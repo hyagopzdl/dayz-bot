@@ -1,0 +1,164 @@
+Crie um projeto Node.js simples chamado "dayz-leaderboard" com o objetivo de gerar um leaderboard PvP a partir de logs do DayZ e enviar automaticamente para um canal do Discord.
+
+---
+
+## OBJETIVO
+
+* Ler um arquivo local chamado "ADM.log"
+* Detectar kills a partir de linhas no formato:
+
+16:10:42 | Player "ROMANIA_GUY93" (...) killed by Player "CamMors_" (...) with AKM from 26.03 meters
+
+* Extrair:
+
+  * killer
+  * victim
+  * arma (weapon)
+  * distância (distance)
+* Gerar leaderboard com:
+
+  * kills
+  * deaths
+  * KD ratio
+* Evitar duplicação de eventos
+* Persistir estado entre execuções
+* Enviar automaticamente o ranking para um canal do Discord a cada 60 segundos
+
+---
+
+## ESTRUTURA DO PROJETO
+
+Criar os seguintes arquivos:
+
+* index.js
+* parser.js
+* discordBot.js
+* state.json
+* ADM.log
+* package.json
+
+---
+
+## DEPENDÊNCIAS
+
+Instalar:
+
+* discord.js
+
+---
+
+## package.json
+
+* usar "type": "module"
+* script:
+  "start": "node index.js"
+
+---
+
+## parser.js
+
+Implementar:
+
+* Ler ADM.log
+
+* Manter state.json com:
+
+  * lastLine (última linha processada)
+  * players (kills/deaths)
+  * processed (lista de eventos já processados)
+
+* Detectar reset do arquivo (se número de linhas diminuir)
+
+* Usar regex:
+
+/Player "(.*?)".*killed by Player "(.*?)".*with (.*?) from ([\d.]+) meters/
+
+* Para cada kill:
+
+  * incrementar death do victim
+  * incrementar kill do killer (se não for suicídio)
+
+* Usar a linha completa como ID único (eventId) para evitar duplicação
+
+* Atualizar lastLine
+
+* Salvar state.json
+
+* Retornar leaderboard ordenado por kills:
+
+[
+{ name, kills, deaths, kd }
+]
+
+---
+
+## discordBot.js
+
+* Criar bot com discord.js
+* Logar com DISCORD_TOKEN
+* Buscar canal via CHANNEL_ID
+* A cada 60 segundos:
+
+  * chamar função getLeaderboard()
+  * montar mensagem:
+
+🏆 Leaderboard PvP
+
+1. PlayerA — 10 kills (2.0 KD)
+2. PlayerB — ...
+
+* Enviar mensagem no canal
+* Se já existir mensagem anterior, editar em vez de enviar nova (evitar spam)
+
+---
+
+## index.js
+
+* Importar parser
+* Importar bot
+* Iniciar bot passando função que retorna leaderboard
+
+---
+
+## state.json
+
+Inicial:
+
+{
+"lastLine": 0,
+"players": {},
+"processed": []
+}
+
+---
+
+## ADM.log (exemplo inicial)
+
+Preencher com:
+
+16:10:42 | Player "ROMANIA_GUY93" (...) killed by Player "CamMors_" (...) with AKM from 26.03 meters
+16:11:10 | Player "PlayerX" (...) killed by Player "CamMors_" (...) with M4A1 from 15.00 meters
+
+---
+
+## VARIÁVEIS DE AMBIENTE
+
+O projeto deve usar:
+
+* DISCORD_TOKEN
+* CHANNEL_ID
+
+---
+
+## RESULTADO ESPERADO
+
+Ao rodar:
+
+* Bot conecta no Discord
+* A cada 60 segundos atualiza o leaderboard
+* Não duplica eventos
+* Persiste progresso mesmo após restart
+
+---
+
+Código deve ser simples, direto e funcional, sem TypeScript, sem frameworks adicionais.
