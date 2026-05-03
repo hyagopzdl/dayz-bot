@@ -1,45 +1,42 @@
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
+import fs from "fs";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const STATE_FILE = "state.json";
 
-const LOG_FILE = path.join(__dirname, 'ADM.log');
-const STATE_FILE = path.join(__dirname, 'state.json');
+type PlayerStats = {
+  kills: number;
+  deaths: number;
+};
 
-const KILL_REGEX = /Player "(.*?)".*?killed by Player "(.*?)".*?with (.*?) from ([\d.]+) meters/;
+type State = {
+  lastLine: number;
+  players: Record<string, PlayerStats>;
+  processed: string[];
+};
 
-function loadState() {
-  try {
-    const raw = fs.readFileSync(STATE_FILE, 'utf8');
-    return JSON.parse(raw);
-  } catch {
-    return { lastLine: 0, players: {}, processed: [] };
+function loadState(): State {
+  if (!fs.existsSync(STATE_FILE)) {
+    return {
+      lastLine: 0,
+      players: {},
+      processed: []
+    };
   }
+  return JSON.parse(fs.readFileSync(STATE_FILE, "utf-8"));
 }
 
-function saveState(state) {
-  fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2), 'utf8');
-}
-
-function ensurePlayer(players, name) {
-  if (!players[name]) {
-    players[name] = { kills: 0, deaths: 0 };
-  }
+function saveState(state: State) {
+  fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
 }
 
 export function getLeaderboard() {
+  if (!fs.existsSync("ADM.log")) return [];
+
+  const log = fs.readFileSync("ADM.log", "utf-8");
+  const lines = log.split("\n");
+
   const state = loadState();
 
-  let lines;
-  try {
-    const content = fs.readFileSync(LOG_FILE, 'utf8');
-    lines = content.split('\n').filter(l => l.trim() !== '');
-  } catch {
-    return buildLeaderboard(state.players);
-  }
-
-  // Detect log file reset (file shrunk)
+  // reset se arquivo reiniciou
   if (lines.length < state.lastLine) {
     state.lastLine = 0;
     state.processed = [];
@@ -47,45 +44,48 @@ export function getLeaderboard() {
 
   const newLines = lines.slice(state.lastLine);
 
+  const killRegex =
+    /Player "(.*?)".*killed by Player "(.*?)".*with (.*?) from ([\d.]+) meters/;
+
   for (const line of newLines) {
-    const eventId = line.trim();
-    if (!eventId) continue;
+    const match = line.match(killRegex);
+    if (!match) continue;
+
+    const victim = match[1];
+    const killer = match[2];
+
+    const eventId = line;
+
     if (state.processed.includes(eventId)) continue;
+    state.processed.push(eventId);
 
-    const match = KILL_REGEX.exec(line);
-    if (match) {
-      const victim = match[1];
-      const killer = match[2];
+    if (!state.players[victim]) {
+      state.players[victim] = { kills: 0, deaths: 0 };
+    }
 
-      ensurePlayer(state.players, victim);
-      ensurePlayer(state.players, killer);
+    if (!state.players[killer]) {
+      state.players[killer] = { kills: 0, deaths: 0 };
+    }
 
-      state.players[victim].deaths += 1;
+    state.players[victim].deaths++;
 
-      // Skip suicides
-      if (killer !== victim) {
-        state.players[killer].kills += 1;
-      }
-
-      state.processed.push(eventId);
+    if (killer !== victim) {
+      state.players[killer].kills++;
     }
   }
 
   state.lastLine = lines.length;
   saveState(state);
 
-  return buildLeaderboard(state.players);
-}
+  return Object.entries(state.players)
+    .map(([name, stats]) => {
+      const kd = stats.kills / (stats.deaths || 1);
 
-function buildLeaderboard(players) {
-  return Object.entries(players)
-    .map(([name, stats]) => ({
-      name,
-      kills: stats.kills,
-      deaths: stats.deaths,
-      kd: stats.deaths === 0
-        ? stats.kills.toFixed(2)
-        : (stats.kills / stats.deaths).toFixed(2),
-    }))
+      return {
+        name,
+        kills: stats.kills,
+        kd: kd.toFixed(2)
+      };
+    })
     .sort((a, b) => b.kills - a.kills);
 }

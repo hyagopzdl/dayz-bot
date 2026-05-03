@@ -1,48 +1,14 @@
 modules = ["nodejs-24"]
 
-[deployment]
-router = "application"
-deploymentTarget = "autoscale"
-
-[deployment.postBuild]
-args = ["pnpm", "store", "prune"]
-env = { "CI" = "true" }
-
-[workflows]
-runButton = "Project"
-
-[[workflows.workflow]]
-name = "Project"
-mode = "parallel"
-author = "agent"
-
-[[workflows.workflow.tasks]]
-task = "workflow.run"
-args = "DayZ Leaderboard Bot"
-
-[[workflows.workflow]]
-name = "DayZ Leaderboard Bot"
-author = "agent"
-
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "pnpm --filter @workspace/dayz-leaderboard run start"
-
-[workflows.workflow.metadata]
-outputType = "console"
-
-[agent]
-stack = "PNPM_WORKSPACE"
-expertMode = true
-
-[postMerge]
-path = "scripts/post-merge.sh"
-timeoutMs = 20000
+run = "pnpm --filter @workspace/api-server dev"
 
 [[ports]]
-localPort = 8080
-externalPort = 8080
+localPort = 3000
+externalPort = 80
 
 [[ports]]
 localPort = 8081
-externalPort = 80
+externalPort = 8081
+
+[deployment]
+deploymentTarget = "cloudrun"

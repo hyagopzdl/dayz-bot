@@ -25,9 +25,16 @@ app.use(
     },
   }),
 );
+
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// 🔥 ROTA PRINCIPAL (ANTES DO ROUTER)
+app.get("/", (req, res) => {
+  console.log("🔥 ROTA / OK");
+  res.send("ok");
+});
 
 app.use("/api", router);
 

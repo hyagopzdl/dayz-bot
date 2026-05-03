@@ -1,25 +1,49 @@
 import app from "./app";
 import { logger } from "./lib/logger";
+import { downloadADM } from "./lib/nitradoDownloader";
+import { getLeaderboard } from "./lib/parser";
+import { startDiscordBot } from "./lib/discordBot";
 
-const rawPort = process.env["PORT"];
+let started = false;
 
-if (!rawPort) {
-  throw new Error(
-    "PORT environment variable is required but was not provided.",
-  );
+function startServer(port: number) {
+  if (started) return;
+  started = true;
+
+  const HOST = "0.0.0.0";
+
+  const server = app.listen(port, HOST, async () => {
+    console.log("🌐 SERVER ONLINE");
+    console.log(`🚀 Running on http://${HOST}:${port}`);
+
+    logger.info({ port }, "Server listening");
+
+    // 🔥 primeira execução
+    await downloadADM();
+
+    console.log("🔥 FORÇANDO PARSER AGORA:");
+    getLeaderboard();
+
+    // 🔁 loop
+    setInterval(async () => {
+      await downloadADM();
+
+      console.log("🔥 PARSER AUTOMÁTICO:");
+      getLeaderboard();
+    }, 60 * 1000);
+
+    // 🤖 Discord
+    startDiscordBot(getLeaderboard);
+  });
+
+  server.on("error", (err: any) => {
+    if (err.code === "EADDRINUSE") {
+      startServer(port + 1);
+    } else {
+      console.error(err);
+      process.exit(1);
+    }
+  });
 }
 
-const port = Number(rawPort);
-
-if (Number.isNaN(port) || port <= 0) {
-  throw new Error(`Invalid PORT value: "${rawPort}"`);
-}
-
-app.listen(port, (err) => {
-  if (err) {
-    logger.error({ err }, "Error listening on port");
-    process.exit(1);
-  }
-
-  logger.info({ port }, "Server listening");
-});
+startServer(Number(process.env.PORT) || 3000);
