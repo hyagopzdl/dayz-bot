@@ -125,6 +125,6 @@ export async function startDiscordBot(getLeaderboard: () => any[]) {
     }
 
     await updateLeaderboard();
-    setInterval(updateLeaderboard, 10 * 60 * 1000);
+    setInterval(updateLeaderboard, 5 * 60 * 1000);
   });
 }
