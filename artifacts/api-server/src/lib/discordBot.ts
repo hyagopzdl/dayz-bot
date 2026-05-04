@@ -77,7 +77,8 @@ Sem dados ainda...
 
         const name = padEnd(p.name, maxName);
         const kills = padStart(String(p.kills), 5);
-        const kd = Number(p.kd).toFixed(2);
+        const kd =
+          p.deaths > 0 ? (p.kills / p.deaths).toFixed(2) : p.kills.toFixed(2);
 
         description += `${rank} \`${name}\` \`${kills} kills\` \`K/D ${kd}\`\n`;
       });
