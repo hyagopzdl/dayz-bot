@@ -3,6 +3,10 @@ import { getState, saveState } from "./state";
 
 const KILL_REGEX = /Player "(.+?)".*killed by Player "(.+?)"/;
 
+// 🔥 ADICIONA REGEX DE CONEXÃO
+const CONNECT_REGEX = /Player "(.+?)" is connected/;
+const DISCONNECT_REGEX = /Player "(.+?)" has been disconnected/;
+
 export function getLeaderboard() {
   console.log("🔥 PARSER FOI CHAMADO");
 
@@ -11,17 +15,18 @@ export function getLeaderboard() {
 
   const state = getState();
 
-  // 🔥 SEMPRE INICIALIZA DIREITO
   let leaderboard: Record<string, { kills: number; deaths: number }> =
     state.players || {};
 
+  let onlinePlayers: Record<string, boolean> = state.onlinePlayers || {};
+
   let start = state.lastLine || 0;
 
-  // 🔥 SE NÃO TEM PLAYERS → RECONSTRÓI
   if (!leaderboard || Object.keys(leaderboard).length === 0) {
     console.log("♻️ reconstruindo estado...");
     start = 0;
     leaderboard = {};
+    onlinePlayers = {};
   }
 
   console.log(`📄 total linhas: ${lines.length}`);
@@ -32,38 +37,54 @@ export function getLeaderboard() {
   for (let i = start; i < lines.length; i++) {
     const line = lines[i];
 
+    // 🔥 KILLS
     const match = line.match(KILL_REGEX);
-    if (!match) continue;
+    if (match) {
+      const victim = match[1];
+      const killer = match[2];
 
-    const victim = match[1];
-    const killer = match[2];
+      if (!leaderboard[killer]) {
+        leaderboard[killer] = { kills: 0, deaths: 0 };
+      }
 
-    // 🔥 GARANTE SEMPRE
-    if (!leaderboard[killer]) {
-      leaderboard[killer] = { kills: 0, deaths: 0 };
+      if (!leaderboard[victim]) {
+        leaderboard[victim] = { kills: 0, deaths: 0 };
+      }
+
+      leaderboard[killer].kills += 1;
+      leaderboard[victim].deaths += 1;
+
+      newKills++;
+
+      console.log(`🔫 ${killer} matou ${victim}`);
     }
 
-    if (!leaderboard[victim]) {
-      leaderboard[victim] = { kills: 0, deaths: 0 };
+    // 🔥 CONECTOU
+    const connectMatch = line.match(CONNECT_REGEX);
+    if (connectMatch) {
+      const player = connectMatch[1];
+      onlinePlayers[player] = true;
+      console.log(`🟢 ${player} entrou`);
     }
 
-    leaderboard[killer].kills += 1;
-    leaderboard[victim].deaths += 1;
-
-    newKills++;
-
-    console.log(`🔫 ${killer} matou ${victim}`);
+    // 🔥 DESCONECTOU
+    const disconnectMatch = line.match(DISCONNECT_REGEX);
+    if (disconnectMatch) {
+      const player = disconnectMatch[1];
+      delete onlinePlayers[player];
+      console.log(`🔴 ${player} saiu`);
+    }
   }
 
   console.log(`🎯 novas kills: ${newKills}`);
+  console.log(`🟢 online agora: ${Object.keys(onlinePlayers).length}`);
 
-  // 🔥 DEBUG FORÇADO
   console.log("💾 VAI SALVAR:", leaderboard);
 
-  // 🔥 SALVA GARANTIDO
   saveState({
     players: leaderboard || {},
     lastLine: lines.length,
+    onlinePlayers, // 🔥 AGORA SALVA
   });
 
   return Object.entries(leaderboard)
