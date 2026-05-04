@@ -10,9 +10,12 @@ const client = new Client({
   intents: [GatewayIntentBits.Guilds],
 });
 
-const MESSAGE_FILE = "message.json";
+// 🔥 arquivos separados
+const MESSAGE_FILE_GLOBAL = "message_global.json";
+const MESSAGE_FILE_DAILY = "message_daily.json";
+const MESSAGE_FILE_WEEKLY = "message_weekly.json";
 
-export async function startDiscordBot(getLeaderboard: () => any[]) {
+export async function startDiscordBot(getLeaderboard: () => any) {
   if (!process.env.DISCORD_TOKEN) {
     console.error("❌ DISCORD_TOKEN não definido");
     return;
@@ -21,17 +24,20 @@ export async function startDiscordBot(getLeaderboard: () => any[]) {
   client.on("ready", async () => {
     console.log("🤖 Discord conectado");
 
-    const channel = (await client.channels.fetch(
+    // 🔥 canais separados
+    const globalChannel = (await client.channels.fetch(
       process.env.DISCORD_CHANNEL_ID!,
     )) as TextBasedChannel;
 
+    const dailyChannel = (await client.channels.fetch(
+      process.env.DISCORD_CHANNEL_DAILY_ID!,
+    )) as TextBasedChannel;
+
+    const weeklyChannel = (await client.channels.fetch(
+      process.env.DISCORD_CHANNEL_WEEKLY_ID!,
+    )) as TextBasedChannel;
+
     const CATEGORY_ID = process.env.DISCORD_ONLINE_CHANNEL_ID!;
-
-    let messageId: string | null = null;
-
-    if (fs.existsSync(MESSAGE_FILE)) {
-      messageId = JSON.parse(fs.readFileSync(MESSAGE_FILE, "utf-8")).id;
-    }
 
     function padEnd(str: string, size: number) {
       return str.length >= size ? str : str + " ".repeat(size - str.length);
@@ -50,12 +56,12 @@ export async function startDiscordBot(getLeaderboard: () => any[]) {
       return nums[i - 3] || `${i + 1}️⃣`;
     }
 
-    function formatLeaderboardEmbed(players: any[]) {
+    function formatLeaderboardEmbed(players: any[], title: string) {
       const embed = new EmbedBuilder().setColor("#FF00AA");
 
       if (!players.length) {
         embed.setDescription(`
-🏆 **Top 10 PvP FaxaDeGaza®** 🏆
+${title}
 
 Sem dados ainda...
         `);
@@ -64,8 +70,7 @@ Sem dados ainda...
 
       const maxName = Math.max(...players.map((p) => p.name.length)) + 2;
 
-      let description = "";
-      description += "🏆 **Top 10 PvP FaxaDeGaza®** 🏆\n\n";
+      let description = `${title}\n\n`;
 
       players.slice(0, 10).forEach((p, i) => {
         const rank = getRank(i);
@@ -113,33 +118,67 @@ Sem dados ainda...
       }
     }
 
+    function mapPlayers(obj: any) {
+      return Object.entries(obj)
+        .map(([name, d]: any) => ({ name, ...d }))
+        .sort((a, b) => b.kills - a.kills);
+    }
+
+    async function sendOrEdit(channel: any, file: string, embed: any) {
+      let messageId: string | null = null;
+
+      if (fs.existsSync(file)) {
+        messageId = JSON.parse(fs.readFileSync(file, "utf-8")).id;
+      }
+
+      let message;
+
+      if (messageId) {
+        try {
+          message = await channel.messages.fetch(messageId);
+        } catch {
+          message = null;
+        }
+      }
+
+      if (message) {
+        await message.edit({ embeds: [embed] });
+      } else {
+        const newMsg = await channel.send({ embeds: [embed] });
+        fs.writeFileSync(file, JSON.stringify({ id: newMsg.id }));
+      }
+    }
+
     async function updateLeaderboard() {
       try {
         const data = getLeaderboard();
-        const embed = formatLeaderboardEmbed(data);
 
-        let message;
+        const globalPlayers = mapPlayers(data.global);
+        const dailyPlayers = mapPlayers(data.daily);
+        const weeklyPlayers = mapPlayers(data.weekly);
 
-        if (messageId) {
-          try {
-            message = await channel.messages.fetch(messageId);
-          } catch {
-            message = null;
-          }
-        }
+        const globalEmbed = formatLeaderboardEmbed(
+          globalPlayers,
+          "🏆 **LEADERBOARD GERAL** 🏆",
+        );
 
-        if (message) {
-          await message.edit({ embeds: [embed] });
-        } else {
-          const newMsg = await channel.send({ embeds: [embed] });
-          messageId = newMsg.id;
+        const dailyEmbed = formatLeaderboardEmbed(
+          dailyPlayers,
+          "🌅 **LEADERBOARD DO DIA** 🌅",
+        );
 
-          fs.writeFileSync(MESSAGE_FILE, JSON.stringify({ id: messageId }));
-        }
+        const weeklyEmbed = formatLeaderboardEmbed(
+          weeklyPlayers,
+          "📆 **LEADERBOARD SEMANAL** 📆",
+        );
+
+        await sendOrEdit(globalChannel, MESSAGE_FILE_GLOBAL, globalEmbed);
+        await sendOrEdit(dailyChannel, MESSAGE_FILE_DAILY, dailyEmbed);
+        await sendOrEdit(weeklyChannel, MESSAGE_FILE_WEEKLY, weeklyEmbed);
 
         await updateOnlineCount();
 
-        console.log("🏆 leaderboard atualizado");
+        console.log("🏆 leaderboards atualizados");
       } catch (err) {
         console.error("❌ erro ao atualizar leaderboard", err);
       }
@@ -170,13 +209,9 @@ Sem dados ainda...
 
       let delay = 5 * 60 * 1000;
 
-      if (count === 0) {
-        delay = 20 * 60 * 1000;
-      } else if (count === 1) {
-        delay = 15 * 60 * 1000;
-      } else {
-        delay = 5 * 60 * 1000;
-      }
+      if (count === 0) delay = 20 * 60 * 1000;
+      else if (count === 1) delay = 15 * 60 * 1000;
+      else delay = 5 * 60 * 1000;
 
       console.log(`⏱️ próximo update em ${delay / 1000}s (${count} online)`);
 
