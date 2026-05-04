@@ -127,8 +127,48 @@ export async function startDiscordBot(getLeaderboard: () => any[]) {
       }
     }
 
+    // 🔥 NOVO: loop dinâmico inteligente
+    async function getOnlineCount(): Promise<number> {
+      try {
+        const state = JSON.parse(fs.readFileSync("state.json", "utf-8"));
+        const onlinePlayers = state.onlinePlayers || {};
+        return Object.keys(onlinePlayers).length;
+      } catch {
+        return 0;
+      }
+    }
+
+    let lastOnlineCount = -1;
+
+    async function dynamicUpdateLoop() {
+      const count = await getOnlineCount();
+
+      if (count !== lastOnlineCount) {
+        console.log(`🔄 mudança detectada: ${lastOnlineCount} → ${count}`);
+        await updateLeaderboard();
+        lastOnlineCount = count;
+      } else {
+        console.log("⏭️ sem mudança, pulando update");
+      }
+
+      let delay = 5 * 60 * 1000;
+
+      if (count === 0) {
+        delay = 20 * 60 * 1000;
+      } else if (count === 1) {
+        delay = 15 * 60 * 1000;
+      } else {
+        delay = 5 * 60 * 1000;
+      }
+
+      console.log(`⏱️ próximo update em ${delay / 1000}s (${count} online)`);
+
+      setTimeout(dynamicUpdateLoop, delay);
+    }
+
+    // 🔥 primeira execução
     await updateLeaderboard();
-    setInterval(updateLeaderboard, 5 * 60 * 1000);
+    dynamicUpdateLoop();
   });
 
   // 🔥 LOGIN DEPOIS
