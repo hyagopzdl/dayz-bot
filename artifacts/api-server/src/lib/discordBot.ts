@@ -17,7 +17,7 @@ export async function startDiscordBot(getLeaderboard: () => any[]) {
       process.env.DISCORD_CHANNEL_ID!,
     )) as TextBasedChannel;
 
-    const ONLINE_CHANNEL_ID = process.env.DISCORD_ONLINE_CHANNEL_ID!;
+    const CATEGORY_ID = process.env.DISCORD_ONLINE_CHANNEL_ID!;
 
     let messageId: string | null = null;
 
@@ -83,19 +83,19 @@ export async function startDiscordBot(getLeaderboard: () => any[]) {
         const onlinePlayers = state.onlinePlayers || {};
         const count = Object.keys(onlinePlayers).length;
 
-        const channel = await client.channels.fetch(ONLINE_CHANNEL_ID);
+        const category = await client.channels.fetch(CATEGORY_ID);
 
-        if (!channel || !("setName" in channel)) return;
+        if (!category || !("setName" in category)) return;
 
         const newName = `🟢 Online: ${count}`;
 
-        if (channel.name === newName) return;
+        if ((category as any).name === newName) return;
 
-        await (channel as any).setName(newName);
+        await (category as any).setName(newName);
 
-        console.log(`🟢 Online atualizado: ${count}`);
+        console.log(`🟢 Categoria atualizada: ${count}`);
       } catch (err) {
-        console.error("❌ erro ao atualizar online", err);
+        console.error("❌ erro ao atualizar categoria online", err);
       }
     }
 
@@ -132,6 +132,6 @@ export async function startDiscordBot(getLeaderboard: () => any[]) {
     }
 
     await updateLeaderboard();
-    setInterval(updateLeaderboard, 60 * 1000);
+    setInterval(updateLeaderboard, 10 * 60 * 1000);
   });
 }
