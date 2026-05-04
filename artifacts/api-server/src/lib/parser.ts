@@ -1,7 +1,7 @@
 import fs from "fs";
 import { getState, saveState } from "./state";
 
-const KILL_REGEX = /Player "(.+?)".*killed by Player "(.+?)"/;
+const KILL_REGEX = /Player "([^"]+)"[\s\S]*?killed by Player "([^"]+)"/;
 
 // 🔥 REGEX DE CONEXÃO
 const CONNECT_REGEX = /Player "(.+?)".*is connected/;
