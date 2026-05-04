@@ -95,7 +95,13 @@ Sem dados ainda...
 
         if (!category || !("setName" in category)) return;
 
-        const newName = `🟢 Online: ${count}`;
+        const MAX_PLAYERS = 10;
+
+        let newName = `━━━〔 PLAYERS ONLINE: ${count}/${MAX_PLAYERS} 〕━━━`;
+
+        if (count >= 5) {
+          newName = `━━━〔 PLAYERS ONLINE: ${count}/${MAX_PLAYERS} 🔥 〕━━━`;
+        }
 
         if ((category as any).name === newName) return;
 
