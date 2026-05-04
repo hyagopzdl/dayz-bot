@@ -21,7 +21,7 @@ export async function startDiscordBot(getLeaderboard: () => any[]) {
     return;
   }
 
-  client.once("clientReady", async () => {
+  client.once("ready", async () => {
     console.log("🤖 Discord conectado");
 
     const channel = (await client.channels.fetch(
