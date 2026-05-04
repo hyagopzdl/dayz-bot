@@ -8,7 +8,18 @@ const client = new Client({
 const MESSAGE_FILE = "message.json";
 
 export async function startDiscordBot(getLeaderboard: () => any[]) {
-  await client.login(process.env.DISCORD_TOKEN);
+  if (!process.env.DISCORD_TOKEN) {
+    console.error("❌ DISCORD_TOKEN não definido");
+    return;
+  }
+
+  try {
+    await client.login(process.env.DISCORD_TOKEN);
+    console.log("✅ login Discord OK");
+  } catch (err) {
+    console.error("❌ erro ao logar no Discord:", err);
+    return;
+  }
 
   client.once("clientReady", async () => {
     console.log("🤖 Discord conectado");

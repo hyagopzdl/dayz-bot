@@ -33,7 +33,12 @@ function startServer(port: number) {
     }, 60 * 1000);
 
     // 🤖 Discord
-    startDiscordBot(getLeaderboard);
+    try {
+      console.log("🚀 iniciando bot do Discord...");
+      startDiscordBot(getLeaderboard);
+    } catch (err) {
+      console.error("❌ erro ao iniciar Discord:", err);
+    }
   });
 
   server.on("error", (err: any) => {
