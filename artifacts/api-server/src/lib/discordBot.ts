@@ -58,48 +58,56 @@ export async function startDiscordBot(getLeaderboard: () => any) {
       const embed = new EmbedBuilder().setColor("#FF00AA");
 
       if (!players.length) {
-        embed.setDescription(`${title}\n\nSem dados ainda...`);
+        embed.setDescription(`
+
+${title}
+
+Sem dados ainda...`);
         return embed;
       }
 
-      // 🔥 LARGURAS FIXAS (garante alinhamento perfeito)
-      const NAME_WIDTH = 14;
-      const KILLS_WIDTH = 5;
-      const KD_WIDTH = 6;
+      // 🔥 largura dinâmica do nome
+      const maxName = Math.min(
+        Math.max(...players.map((p) => p.name.length)),
+        18,
+      );
 
-      let lines: string[] = [];
+      // 🔥 largura dinâmica das kills (com label)
+      const maxKillsLength = Math.max(
+        ...players.map((p) => `${p.kills} kills`.length),
+      );
 
-      // 🔥 HEADER ALINHADO
-      const header = `   ${padEnd("PLAYER", NAME_WIDTH)} │ ${padStart("KILL(S)", KILLS_WIDTH)} │ ${padStart("K/D", KD_WIDTH)}`;
-      const separator = "─".repeat(header.length);
+      const KD_WIDTH = 8; // "K/D X.XX"
 
-      lines.push(header);
-      lines.push(separator);
+      let description = `${title}\n\n`;
 
       players.slice(0, 10).forEach((p, i) => {
         const rank = getRank(i);
 
-        const name = padEnd(p.name.slice(0, NAME_WIDTH), NAME_WIDTH);
-        const kills = padStart(String(p.kills), KILLS_WIDTH);
+        // 🔥 nome com "…"
+        let trimmedName =
+          p.name.length > maxName ? p.name.slice(0, maxName - 1) + "…" : p.name;
+
+        const name = padEnd(trimmedName, maxName);
+
+        // 🔥 kills com label
+        const killsText = `${p.kills} kills`;
+        const kills = padStart(killsText, maxKillsLength);
+
+        // 🔥 KD com label
         const kd =
           p.deaths > 0 ? (p.kills / p.deaths).toFixed(2) : p.kills.toFixed(2);
 
-        const kdFormatted = padStart(kd, KD_WIDTH);
+        const kdText = `K/D ${kd}`;
+        const kdFormatted = padStart(kdText, KD_WIDTH);
 
-        lines.push(`${rank} ${name} │ ${kills} │ ${kdFormatted}`);
-        lines.push(""); // 👈 quebra de linha entre players
+        description += `${rank} \`${name}\` \`${kills}\` \`${kdFormatted}\`\n\n`;
       });
 
       const timestamp = Math.floor(Date.now() / 1000);
+      description += `⏱️ Atualizado <t:${timestamp}:R>`;
 
-      embed.setDescription(
-        `${title}\n\n` +
-          "```" +
-          "\n" +
-          lines.join("\n") +
-          "\n```" +
-          `\n⏱️ Atualizado <t:${timestamp}:R>`,
-      );
+      embed.setDescription(description);
 
       return embed;
     }
