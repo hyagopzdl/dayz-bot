@@ -1,3 +1,362 @@
 {
-  "lastLine": 5
+  "players": {
+    "LN4K_GLASGOW": {
+      "kills": 29,
+      "deaths": 20
+    },
+    "xMatheusFera": {
+      "kills": 16,
+      "deaths": 16
+    },
+    "LN4K_ECHO": {
+      "kills": 19,
+      "deaths": 27
+    },
+    "r-one10": {
+      "kills": 1,
+      "deaths": 2
+    },
+    "klvntorres": {
+      "kills": 15,
+      "deaths": 15
+    },
+    "Batateira2007": {
+      "kills": 10,
+      "deaths": 17
+    },
+    "DrKhaIifAk47": {
+      "kills": 21,
+      "deaths": 14
+    },
+    "XxYugo_25xX": {
+      "kills": 1,
+      "deaths": 0
+    },
+    "armee-liee-007": {
+      "kills": 0,
+      "deaths": 1
+    },
+    "OGxAce100": {
+      "kills": 20,
+      "deaths": 0
+    },
+    "Ex_Infinity-_-": {
+      "kills": 0,
+      "deaths": 41
+    },
+    "GainzaGainza": {
+      "kills": 28,
+      "deaths": 22
+    },
+    "Vito_C_Lambardi": {
+      "kills": 29,
+      "deaths": 1
+    },
+    "Mike34_gm": {
+      "kills": 1,
+      "deaths": 7
+    },
+    "ll_-LadoDuMall": {
+      "kills": 43,
+      "deaths": 20
+    },
+    "SpenazatoPro": {
+      "kills": 19,
+      "deaths": 38
+    },
+    "Trro_king2": {
+      "kills": 36,
+      "deaths": 26
+    },
+    "xEricM4zZ": {
+      "kills": 4,
+      "deaths": 12
+    },
+    "brendogm_": {
+      "kills": 7,
+      "deaths": 6
+    },
+    "engenheiro_dayz": {
+      "kills": 2,
+      "deaths": 2
+    },
+    "DRUGZI420": {
+      "kills": 6,
+      "deaths": 10
+    },
+    "faneto65": {
+      "kills": 5,
+      "deaths": 5
+    },
+    "Alekes80_": {
+      "kills": 1,
+      "deaths": 0
+    },
+    "Methamfetaa": {
+      "kills": 38,
+      "deaths": 23
+    },
+    "kemikaali_keke": {
+      "kills": 10,
+      "deaths": 11
+    },
+    "O_ol-_-ll-_-lo_0": {
+      "kills": 10,
+      "deaths": 24
+    },
+    "starlviaa": {
+      "kills": 2,
+      "deaths": 4
+    },
+    "Glenn_prime": {
+      "kills": 2,
+      "deaths": 3
+    },
+    "brunooFnx": {
+      "kills": 0,
+      "deaths": 1
+    },
+    "Doomination515": {
+      "kills": 24,
+      "deaths": 15
+    },
+    "TTV_SWEATYCLIX88": {
+      "kills": 14,
+      "deaths": 19
+    },
+    "CWAOAA1416": {
+      "kills": 8,
+      "deaths": 13
+    },
+    "thegamerboydYT": {
+      "kills": 5,
+      "deaths": 10
+    },
+    "JNASTY187211": {
+      "kills": 0,
+      "deaths": 8
+    },
+    "Raccon-Man2023": {
+      "kills": 37,
+      "deaths": 30
+    },
+    "CamMors_": {
+      "kills": 25,
+      "deaths": 11
+    },
+    "Oh_Yes_Im_Girl24": {
+      "kills": 0,
+      "deaths": 2
+    },
+    "FF-R6-TOM-LOLMDR": {
+      "kills": 51,
+      "deaths": 76
+    },
+    "KRUJOSKI_FRAN": {
+      "kills": 35,
+      "deaths": 28
+    },
+    "alinou36": {
+      "kills": 58,
+      "deaths": 95
+    },
+    "schublucas": {
+      "kills": 48,
+      "deaths": 46
+    },
+    "iOrbitallAll": {
+      "kills": 92,
+      "deaths": 76
+    },
+    "qreqz-_-": {
+      "kills": 58,
+      "deaths": 28
+    },
+    "Zenix_633": {
+      "kills": 7,
+      "deaths": 11
+    },
+    "nanoulux": {
+      "kills": 3,
+      "deaths": 0
+    },
+    "GlurgGlurg": {
+      "kills": 10,
+      "deaths": 9
+    },
+    "Davisouza392": {
+      "kills": 7,
+      "deaths": 7
+    },
+    "Dj2x669": {
+      "kills": 2,
+      "deaths": 5
+    },
+    "CCB_pingouin": {
+      "kills": 16,
+      "deaths": 16
+    },
+    "ICEBLUE_3333": {
+      "kills": 12,
+      "deaths": 16
+    },
+    "smo-key-JOE": {
+      "kills": 19,
+      "deaths": 13
+    },
+    "doublefoley-_-": {
+      "kills": 8,
+      "deaths": 6
+    },
+    "standard-promu6": {
+      "kills": 6,
+      "deaths": 5
+    },
+    "willholmes_": {
+      "kills": 1,
+      "deaths": 2
+    },
+    "Phatommam": {
+      "kills": 0,
+      "deaths": 1
+    },
+    "tiio-te": {
+      "kills": 12,
+      "deaths": 27
+    },
+    "PeppeIlCorallino": {
+      "kills": 45,
+      "deaths": 46
+    },
+    "Daniel-mandela": {
+      "kills": 108,
+      "deaths": 84
+    },
+    "BDC-pedrohp77": {
+      "kills": 59,
+      "deaths": 52
+    },
+    "jxnyzi-_-egoo": {
+      "kills": 27,
+      "deaths": 14
+    },
+    "toxickiller767": {
+      "kills": 2,
+      "deaths": 5
+    },
+    "pdiddy_bahiano": {
+      "kills": 0,
+      "deaths": 2
+    },
+    "adrpinschester02": {
+      "kills": 7,
+      "deaths": 12
+    },
+    "temp-3674848773": {
+      "kills": 12,
+      "deaths": 17
+    },
+    "ChIlito_spkl": {
+      "kills": 7,
+      "deaths": 13
+    },
+    "AlwaysZayKD35": {
+      "kills": 3,
+      "deaths": 2
+    },
+    "KijuPiotrPL": {
+      "kills": 4,
+      "deaths": 2
+    },
+    "kevkills1997": {
+      "kills": 0,
+      "deaths": 1
+    },
+    "Gui_19_": {
+      "kills": 46,
+      "deaths": 51
+    },
+    "davidboutin32": {
+      "kills": 16,
+      "deaths": 14
+    },
+    "Hypnuuuuus": {
+      "kills": 0,
+      "deaths": 5
+    },
+    "BrunoX_XSantos": {
+      "kills": 18,
+      "deaths": 24
+    },
+    "storm_queeen92": {
+      "kills": 14,
+      "deaths": 23
+    },
+    "Pe_de_panoM4-": {
+      "kills": 16,
+      "deaths": 11
+    },
+    "romaaet0": {
+      "kills": 6,
+      "deaths": 2
+    },
+    "F_J_067": {
+      "kills": 14,
+      "deaths": 17
+    },
+    "yAlekzzyn_-": {
+      "kills": 16,
+      "deaths": 14
+    },
+    "zubetsu_asuma": {
+      "kills": 6,
+      "deaths": 13
+    },
+    "P_DiddyDayz": {
+      "kills": 16,
+      "deaths": 9
+    },
+    "g4br1el_pr0play": {
+      "kills": 1,
+      "deaths": 6
+    },
+    "propagandalf566": {
+      "kills": 10,
+      "deaths": 9
+    },
+    "chicopereira_": {
+      "kills": 21,
+      "deaths": 17
+    },
+    "cold_shivers45": {
+      "kills": 13,
+      "deaths": 9
+    },
+    "rdx-ciganinho": {
+      "kills": 12,
+      "deaths": 9
+    },
+    "black_panda32132": {
+      "kills": 11,
+      "deaths": 23
+    },
+    "GG-maxzzz187": {
+      "kills": 42,
+      "deaths": 34
+    },
+    "Carpe_diem_001": {
+      "kills": 9,
+      "deaths": 23
+    },
+    "FAZE_GOBLIN_23": {
+      "kills": 51,
+      "deaths": 25
+    },
+    "yaboyjezus": {
+      "kills": 11,
+      "deaths": 25
+    }
+  },
+  "onlinePlayers": {},
+  "lastLine": 22819
 }

@@ -3,8 +3,6 @@ import { getState, saveState } from "./state";
 
 const KILL_REGEX = /Player "(.+?)".*killed by Player "(.+?)"/;
 
-let leaderboard: Record<string, { kills: number }> = {};
-
 export function getLeaderboard() {
   console.log("🔥 PARSER FOI CHAMADO");
 
@@ -12,7 +10,19 @@ export function getLeaderboard() {
   const lines = log.split("\n");
 
   const state = getState();
-  const start = state.lastLine || 0;
+
+  // 🔥 SEMPRE INICIALIZA DIREITO
+  let leaderboard: Record<string, { kills: number; deaths: number }> =
+    state.players || {};
+
+  let start = state.lastLine || 0;
+
+  // 🔥 SE NÃO TEM PLAYERS → RECONSTRÓI
+  if (!leaderboard || Object.keys(leaderboard).length === 0) {
+    console.log("♻️ reconstruindo estado...");
+    start = 0;
+    leaderboard = {};
+  }
 
   console.log(`📄 total linhas: ${lines.length}`);
   console.log(`📍 processando de: ${start}`);
@@ -23,32 +33,47 @@ export function getLeaderboard() {
     const line = lines[i];
 
     const match = line.match(KILL_REGEX);
+    if (!match) continue;
 
-    if (match) {
-      const victim = match[1];
-      const killer = match[2];
+    const victim = match[1];
+    const killer = match[2];
 
-      if (!leaderboard[killer]) {
-        leaderboard[killer] = { kills: 0 };
-      }
-
-      leaderboard[killer].kills += 1;
-
-      newKills++;
-
-      console.log(`🔫 ${killer} matou ${victim}`);
+    // 🔥 GARANTE SEMPRE
+    if (!leaderboard[killer]) {
+      leaderboard[killer] = { kills: 0, deaths: 0 };
     }
+
+    if (!leaderboard[victim]) {
+      leaderboard[victim] = { kills: 0, deaths: 0 };
+    }
+
+    leaderboard[killer].kills += 1;
+    leaderboard[victim].deaths += 1;
+
+    newKills++;
+
+    console.log(`🔫 ${killer} matou ${victim}`);
   }
 
   console.log(`🎯 novas kills: ${newKills}`);
 
-  // 🔥 salva progresso
-  saveState({ lastLine: lines.length });
+  // 🔥 DEBUG FORÇADO
+  console.log("💾 VAI SALVAR:", leaderboard);
+
+  // 🔥 SALVA GARANTIDO
+  saveState({
+    players: leaderboard || {},
+    lastLine: lines.length,
+  });
 
   return Object.entries(leaderboard)
-    .map(([name, data]) => ({
-      name,
-      kills: data.kills,
-    }))
+    .map(([name, data]) => {
+      const kills = data.kills || 0;
+      const deaths = data.deaths || 0;
+
+      const kd = deaths > 0 ? (kills / deaths).toFixed(2) : kills.toFixed(2);
+
+      return { name, kills, deaths, kd };
+    })
     .sort((a, b) => b.kills - a.kills);
 }

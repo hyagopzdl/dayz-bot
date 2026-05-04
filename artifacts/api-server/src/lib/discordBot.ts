@@ -17,6 +17,8 @@ export async function startDiscordBot(getLeaderboard: () => any[]) {
       process.env.DISCORD_CHANNEL_ID!,
     )) as TextBasedChannel;
 
+    const ONLINE_CHANNEL_ID = process.env.DISCORD_ONLINE_CHANNEL_ID!;
+
     let messageId: string | null = null;
 
     if (fs.existsSync(MESSAGE_FILE)) {
@@ -48,11 +50,7 @@ export async function startDiscordBot(getLeaderboard: () => any[]) {
       const maxName = Math.max(...players.map((p) => p.name.length)) + 2;
 
       let msg = "";
-
-      // topo
       msg += "\n\n";
-
-      // título
       msg += "🏆 **Top 10 PvP FaxaDeGaza®** 🏆\n\n\n";
 
       players.slice(0, 10).forEach((p, i) => {
@@ -65,7 +63,6 @@ export async function startDiscordBot(getLeaderboard: () => any[]) {
         msg += `${rank} \`${name}\` \`${kills} kills\` \`  K/D ${kd}\`\n\n`;
       });
 
-      // data
       const now = new Date();
       const formatted =
         now.toLocaleDateString("pt-BR") +
@@ -80,10 +77,31 @@ export async function startDiscordBot(getLeaderboard: () => any[]) {
       return msg;
     }
 
+    async function updateOnlineCount() {
+      try {
+        const state = JSON.parse(fs.readFileSync("state.json", "utf-8"));
+        const onlinePlayers = state.onlinePlayers || {};
+        const count = Object.keys(onlinePlayers).length;
+
+        const channel = await client.channels.fetch(ONLINE_CHANNEL_ID);
+
+        if (!channel || !("setName" in channel)) return;
+
+        const newName = `🟢 Online: ${count}`;
+
+        if (channel.name === newName) return;
+
+        await (channel as any).setName(newName);
+
+        console.log(`🟢 Online atualizado: ${count}`);
+      } catch (err) {
+        console.error("❌ erro ao atualizar online", err);
+      }
+    }
+
     async function updateLeaderboard() {
       try {
         const data = getLeaderboard();
-
         const content = formatLeaderboard(data);
 
         let message;
@@ -105,16 +123,15 @@ export async function startDiscordBot(getLeaderboard: () => any[]) {
           fs.writeFileSync(MESSAGE_FILE, JSON.stringify({ id: messageId }));
         }
 
+        await updateOnlineCount();
+
         console.log("🏆 leaderboard atualizado");
       } catch (err) {
         console.error("❌ erro ao atualizar leaderboard", err);
       }
     }
 
-    // 🔥 primeira execução imediata
     await updateLeaderboard();
-
-    // 🔁 atualiza a cada 60s
     setInterval(updateLeaderboard, 60 * 1000);
   });
 }

@@ -1,15 +1,35 @@
 import fs from "fs";
+import path from "path";
 
-const STATE_FILE = "state.json";
+// 🔥 FORÇA caminho correto do projeto
+const FILE = path.resolve(process.cwd(), "state.json");
 
 export function getState() {
-  if (!fs.existsSync(STATE_FILE)) {
-    return { lastLine: 0 };
+  if (!fs.existsSync(FILE)) {
+    return {
+      players: {},
+      onlinePlayers: {},
+      lastLine: 0,
+    };
   }
 
-  return JSON.parse(fs.readFileSync(STATE_FILE, "utf-8"));
+  const data = JSON.parse(fs.readFileSync(FILE, "utf-8"));
+
+  return {
+    players: data.players || {},
+    onlinePlayers: data.onlinePlayers || {},
+    lastLine: data.lastLine || 0,
+  };
 }
 
-export function saveState(state: any) {
-  fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
+export function saveState(data: any) {
+  const safeData = {
+    players: data.players || {},
+    onlinePlayers: data.onlinePlayers || {},
+    lastLine: data.lastLine || 0,
+  };
+
+  fs.writeFileSync(FILE, JSON.stringify(safeData, null, 2));
+
+  console.log("💾 STATE SALVO EM:", FILE);
 }
