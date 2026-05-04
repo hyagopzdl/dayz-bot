@@ -3,7 +3,7 @@ import { getState, saveState } from "./state";
 
 const KILL_REGEX = /Player "(.+?)".*killed by Player "(.+?)"/;
 
-// 🔥 ADICIONA REGEX DE CONEXÃO
+// 🔥 REGEX DE CONEXÃO
 const CONNECT_REGEX = /Player "(.+?)".*is connected/;
 const DISCONNECT_REGEX = /Player "(.+?)".*has been disconnected/;
 
@@ -22,8 +22,17 @@ export function getLeaderboard() {
 
   let start = state.lastLine || 0;
 
+  // 🔥 SE NÃO TEM DADOS → RECONSTRÓI
   if (!leaderboard || Object.keys(leaderboard).length === 0) {
     console.log("♻️ reconstruindo estado...");
+    start = 0;
+    leaderboard = {};
+    onlinePlayers = {};
+  }
+
+  // 🔥 NOVO: DETECTA RESET DO LOG
+  if (start > lines.length) {
+    console.log("♻️ log resetado, reiniciando parser...");
     start = 0;
     leaderboard = {};
     onlinePlayers = {};
@@ -84,7 +93,7 @@ export function getLeaderboard() {
   saveState({
     players: leaderboard || {},
     lastLine: lines.length,
-    onlinePlayers, // 🔥 AGORA SALVA
+    onlinePlayers,
   });
 
   return Object.entries(leaderboard)
