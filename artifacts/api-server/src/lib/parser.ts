@@ -82,12 +82,8 @@ export function getLeaderboard() {
 
   // 🔥 DETECTA RESET DE LOG
   if (start > lines.length) {
-    console.log("♻️ log resetado, reiniciando parser...");
+    console.log("♻️ log resetado, continuando sem perder dados...");
     start = 0;
-    leaderboard = {};
-    dailyPlayers = {};
-    weeklyPlayers = {};
-    onlinePlayers = {};
   }
 
   console.log(`📄 total linhas: ${lines.length}`);
