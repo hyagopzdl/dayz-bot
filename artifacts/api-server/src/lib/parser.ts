@@ -4,8 +4,8 @@ import { getState, saveState } from "./state";
 const KILL_REGEX = /Player "(.+?)".*killed by Player "(.+?)"/;
 
 // 🔥 ADICIONA REGEX DE CONEXÃO
-const CONNECT_REGEX = /Player "(.+?)" is connected/;
-const DISCONNECT_REGEX = /Player "(.+?)" has been disconnected/;
+const CONNECT_REGEX = /Player "(.+?)".*is connected/;
+const DISCONNECT_REGEX = /Player "(.+?)".*has been disconnected/;
 
 export function getLeaderboard() {
   console.log("🔥 PARSER FOI CHAMADO");
