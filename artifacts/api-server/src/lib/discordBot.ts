@@ -1,4 +1,9 @@
-import { Client, GatewayIntentBits, TextBasedChannel } from "discord.js";
+import {
+  Client,
+  GatewayIntentBits,
+  TextBasedChannel,
+  EmbedBuilder,
+} from "discord.js";
 import fs from "fs";
 
 const client = new Client({
@@ -13,7 +18,6 @@ export async function startDiscordBot(getLeaderboard: () => any[]) {
     return;
   }
 
-  // 🔥 REGISTRA ANTES DO LOGIN
   client.on("ready", async () => {
     console.log("🤖 Discord conectado");
 
@@ -46,16 +50,22 @@ export async function startDiscordBot(getLeaderboard: () => any[]) {
       return nums[i - 3] || `${i + 1}️⃣`;
     }
 
-    function formatLeaderboard(players: any[]) {
+    function formatLeaderboardEmbed(players: any[]) {
+      const embed = new EmbedBuilder().setColor("#FF00AA");
+
       if (!players.length) {
-        return "\n\n🏆 **Top 10 PvP FaxaDeGaza®** 🏆\n\n\nSem dados ainda...\n";
+        embed.setDescription(`
+🏆 **Top 10 PvP FaxaDeGaza®** 🏆
+
+Sem dados ainda...
+        `);
+        return embed;
       }
 
       const maxName = Math.max(...players.map((p) => p.name.length)) + 2;
 
-      let msg = "";
-      msg += "\n\n";
-      msg += "🏆 **Top 10 PvP FaxaDeGaza®** 🏆\n\n\n";
+      let description = "";
+      description += "🏆 **Top 10 PvP FaxaDeGaza®** 🏆\n\n";
 
       players.slice(0, 10).forEach((p, i) => {
         const rank = getRank(i);
@@ -64,13 +74,15 @@ export async function startDiscordBot(getLeaderboard: () => any[]) {
         const kills = padStart(String(p.kills), 5);
         const kd = Number(p.kd).toFixed(2);
 
-        msg += `${rank} \`${name}\` \`${kills} kills\` \`  K/D ${kd}\`\n\n`;
+        description += `${rank} \`${name}\` \`${kills} kills\` \`K/D ${kd}\`\n`;
       });
 
       const timestamp = Math.floor(Date.now() / 1000);
-      msg += `\nAtualizado <t:${timestamp}:R>\n`;
+      description += `\n\n⏱️ Atualizado <t:${timestamp}:R>`;
 
-      return msg;
+      embed.setDescription(description);
+
+      return embed;
     }
 
     async function updateOnlineCount() {
@@ -98,7 +110,7 @@ export async function startDiscordBot(getLeaderboard: () => any[]) {
     async function updateLeaderboard() {
       try {
         const data = getLeaderboard();
-        const content = formatLeaderboard(data);
+        const embed = formatLeaderboardEmbed(data);
 
         let message;
 
@@ -111,9 +123,9 @@ export async function startDiscordBot(getLeaderboard: () => any[]) {
         }
 
         if (message) {
-          await message.edit(content);
+          await message.edit({ embeds: [embed] });
         } else {
-          const newMsg = await channel.send(content);
+          const newMsg = await channel.send({ embeds: [embed] });
           messageId = newMsg.id;
 
           fs.writeFileSync(MESSAGE_FILE, JSON.stringify({ id: messageId }));
@@ -127,7 +139,6 @@ export async function startDiscordBot(getLeaderboard: () => any[]) {
       }
     }
 
-    // 🔥 NOVO: loop dinâmico inteligente
     async function getOnlineCount(): Promise<number> {
       try {
         const state = JSON.parse(fs.readFileSync("state.json", "utf-8"));
@@ -166,12 +177,10 @@ export async function startDiscordBot(getLeaderboard: () => any[]) {
       setTimeout(dynamicUpdateLoop, delay);
     }
 
-    // 🔥 primeira execução
     await updateLeaderboard();
     dynamicUpdateLoop();
   });
 
-  // 🔥 LOGIN DEPOIS
   try {
     await client.login(process.env.DISCORD_TOKEN);
     console.log("✅ login Discord OK");
