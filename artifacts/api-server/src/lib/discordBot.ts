@@ -13,15 +13,8 @@ export async function startDiscordBot(getLeaderboard: () => any[]) {
     return;
   }
 
-  try {
-    await client.login(process.env.DISCORD_TOKEN);
-    console.log("✅ login Discord OK");
-  } catch (err) {
-    console.error("❌ erro ao logar no Discord:", err);
-    return;
-  }
-
-  client.once("ready", async () => {
+  // 🔥 REGISTRA ANTES DO LOGIN
+  client.on("ready", async () => {
     console.log("🤖 Discord conectado");
 
     const channel = (await client.channels.fetch(
@@ -74,7 +67,6 @@ export async function startDiscordBot(getLeaderboard: () => any[]) {
         msg += `${rank} \`${name}\` \`${kills} kills\` \`  K/D ${kd}\`\n\n`;
       });
 
-      // 🔥 TIMESTAMP RELATIVO DO DISCORD
       const timestamp = Math.floor(Date.now() / 1000);
       msg += `\nAtualizado <t:${timestamp}:R>\n`;
 
@@ -138,4 +130,12 @@ export async function startDiscordBot(getLeaderboard: () => any[]) {
     await updateLeaderboard();
     setInterval(updateLeaderboard, 5 * 60 * 1000);
   });
+
+  // 🔥 LOGIN DEPOIS
+  try {
+    await client.login(process.env.DISCORD_TOKEN);
+    console.log("✅ login Discord OK");
+  } catch (err) {
+    console.error("❌ erro ao logar no Discord:", err);
+  }
 }
