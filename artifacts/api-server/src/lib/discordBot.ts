@@ -63,16 +63,9 @@ export async function startDiscordBot(getLeaderboard: () => any[]) {
         msg += `${rank} \`${name}\` \`${kills} kills\` \`  K/D ${kd}\`\n\n`;
       });
 
-      const now = new Date();
-      const formatted =
-        now.toLocaleDateString("pt-BR") +
-        " " +
-        now.toLocaleTimeString("pt-BR", {
-          hour: "2-digit",
-          minute: "2-digit",
-        });
-
-      msg += `\nAtualizado em \`${formatted}\`\n`;
+      // 🔥 TIMESTAMP RELATIVO DO DISCORD
+      const timestamp = Math.floor(Date.now() / 1000);
+      msg += `\nAtualizado <t:${timestamp}:R>\n`;
 
       return msg;
     }
