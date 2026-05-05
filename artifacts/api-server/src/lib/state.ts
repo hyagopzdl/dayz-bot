@@ -1,35 +1,109 @@
 import fs from "fs";
 import path from "path";
 
-// 🔥 FORÇA caminho correto do projeto
 const FILE = path.resolve(process.cwd(), "state.json");
 
-export function getState() {
-  if (!fs.existsSync(FILE)) {
-    return {
-      players: {},
-      onlinePlayers: {},
-      lastLine: 0,
-    };
-  }
+export type PlayerStats = {
+  kills: number;
+  deaths: number;
+};
 
-  const data = JSON.parse(fs.readFileSync(FILE, "utf-8"));
+export type OnlinePlayer = {
+  online: true;
+  lastSeenAt: string;
+};
 
+export type FileCursor = {
+  lastLine: number;
+  lastProcessedAt: string;
+};
+
+export type AppState = {
+  players: Record<string, PlayerStats>;
+  dailyPlayers: Record<string, PlayerStats>;
+  weeklyPlayers: Record<string, PlayerStats>;
+  onlinePlayers: Record<string, OnlinePlayer>;
+
+  files: Record<string, FileCursor>;
+  recentEventIds: string[];
+
+  lastDailyReset: string;
+  lastWeeklyReset: string;
+
+  lastLine?: number;
+  lastFileName?: string;
+};
+
+function defaultState(): AppState {
   return {
-    players: data.players || {},
-    onlinePlayers: data.onlinePlayers || {},
-    lastLine: data.lastLine || 0,
+    players: {},
+    dailyPlayers: {},
+    weeklyPlayers: {},
+    onlinePlayers: {},
+    files: {},
+    recentEventIds: [],
+    lastDailyReset: "",
+    lastWeeklyReset: "",
   };
 }
 
-export function saveState(data: any) {
-  const safeData = {
+function migrateLegacyState(data: any): AppState {
+  const state = defaultState();
+
+  state.players = data.players || {};
+  state.dailyPlayers = data.dailyPlayers || {};
+  state.weeklyPlayers = data.weeklyPlayers || {};
+  state.recentEventIds = data.recentEventIds || [];
+  state.files = data.files || {};
+  state.lastDailyReset = data.lastDailyReset || "";
+  state.lastWeeklyReset = data.lastWeeklyReset || "";
+  state.lastLine = data.lastLine;
+  state.lastFileName = data.lastFileName;
+
+  const rawOnlinePlayers = data.onlinePlayers || {};
+
+  for (const [name, value] of Object.entries(rawOnlinePlayers)) {
+    if (value === true) {
+      state.onlinePlayers[name] = {
+        online: true,
+        lastSeenAt: new Date().toISOString(),
+      };
+    } else if (typeof value === "object" && value) {
+      state.onlinePlayers[name] = value as OnlinePlayer;
+    }
+  }
+
+  return state;
+}
+
+export function getState(): AppState {
+  if (!fs.existsSync(FILE)) {
+    return defaultState();
+  }
+
+  try {
+    const data = JSON.parse(fs.readFileSync(FILE, "utf-8"));
+    return migrateLegacyState(data);
+  } catch (err) {
+    console.error("❌ erro lendo state.json, usando estado vazio:", err);
+    return defaultState();
+  }
+}
+
+export function saveState(data: AppState) {
+  const safeData: AppState = {
     players: data.players || {},
+    dailyPlayers: data.dailyPlayers || {},
+    weeklyPlayers: data.weeklyPlayers || {},
     onlinePlayers: data.onlinePlayers || {},
-    lastLine: data.lastLine || 0,
+    files: data.files || {},
+    recentEventIds: (data.recentEventIds || []).slice(-10000),
+    lastDailyReset: data.lastDailyReset || "",
+    lastWeeklyReset: data.lastWeeklyReset || "",
+    lastLine: data.lastLine,
+    lastFileName: data.lastFileName,
   };
 
   fs.writeFileSync(FILE, JSON.stringify(safeData, null, 2));
-
   console.log("💾 STATE SALVO EM:", FILE);
 }

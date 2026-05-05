@@ -14,13 +14,15 @@ const MESSAGE_FILE_GLOBAL = "message_global.json";
 const MESSAGE_FILE_DAILY = "message_daily.json";
 const MESSAGE_FILE_WEEKLY = "message_weekly.json";
 
+let discordLoopRunning = false;
+
 export async function startDiscordBot(getLeaderboard: () => any) {
   if (!process.env.DISCORD_TOKEN) {
     console.error("❌ DISCORD_TOKEN não definido");
     return;
   }
 
-  client.on("ready", async () => {
+  client.once("ready", async () => {
     console.log("🤖 Discord conectado");
 
     const globalChannel = (await client.channels.fetch(
@@ -58,7 +60,10 @@ export async function startDiscordBot(getLeaderboard: () => any) {
       const embed = new EmbedBuilder().setColor("#FF00AA");
 
       if (!players.length) {
-        embed.setDescription(`\n${title}\n\nSem dados ainda...`);
+        const timestamp = Math.floor(Date.now() / 1000);
+        embed.setDescription(
+          `\n${title}\n\nSem dados ainda...\n\n⏱️ Atualizado <t:${timestamp}:R>`,
+        );
         return embed;
       }
 
@@ -78,7 +83,7 @@ export async function startDiscordBot(getLeaderboard: () => any) {
       players.slice(0, 10).forEach((p, i) => {
         const rank = getRank(i);
 
-        let trimmedName =
+        const trimmedName =
           p.name.length > maxName ? p.name.slice(0, maxName - 1) + "…" : p.name;
 
         const name = padEnd(trimmedName, maxName);
@@ -103,11 +108,19 @@ export async function startDiscordBot(getLeaderboard: () => any) {
       return embed;
     }
 
-    async function updateOnlineCount() {
+    function getOnlineCount(): number {
       try {
         const state = JSON.parse(fs.readFileSync("state.json", "utf-8"));
         const onlinePlayers = state.onlinePlayers || {};
-        const count = Object.keys(onlinePlayers).length;
+        return Object.keys(onlinePlayers).length;
+      } catch {
+        return 0;
+      }
+    }
+
+    async function updateOnlineCount() {
+      try {
+        const count = getOnlineCount();
 
         const category = await client.channels.fetch(CATEGORY_ID);
 
@@ -132,7 +145,7 @@ export async function startDiscordBot(getLeaderboard: () => any) {
     }
 
     function mapPlayers(obj: any) {
-      return Object.entries(obj)
+      return Object.entries(obj || {})
         .map(([name, d]: any) => ({ name, ...d }))
         .sort((a, b) => b.kills - a.kills);
     }
@@ -141,7 +154,11 @@ export async function startDiscordBot(getLeaderboard: () => any) {
       let messageId: string | null = null;
 
       if (fs.existsSync(file)) {
-        messageId = JSON.parse(fs.readFileSync(file, "utf-8")).id;
+        try {
+          messageId = JSON.parse(fs.readFileSync(file, "utf-8")).id;
+        } catch {
+          messageId = null;
+        }
       }
 
       let message;
@@ -158,11 +175,20 @@ export async function startDiscordBot(getLeaderboard: () => any) {
         await message.edit({ embeds: [embed] });
       } else {
         const newMsg = await channel.send({ embeds: [embed] });
-        fs.writeFileSync(file, JSON.stringify({ id: newMsg.id }));
+        fs.writeFileSync(file, JSON.stringify({ id: newMsg.id }, null, 2));
       }
     }
 
     async function updateLeaderboard() {
+      if (discordLoopRunning) {
+        console.log(
+          "⏭️ Discord update ignorado: execução anterior ainda rodando",
+        );
+        return;
+      }
+
+      discordLoopRunning = true;
+
       try {
         const data = getLeaderboard();
 
@@ -194,16 +220,8 @@ export async function startDiscordBot(getLeaderboard: () => any) {
         console.log("🏆 leaderboards atualizados");
       } catch (err) {
         console.error("❌ erro ao atualizar leaderboard", err);
-      }
-    }
-
-    async function getOnlineCount(): Promise<number> {
-      try {
-        const state = JSON.parse(fs.readFileSync("state.json", "utf-8"));
-        const onlinePlayers = state.onlinePlayers || {};
-        return Object.keys(onlinePlayers).length;
-      } catch {
-        return 0;
+      } finally {
+        discordLoopRunning = false;
       }
     }
 
@@ -211,40 +229,44 @@ export async function startDiscordBot(getLeaderboard: () => any) {
     let lastUpdateTime = 0;
 
     async function dynamicUpdateLoop() {
-      const count = await getOnlineCount();
-      const now = Date.now();
+      try {
+        const count = getOnlineCount();
+        const now = Date.now();
 
-      let shouldUpdate = false;
+        let shouldUpdate = false;
 
-      // 🔄 mudança de players
-      if (count !== lastOnlineCount) {
-        console.log(`🔄 mudança detectada: ${lastOnlineCount} → ${count}`);
-        shouldUpdate = true;
-        lastOnlineCount = count;
+        if (count !== lastOnlineCount) {
+          console.log(`🔄 mudança detectada: ${lastOnlineCount} → ${count}`);
+          shouldUpdate = true;
+          lastOnlineCount = count;
+        }
+
+        if (now - lastUpdateTime > 2 * 60 * 1000) {
+          console.log("⏱️ fallback: forçando update");
+          shouldUpdate = true;
+        }
+
+        if (shouldUpdate) {
+          await updateLeaderboard();
+          lastUpdateTime = Date.now();
+        } else {
+          console.log("⏭️ sem mudança e dentro do tempo");
+        }
+      } catch (err) {
+        console.error("❌ erro no loop dinâmico Discord:", err);
       }
-
-      // ⏱️ fallback (garante atualização mesmo sem mudança)
-      if (now - lastUpdateTime > 2 * 60 * 1000) {
-        console.log("⏱️ fallback: forçando update");
-        shouldUpdate = true;
-      }
-
-      if (shouldUpdate) {
-        await updateLeaderboard();
-        lastUpdateTime = now;
-      } else {
-        console.log("⏭️ sem mudança e dentro do tempo");
-      }
-
-      const delay = 2 * 60 * 1000;
-
-      console.log(`⏱️ próximo update em ${delay / 1000}s`);
-
-      setTimeout(dynamicUpdateLoop, delay);
     }
 
     await updateLeaderboard();
-    dynamicUpdateLoop();
+
+    setInterval(
+      () => {
+        dynamicUpdateLoop().catch((err) => {
+          console.error("❌ erro fatal no Discord loop:", err);
+        });
+      },
+      2 * 60 * 1000,
+    );
   });
 
   try {

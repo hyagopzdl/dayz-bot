@@ -5,8 +5,15 @@ import { getLeaderboard } from "./lib/parser";
 import { startDiscordBot } from "./lib/discordBot";
 
 let started = false;
+let cycleRunning = false;
 
 async function runCycle() {
+  if (cycleRunning) {
+    console.log("⏭️ ciclo ignorado: execução anterior ainda rodando");
+    return;
+  }
+
+  cycleRunning = true;
   console.log("🔁 LOOP PRINCIPAL");
 
   try {
@@ -20,6 +27,8 @@ async function runCycle() {
     getLeaderboard();
   } catch (err) {
     console.error("❌ erro parser:", err);
+  } finally {
+    cycleRunning = false;
   }
 }
 
@@ -35,10 +44,8 @@ function startServer(port: number) {
 
     logger.info({ port }, "Server listening");
 
-    // 🔥 roda uma vez
     await runCycle();
 
-    // 🤖 Discord
     try {
       console.log("🚀 iniciando bot do Discord...");
       startDiscordBot(getLeaderboard);
@@ -47,11 +54,15 @@ function startServer(port: number) {
     }
   });
 
-  // 🔥 LOOP FORA DO LISTEN (CRÍTICO)
-  setInterval(runCycle, 60 * 1000);
+  setInterval(() => {
+    runCycle().catch((err) => {
+      console.error("❌ erro fatal no ciclo:", err);
+    });
+  }, 60 * 1000);
 
   server.on("error", (err: any) => {
     if (err.code === "EADDRINUSE") {
+      started = false;
       startServer(port + 1);
     } else {
       console.error(err);

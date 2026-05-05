@@ -1,13 +1,14 @@
 import fs from "fs";
-import { getState, saveState } from "./state";
+import crypto from "crypto";
+import { getState, saveState, AppState, PlayerStats } from "./state";
+import { MANIFEST_FILE } from "./nitradoDownloader";
 
-const KILL_REGEX = /Player "([^"]+)"[\s\S]*?killed by Player "([^"]+)"/;
+const KILL_REGEX = /Player "([^"]+)".*?killed by Player "([^"]+)"/;
+const CONNECT_REGEX = /Player "([^"]+)".*?is connected/;
+const DISCONNECT_REGEX = /Player "([^"]+)".*?has been disconnected/;
 
-// 🔥 REGEX DE CONEXÃO
-const CONNECT_REGEX = /Player "([^"]+)"[\s\S]*?is connected/;
-const DISCONNECT_REGEX = /Player "([^"]+)"[\s\S]*?has been disconnected/;
+const ONLINE_TTL_MS = 45 * 60 * 1000;
 
-// 🇧🇷 DATA NO FUSO DO BRASIL
 function getBrazilDateParts() {
   const now = new Date();
 
@@ -20,8 +21,8 @@ function getBrazilDateParts() {
   });
 
   const parts = formatter.formatToParts(now);
+  const map: Record<string, string> = {};
 
-  const map: any = {};
   parts.forEach((p) => {
     map[p.type] = p.value;
   });
@@ -32,145 +33,224 @@ function getBrazilDateParts() {
   };
 }
 
-export function getLeaderboard() {
-  console.log("🔥 PARSER FOI CHAMADO");
+function eventId(fileName: string, lineNumber: number, line: string) {
+  return crypto
+    .createHash("sha1")
+    .update(`${fileName}:${lineNumber}:${line.trim()}`)
+    .digest("hex");
+}
 
-  const log = fs.readFileSync("ADM.log", "utf-8");
-  const lines = log.split("\n");
-
-  const state = getState();
-
-  let leaderboard = state.players || {};
-  let dailyPlayers = state.dailyPlayers || {};
-  let weeklyPlayers = state.weeklyPlayers || {};
-  let onlinePlayers = state.onlinePlayers || {};
-
-  let start = state.lastLine || 0;
-
-  // 🔥 DETECTA TROCA REAL DE ARQUIVO (AGORA CORRETO)
-  let currentFileName = "";
-
-  try {
-    currentFileName = fs.readFileSync("currentFile.txt", "utf-8");
-  } catch {
-    currentFileName = "";
+function ensurePlayer(obj: Record<string, PlayerStats>, name: string) {
+  if (!obj[name]) {
+    obj[name] = { kills: 0, deaths: 0 };
   }
+}
 
-  if (state.lastFileName !== currentFileName) {
-    console.log("📂 arquivo mudou → resetando leitura");
+function addKill(state: AppState, killer: string, victim: string) {
+  ensurePlayer(state.players, killer);
+  ensurePlayer(state.players, victim);
 
-    start = 0;
-    state.lastFileName = currentFileName;
+  state.players[killer].kills += 1;
+  state.players[victim].deaths += 1;
+
+  ensurePlayer(state.dailyPlayers, killer);
+  ensurePlayer(state.dailyPlayers, victim);
+
+  state.dailyPlayers[killer].kills += 1;
+  state.dailyPlayers[victim].deaths += 1;
+
+  ensurePlayer(state.weeklyPlayers, killer);
+  ensurePlayer(state.weeklyPlayers, victim);
+
+  state.weeklyPlayers[killer].kills += 1;
+  state.weeklyPlayers[victim].deaths += 1;
+}
+
+function markOnline(state: AppState, player: string) {
+  state.onlinePlayers[player] = {
+    online: true,
+    lastSeenAt: new Date().toISOString(),
+  };
+}
+
+function markOffline(state: AppState, player: string) {
+  delete state.onlinePlayers[player];
+}
+
+function cleanupOnlinePlayers(state: AppState) {
+  const now = Date.now();
+
+  for (const [player, data] of Object.entries(state.onlinePlayers)) {
+    const lastSeen = new Date(data.lastSeenAt).getTime();
+
+    if (!Number.isFinite(lastSeen) || now - lastSeen > ONLINE_TTL_MS) {
+      delete state.onlinePlayers[player];
+    }
   }
+}
 
-  // 🔥 RESET POR DATA (BRASIL)
+function applyResets(state: AppState) {
   const { date: today, weekday } = getBrazilDateParts();
 
   if (state.lastDailyReset !== today) {
-    console.log("🌅 reset diário (00:00 Brasil)");
-    dailyPlayers = {};
+    console.log("🌅 reset diário");
+    state.dailyPlayers = {};
     state.lastDailyReset = today;
   }
 
   if (weekday === "seg." && state.lastWeeklyReset !== today) {
-    console.log("📆 reset semanal (segunda 00:00 Brasil)");
-    weeklyPlayers = {};
+    console.log("📆 reset semanal");
+    state.weeklyPlayers = {};
     state.lastWeeklyReset = today;
   }
+}
 
-  // 🔥 RECONSTRUÇÃO
-  if (!leaderboard || Object.keys(leaderboard).length === 0) {
-    console.log("♻️ reconstruindo estado...");
-    start = 0;
-    leaderboard = {};
-    dailyPlayers = {};
-    weeklyPlayers = {};
-    onlinePlayers = {};
+function readManifestFiles(): string[] {
+  if (!fs.existsSync(MANIFEST_FILE)) {
+    if (fs.existsSync("ADM.log")) return ["ADM.log"];
+    return [];
   }
 
-  // 🔥 DETECTA RESET DE LOG
+  try {
+    const manifest = JSON.parse(fs.readFileSync(MANIFEST_FILE, "utf-8"));
+    return Array.isArray(manifest.files) ? manifest.files : [];
+  } catch {
+    return [];
+  }
+}
+
+function processFile(filePath: string, state: AppState) {
+  if (!fs.existsSync(filePath)) return;
+
+  const fileName = filePath;
+  const log = fs.readFileSync(filePath, "utf-8");
+  const lines = log.split(/\r?\n/);
+
+  const cursor = state.files[fileName] || {
+    lastLine: 0,
+    lastProcessedAt: new Date().toISOString(),
+  };
+
+  let start = cursor.lastLine || 0;
+
   if (start > lines.length) {
-    console.log("♻️ log resetado, continuando sem perder dados...");
+    console.log(`♻️ arquivo rotacionado/encurtado: ${fileName}`);
     start = 0;
   }
 
+  console.log(`📄 ${fileName}`);
   console.log(`📄 total linhas: ${lines.length}`);
   console.log(`📍 processando de: ${start}`);
 
   let newKills = 0;
+  let newConnections = 0;
+  let newDisconnections = 0;
+
+  const dedupe = new Set(state.recentEventIds || []);
 
   for (let i = start; i < lines.length; i++) {
-    const line = lines[i];
+    const line = lines[i]?.trim();
+    if (!line) continue;
 
-    // 🔫 KILLS
-    const match = line.match(KILL_REGEX);
-    if (match) {
-      const victim = match[1];
-      const killer = match[2];
+    const id = eventId(fileName, i, line);
 
-      if (!leaderboard[killer]) {
-        leaderboard[killer] = { kills: 0, deaths: 0 };
-      }
-      if (!leaderboard[victim]) {
-        leaderboard[victim] = { kills: 0, deaths: 0 };
-      }
-
-      leaderboard[killer].kills += 1;
-      leaderboard[victim].deaths += 1;
-
-      if (!dailyPlayers[killer]) dailyPlayers[killer] = { kills: 0, deaths: 0 };
-      if (!dailyPlayers[victim]) dailyPlayers[victim] = { kills: 0, deaths: 0 };
-
-      dailyPlayers[killer].kills += 1;
-      dailyPlayers[victim].deaths += 1;
-
-      if (!weeklyPlayers[killer])
-        weeklyPlayers[killer] = { kills: 0, deaths: 0 };
-      if (!weeklyPlayers[victim])
-        weeklyPlayers[victim] = { kills: 0, deaths: 0 };
-
-      weeklyPlayers[killer].kills += 1;
-      weeklyPlayers[victim].deaths += 1;
-
-      newKills++;
-
-      console.log(`🔫 ${killer} matou ${victim}`);
+    if (dedupe.has(id)) {
+      continue;
     }
 
-    // 🟢 CONECTOU
+    const killMatch = line.match(KILL_REGEX);
+    if (killMatch) {
+      const victim = killMatch[1];
+      const killer = killMatch[2];
+
+      addKill(state, killer, victim);
+      state.recentEventIds.push(id);
+      dedupe.add(id);
+
+      newKills++;
+      console.log(`🔫 ${killer} matou ${victim}`);
+      continue;
+    }
+
     const connectMatch = line.match(CONNECT_REGEX);
     if (connectMatch) {
       const player = connectMatch[1];
-      onlinePlayers[player] = true;
+
+      markOnline(state, player);
+      state.recentEventIds.push(id);
+      dedupe.add(id);
+
+      newConnections++;
       console.log(`🟢 ${player} entrou`);
+      continue;
     }
 
-    // 🔴 DESCONECTOU
     const disconnectMatch = line.match(DISCONNECT_REGEX);
     if (disconnectMatch) {
       const player = disconnectMatch[1];
-      delete onlinePlayers[player];
+
+      markOffline(state, player);
+      state.recentEventIds.push(id);
+      dedupe.add(id);
+
+      newDisconnections++;
       console.log(`🔴 ${player} saiu`);
+      continue;
     }
   }
 
-  console.log(`🎯 novas kills: ${newKills}`);
-  console.log(`🟢 online agora: ${Object.keys(onlinePlayers).length}`);
+  cursor.lastLine = lines.length;
+  cursor.lastProcessedAt = new Date().toISOString();
 
-  saveState({
-    players: leaderboard,
-    dailyPlayers,
-    weeklyPlayers,
-    lastDailyReset: state.lastDailyReset,
-    lastWeeklyReset: state.lastWeeklyReset,
-    lastLine: lines.length,
-    onlinePlayers,
-    lastFileName: state.lastFileName, // 🔥 NOVO
-  });
+  state.files[fileName] = cursor;
+  state.lastLine = lines.length;
+  state.lastFileName = fileName;
+
+  state.recentEventIds = state.recentEventIds.slice(-10000);
+
+  console.log(`🎯 novas kills: ${newKills}`);
+  console.log(`🟢 conexões: ${newConnections}`);
+  console.log(`🔴 desconexões: ${newDisconnections}`);
+}
+
+export function getLeaderboard() {
+  console.log("🔥 PARSER FOI CHAMADO");
+
+  const state = getState();
+
+  applyResets(state);
+
+  const files = readManifestFiles();
+
+  if (!files.length) {
+    console.log("⚠️ nenhum arquivo ADM local encontrado");
+    cleanupOnlinePlayers(state);
+    saveState(state);
+
+    return {
+      global: state.players,
+      daily: state.dailyPlayers,
+      weekly: state.weeklyPlayers,
+    };
+  }
+
+  for (const file of files) {
+    try {
+      processFile(file, state);
+    } catch (err) {
+      console.error(`❌ erro processando ${file}:`, err);
+    }
+  }
+
+  cleanupOnlinePlayers(state);
+
+  console.log(`🟢 online agora: ${Object.keys(state.onlinePlayers).length}`);
+
+  saveState(state);
 
   return {
-    global: leaderboard,
-    daily: dailyPlayers,
-    weekly: weeklyPlayers,
+    global: state.players,
+    daily: state.dailyPlayers,
+    weekly: state.weeklyPlayers,
   };
 }
