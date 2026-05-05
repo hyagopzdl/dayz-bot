@@ -6,6 +6,23 @@ import { startDiscordBot } from "./lib/discordBot";
 
 let started = false;
 
+async function runCycle() {
+  console.log("🔁 LOOP PRINCIPAL");
+
+  try {
+    await downloadADM();
+  } catch (err) {
+    console.error("❌ erro download:", err);
+  }
+
+  try {
+    console.log("🔥 PARSER AUTOMÁTICO");
+    getLeaderboard();
+  } catch (err) {
+    console.error("❌ erro parser:", err);
+  }
+}
+
 function startServer(port: number) {
   if (started) return;
   started = true;
@@ -18,32 +35,8 @@ function startServer(port: number) {
 
     logger.info({ port }, "Server listening");
 
-    // 🔥 primeira execução (protegida)
-    try {
-      await downloadADM();
-      console.log("🔥 FORÇANDO PARSER AGORA:");
-      getLeaderboard();
-    } catch (err) {
-      console.error("❌ erro na execução inicial:", err);
-    }
-
-    // 🔁 loop robusto (NUNCA MORRE)
-    setInterval(async () => {
-      console.log("🔁 LOOP PRINCIPAL RODANDO");
-
-      try {
-        await downloadADM();
-      } catch (err) {
-        console.error("❌ erro download:", err);
-      }
-
-      try {
-        console.log("🔥 PARSER AUTOMÁTICO:");
-        getLeaderboard();
-      } catch (err) {
-        console.error("❌ erro parser:", err);
-      }
-    }, 60 * 1000); // 1 minuto
+    // 🔥 roda uma vez
+    await runCycle();
 
     // 🤖 Discord
     try {
@@ -53,6 +46,9 @@ function startServer(port: number) {
       console.error("❌ erro ao iniciar Discord:", err);
     }
   });
+
+  // 🔥 LOOP FORA DO LISTEN (CRÍTICO)
+  setInterval(runCycle, 60 * 1000);
 
   server.on("error", (err: any) => {
     if (err.code === "EADDRINUSE") {
