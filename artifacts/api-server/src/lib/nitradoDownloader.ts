@@ -28,9 +28,6 @@ export async function downloadADM() {
       return;
     }
 
-    console.log("📂 arquivos encontrados:");
-    files.forEach((f: any) => console.log(f.path));
-
     const admFiles = files.filter((f: any) => f.path.endsWith(".ADM"));
 
     if (!admFiles.length) {
@@ -38,7 +35,7 @@ export async function downloadADM() {
       return;
     }
 
-    // 🔥 ORDENAÇÃO CORRETA POR DATA
+    // 🔥 ORDENA POR DATA (mantém sua lógica)
     admFiles.sort((a: any, b: any) => {
       const getDate = (p: string) => {
         const match = p.match(/_(\d{4}-\d{2}-\d{2})_(\d{2}-\d{2}-\d{2})/);
@@ -50,46 +47,61 @@ export async function downloadADM() {
       return getDate(b.path) - getDate(a.path);
     });
 
-    const latest = admFiles[0];
+    // 🔥 PEGA OS 3 MAIS RECENTES
+    const candidates = admFiles.slice(0, 3);
 
-    console.log("📄 Mais recente escolhido:", latest.path);
+    console.log("📂 candidatos:");
+    candidates.forEach((f: any) => console.log(f.path));
 
-    const downloadRes = await fetch(
-      `https://api.nitrado.net/services/${SERVICE_ID}/gameservers/file_server/download?file=${encodeURIComponent(latest.path)}`,
-      {
-        headers: {
-          Authorization: `Bearer ${process.env.NITRADO_TOKEN}`,
-        },
-      },
-    );
+    // 🔥 BUSCA TAMANHO REAL E ESCOLHE O MAIOR
+    let chosenFile: any = null;
+    let biggestSize = 0;
 
-    const downloadJson = await downloadRes.json();
-    const url = downloadJson?.data?.token?.url;
+    for (const file of candidates) {
+      try {
+        const downloadRes = await fetch(
+          `https://api.nitrado.net/services/${SERVICE_ID}/gameservers/file_server/download?file=${encodeURIComponent(file.path)}`,
+          {
+            headers: {
+              Authorization: `Bearer ${process.env.NITRADO_TOKEN}`,
+            },
+          },
+        );
 
-    if (!url) {
-      console.log("❌ Não conseguiu gerar URL");
-      console.log(downloadJson);
+        const downloadJson = await downloadRes.json();
+        const url = downloadJson?.data?.token?.url;
+
+        if (!url) continue;
+
+        const finalUrl = `${url}&t=${Date.now()}`;
+
+        const fileRes = await fetch(finalUrl);
+        const text = await fileRes.text();
+
+        const size = text.length;
+
+        console.log(`📏 ${file.path} → ${size}`);
+
+        if (size > biggestSize) {
+          biggestSize = size;
+          chosenFile = { path: file.path, text };
+        }
+      } catch (err) {
+        console.log("⚠️ erro ao testar arquivo:", file.path);
+      }
+    }
+
+    if (!chosenFile) {
+      console.log("❌ Nenhum arquivo válido encontrado");
       return;
     }
 
-    console.log("🔗 Baixando arquivo real...");
+    console.log("📄 arquivo escolhido:", chosenFile.path);
+    console.log("📏 tamanho arquivo:", chosenFile.text.length);
 
-    // 🔥 ANTI-CACHE (ESSENCIAL)
-    const finalUrl = `${url}&t=${Date.now()}`;
+    fs.writeFileSync(OUTPUT, chosenFile.text);
 
-    const fileRes = await fetch(finalUrl);
-    const text = await fileRes.text();
-
-    if (!text || text.length < 50) {
-      console.log("⚠️ Arquivo suspeito ou vazio");
-      console.log(text);
-      return;
-    }
-
-    fs.writeFileSync(OUTPUT, text);
-
-    console.log("📏 tamanho arquivo:", text.length);
-    console.log("✅ ADM.log atualizado (mais recente REAL)");
+    console.log("✅ ADM.log atualizado (arquivo ativo)");
   } catch (err) {
     console.error("❌ Erro no download:", err);
   }
