@@ -41,23 +41,26 @@ export function getLeaderboard() {
   const state = getState();
 
   let leaderboard = state.players || {};
-
   let dailyPlayers = state.dailyPlayers || {};
-
   let weeklyPlayers = state.weeklyPlayers || {};
-
   let onlinePlayers = state.onlinePlayers || {};
 
   let start = state.lastLine || 0;
 
-  // 🔥 DETECTA MUDANÇA DE ARQUIVO (CRÍTICO)
-  const currentFileTime = fs.statSync("ADM.log").mtimeMs;
+  // 🔥 DETECTA TROCA REAL DE ARQUIVO (AGORA CORRETO)
+  let currentFileName = "";
 
-  if (state.lastFileTime !== currentFileTime) {
+  try {
+    currentFileName = fs.readFileSync("currentFile.txt", "utf-8");
+  } catch {
+    currentFileName = "";
+  }
+
+  if (state.lastFileName !== currentFileName) {
     console.log("📂 arquivo mudou → resetando leitura");
 
     start = 0;
-    state.lastFileTime = currentFileTime;
+    state.lastFileName = currentFileName;
   }
 
   // 🔥 RESET POR DATA (BRASIL)
@@ -162,7 +165,7 @@ export function getLeaderboard() {
     lastWeeklyReset: state.lastWeeklyReset,
     lastLine: lines.length,
     onlinePlayers,
-    lastFileTime: state.lastFileTime, // 🔥 IMPORTANTE
+    lastFileName: state.lastFileName, // 🔥 NOVO
   });
 
   return {
