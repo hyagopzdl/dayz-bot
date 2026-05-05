@@ -2,6 +2,7 @@ import fs from "fs";
 import path from "path";
 
 const OUTPUT = path.resolve("ADM.log");
+const CURRENT_FILE = path.resolve("currentFile.txt"); // 🔥 NOVO
 
 const SERVICE_ID = "19149785";
 const BASE_DIR = "/games/ni13029176_1/noftp/dayzps/config";
@@ -35,7 +36,7 @@ export async function downloadADM() {
       return;
     }
 
-    // 🔥 ORDENA POR DATA (mantém sua lógica)
+    // 🔥 ORDENA POR DATA
     admFiles.sort((a: any, b: any) => {
       const getDate = (p: string) => {
         const match = p.match(/_(\d{4}-\d{2}-\d{2})_(\d{2}-\d{2}-\d{2})/);
@@ -53,7 +54,6 @@ export async function downloadADM() {
     console.log("📂 candidatos:");
     candidates.forEach((f: any) => console.log(f.path));
 
-    // 🔥 BUSCA TAMANHO REAL E ESCOLHE O MAIOR
     let chosenFile: any = null;
     let biggestSize = 0;
 
@@ -99,7 +99,11 @@ export async function downloadADM() {
     console.log("📄 arquivo escolhido:", chosenFile.path);
     console.log("📏 tamanho arquivo:", chosenFile.text.length);
 
+    // 🔥 salva o log
     fs.writeFileSync(OUTPUT, chosenFile.text);
+
+    // 🔥 SALVA O NOME DO ARQUIVO (ESSENCIAL)
+    fs.writeFileSync(CURRENT_FILE, chosenFile.path);
 
     console.log("✅ ADM.log atualizado (arquivo ativo)");
   } catch (err) {
