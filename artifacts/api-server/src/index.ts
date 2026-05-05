@@ -54,11 +54,14 @@ function startServer(port: number) {
     }
   });
 
-  setInterval(() => {
-    runCycle().catch((err) => {
-      console.error("❌ erro fatal no ciclo:", err);
-    });
-  }, 60 * 1000);
+  setInterval(
+    () => {
+      runCycle().catch((err) => {
+        console.error("❌ erro fatal no ciclo:", err);
+      });
+    },
+    5 * 60 * 1000,
+  );
 
   server.on("error", (err: any) => {
     if (err.code === "EADDRINUSE") {

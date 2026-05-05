@@ -255,9 +255,12 @@ export async function startDiscordBot() {
 
     await updateLeaderboard();
 
-    setInterval(async () => {
-      await updateLeaderboard();
-    }, 60 * 1000);
+    setInterval(
+      async () => {
+        await updateLeaderboard();
+      },
+      5 * 60 * 1000,
+    );
   });
 
   try {
