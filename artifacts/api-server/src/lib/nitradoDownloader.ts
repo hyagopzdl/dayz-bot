@@ -2,7 +2,7 @@ import fs from "fs";
 import path from "path";
 
 const OUTPUT = path.resolve("ADM.log");
-const CURRENT_FILE = path.resolve("currentFile.txt"); // 🔥 NOVO
+const CURRENT_FILE = path.resolve("currentFile.txt");
 
 const SERVICE_ID = "19149785";
 const BASE_DIR = "/games/ni13029176_1/noftp/dayzps/config";
@@ -36,7 +36,7 @@ export async function downloadADM() {
       return;
     }
 
-    // 🔥 ORDENA POR DATA
+    // 🔥 ORDENA POR DATA (mais recente primeiro)
     admFiles.sort((a: any, b: any) => {
       const getDate = (p: string) => {
         const match = p.match(/_(\d{4}-\d{2}-\d{2})_(\d{2}-\d{2}-\d{2})/);
@@ -48,61 +48,44 @@ export async function downloadADM() {
       return getDate(b.path) - getDate(a.path);
     });
 
-    // 🔥 PEGA OS 3 MAIS RECENTES
-    const candidates = admFiles.slice(0, 3);
+    // 🔥 ESCOLHE APENAS O MAIS RECENTE
+    const chosenFile = admFiles[0];
 
-    console.log("📂 candidatos:");
-    candidates.forEach((f: any) => console.log(f.path));
+    console.log("📄 arquivo escolhido:", chosenFile.path);
 
-    let chosenFile: any = null;
-    let biggestSize = 0;
+    const downloadRes = await fetch(
+      `https://api.nitrado.net/services/${SERVICE_ID}/gameservers/file_server/download?file=${encodeURIComponent(chosenFile.path)}`,
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.NITRADO_TOKEN}`,
+        },
+      },
+    );
 
-    for (const file of candidates) {
-      try {
-        const downloadRes = await fetch(
-          `https://api.nitrado.net/services/${SERVICE_ID}/gameservers/file_server/download?file=${encodeURIComponent(file.path)}`,
-          {
-            headers: {
-              Authorization: `Bearer ${process.env.NITRADO_TOKEN}`,
-            },
-          },
-        );
+    const downloadJson = await downloadRes.json();
+    const url = downloadJson?.data?.token?.url;
 
-        const downloadJson = await downloadRes.json();
-        const url = downloadJson?.data?.token?.url;
-
-        if (!url) continue;
-
-        const finalUrl = `${url}&t=${Date.now()}`;
-
-        const fileRes = await fetch(finalUrl);
-        const text = await fileRes.text();
-
-        const size = text.length;
-
-        console.log(`📏 ${file.path} → ${size}`);
-
-        if (size > biggestSize) {
-          biggestSize = size;
-          chosenFile = { path: file.path, text };
-        }
-      } catch (err) {
-        console.log("⚠️ erro ao testar arquivo:", file.path);
-      }
-    }
-
-    if (!chosenFile) {
-      console.log("❌ Nenhum arquivo válido encontrado");
+    if (!url) {
+      console.log("❌ erro ao obter URL");
       return;
     }
 
-    console.log("📄 arquivo escolhido:", chosenFile.path);
-    console.log("📏 tamanho arquivo:", chosenFile.text.length);
+    const finalUrl = `${url}&t=${Date.now()}`;
 
-    // 🔥 salva o log
-    fs.writeFileSync(OUTPUT, chosenFile.text);
+    const fileRes = await fetch(finalUrl);
+    const text = await fileRes.text();
 
-    // 🔥 SALVA O NOME DO ARQUIVO (ESSENCIAL)
+    if (!text || text.length < 50) {
+      console.log("⚠️ Arquivo vazio ou inválido");
+      return;
+    }
+
+    console.log("📏 tamanho arquivo:", text.length);
+
+    // 🔥 salva o conteúdo
+    fs.writeFileSync(OUTPUT, text);
+
+    // 🔥 salva o nome do arquivo ativo
     fs.writeFileSync(CURRENT_FILE, chosenFile.path);
 
     console.log("✅ ADM.log atualizado (arquivo ativo)");
