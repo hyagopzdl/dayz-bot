@@ -18,19 +18,32 @@ function startServer(port: number) {
 
     logger.info({ port }, "Server listening");
 
-    // 🔥 primeira execução
-    await downloadADM();
-
-    console.log("🔥 FORÇANDO PARSER AGORA:");
-    getLeaderboard();
-
-    // 🔁 loop
-    setInterval(async () => {
+    // 🔥 primeira execução (protegida)
+    try {
       await downloadADM();
-
-      console.log("🔥 PARSER AUTOMÁTICO:");
+      console.log("🔥 FORÇANDO PARSER AGORA:");
       getLeaderboard();
-    }, 60 * 1000);
+    } catch (err) {
+      console.error("❌ erro na execução inicial:", err);
+    }
+
+    // 🔁 loop robusto (NUNCA MORRE)
+    setInterval(async () => {
+      console.log("🔁 LOOP PRINCIPAL RODANDO");
+
+      try {
+        await downloadADM();
+      } catch (err) {
+        console.error("❌ erro download:", err);
+      }
+
+      try {
+        console.log("🔥 PARSER AUTOMÁTICO:");
+        getLeaderboard();
+      } catch (err) {
+        console.error("❌ erro parser:", err);
+      }
+    }, 60 * 1000); // 1 minuto
 
     // 🤖 Discord
     try {
