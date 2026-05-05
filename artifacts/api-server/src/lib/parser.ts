@@ -27,8 +27,8 @@ function getBrazilDateParts() {
   });
 
   return {
-    date: `${map.year}-${map.month}-${map.day}`, // ex: 2026-05-04
-    weekday: map.weekday, // ex: seg., ter., etc
+    date: `${map.year}-${map.month}-${map.day}`,
+    weekday: map.weekday,
   };
 }
 
@@ -40,30 +40,35 @@ export function getLeaderboard() {
 
   const state = getState();
 
-  let leaderboard: Record<string, { kills: number; deaths: number }> =
-    state.players || {};
+  let leaderboard = state.players || {};
 
-  let dailyPlayers: Record<string, { kills: number; deaths: number }> =
-    state.dailyPlayers || {};
+  let dailyPlayers = state.dailyPlayers || {};
 
-  let weeklyPlayers: Record<string, { kills: number; deaths: number }> =
-    state.weeklyPlayers || {};
+  let weeklyPlayers = state.weeklyPlayers || {};
 
-  let onlinePlayers: Record<string, boolean> = state.onlinePlayers || {};
+  let onlinePlayers = state.onlinePlayers || {};
 
   let start = state.lastLine || 0;
+
+  // 🔥 DETECTA MUDANÇA DE ARQUIVO (CRÍTICO)
+  const currentFileTime = fs.statSync("ADM.log").mtimeMs;
+
+  if (state.lastFileTime !== currentFileTime) {
+    console.log("📂 arquivo mudou → resetando leitura");
+
+    start = 0;
+    state.lastFileTime = currentFileTime;
+  }
 
   // 🔥 RESET POR DATA (BRASIL)
   const { date: today, weekday } = getBrazilDateParts();
 
-  // 🌅 RESET DIÁRIO (00:00)
   if (state.lastDailyReset !== today) {
     console.log("🌅 reset diário (00:00 Brasil)");
     dailyPlayers = {};
     state.lastDailyReset = today;
   }
 
-  // 📆 RESET SEMANAL (SEGUNDA 00:00)
   if (weekday === "seg." && state.lastWeeklyReset !== today) {
     console.log("📆 reset semanal (segunda 00:00 Brasil)");
     weeklyPlayers = {};
@@ -100,7 +105,6 @@ export function getLeaderboard() {
       const victim = match[1];
       const killer = match[2];
 
-      // GLOBAL
       if (!leaderboard[killer]) {
         leaderboard[killer] = { kills: 0, deaths: 0 };
       }
@@ -111,14 +115,12 @@ export function getLeaderboard() {
       leaderboard[killer].kills += 1;
       leaderboard[victim].deaths += 1;
 
-      // DAILY
       if (!dailyPlayers[killer]) dailyPlayers[killer] = { kills: 0, deaths: 0 };
       if (!dailyPlayers[victim]) dailyPlayers[victim] = { kills: 0, deaths: 0 };
 
       dailyPlayers[killer].kills += 1;
       dailyPlayers[victim].deaths += 1;
 
-      // WEEKLY
       if (!weeklyPlayers[killer])
         weeklyPlayers[killer] = { kills: 0, deaths: 0 };
       if (!weeklyPlayers[victim])
@@ -160,6 +162,7 @@ export function getLeaderboard() {
     lastWeeklyReset: state.lastWeeklyReset,
     lastLine: lines.length,
     onlinePlayers,
+    lastFileTime: state.lastFileTime, // 🔥 IMPORTANTE
   });
 
   return {
