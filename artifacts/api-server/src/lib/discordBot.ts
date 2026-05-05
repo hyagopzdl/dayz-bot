@@ -58,11 +58,7 @@ export async function startDiscordBot(getLeaderboard: () => any) {
       const embed = new EmbedBuilder().setColor("#FF00AA");
 
       if (!players.length) {
-        embed.setDescription(`
-
-${title}
-
-Sem dados ainda...`);
+        embed.setDescription(`\n${title}\n\nSem dados ainda...`);
         return embed;
       }
 
@@ -212,21 +208,37 @@ Sem dados ainda...`);
     }
 
     let lastOnlineCount = -1;
+    let lastUpdateTime = 0;
 
     async function dynamicUpdateLoop() {
       const count = await getOnlineCount();
+      const now = Date.now();
 
+      let shouldUpdate = false;
+
+      // 🔄 mudança de players
       if (count !== lastOnlineCount) {
         console.log(`🔄 mudança detectada: ${lastOnlineCount} → ${count}`);
-        await updateLeaderboard();
+        shouldUpdate = true;
         lastOnlineCount = count;
-      } else {
-        console.log("⏭️ sem mudança, pulando update");
       }
 
-      const delay = 2 * 60 * 1000; // 🔥 FIXO
+      // ⏱️ fallback (garante atualização mesmo sem mudança)
+      if (now - lastUpdateTime > 2 * 60 * 1000) {
+        console.log("⏱️ fallback: forçando update");
+        shouldUpdate = true;
+      }
 
-      console.log(`⏱️ próximo update em ${delay / 1000}s (${count} online)`);
+      if (shouldUpdate) {
+        await updateLeaderboard();
+        lastUpdateTime = now;
+      } else {
+        console.log("⏭️ sem mudança e dentro do tempo");
+      }
+
+      const delay = 2 * 60 * 1000;
+
+      console.log(`⏱️ próximo update em ${delay / 1000}s`);
 
       setTimeout(dynamicUpdateLoop, delay);
     }
