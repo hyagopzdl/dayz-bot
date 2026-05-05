@@ -4,8 +4,8 @@ import { getState, saveState } from "./state";
 const KILL_REGEX = /Player "([^"]+)"[\s\S]*?killed by Player "([^"]+)"/;
 
 // 🔥 REGEX DE CONEXÃO
-const CONNECT_REGEX = /Player "(.+?)".*is connected/;
-const DISCONNECT_REGEX = /Player "(.+?)".*has been disconnected/;
+const CONNECT_REGEX = /Player "([^"]+)"[\s\S]*?is connected/;
+const DISCONNECT_REGEX = /Player "([^"]+)"[\s\S]*?has been disconnected/;
 
 // 🇧🇷 DATA NO FUSO DO BRASIL
 function getBrazilDateParts() {
