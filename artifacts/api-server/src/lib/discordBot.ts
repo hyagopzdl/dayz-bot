@@ -66,35 +66,30 @@ Sem dados ainda...`);
         return embed;
       }
 
-      // 🔥 largura dinâmica do nome
       const maxName = Math.min(
         Math.max(...players.map((p) => p.name.length)),
         18,
       );
 
-      // 🔥 largura dinâmica das kills (com label)
       const maxKillsLength = Math.max(
         ...players.map((p) => `${p.kills} kills`.length),
       );
 
-      const KD_WIDTH = 8; // "K/D X.XX"
+      const KD_WIDTH = 8;
 
       let description = `${title}\n\n`;
 
       players.slice(0, 10).forEach((p, i) => {
         const rank = getRank(i);
 
-        // 🔥 nome com "…"
         let trimmedName =
           p.name.length > maxName ? p.name.slice(0, maxName - 1) + "…" : p.name;
 
         const name = padEnd(trimmedName, maxName);
 
-        // 🔥 kills com label
         const killsText = `${p.kills} kills`;
         const kills = padStart(killsText, maxKillsLength);
 
-        // 🔥 KD com label
         const kd =
           p.deaths > 0 ? (p.kills / p.deaths).toFixed(2) : p.kills.toFixed(2);
 
@@ -229,11 +224,7 @@ Sem dados ainda...`);
         console.log("⏭️ sem mudança, pulando update");
       }
 
-      let delay = 5 * 60 * 1000;
-
-      if (count === 0) delay = 20 * 60 * 1000;
-      else if (count === 1) delay = 15 * 60 * 1000;
-      else delay = 5 * 60 * 1000;
+      const delay = 2 * 60 * 1000; // 🔥 FIXO
 
       console.log(`⏱️ próximo update em ${delay / 1000}s (${count} online)`);
 
