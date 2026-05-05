@@ -5,10 +5,13 @@ import {
   EmbedBuilder,
 } from "discord.js";
 import fs from "fs";
+import path from "path";
 
 const client = new Client({
   intents: [GatewayIntentBits.Guilds],
 });
+
+const STATE_FILE = path.resolve(process.cwd(), "state.json");
 
 const MESSAGE_FILE_GLOBAL = "message_global.json";
 const MESSAGE_FILE_DAILY = "message_daily.json";
@@ -56,9 +59,38 @@ export async function startDiscordBot() {
       return nums[i - 3] || `${i + 1}️⃣`;
     }
 
+    function getState() {
+      try {
+        const state = JSON.parse(fs.readFileSync(STATE_FILE, "utf-8"));
+
+        console.log("📊 Discord lendo state:", {
+          file: STATE_FILE,
+          global: Object.keys(state.players || {}).length,
+          daily: Object.keys(state.dailyPlayers || {}).length,
+          weekly: Object.keys(state.weeklyPlayers || {}).length,
+          online: Object.keys(state.onlinePlayers || {}).length,
+        });
+
+        return state;
+      } catch (err) {
+        console.error("❌ Discord não conseguiu ler state.json:", err);
+        return {};
+      }
+    }
+
+    function getOnlineCount(): number {
+      const state = getState();
+      return Object.keys(state.onlinePlayers || {}).length;
+    }
+
+    function mapPlayers(obj: any) {
+      return Object.entries(obj || {})
+        .map(([name, d]: any) => ({ name, ...d }))
+        .sort((a, b) => b.kills - a.kills);
+    }
+
     function formatLeaderboardEmbed(players: any[], title: string) {
       const embed = new EmbedBuilder().setColor("#FF00AA");
-
       const timestamp = Math.floor(Date.now() / 1000);
 
       if (!players.length) {
@@ -108,26 +140,16 @@ export async function startDiscordBot() {
       return embed;
     }
 
-    function getState() {
-      try {
-        return JSON.parse(fs.readFileSync("state.json", "utf-8"));
-      } catch {
-        return {};
-      }
-    }
-
-    function getOnlineCount(): number {
-      const state = getState();
-      return Object.keys(state.onlinePlayers || {}).length;
-    }
-
     async function updateOnlineCount() {
       try {
         const count = getOnlineCount();
 
         const category = await client.channels.fetch(CATEGORY_ID);
 
-        if (!category || !("setName" in category)) return;
+        if (!category || !("setName" in category)) {
+          console.error("❌ canal/categoria online inválido");
+          return;
+        }
 
         const MAX_PLAYERS = 10;
 
@@ -137,20 +159,17 @@ export async function startDiscordBot() {
           newName = `━━━〔 PLAYERS ONLINE: ${count}/${MAX_PLAYERS} 🔥 〕━━━`;
         }
 
-        if ((category as any).name === newName) return;
+        if ((category as any).name === newName) {
+          console.log(`🟢 Categoria já está atualizada: ${newName}`);
+          return;
+        }
 
         await (category as any).setName(newName);
 
-        console.log(`🟢 Categoria atualizada: ${count}`);
+        console.log(`🟢 Categoria atualizada: ${newName}`);
       } catch (err) {
         console.error("❌ erro ao atualizar categoria online", err);
       }
-    }
-
-    function mapPlayers(obj: any) {
-      return Object.entries(obj || {})
-        .map(([name, d]: any) => ({ name, ...d }))
-        .sort((a, b) => b.kills - a.kills);
     }
 
     async function sendOrEdit(channel: any, file: string, embed: any) {
@@ -164,7 +183,7 @@ export async function startDiscordBot() {
         }
       }
 
-      let message;
+      let message: any = null;
 
       if (messageId) {
         try {
@@ -176,17 +195,27 @@ export async function startDiscordBot() {
 
       if (message) {
         await message.edit({ embeds: [embed] });
-      } else {
-        const newMsg = await channel.send({ embeds: [embed] });
-        fs.writeFileSync(file, JSON.stringify({ id: newMsg.id }, null, 2));
+        console.log(`✏️ mensagem editada: ${file}`);
+        return;
       }
+
+      const newMsg = await channel.send({ embeds: [embed] });
+      fs.writeFileSync(file, JSON.stringify({ id: newMsg.id }, null, 2));
+
+      console.log(`📨 nova mensagem enviada: ${file}`);
     }
 
     async function updateLeaderboard() {
-      if (discordLoopRunning) return;
+      if (discordLoopRunning) {
+        console.log("⏭️ Discord update ignorado: anterior ainda rodando");
+        return;
+      }
+
       discordLoopRunning = true;
 
       try {
+        console.log("🔄 Discord tick");
+
         const state = getState();
 
         const globalPlayers = mapPlayers(state.players);
@@ -224,42 +253,11 @@ export async function startDiscordBot() {
       }
     }
 
-    let lastOnlineCount = -1;
-    let lastUpdateTime = 0;
-
-    async function dynamicUpdateLoop() {
-      try {
-        const count = getOnlineCount();
-        const now = Date.now();
-
-        let shouldUpdate = false;
-
-        if (count !== lastOnlineCount) {
-          shouldUpdate = true;
-          lastOnlineCount = count;
-        }
-
-        if (now - lastUpdateTime > 2 * 60 * 1000) {
-          shouldUpdate = true;
-        }
-
-        if (shouldUpdate) {
-          await updateLeaderboard();
-          lastUpdateTime = now;
-        }
-      } catch (err) {
-        console.error("❌ erro no loop Discord:", err);
-      }
-    }
-
     await updateLeaderboard();
 
-    setInterval(
-      () => {
-        dynamicUpdateLoop();
-      },
-      2 * 60 * 1000,
-    );
+    setInterval(async () => {
+      await updateLeaderboard();
+    }, 60 * 1000);
   });
 
   try {
