@@ -48,7 +48,7 @@ function startServer(port: number) {
 
     try {
       console.log("🚀 iniciando bot do Discord...");
-      startDiscordBot(getLeaderboard);
+      startDiscordBot();
     } catch (err) {
       console.error("❌ erro ao iniciar Discord:", err);
     }

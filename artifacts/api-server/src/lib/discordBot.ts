@@ -16,7 +16,7 @@ const MESSAGE_FILE_WEEKLY = "message_weekly.json";
 
 let discordLoopRunning = false;
 
-export async function startDiscordBot(getLeaderboard: () => any) {
+export async function startDiscordBot() {
   if (!process.env.DISCORD_TOKEN) {
     console.error("❌ DISCORD_TOKEN não definido");
     return;
@@ -59,8 +59,9 @@ export async function startDiscordBot(getLeaderboard: () => any) {
     function formatLeaderboardEmbed(players: any[], title: string) {
       const embed = new EmbedBuilder().setColor("#FF00AA");
 
+      const timestamp = Math.floor(Date.now() / 1000);
+
       if (!players.length) {
-        const timestamp = Math.floor(Date.now() / 1000);
         embed.setDescription(
           `\n${title}\n\nSem dados ainda...\n\n⏱️ Atualizado <t:${timestamp}:R>`,
         );
@@ -100,7 +101,6 @@ export async function startDiscordBot(getLeaderboard: () => any) {
         description += `${rank} \`${name}\` \`${kills}\` \`${kdFormatted}\`\n\n`;
       });
 
-      const timestamp = Math.floor(Date.now() / 1000);
       description += `⏱️ Atualizado <t:${timestamp}:R>`;
 
       embed.setDescription(description);
@@ -108,14 +108,17 @@ export async function startDiscordBot(getLeaderboard: () => any) {
       return embed;
     }
 
-    function getOnlineCount(): number {
+    function getState() {
       try {
-        const state = JSON.parse(fs.readFileSync("state.json", "utf-8"));
-        const onlinePlayers = state.onlinePlayers || {};
-        return Object.keys(onlinePlayers).length;
+        return JSON.parse(fs.readFileSync("state.json", "utf-8"));
       } catch {
-        return 0;
+        return {};
       }
+    }
+
+    function getOnlineCount(): number {
+      const state = getState();
+      return Object.keys(state.onlinePlayers || {}).length;
     }
 
     async function updateOnlineCount() {
@@ -180,40 +183,36 @@ export async function startDiscordBot(getLeaderboard: () => any) {
     }
 
     async function updateLeaderboard() {
-      if (discordLoopRunning) {
-        console.log(
-          "⏭️ Discord update ignorado: execução anterior ainda rodando",
-        );
-        return;
-      }
-
+      if (discordLoopRunning) return;
       discordLoopRunning = true;
 
       try {
-        const data = getLeaderboard();
+        const state = getState();
 
-        const globalPlayers = mapPlayers(data.global);
-        const dailyPlayers = mapPlayers(data.daily);
-        const weeklyPlayers = mapPlayers(data.weekly);
+        const globalPlayers = mapPlayers(state.players);
+        const dailyPlayers = mapPlayers(state.dailyPlayers);
+        const weeklyPlayers = mapPlayers(state.weeklyPlayers);
 
-        const globalEmbed = formatLeaderboardEmbed(
-          globalPlayers,
-          "🏆 **LEADERBOARD GERAL** 🏆",
+        await sendOrEdit(
+          globalChannel,
+          MESSAGE_FILE_GLOBAL,
+          formatLeaderboardEmbed(globalPlayers, "🏆 **LEADERBOARD GERAL** 🏆"),
         );
 
-        const dailyEmbed = formatLeaderboardEmbed(
-          dailyPlayers,
-          "🌅 **LEADERBOARD DO DIA** 🌅",
+        await sendOrEdit(
+          dailyChannel,
+          MESSAGE_FILE_DAILY,
+          formatLeaderboardEmbed(dailyPlayers, "🌅 **LEADERBOARD DO DIA** 🌅"),
         );
 
-        const weeklyEmbed = formatLeaderboardEmbed(
-          weeklyPlayers,
-          "📆 **LEADERBOARD SEMANAL** 📆",
+        await sendOrEdit(
+          weeklyChannel,
+          MESSAGE_FILE_WEEKLY,
+          formatLeaderboardEmbed(
+            weeklyPlayers,
+            "📆 **LEADERBOARD SEMANAL** 📆",
+          ),
         );
-
-        await sendOrEdit(globalChannel, MESSAGE_FILE_GLOBAL, globalEmbed);
-        await sendOrEdit(dailyChannel, MESSAGE_FILE_DAILY, dailyEmbed);
-        await sendOrEdit(weeklyChannel, MESSAGE_FILE_WEEKLY, weeklyEmbed);
 
         await updateOnlineCount();
 
@@ -236,24 +235,20 @@ export async function startDiscordBot(getLeaderboard: () => any) {
         let shouldUpdate = false;
 
         if (count !== lastOnlineCount) {
-          console.log(`🔄 mudança detectada: ${lastOnlineCount} → ${count}`);
           shouldUpdate = true;
           lastOnlineCount = count;
         }
 
         if (now - lastUpdateTime > 2 * 60 * 1000) {
-          console.log("⏱️ fallback: forçando update");
           shouldUpdate = true;
         }
 
         if (shouldUpdate) {
           await updateLeaderboard();
-          lastUpdateTime = Date.now();
-        } else {
-          console.log("⏭️ sem mudança e dentro do tempo");
+          lastUpdateTime = now;
         }
       } catch (err) {
-        console.error("❌ erro no loop dinâmico Discord:", err);
+        console.error("❌ erro no loop Discord:", err);
       }
     }
 
@@ -261,9 +256,7 @@ export async function startDiscordBot(getLeaderboard: () => any) {
 
     setInterval(
       () => {
-        dynamicUpdateLoop().catch((err) => {
-          console.error("❌ erro fatal no Discord loop:", err);
-        });
+        dynamicUpdateLoop();
       },
       2 * 60 * 1000,
     );
