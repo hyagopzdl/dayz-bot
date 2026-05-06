@@ -18,6 +18,7 @@ const MESSAGE_FILE_GLOBAL = "message_global.json";
 const MESSAGE_FILE_DAILY = "message_daily.json";
 const MESSAGE_FILE_WEEKLY = "message_weekly.json";
 const MESSAGE_FILE_ONLINE_LIST = "message_online_list.json";
+const MESSAGE_FILE_KILLFEED = "message_killfeed.json";
 
 let discordLoopRunning = false;
 
@@ -45,6 +46,12 @@ export async function startDiscordBot() {
     const onlineListChannel = process.env.DISCORD_ONLINE_LIST_CHANNEL_ID
       ? ((await client.channels.fetch(
           process.env.DISCORD_ONLINE_LIST_CHANNEL_ID,
+        )) as TextBasedChannel)
+      : null;
+
+    const killfeedChannel = process.env.DISCORD_KILLFEED_CHANNEL_ID
+      ? ((await client.channels.fetch(
+          process.env.DISCORD_KILLFEED_CHANNEL_ID,
         )) as TextBasedChannel)
       : null;
 
@@ -77,6 +84,7 @@ export async function startDiscordBot() {
           daily: Object.keys(state.dailyPlayers || {}).length,
           weekly: Object.keys(state.weeklyPlayers || {}).length,
           online: Object.keys(state.onlinePlayers || {}).length,
+          killfeed: (state.killFeedEvents || []).length,
         });
 
         return state;
@@ -88,7 +96,7 @@ export async function startDiscordBot() {
 
     function saveState(state: any) {
       fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
-      console.log("💾 state resetado/salvo pelo Discord");
+      console.log("💾 state salvo pelo Discord");
     }
 
     function resetRankings() {
@@ -97,8 +105,8 @@ export async function startDiscordBot() {
       state.players = {};
       state.dailyPlayers = {};
       state.weeklyPlayers = {};
+      state.killFeedEvents = [];
 
-      // Mantém cursores e dedupe para NÃO puxar log antigo de novo
       state.files = state.files || {};
       state.recentEventIds = state.recentEventIds || [];
       state.onlinePlayers = state.onlinePlayers || {};
@@ -121,6 +129,26 @@ export async function startDiscordBot() {
 
       state.lastDailyReset = `${map.year}-${map.month}-${map.day}`;
       state.lastWeeklyReset = state.lastWeeklyReset || "";
+
+      saveState(state);
+    }
+
+    function clearSentKillFeedEvents(sentEvents: any[]) {
+      if (!sentEvents.length) return;
+
+      const state = getState();
+      const currentEvents = state.killFeedEvents || [];
+
+      const sentKeys = new Set(
+        sentEvents.map(
+          (event) => `${event.killer}|${event.victim}|${event.at}`,
+        ),
+      );
+
+      state.killFeedEvents = currentEvents.filter(
+        (event: any) =>
+          !sentKeys.has(`${event.killer}|${event.victim}|${event.at}`),
+      );
 
       saveState(state);
     }
@@ -215,6 +243,38 @@ export async function startDiscordBot() {
       return embed;
     }
 
+    function formatKillFeedEmbed(state: any) {
+      const events = (state.killFeedEvents || []).slice(-20);
+      const timestamp = Math.floor(Date.now() / 1000);
+
+      const embed = new EmbedBuilder()
+        .setColor("#FF3333")
+        .setTitle(`🔫 KILLFEED RECENTE (${events.length})`);
+
+      if (!events.length) {
+        embed.setDescription(
+          `Nenhuma kill nova desde a última atualização.\n\n⏱️ Atualizado <t:${timestamp}:R>`,
+        );
+        return embed;
+      }
+
+      const description = events
+        .map((event: any) => {
+          const eventTime = event.at
+            ? Math.floor(new Date(event.at).getTime() / 1000)
+            : timestamp;
+
+          return `• **${event.killer}** matou **${event.victim}** — <t:${eventTime}:R>`;
+        })
+        .join("\n");
+
+      embed.setDescription(
+        `${description}\n\n⏱️ Atualizado <t:${timestamp}:R>`,
+      );
+
+      return embed;
+    }
+
     async function updateOnlineCount() {
       try {
         const count = getOnlineCount();
@@ -293,6 +353,23 @@ export async function startDiscordBot() {
       );
     }
 
+    async function updateKillFeed(state: any) {
+      if (!killfeedChannel) {
+        console.log("⚠️ DISCORD_KILLFEED_CHANNEL_ID não configurado");
+        return;
+      }
+
+      const eventsToSend = (state.killFeedEvents || []).slice(-20);
+
+      await sendOrEdit(
+        killfeedChannel,
+        MESSAGE_FILE_KILLFEED,
+        formatKillFeedEmbed(state),
+      );
+
+      clearSentKillFeedEvents(eventsToSend);
+    }
+
     async function updateLeaderboard() {
       if (discordLoopRunning) {
         console.log("⏭️ Discord update ignorado: anterior ainda rodando");
@@ -333,6 +410,7 @@ export async function startDiscordBot() {
 
         await updateOnlineCount();
         await updateOnlineList(state);
+        await updateKillFeed(state);
 
         console.log("🏆 leaderboards atualizados");
       } catch (err) {
