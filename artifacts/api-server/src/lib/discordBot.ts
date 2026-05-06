@@ -16,6 +16,7 @@ const STATE_FILE = path.resolve(process.cwd(), "state.json");
 const MESSAGE_FILE_GLOBAL = "message_global.json";
 const MESSAGE_FILE_DAILY = "message_daily.json";
 const MESSAGE_FILE_WEEKLY = "message_weekly.json";
+const MESSAGE_FILE_ONLINE_LIST = "message_online_list.json";
 
 let discordLoopRunning = false;
 
@@ -39,6 +40,12 @@ export async function startDiscordBot() {
     const weeklyChannel = (await client.channels.fetch(
       process.env.DISCORD_CHANNEL_WEEKLY_ID!,
     )) as TextBasedChannel;
+
+    const onlineListChannel = process.env.DISCORD_ONLINE_LIST_CHANNEL_ID
+      ? ((await client.channels.fetch(
+          process.env.DISCORD_ONLINE_LIST_CHANNEL_ID,
+        )) as TextBasedChannel)
+      : null;
 
     const CATEGORY_ID = process.env.DISCORD_ONLINE_CHANNEL_ID!;
 
@@ -89,6 +96,12 @@ export async function startDiscordBot() {
         .sort((a, b) => b.kills - a.kills);
     }
 
+    function getOnlinePlayerNames(state: any) {
+      return Object.keys(state.onlinePlayers || {}).sort((a, b) =>
+        a.localeCompare(b),
+      );
+    }
+
     function formatLeaderboardEmbed(players: any[], title: string) {
       const embed = new EmbedBuilder().setColor("#FF00AA");
       const timestamp = Math.floor(Date.now() / 1000);
@@ -136,6 +149,28 @@ export async function startDiscordBot() {
       description += `⏱️ Atualizado <t:${timestamp}:R>`;
 
       embed.setDescription(description);
+
+      return embed;
+    }
+
+    function formatOnlineListEmbed(state: any) {
+      const players = getOnlinePlayerNames(state);
+      const timestamp = Math.floor(Date.now() / 1000);
+
+      const embed = new EmbedBuilder()
+        .setColor("#00FF88")
+        .setTitle(`🟢 PLAYERS ONLINE (${players.length}/10)`);
+
+      if (!players.length) {
+        embed.setDescription(
+          `Nenhum jogador online no momento.\n\n⏱️ Atualizado <t:${timestamp}:R>`,
+        );
+        return embed;
+      }
+
+      const list = players.map((name) => `• ${name}`).join("\n");
+
+      embed.setDescription(`${list}\n\n⏱️ Atualizado <t:${timestamp}:R>`);
 
       return embed;
     }
@@ -205,6 +240,19 @@ export async function startDiscordBot() {
       console.log(`📨 nova mensagem enviada: ${file}`);
     }
 
+    async function updateOnlineList(state: any) {
+      if (!onlineListChannel) {
+        console.log("⚠️ DISCORD_ONLINE_LIST_CHANNEL_ID não configurado");
+        return;
+      }
+
+      await sendOrEdit(
+        onlineListChannel,
+        MESSAGE_FILE_ONLINE_LIST,
+        formatOnlineListEmbed(state),
+      );
+    }
+
     async function updateLeaderboard() {
       if (discordLoopRunning) {
         console.log("⏭️ Discord update ignorado: anterior ainda rodando");
@@ -244,6 +292,7 @@ export async function startDiscordBot() {
         );
 
         await updateOnlineCount();
+        await updateOnlineList(state);
 
         console.log("🏆 leaderboards atualizados");
       } catch (err) {
