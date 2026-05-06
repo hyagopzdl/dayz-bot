@@ -133,26 +133,6 @@ export async function startDiscordBot() {
       saveState(state);
     }
 
-    function clearSentKillFeedEvents(sentEvents: any[]) {
-      if (!sentEvents.length) return;
-
-      const state = getState();
-      const currentEvents = state.killFeedEvents || [];
-
-      const sentKeys = new Set(
-        sentEvents.map(
-          (event) => `${event.killer}|${event.victim}|${event.at}`,
-        ),
-      );
-
-      state.killFeedEvents = currentEvents.filter(
-        (event: any) =>
-          !sentKeys.has(`${event.killer}|${event.victim}|${event.at}`),
-      );
-
-      saveState(state);
-    }
-
     function getOnlineCount(): number {
       const state = getState();
       return Object.keys(state.onlinePlayers || {}).length;
@@ -244,8 +224,17 @@ export async function startDiscordBot() {
     }
 
     function formatKillFeedEmbed(state: any) {
-      const events = (state.killFeedEvents || []).slice(-20);
-      const timestamp = Math.floor(Date.now() / 1000);
+      const now = Date.now();
+      const timestamp = Math.floor(now / 1000);
+
+      const events = (state.killFeedEvents || []).filter((event: any) => {
+        if (!event.at) return false;
+
+        const eventTime = new Date(event.at).getTime();
+        if (!Number.isFinite(eventTime)) return false;
+
+        return now - eventTime <= 15 * 60 * 1000;
+      });
 
       const embed = new EmbedBuilder()
         .setColor("#FF3333")
@@ -258,19 +247,30 @@ export async function startDiscordBot() {
         return embed;
       }
 
-      const description = events
-        .map((event: any) => {
-          const eventTime = event.at
-            ? Math.floor(new Date(event.at).getTime() / 1000)
-            : timestamp;
+      const lines: string[] = [];
+      let usedChars = 0;
 
-          return `• **${event.killer}** matou **${event.victim}** — <t:${eventTime}:R>`;
-        })
-        .join("\n");
+      for (const event of events) {
+        const eventTime = Math.floor(new Date(event.at).getTime() / 1000);
+        const line = `• **${event.killer}** matou **${event.victim}** — <t:${eventTime}:R>`;
 
-      embed.setDescription(
-        `${description}\n\n⏱️ Atualizado <t:${timestamp}:R>`,
-      );
+        if (usedChars + line.length > 3500) break;
+
+        lines.push(line);
+        usedChars += line.length;
+      }
+
+      const hidden = events.length - lines.length;
+
+      let description = lines.join("\n");
+
+      if (hidden > 0) {
+        description += `\n\n+${hidden} kills não exibidas por limite do Discord.`;
+      }
+
+      description += `\n\n⏱️ Atualizado <t:${timestamp}:R>`;
+
+      embed.setDescription(description);
 
       return embed;
     }
@@ -359,15 +359,17 @@ export async function startDiscordBot() {
         return;
       }
 
-      const eventsToSend = (state.killFeedEvents || []).slice(-20);
-
       await sendOrEdit(
         killfeedChannel,
         MESSAGE_FILE_KILLFEED,
         formatKillFeedEmbed(state),
       );
 
-      clearSentKillFeedEvents(eventsToSend);
+      const freshState = getState();
+      freshState.killFeedEvents = [];
+      saveState(freshState);
+
+      console.log("🧹 killfeed limpo após atualização");
     }
 
     async function updateLeaderboard() {

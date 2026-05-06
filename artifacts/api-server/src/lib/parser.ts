@@ -7,8 +7,6 @@ const KILL_REGEX = /Player "([^"]+)".*?killed by Player "([^"]+)"/;
 const CONNECT_REGEX = /Player "([^"]+)".*?is connected/;
 const DISCONNECT_REGEX = /Player "([^"]+)".*?has been disconnected/;
 
-const ONLINE_TTL_MS = 45 * 60 * 1000;
-
 function getBrazilDateParts(date = new Date()) {
   const formatter = new Intl.DateTimeFormat("pt-BR", {
     timeZone: "America/Sao_Paulo",
@@ -95,7 +93,7 @@ function addKillFeedEvent(
     at: (eventDate || new Date()).toISOString(),
   });
 
-  state.killFeedEvents = state.killFeedEvents.slice(-50);
+  state.killFeedEvents = state.killFeedEvents.slice(-100);
 }
 
 function addKill(
@@ -141,15 +139,7 @@ function markOffline(state: AppState, player: string) {
 }
 
 function cleanupOnlinePlayers(state: AppState) {
-  const now = Date.now();
-
-  for (const [player, data] of Object.entries(state.onlinePlayers)) {
-    const lastSeen = new Date(data.lastSeenAt).getTime();
-
-    if (!Number.isFinite(lastSeen) || now - lastSeen > ONLINE_TTL_MS) {
-      delete state.onlinePlayers[player];
-    }
-  }
+  state.onlinePlayers = state.onlinePlayers || {};
 }
 
 function applyResets(state: AppState) {
@@ -279,7 +269,7 @@ function processFile(filePath: string, state: AppState) {
   state.lastFileName = fileName;
 
   state.recentEventIds = state.recentEventIds.slice(-10000);
-  state.killFeedEvents = (state.killFeedEvents || []).slice(-50);
+  state.killFeedEvents = (state.killFeedEvents || []).slice(-100);
 
   console.log(`🎯 novas kills: ${newKills}`);
   console.log(
