@@ -224,17 +224,11 @@ export async function startDiscordBot() {
     }
 
     function formatKillFeedEmbed(state: any) {
-      const now = Date.now();
-      const timestamp = Math.floor(now / 1000);
+      const timestamp = Math.floor(Date.now() / 1000);
 
-      const events = (state.killFeedEvents || []).filter((event: any) => {
-        if (!event.at) return false;
-
-        const eventTime = new Date(event.at).getTime();
-        if (!Number.isFinite(eventTime)) return false;
-
-        return now - eventTime <= 15 * 60 * 1000;
-      });
+      // Mostra TODAS as kills acumuladas desde a última limpeza.
+      // O buffer é limpo após o Discord atualizar o canal.
+      const events = state.killFeedEvents || [];
 
       const embed = new EmbedBuilder()
         .setColor("#FF3333")
@@ -244,23 +238,27 @@ export async function startDiscordBot() {
         embed.setDescription(
           `Nenhuma kill nova desde a última atualização.\n\n⏱️ Atualizado <t:${timestamp}:R>`,
         );
+
         return embed;
       }
 
       const lines: string[] = [];
       let usedChars = 0;
 
-      for (const event of events) {
-        const eventTime = Math.floor(new Date(event.at).getTime() / 1000);
-        const line = `• **${event.killer}** matou **${event.victim}** — <t:${eventTime}:R>`;
+      // Mostra as mais recentes primeiro
+      const reversedEvents = [...events].reverse();
 
+      for (const event of reversedEvents) {
+        const line = `• **${event.killer}** matou **${event.victim}**`;
+
+        // margem de segurança do Discord
         if (usedChars + line.length > 3500) break;
 
         lines.push(line);
         usedChars += line.length;
       }
 
-      const hidden = events.length - lines.length;
+      const hidden = reversedEvents.length - lines.length;
 
       let description = lines.join("\n");
 
