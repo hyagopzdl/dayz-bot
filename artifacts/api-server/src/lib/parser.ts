@@ -48,14 +48,47 @@ function getBrazilWeekKey(date = new Date()) {
   return monday.toISOString().slice(0, 10);
 }
 
-function extractTimestamp(line: string): Date | null {
-  const match = line.match(/^(\d{4}-\d{2}-\d{2}T[\d:.]+Z)/);
+function extractBaseDateFromLog(lines: string[]): string | null {
+  for (const line of lines.slice(0, 20)) {
+    const match = line.match(/AdminLog started on (\d{4}-\d{2}-\d{2})/);
+    if (match) return match[1];
+  }
+
+  return null;
+}
+
+function extractBaseDateFromFilePath(filePath: string): string | null {
+  const match = filePath.match(/_(\d{4}-\d{2}-\d{2})_\d{2}-\d{2}-\d{2}\.ADM$/);
+  return match ? match[1] : null;
+}
+
+function extractLineSeconds(line: string): number | null {
+  const match = line.match(/^(\d{2}):(\d{2}):(\d{2})\s*\|/);
   if (!match) return null;
 
-  const date = new Date(match[1]);
-  if (Number.isNaN(date.getTime())) return null;
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  const seconds = Number(match[3]);
+
+  return hours * 3600 + minutes * 60 + seconds;
+}
+
+function createUTCDateFromBaseAndSeconds(baseDate: string, seconds: number) {
+  const [year, month, day] = baseDate.split("-").map(Number);
+
+  const date = new Date(Date.UTC(year, month - 1, day, 0, 0, 0));
+  date.setUTCSeconds(seconds);
 
   return date;
+}
+
+function addDaysToDateString(baseDate: string, days: number) {
+  const [year, month, day] = baseDate.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day, 0, 0, 0));
+
+  date.setUTCDate(date.getUTCDate() + days);
+
+  return date.toISOString().slice(0, 10);
 }
 
 function isTodayInBrazil(eventDate: Date) {
@@ -180,6 +213,15 @@ function processFile(filePath: string, state: AppState) {
   const log = fs.readFileSync(filePath, "utf-8");
   const lines = log.split(/\r?\n/);
 
+  const baseDate =
+    extractBaseDateFromLog(lines) || extractBaseDateFromFilePath(filePath);
+
+  if (!baseDate) {
+    console.log(`⚠️ não consegui detectar data base do ADM: ${fileName}`);
+  } else {
+    console.log(`🗓️ data base ADM: ${baseDate}`);
+  }
+
   const cursor = state.files[fileName] || {
     lastLine: 0,
     lastProcessedAt: new Date().toISOString(),
@@ -196,9 +238,24 @@ function processFile(filePath: string, state: AppState) {
   console.log(`📄 total linhas: ${lines.length}`);
   console.log(`📍 processando de: ${start}`);
 
+  let currentDayOffset = 0;
+  let previousSeconds: number | null = null;
+
+  for (let i = 0; i < start; i++) {
+    const seconds = extractLineSeconds(lines[i] || "");
+    if (seconds === null) continue;
+
+    if (previousSeconds !== null && seconds < previousSeconds) {
+      currentDayOffset++;
+    }
+
+    previousSeconds = seconds;
+  }
+
   let newKills = 0;
   let ignoredDailyKills = 0;
   let ignoredWeeklyKills = 0;
+  let killsWithoutDate = 0;
   let newConnections = 0;
   let newDisconnections = 0;
 
@@ -208,13 +265,31 @@ function processFile(filePath: string, state: AppState) {
     const line = lines[i]?.trim();
     if (!line) continue;
 
+    const lineSeconds = extractLineSeconds(line);
+
+    if (
+      lineSeconds !== null &&
+      previousSeconds !== null &&
+      lineSeconds < previousSeconds
+    ) {
+      currentDayOffset++;
+    }
+
+    previousSeconds = lineSeconds ?? previousSeconds;
+
+    const eventDate =
+      baseDate && lineSeconds !== null
+        ? createUTCDateFromBaseAndSeconds(
+            addDaysToDateString(baseDate, currentDayOffset),
+            lineSeconds,
+          )
+        : null;
+
     const id = eventId(fileName, i, line);
 
     if (dedupe.has(id)) {
       continue;
     }
-
-    const eventDate = extractTimestamp(line);
 
     const killMatch = line.match(KILL_REGEX);
     if (killMatch) {
@@ -223,6 +298,7 @@ function processFile(filePath: string, state: AppState) {
 
       addKill(state, killer, victim, eventDate);
 
+      if (!eventDate) killsWithoutDate++;
       if (eventDate && !isTodayInBrazil(eventDate)) ignoredDailyKills++;
       if (eventDate && !isThisWeekInBrazil(eventDate)) ignoredWeeklyKills++;
 
@@ -272,6 +348,7 @@ function processFile(filePath: string, state: AppState) {
   state.killFeedEvents = (state.killFeedEvents || []).slice(-100);
 
   console.log(`🎯 novas kills: ${newKills}`);
+  console.log(`⚠️ kills sem data: ${killsWithoutDate}`);
   console.log(
     `🌅 kills ignoradas no diário por data antiga: ${ignoredDailyKills}`,
   );
