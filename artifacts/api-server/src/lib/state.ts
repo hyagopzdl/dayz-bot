@@ -18,6 +18,12 @@ export type FileCursor = {
   lastProcessedAt: string;
 };
 
+export type KillFeedEvent = {
+  killer: string;
+  victim: string;
+  at: string;
+};
+
 export type AppState = {
   players: Record<string, PlayerStats>;
   dailyPlayers: Record<string, PlayerStats>;
@@ -26,6 +32,8 @@ export type AppState = {
 
   files: Record<string, FileCursor>;
   recentEventIds: string[];
+
+  killFeedEvents: KillFeedEvent[];
 
   lastDailyReset: string;
   lastWeeklyReset: string;
@@ -42,6 +50,7 @@ function defaultState(): AppState {
     onlinePlayers: {},
     files: {},
     recentEventIds: [],
+    killFeedEvents: [],
     lastDailyReset: "",
     lastWeeklyReset: "",
   };
@@ -54,6 +63,7 @@ function migrateLegacyState(data: any): AppState {
   state.dailyPlayers = data.dailyPlayers || {};
   state.weeklyPlayers = data.weeklyPlayers || {};
   state.recentEventIds = data.recentEventIds || [];
+  state.killFeedEvents = data.killFeedEvents || [];
   state.files = data.files || {};
   state.lastDailyReset = data.lastDailyReset || "";
   state.lastWeeklyReset = data.lastWeeklyReset || "";
@@ -98,6 +108,7 @@ export function saveState(data: AppState) {
     onlinePlayers: data.onlinePlayers || {},
     files: data.files || {},
     recentEventIds: (data.recentEventIds || []).slice(-10000),
+    killFeedEvents: (data.killFeedEvents || []).slice(-50),
     lastDailyReset: data.lastDailyReset || "",
     lastWeeklyReset: data.lastWeeklyReset || "",
     lastLine: data.lastLine,

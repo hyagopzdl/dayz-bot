@@ -81,6 +81,23 @@ function ensurePlayer(obj: Record<string, PlayerStats>, name: string) {
   }
 }
 
+function addKillFeedEvent(
+  state: AppState,
+  killer: string,
+  victim: string,
+  eventDate: Date | null,
+) {
+  state.killFeedEvents = state.killFeedEvents || [];
+
+  state.killFeedEvents.push({
+    killer,
+    victim,
+    at: (eventDate || new Date()).toISOString(),
+  });
+
+  state.killFeedEvents = state.killFeedEvents.slice(-50);
+}
+
 function addKill(
   state: AppState,
   killer: string,
@@ -108,6 +125,8 @@ function addKill(
     state.weeklyPlayers[killer].kills += 1;
     state.weeklyPlayers[victim].deaths += 1;
   }
+
+  addKillFeedEvent(state, killer, victim, eventDate);
 }
 
 function markOnline(state: AppState, player: string) {
@@ -260,6 +279,7 @@ function processFile(filePath: string, state: AppState) {
   state.lastFileName = fileName;
 
   state.recentEventIds = state.recentEventIds.slice(-10000);
+  state.killFeedEvents = (state.killFeedEvents || []).slice(-50);
 
   console.log(`🎯 novas kills: ${newKills}`);
   console.log(
