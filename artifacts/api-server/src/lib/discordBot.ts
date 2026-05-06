@@ -3,6 +3,7 @@ import {
   GatewayIntentBits,
   TextBasedChannel,
   EmbedBuilder,
+  PermissionsBitField,
 } from "discord.js";
 import fs from "fs";
 import path from "path";
@@ -83,6 +84,45 @@ export async function startDiscordBot() {
         console.error("❌ Discord não conseguiu ler state.json:", err);
         return {};
       }
+    }
+
+    function saveState(state: any) {
+      fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
+      console.log("💾 state resetado/salvo pelo Discord");
+    }
+
+    function resetRankings() {
+      const state = getState();
+
+      state.players = {};
+      state.dailyPlayers = {};
+      state.weeklyPlayers = {};
+
+      // Mantém cursores e dedupe para NÃO puxar log antigo de novo
+      state.files = state.files || {};
+      state.recentEventIds = state.recentEventIds || [];
+      state.onlinePlayers = state.onlinePlayers || {};
+
+      const now = new Date();
+
+      const formatter = new Intl.DateTimeFormat("pt-BR", {
+        timeZone: "America/Sao_Paulo",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      });
+
+      const parts = formatter.formatToParts(now);
+      const map: Record<string, string> = {};
+
+      parts.forEach((p) => {
+        map[p.type] = p.value;
+      });
+
+      state.lastDailyReset = `${map.year}-${map.month}-${map.day}`;
+      state.lastWeeklyReset = state.lastWeeklyReset || "";
+
+      saveState(state);
     }
 
     function getOnlineCount(): number {
@@ -302,6 +342,71 @@ export async function startDiscordBot() {
       }
     }
 
+    async function registerCommands() {
+      try {
+        const command = {
+          name: "reset-ranking",
+          description: "Zera todos os rankings sem reprocessar logs antigos.",
+          defaultMemberPermissions:
+            PermissionsBitField.Flags.Administrator.toString(),
+          dmPermission: false,
+        };
+
+        if (process.env.DISCORD_SERVER_ID) {
+          const guild = await client.guilds.fetch(
+            process.env.DISCORD_SERVER_ID,
+          );
+          await guild.commands.create(command);
+          console.log("✅ comando /reset-ranking registrado no servidor");
+        } else {
+          await client.application?.commands.create(command);
+          console.log("✅ comando /reset-ranking registrado globalmente");
+        }
+      } catch (err) {
+        console.error("❌ erro registrando /reset-ranking:", err);
+      }
+    }
+
+    client.on("interactionCreate", async (interaction) => {
+      if (!interaction.isChatInputCommand()) return;
+      if (interaction.commandName !== "reset-ranking") return;
+
+      try {
+        if (
+          !interaction.memberPermissions?.has(
+            PermissionsBitField.Flags.Administrator,
+          )
+        ) {
+          await interaction.reply({
+            content: "❌ Apenas administradores podem usar este comando.",
+            ephemeral: true,
+          });
+          return;
+        }
+
+        await interaction.deferReply({ ephemeral: true });
+
+        resetRankings();
+        await updateLeaderboard();
+
+        await interaction.editReply(
+          "✅ Rankings zerados com sucesso. Os cursores dos logs foram mantidos para evitar reprocessamento antigo.",
+        );
+      } catch (err) {
+        console.error("❌ erro no /reset-ranking:", err);
+
+        if (interaction.deferred || interaction.replied) {
+          await interaction.editReply("❌ Erro ao resetar rankings.");
+        } else {
+          await interaction.reply({
+            content: "❌ Erro ao resetar rankings.",
+            ephemeral: true,
+          });
+        }
+      }
+    });
+
+    await registerCommands();
     await updateLeaderboard();
 
     setInterval(
