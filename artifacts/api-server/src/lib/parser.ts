@@ -9,9 +9,7 @@ const DISCONNECT_REGEX = /Player "([^"]+)".*?has been disconnected/;
 
 const ONLINE_TTL_MS = 45 * 60 * 1000;
 
-function getBrazilDateParts() {
-  const now = new Date();
-
+function getBrazilDateParts(date = new Date()) {
   const formatter = new Intl.DateTimeFormat("pt-BR", {
     timeZone: "America/Sao_Paulo",
     year: "numeric",
@@ -20,7 +18,7 @@ function getBrazilDateParts() {
     weekday: "short",
   });
 
-  const parts = formatter.formatToParts(now);
+  const parts = formatter.formatToParts(date);
   const map: Record<string, string> = {};
 
   parts.forEach((p) => {
@@ -31,6 +29,43 @@ function getBrazilDateParts() {
     date: `${map.year}-${map.month}-${map.day}`,
     weekday: map.weekday,
   };
+}
+
+function getBrazilWeekKey(date = new Date()) {
+  const brazilDateString = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
+
+  const localDate = new Date(`${brazilDateString}T00:00:00`);
+
+  const day = localDate.getDay();
+  const diffToMonday = day === 0 ? -6 : 1 - day;
+
+  const monday = new Date(localDate);
+  monday.setDate(localDate.getDate() + diffToMonday);
+
+  return monday.toISOString().slice(0, 10);
+}
+
+function extractTimestamp(line: string): Date | null {
+  const match = line.match(/^(\d{4}-\d{2}-\d{2}T[\d:.]+Z)/);
+  if (!match) return null;
+
+  const date = new Date(match[1]);
+  if (Number.isNaN(date.getTime())) return null;
+
+  return date;
+}
+
+function isTodayInBrazil(eventDate: Date) {
+  return getBrazilDateParts(eventDate).date === getBrazilDateParts().date;
+}
+
+function isThisWeekInBrazil(eventDate: Date) {
+  return getBrazilWeekKey(eventDate) === getBrazilWeekKey();
 }
 
 function eventId(fileName: string, lineNumber: number, line: string) {
@@ -46,24 +81,33 @@ function ensurePlayer(obj: Record<string, PlayerStats>, name: string) {
   }
 }
 
-function addKill(state: AppState, killer: string, victim: string) {
+function addKill(
+  state: AppState,
+  killer: string,
+  victim: string,
+  eventDate: Date | null,
+) {
   ensurePlayer(state.players, killer);
   ensurePlayer(state.players, victim);
 
   state.players[killer].kills += 1;
   state.players[victim].deaths += 1;
 
-  ensurePlayer(state.dailyPlayers, killer);
-  ensurePlayer(state.dailyPlayers, victim);
+  if (eventDate && isTodayInBrazil(eventDate)) {
+    ensurePlayer(state.dailyPlayers, killer);
+    ensurePlayer(state.dailyPlayers, victim);
 
-  state.dailyPlayers[killer].kills += 1;
-  state.dailyPlayers[victim].deaths += 1;
+    state.dailyPlayers[killer].kills += 1;
+    state.dailyPlayers[victim].deaths += 1;
+  }
 
-  ensurePlayer(state.weeklyPlayers, killer);
-  ensurePlayer(state.weeklyPlayers, victim);
+  if (eventDate && isThisWeekInBrazil(eventDate)) {
+    ensurePlayer(state.weeklyPlayers, killer);
+    ensurePlayer(state.weeklyPlayers, victim);
 
-  state.weeklyPlayers[killer].kills += 1;
-  state.weeklyPlayers[victim].deaths += 1;
+    state.weeklyPlayers[killer].kills += 1;
+    state.weeklyPlayers[victim].deaths += 1;
+  }
 }
 
 function markOnline(state: AppState, player: string) {
@@ -90,7 +134,8 @@ function cleanupOnlinePlayers(state: AppState) {
 }
 
 function applyResets(state: AppState) {
-  const { date: today, weekday } = getBrazilDateParts();
+  const { date: today } = getBrazilDateParts();
+  const currentWeek = getBrazilWeekKey();
 
   if (state.lastDailyReset !== today) {
     console.log("🌅 reset diário");
@@ -98,10 +143,10 @@ function applyResets(state: AppState) {
     state.lastDailyReset = today;
   }
 
-  if (weekday === "seg." && state.lastWeeklyReset !== today) {
+  if (state.lastWeeklyReset !== currentWeek) {
     console.log("📆 reset semanal");
     state.weeklyPlayers = {};
-    state.lastWeeklyReset = today;
+    state.lastWeeklyReset = currentWeek;
   }
 }
 
@@ -143,6 +188,8 @@ function processFile(filePath: string, state: AppState) {
   console.log(`📍 processando de: ${start}`);
 
   let newKills = 0;
+  let ignoredDailyKills = 0;
+  let ignoredWeeklyKills = 0;
   let newConnections = 0;
   let newDisconnections = 0;
 
@@ -158,12 +205,18 @@ function processFile(filePath: string, state: AppState) {
       continue;
     }
 
+    const eventDate = extractTimestamp(line);
+
     const killMatch = line.match(KILL_REGEX);
     if (killMatch) {
       const victim = killMatch[1];
       const killer = killMatch[2];
 
-      addKill(state, killer, victim);
+      addKill(state, killer, victim, eventDate);
+
+      if (eventDate && !isTodayInBrazil(eventDate)) ignoredDailyKills++;
+      if (eventDate && !isThisWeekInBrazil(eventDate)) ignoredWeeklyKills++;
+
       state.recentEventIds.push(id);
       dedupe.add(id);
 
@@ -209,6 +262,12 @@ function processFile(filePath: string, state: AppState) {
   state.recentEventIds = state.recentEventIds.slice(-10000);
 
   console.log(`🎯 novas kills: ${newKills}`);
+  console.log(
+    `🌅 kills ignoradas no diário por data antiga: ${ignoredDailyKills}`,
+  );
+  console.log(
+    `📆 kills ignoradas no semanal por semana antiga: ${ignoredWeeklyKills}`,
+  );
   console.log(`🟢 conexões: ${newConnections}`);
   console.log(`🔴 desconexões: ${newDisconnections}`);
 }
