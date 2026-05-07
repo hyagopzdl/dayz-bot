@@ -135,34 +135,77 @@ export async function startDiscordBot() {
       return `${days} days ago`;
     }
 
+    function getNextDailyResetTimestamp() {
+      const now = new Date();
+      const next = new Date(now);
+
+      next.setUTCHours(3, 0, 0, 0);
+
+      if (next.getTime() <= now.getTime()) {
+        next.setUTCDate(next.getUTCDate() + 1);
+      }
+
+      return Math.floor(next.getTime() / 1000);
+    }
+
+    function getNextWeeklyResetTimestamp() {
+      const now = new Date();
+      const next = new Date(now);
+
+      next.setUTCHours(3, 0, 0, 0);
+
+      const currentDay = next.getUTCDay();
+      const daysUntilMonday = currentDay === 1 ? 7 : (8 - currentDay) % 7;
+
+      next.setUTCDate(next.getUTCDate() + daysUntilMonday);
+
+      return Math.floor(next.getTime() / 1000);
+    }
+
+    function getDailyResetTime() {
+      const ts = getNextDailyResetTimestamp();
+      return `Resets <t:${ts}:R> • <t:${ts}:t>`;
+    }
+
+    function getWeeklyResetTime() {
+      const ts = getNextWeeklyResetTimestamp();
+      return `Resets <t:${ts}:R> • <t:${ts}:F>`;
+    }
+
     function buildHeader(emoji: string, title: string, subtitle: string) {
-      return `${emoji} **${title}**\n${subtitle}\n\n`;
+      return `\u200B\n${emoji} **${title}**\n${subtitle}\n\u200B\n`;
     }
 
     function buildFooter() {
       const timestamp = Math.floor(Date.now() / 1000);
-
       return `\n\n⏱️ Updated <t:${timestamp}:R>`;
     }
 
-    function createBaseEmbed(color: string) {
-      return new EmbedBuilder().setColor(color).setAuthor({
-        name: BOT_NAME,
-        iconURL: BOT_ICON,
-      });
+    function createBaseEmbed(color: string, withAuthor = true) {
+      const embed = new EmbedBuilder().setColor(color);
+
+      if (withAuthor) {
+        embed.setAuthor({
+          name: BOT_NAME,
+          iconURL: BOT_ICON,
+        });
+      }
+
+      return embed;
     }
 
     function resetRankings() {
       const state = getState();
+      const today = new Date().toISOString().slice(0, 10);
 
       state.players = {};
       state.dailyPlayers = {};
       state.weeklyPlayers = {};
       state.killFeedEvents = [];
 
-      state.globalStartedAt = new Date().toISOString().slice(0, 10);
-      state.dailyStartedAt = new Date().toISOString().slice(0, 10);
-      state.weeklyStartedAt = new Date().toISOString().slice(0, 10);
+      state.globalStartedAt = today;
+      state.dailyStartedAt = today;
+      state.weeklyStartedAt = today;
 
       state.files = state.files || {};
       state.recentEventIds = state.recentEventIds || [];
@@ -194,9 +237,10 @@ export async function startDiscordBot() {
         emoji: string;
         title: string;
         subtitle: string;
+        color: string;
       },
     ) {
-      const embed = createBaseEmbed("#FF00AA");
+      const embed = createBaseEmbed(options.color);
 
       if (!players.length) {
         embed.setDescription(
@@ -254,7 +298,6 @@ export async function startDiscordBot() {
 
     function formatOnlineListEmbed(state: any) {
       const players = getOnlinePlayerNames(state);
-
       const embed = createBaseEmbed("#00FF88");
 
       if (!players.length) {
@@ -328,7 +371,7 @@ export async function startDiscordBot() {
       const victim = event.victim || "Unknown";
       const weapon = formatWeapon(event.weapon);
 
-      return createBaseEmbed("#FF3333").setDescription(
+      return createBaseEmbed("#FF3333", false).setDescription(
         `**${killer}** \`[${weapon}]\` killed 💀 **${victim}**`,
       );
     }
@@ -499,6 +542,15 @@ export async function startDiscordBot() {
       try {
         const state = getState();
 
+        if (!state.globalStartedAt) {
+          state.globalStartedAt =
+            state.lastDailyReset ||
+            state.lastWeeklyReset ||
+            new Date().toISOString().slice(0, 10);
+
+          saveState(state);
+        }
+
         const globalPlayers = mapPlayers(state.players);
         const dailyPlayers = mapPlayers(state.dailyPlayers);
         const weeklyPlayers = mapPlayers(state.weeklyPlayers);
@@ -512,6 +564,7 @@ export async function startDiscordBot() {
             subtitle: `Count started on ${formatDate(
               state.globalStartedAt,
             )} (${getRelativeDays(state.globalStartedAt)})`,
+            color: "#FFD700",
           }),
         );
 
@@ -521,9 +574,8 @@ export async function startDiscordBot() {
           formatLeaderboardEmbed(dailyPlayers, {
             emoji: "🌅",
             title: "Daily Ranking",
-            subtitle: `Count started on ${formatDate(
-              state.lastDailyReset,
-            )} (${getRelativeDays(state.lastDailyReset)})`,
+            subtitle: getDailyResetTime(),
+            color: "#FF00AA",
           }),
         );
 
@@ -533,9 +585,8 @@ export async function startDiscordBot() {
           formatLeaderboardEmbed(weeklyPlayers, {
             emoji: "📆",
             title: "Weekly Ranking",
-            subtitle: `Count started on ${formatDate(
-              state.lastWeeklyReset,
-            )} (${getRelativeDays(state.lastWeeklyReset)})`,
+            subtitle: getWeeklyResetTime(),
+            color: "#0099FF",
           }),
         );
 

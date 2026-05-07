@@ -7,6 +7,11 @@ const KILL_REGEX = /Player "([^"]+)".*?killed by Player "([^"]+)"/;
 const CONNECT_REGEX = /Player "([^"]+)".*?is connected/;
 const DISCONNECT_REGEX = /Player "([^"]+)".*?has been disconnected/;
 
+type AdmEventTime = {
+  dateString: string;
+  date: Date;
+};
+
 function getBrazilDateParts(date = new Date()) {
   const formatter = new Intl.DateTimeFormat("pt-BR", {
     timeZone: "America/Sao_Paulo",
@@ -29,23 +34,25 @@ function getBrazilDateParts(date = new Date()) {
   };
 }
 
-function getBrazilWeekKey(date = new Date()) {
-  const brazilDateString = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Sao_Paulo",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(date);
+function getWeekKeyFromDateString(dateString: string) {
+  const [year, month, day] = dateString.split("-").map(Number);
+  const localDate = new Date(year, month - 1, day, 0, 0, 0);
 
-  const localDate = new Date(`${brazilDateString}T00:00:00`);
-
-  const day = localDate.getDay();
-  const diffToMonday = day === 0 ? -6 : 1 - day;
+  const weekDay = localDate.getDay();
+  const diffToMonday = weekDay === 0 ? -6 : 1 - weekDay;
 
   const monday = new Date(localDate);
   monday.setDate(localDate.getDate() + diffToMonday);
 
-  return monday.toISOString().slice(0, 10);
+  const mondayYear = monday.getFullYear();
+  const mondayMonth = String(monday.getMonth() + 1).padStart(2, "0");
+  const mondayDay = String(monday.getDate()).padStart(2, "0");
+
+  return `${mondayYear}-${mondayMonth}-${mondayDay}`;
+}
+
+function getBrazilWeekKey(date = new Date()) {
+  return getWeekKeyFromDateString(getBrazilDateParts(date).date);
 }
 
 function extractBaseDateFromLog(lines: string[]): string | null {
@@ -73,31 +80,44 @@ function extractLineSeconds(line: string): number | null {
   return hours * 3600 + minutes * 60 + seconds;
 }
 
-function createUTCDateFromBaseAndSeconds(baseDate: string, seconds: number) {
+function addDaysToDateString(baseDate: string, days: number) {
   const [year, month, day] = baseDate.split("-").map(Number);
+  const date = new Date(year, month - 1, day, 0, 0, 0);
+
+  date.setDate(date.getDate() + days);
+
+  const nextYear = date.getFullYear();
+  const nextMonth = String(date.getMonth() + 1).padStart(2, "0");
+  const nextDay = String(date.getDate()).padStart(2, "0");
+
+  return `${nextYear}-${nextMonth}-${nextDay}`;
+}
+
+function createAdmEventTime(
+  baseDate: string,
+  dayOffset: number,
+  seconds: number,
+): AdmEventTime {
+  const dateString = addDaysToDateString(baseDate, dayOffset);
+
+  const [year, month, day] = dateString.split("-").map(Number);
 
   const hours = Math.floor(seconds / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
   const secs = seconds % 60;
 
-  return new Date(year, month - 1, day, hours, minutes, secs);
+  return {
+    dateString,
+    date: new Date(year, month - 1, day, hours, minutes, secs),
+  };
 }
 
-function addDaysToDateString(baseDate: string, days: number) {
-  const [year, month, day] = baseDate.split("-").map(Number);
-  const date = new Date(Date.UTC(year, month - 1, day, 0, 0, 0));
-
-  date.setUTCDate(date.getUTCDate() + days);
-
-  return date.toISOString().slice(0, 10);
+function isTodayInBrazil(eventTime: AdmEventTime) {
+  return eventTime.dateString === getBrazilDateParts().date;
 }
 
-function isTodayInBrazil(eventDate: Date) {
-  return getBrazilDateParts(eventDate).date === getBrazilDateParts().date;
-}
-
-function isThisWeekInBrazil(eventDate: Date) {
-  return getBrazilWeekKey(eventDate) === getBrazilWeekKey();
+function isThisWeekInBrazil(eventTime: AdmEventTime) {
+  return getWeekKeyFromDateString(eventTime.dateString) === getBrazilWeekKey();
 }
 
 function eventId(fileName: string, lineNumber: number, line: string) {
@@ -133,7 +153,7 @@ function addKillFeedEvent(
   killer: string,
   victim: string,
   weapon: string,
-  eventDate: Date | null,
+  eventTime: AdmEventTime | null,
 ) {
   state.killFeedEvents = state.killFeedEvents || [];
 
@@ -141,7 +161,7 @@ function addKillFeedEvent(
     killer,
     victim,
     weapon,
-    at: (eventDate || new Date()).toISOString(),
+    at: (eventTime?.date || new Date()).toISOString(),
   });
 
   state.killFeedEvents = state.killFeedEvents.slice(-100);
@@ -152,7 +172,7 @@ function addKill(
   killer: string,
   victim: string,
   weapon: string,
-  eventDate: Date | null,
+  eventTime: AdmEventTime | null,
 ) {
   ensurePlayer(state.players, killer);
   ensurePlayer(state.players, victim);
@@ -160,7 +180,7 @@ function addKill(
   state.players[killer].kills += 1;
   state.players[victim].deaths += 1;
 
-  if (eventDate && isTodayInBrazil(eventDate)) {
+  if (eventTime && isTodayInBrazil(eventTime)) {
     ensurePlayer(state.dailyPlayers, killer);
     ensurePlayer(state.dailyPlayers, victim);
 
@@ -168,7 +188,7 @@ function addKill(
     state.dailyPlayers[victim].deaths += 1;
   }
 
-  if (eventDate && isThisWeekInBrazil(eventDate)) {
+  if (eventTime && isThisWeekInBrazil(eventTime)) {
     ensurePlayer(state.weeklyPlayers, killer);
     ensurePlayer(state.weeklyPlayers, victim);
 
@@ -176,7 +196,7 @@ function addKill(
     state.weeklyPlayers[victim].deaths += 1;
   }
 
-  addKillFeedEvent(state, killer, victim, weapon, eventDate);
+  addKillFeedEvent(state, killer, victim, weapon, eventTime);
 }
 
 function markOnline(state: AppState, player: string) {
@@ -296,12 +316,9 @@ function processFile(filePath: string, state: AppState) {
 
     previousSeconds = lineSeconds ?? previousSeconds;
 
-    const eventDate =
+    const eventTime =
       baseDate && lineSeconds !== null
-        ? createUTCDateFromBaseAndSeconds(
-            addDaysToDateString(baseDate, currentDayOffset),
-            lineSeconds,
-          )
+        ? createAdmEventTime(baseDate, currentDayOffset, lineSeconds)
         : null;
 
     const id = eventId(fileName, i, line);
@@ -316,11 +333,11 @@ function processFile(filePath: string, state: AppState) {
       const killer = killMatch[2];
       const weapon = extractWeapon(line);
 
-      addKill(state, killer, victim, weapon, eventDate);
+      addKill(state, killer, victim, weapon, eventTime);
 
-      if (!eventDate) killsWithoutDate++;
-      if (eventDate && !isTodayInBrazil(eventDate)) ignoredDailyKills++;
-      if (eventDate && !isThisWeekInBrazil(eventDate)) ignoredWeeklyKills++;
+      if (!eventTime) killsWithoutDate++;
+      if (eventTime && !isTodayInBrazil(eventTime)) ignoredDailyKills++;
+      if (eventTime && !isThisWeekInBrazil(eventTime)) ignoredWeeklyKills++;
 
       state.recentEventIds.push(id);
       dedupe.add(id);
