@@ -18,7 +18,9 @@ const MESSAGE_FILE_GLOBAL = "message_global.json";
 const MESSAGE_FILE_DAILY = "message_daily.json";
 const MESSAGE_FILE_WEEKLY = "message_weekly.json";
 const MESSAGE_FILE_ONLINE_LIST = "message_online_list.json";
-const MESSAGE_FILE_KILLFEED = "message_killfeed.json";
+
+const KILLFEED_PAGE_SIZE = 10;
+const KILLFEED_MESSAGE_PREFIX = "message_killfeed_page_";
 
 let discordLoopRunning = false;
 
@@ -223,54 +225,126 @@ export async function startDiscordBot() {
       return embed;
     }
 
-    function formatKillFeedEmbed(state: any) {
-      const timestamp = Math.floor(Date.now() / 1000);
+    function chunkArray<T>(items: T[], size: number): T[][] {
+      const chunks: T[][] = [];
 
-      // Mostra TODAS as kills acumuladas desde a última limpeza.
-      // O buffer é limpo após o Discord atualizar o canal.
-      const events = state.killFeedEvents || [];
+      for (let i = 0; i < items.length; i += size) {
+        chunks.push(items.slice(i, i + size));
+      }
 
-      const embed = new EmbedBuilder()
+      return chunks;
+    }
+
+    function killfeedPageFile(pageIndex: number) {
+      return `${KILLFEED_MESSAGE_PREFIX}${pageIndex}.json`;
+    }
+
+    function formatWeapon(weapon: string | undefined) {
+      const clean = weapon?.trim();
+
+      if (!clean || clean.toLowerCase() === "unknown") {
+        return "Unknown";
+      }
+
+      return clean;
+    }
+
+    function formatKillFeedEmbed(event: any) {
+      const killer = event.killer || "Unknown";
+      const victim = event.victim || "Unknown";
+      const weapon = formatWeapon(event.weapon);
+
+      return new EmbedBuilder()
         .setColor("#FF3333")
-        .setTitle(`🔫 KILLFEED RECENTE (${events.length})`);
+        .setDescription(
+          `**${killer}** \`[${weapon}]\` killed 💀 **${victim}**`,
+        );
+    }
 
-      if (!events.length) {
-        embed.setDescription(
-          `Nenhuma kill nova desde a última atualização.\n\n⏱️ Atualizado <t:${timestamp}:R>`,
+    async function sendOrEdit(channel: any, file: string, embedOrEmbeds: any) {
+      const embeds = Array.isArray(embedOrEmbeds)
+        ? embedOrEmbeds
+        : [embedOrEmbeds];
+
+      let messageId: string | null = null;
+
+      if (fs.existsSync(file)) {
+        try {
+          messageId = JSON.parse(fs.readFileSync(file, "utf-8")).id;
+        } catch {
+          messageId = null;
+        }
+      }
+
+      let message: any = null;
+
+      if (messageId) {
+        try {
+          message = await channel.messages.fetch(messageId);
+        } catch {
+          message = null;
+        }
+      }
+
+      if (message) {
+        await message.edit({ embeds });
+        console.log(`✏️ mensagem editada: ${file}`);
+        return;
+      }
+
+      const newMsg = await channel.send({ embeds });
+      fs.writeFileSync(file, JSON.stringify({ id: newMsg.id }, null, 2));
+
+      console.log(`📨 nova mensagem enviada: ${file}`);
+    }
+
+    async function deleteMessageByFile(channel: any, file: string) {
+      if (!fs.existsSync(file)) return;
+
+      try {
+        const messageId = JSON.parse(fs.readFileSync(file, "utf-8")).id;
+
+        if (messageId) {
+          try {
+            const message = await channel.messages.fetch(messageId);
+            await message.delete();
+            console.log(`🗑️ mensagem removida: ${file}`);
+          } catch {
+            console.log(`⚠️ mensagem extra não encontrada no Discord: ${file}`);
+          }
+        }
+      } catch {
+        // ignora arquivo inválido
+      }
+
+      try {
+        fs.unlinkSync(file);
+      } catch {
+        // ignora erro ao remover arquivo local
+      }
+    }
+
+    async function deleteExtraKillFeedPages(channel: any, neededPages: number) {
+      const files = fs
+        .readdirSync(process.cwd())
+        .filter(
+          (file) =>
+            file.startsWith(KILLFEED_MESSAGE_PREFIX) && file.endsWith(".json"),
         );
 
-        return embed;
+      for (const file of files) {
+        const match = file.match(
+          new RegExp(`^${KILLFEED_MESSAGE_PREFIX}(\\d+)\\.json$`),
+        );
+
+        if (!match) continue;
+
+        const pageIndex = Number(match[1]);
+
+        if (pageIndex >= neededPages) {
+          await deleteMessageByFile(channel, file);
+        }
       }
-
-      const lines: string[] = [];
-      let usedChars = 0;
-
-      // Mostra as mais recentes primeiro
-      const reversedEvents = [...events].reverse();
-
-      for (const event of reversedEvents) {
-        const line = `• **${event.killer}** matou **${event.victim}**`;
-
-        // margem de segurança do Discord
-        if (usedChars + line.length > 3500) break;
-
-        lines.push(line);
-        usedChars += line.length;
-      }
-
-      const hidden = reversedEvents.length - lines.length;
-
-      let description = lines.join("\n");
-
-      if (hidden > 0) {
-        description += `\n\n+${hidden} kills não exibidas por limite do Discord.`;
-      }
-
-      description += `\n\n⏱️ Atualizado <t:${timestamp}:R>`;
-
-      embed.setDescription(description);
-
-      return embed;
     }
 
     async function updateOnlineCount() {
@@ -305,39 +379,6 @@ export async function startDiscordBot() {
       }
     }
 
-    async function sendOrEdit(channel: any, file: string, embed: any) {
-      let messageId: string | null = null;
-
-      if (fs.existsSync(file)) {
-        try {
-          messageId = JSON.parse(fs.readFileSync(file, "utf-8")).id;
-        } catch {
-          messageId = null;
-        }
-      }
-
-      let message: any = null;
-
-      if (messageId) {
-        try {
-          message = await channel.messages.fetch(messageId);
-        } catch {
-          message = null;
-        }
-      }
-
-      if (message) {
-        await message.edit({ embeds: [embed] });
-        console.log(`✏️ mensagem editada: ${file}`);
-        return;
-      }
-
-      const newMsg = await channel.send({ embeds: [embed] });
-      fs.writeFileSync(file, JSON.stringify({ id: newMsg.id }, null, 2));
-
-      console.log(`📨 nova mensagem enviada: ${file}`);
-    }
-
     async function updateOnlineList(state: any) {
       if (!onlineListChannel) {
         console.log("⚠️ DISCORD_ONLINE_LIST_CHANNEL_ID não configurado");
@@ -357,17 +398,35 @@ export async function startDiscordBot() {
         return;
       }
 
-      await sendOrEdit(
-        killfeedChannel,
-        MESSAGE_FILE_KILLFEED,
-        formatKillFeedEmbed(state),
-      );
+      const events = [...(state.killFeedEvents || [])].reverse();
+
+      if (!events.length) {
+        const emptyEmbed = new EmbedBuilder()
+          .setColor("#FF3333")
+          .setDescription("Nenhuma kill nova desde a última atualização.");
+
+        await sendOrEdit(killfeedChannel, killfeedPageFile(0), [emptyEmbed]);
+        await deleteExtraKillFeedPages(killfeedChannel, 1);
+        return;
+      }
+
+      const pages = chunkArray(events, KILLFEED_PAGE_SIZE);
+
+      for (let pageIndex = 0; pageIndex < pages.length; pageIndex++) {
+        const embeds = pages[pageIndex].map(formatKillFeedEmbed);
+
+        await sendOrEdit(killfeedChannel, killfeedPageFile(pageIndex), embeds);
+      }
+
+      await deleteExtraKillFeedPages(killfeedChannel, pages.length);
 
       const freshState = getState();
       freshState.killFeedEvents = [];
       saveState(freshState);
 
-      console.log("🧹 killfeed limpo após atualização");
+      console.log(
+        `🧹 killfeed limpo após atualização (${events.length} eventos em ${pages.length} página(s))`,
+      );
     }
 
     async function updateLeaderboard() {

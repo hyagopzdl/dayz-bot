@@ -112,10 +112,26 @@ function ensurePlayer(obj: Record<string, PlayerStats>, name: string) {
   }
 }
 
+function extractWeapon(line: string): string {
+  const lower = line.toLowerCase();
+
+  if (lower.includes("with ")) {
+    const match = line.match(/\bwith\s+(.+?)(?:\s+from|\s+\(|$)/i);
+    if (match?.[1]) return match[1].trim();
+  }
+
+  if (lower.includes("explosion")) return "Explosion";
+  if (lower.includes("fall damage")) return "Fall Damage";
+  if (lower.includes("vehicle")) return "Vehicle";
+
+  return "Unknown";
+}
+
 function addKillFeedEvent(
   state: AppState,
   killer: string,
   victim: string,
+  weapon: string,
   eventDate: Date | null,
 ) {
   state.killFeedEvents = state.killFeedEvents || [];
@@ -123,6 +139,7 @@ function addKillFeedEvent(
   state.killFeedEvents.push({
     killer,
     victim,
+    weapon,
     at: (eventDate || new Date()).toISOString(),
   });
 
@@ -133,6 +150,7 @@ function addKill(
   state: AppState,
   killer: string,
   victim: string,
+  weapon: string,
   eventDate: Date | null,
 ) {
   ensurePlayer(state.players, killer);
@@ -157,7 +175,7 @@ function addKill(
     state.weeklyPlayers[victim].deaths += 1;
   }
 
-  addKillFeedEvent(state, killer, victim, eventDate);
+  addKillFeedEvent(state, killer, victim, weapon, eventDate);
 }
 
 function markOnline(state: AppState, player: string) {
@@ -295,8 +313,9 @@ function processFile(filePath: string, state: AppState) {
     if (killMatch) {
       const victim = killMatch[1];
       const killer = killMatch[2];
+      const weapon = extractWeapon(line);
 
-      addKill(state, killer, victim, eventDate);
+      addKill(state, killer, victim, weapon, eventDate);
 
       if (!eventDate) killsWithoutDate++;
       if (eventDate && !isTodayInBrazil(eventDate)) ignoredDailyKills++;
@@ -306,7 +325,7 @@ function processFile(filePath: string, state: AppState) {
       dedupe.add(id);
 
       newKills++;
-      console.log(`🔫 ${killer} matou ${victim}`);
+      console.log(`🔫 ${killer} matou ${victim} com ${weapon}`);
       continue;
     }
 
