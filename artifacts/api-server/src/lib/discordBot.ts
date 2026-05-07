@@ -25,7 +25,7 @@ const KILLFEED_MESSAGE_PREFIX = "message_killfeed_page_";
 const BOT_NAME = "PZ's DayZ Bot";
 
 const BOT_ICON =
-  "https://media.discordapp.net/attachments/1501806293583659048/1501806438178099211/pzbot.png?ex=69fd69bd&is=69fc183d&hm=470c5555d05e0657d935ca7cba8d701475c15185ebcd6e6c549c9b945787ee6b&=&format=webp&quality=lossless&width=1526&height=1526";
+  "https://media.discordapp.net/attachments/1501806293583659048/1501832841703723088/pz-avatar.png?ex=69fd8254&is=69fc30d4&hm=2075bd7c316893afbf66950ab1373fc5d5a076662bc5ad1033b6763f6689b63c&=&format=webp&quality=lossless&width=1526&height=1526";
 
 let discordLoopRunning = false;
 
