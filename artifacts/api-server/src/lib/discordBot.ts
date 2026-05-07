@@ -19,8 +19,13 @@ const MESSAGE_FILE_DAILY = "message_daily.json";
 const MESSAGE_FILE_WEEKLY = "message_weekly.json";
 const MESSAGE_FILE_ONLINE_LIST = "message_online_list.json";
 
-const KILLFEED_PAGE_SIZE = 10;
+const KILLFEED_PAGE_SIZE = 9;
 const KILLFEED_MESSAGE_PREFIX = "message_killfeed_page_";
+
+const BOT_NAME = "PZ's DayZ Bot";
+
+const BOT_ICON =
+  "https://media.discordapp.net/attachments/1501806293583659048/1501806438178099211/pzbot.png?ex=69fd69bd&is=69fc183d&hm=470c5555d05e0657d935ca7cba8d701475c15185ebcd6e6c549c9b945787ee6b&=&format=webp&quality=lossless&width=1526&height=1526";
 
 let discordLoopRunning = false;
 
@@ -101,6 +106,52 @@ export async function startDiscordBot() {
       console.log("💾 state salvo pelo Discord");
     }
 
+    function formatDate(dateString?: string) {
+      if (!dateString) return "Unknown";
+
+      const date = new Date(`${dateString}T00:00:00`);
+
+      return new Intl.DateTimeFormat("en-US", {
+        month: "long",
+        day: "numeric",
+        year: "numeric",
+      }).format(date);
+    }
+
+    function getRelativeDays(dateString?: string) {
+      if (!dateString) return "Unknown";
+
+      const start = new Date(`${dateString}T00:00:00`).getTime();
+      const now = Date.now();
+
+      const days = Math.max(
+        0,
+        Math.floor((now - start) / (1000 * 60 * 60 * 24)),
+      );
+
+      if (days === 0) return "today";
+      if (days === 1) return "1 day ago";
+
+      return `${days} days ago`;
+    }
+
+    function buildHeader(emoji: string, title: string, subtitle: string) {
+      return `${emoji} **${title}**\n${subtitle}\n\n`;
+    }
+
+    function buildFooter() {
+      const timestamp = Math.floor(Date.now() / 1000);
+
+      return `\n\n⏱️ Updated <t:${timestamp}:R>`;
+    }
+
+    function createBaseEmbed(color: string) {
+      return new EmbedBuilder().setColor(color).setAuthor({
+        name: BOT_NAME,
+        iconURL: BOT_ICON,
+      });
+    }
+
     function resetRankings() {
       const state = getState();
 
@@ -109,28 +160,13 @@ export async function startDiscordBot() {
       state.weeklyPlayers = {};
       state.killFeedEvents = [];
 
+      state.globalStartedAt = new Date().toISOString().slice(0, 10);
+      state.dailyStartedAt = new Date().toISOString().slice(0, 10);
+      state.weeklyStartedAt = new Date().toISOString().slice(0, 10);
+
       state.files = state.files || {};
       state.recentEventIds = state.recentEventIds || [];
       state.onlinePlayers = state.onlinePlayers || {};
-
-      const now = new Date();
-
-      const formatter = new Intl.DateTimeFormat("pt-BR", {
-        timeZone: "America/Sao_Paulo",
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
-      });
-
-      const parts = formatter.formatToParts(now);
-      const map: Record<string, string> = {};
-
-      parts.forEach((p) => {
-        map[p.type] = p.value;
-      });
-
-      state.lastDailyReset = `${map.year}-${map.month}-${map.day}`;
-      state.lastWeeklyReset = state.lastWeeklyReset || "";
 
       saveState(state);
     }
@@ -152,14 +188,23 @@ export async function startDiscordBot() {
       );
     }
 
-    function formatLeaderboardEmbed(players: any[], title: string) {
-      const embed = new EmbedBuilder().setColor("#FF00AA");
-      const timestamp = Math.floor(Date.now() / 1000);
+    function formatLeaderboardEmbed(
+      players: any[],
+      options: {
+        emoji: string;
+        title: string;
+        subtitle: string;
+      },
+    ) {
+      const embed = createBaseEmbed("#FF00AA");
 
       if (!players.length) {
         embed.setDescription(
-          `\n${title}\n\nSem dados ainda...\n\n⏱️ Atualizado <t:${timestamp}:R>`,
+          buildHeader(options.emoji, options.title, options.subtitle) +
+            `**No data available yet**\nStart playing and claim the top spot!` +
+            buildFooter(),
         );
+
         return embed;
       }
 
@@ -174,7 +219,11 @@ export async function startDiscordBot() {
 
       const KD_WIDTH = 8;
 
-      let description = `${title}\n\n`;
+      let description = buildHeader(
+        options.emoji,
+        options.title,
+        options.subtitle,
+      );
 
       players.slice(0, 10).forEach((p, i) => {
         const rank = getRank(i);
@@ -196,7 +245,7 @@ export async function startDiscordBot() {
         description += `${rank} \`${name}\` \`${kills}\` \`${kdFormatted}\`\n\n`;
       });
 
-      description += `⏱️ Atualizado <t:${timestamp}:R>`;
+      description += buildFooter();
 
       embed.setDescription(description);
 
@@ -205,22 +254,30 @@ export async function startDiscordBot() {
 
     function formatOnlineListEmbed(state: any) {
       const players = getOnlinePlayerNames(state);
-      const timestamp = Math.floor(Date.now() / 1000);
 
-      const embed = new EmbedBuilder()
-        .setColor("#00FF88")
-        .setTitle(`🟢 PLAYERS ONLINE (${players.length}/10)`);
+      const embed = createBaseEmbed("#00FF88");
 
       if (!players.length) {
         embed.setDescription(
-          `Nenhum jogador online no momento.\n\n⏱️ Atualizado <t:${timestamp}:R>`,
+          buildHeader("🟢", "Players Online", "Live server activity") +
+            `**No players online**\nThe server is currently quiet.` +
+            buildFooter(),
         );
+
         return embed;
       }
 
       const list = players.map((name) => `• ${name}`).join("\n");
 
-      embed.setDescription(`${list}\n\n⏱️ Atualizado <t:${timestamp}:R>`);
+      embed.setDescription(
+        buildHeader(
+          "🟢",
+          "Players Online",
+          `${players.length}/10 survivors currently connected`,
+        ) +
+          `${list}` +
+          buildFooter(),
+      );
 
       return embed;
     }
@@ -249,16 +306,31 @@ export async function startDiscordBot() {
       return clean;
     }
 
+    function createKillFeedHeaderEmbed(eventsCount: number) {
+      return createBaseEmbed("#FF3333").setDescription(
+        buildHeader(
+          "🔫",
+          "Kill Feed",
+          `${eventsCount} recent kill${eventsCount === 1 ? "" : "s"} detected`,
+        ) + `Tracking the latest PvP activity across the server.`,
+      );
+    }
+
+    function createKillFeedEmptyEmbed() {
+      return createBaseEmbed("#FF3333").setDescription(
+        buildHeader("🔫", "Kill Feed", "Live PvP activity") +
+          `**No recent kills**\nKill someone and keep the feed alive!`,
+      );
+    }
+
     function formatKillFeedEmbed(event: any) {
       const killer = event.killer || "Unknown";
       const victim = event.victim || "Unknown";
       const weapon = formatWeapon(event.weapon);
 
-      return new EmbedBuilder()
-        .setColor("#FF3333")
-        .setDescription(
-          `**${killer}** \`[${weapon}]\` killed 💀 **${victim}**`,
-        );
+      return createBaseEmbed("#FF3333").setDescription(
+        `**${killer}** \`[${weapon}]\` killed 💀 **${victim}**`,
+      );
     }
 
     async function sendOrEdit(channel: any, file: string, embedOrEmbeds: any) {
@@ -308,20 +380,13 @@ export async function startDiscordBot() {
           try {
             const message = await channel.messages.fetch(messageId);
             await message.delete();
-            console.log(`🗑️ mensagem removida: ${file}`);
-          } catch {
-            console.log(`⚠️ mensagem extra não encontrada no Discord: ${file}`);
-          }
+          } catch {}
         }
-      } catch {
-        // ignora arquivo inválido
-      }
+      } catch {}
 
       try {
         fs.unlinkSync(file);
-      } catch {
-        // ignora erro ao remover arquivo local
-      }
+      } catch {}
     }
 
     async function deleteExtraKillFeedPages(channel: any, neededPages: number) {
@@ -367,13 +432,10 @@ export async function startDiscordBot() {
         }
 
         if ((category as any).name === newName) {
-          console.log(`🟢 Categoria já está atualizada: ${newName}`);
           return;
         }
 
         await (category as any).setName(newName);
-
-        console.log(`🟢 Categoria atualizada: ${newName}`);
       } catch (err) {
         console.error("❌ erro ao atualizar categoria online", err);
       }
@@ -381,7 +443,6 @@ export async function startDiscordBot() {
 
     async function updateOnlineList(state: any) {
       if (!onlineListChannel) {
-        console.log("⚠️ DISCORD_ONLINE_LIST_CHANNEL_ID não configurado");
         return;
       }
 
@@ -394,19 +455,18 @@ export async function startDiscordBot() {
 
     async function updateKillFeed(state: any) {
       if (!killfeedChannel) {
-        console.log("⚠️ DISCORD_KILLFEED_CHANNEL_ID não configurado");
         return;
       }
 
       const events = [...(state.killFeedEvents || [])].reverse();
 
       if (!events.length) {
-        const emptyEmbed = new EmbedBuilder()
-          .setColor("#FF3333")
-          .setDescription("Nenhuma kill nova desde a última atualização.");
+        await sendOrEdit(killfeedChannel, killfeedPageFile(0), [
+          createKillFeedEmptyEmbed(),
+        ]);
 
-        await sendOrEdit(killfeedChannel, killfeedPageFile(0), [emptyEmbed]);
         await deleteExtraKillFeedPages(killfeedChannel, 1);
+
         return;
       }
 
@@ -414,6 +474,10 @@ export async function startDiscordBot() {
 
       for (let pageIndex = 0; pageIndex < pages.length; pageIndex++) {
         const embeds = pages[pageIndex].map(formatKillFeedEmbed);
+
+        if (pageIndex === 0) {
+          embeds.unshift(createKillFeedHeaderEmbed(events.length));
+        }
 
         await sendOrEdit(killfeedChannel, killfeedPageFile(pageIndex), embeds);
       }
@@ -423,23 +487,16 @@ export async function startDiscordBot() {
       const freshState = getState();
       freshState.killFeedEvents = [];
       saveState(freshState);
-
-      console.log(
-        `🧹 killfeed limpo após atualização (${events.length} eventos em ${pages.length} página(s))`,
-      );
     }
 
     async function updateLeaderboard() {
       if (discordLoopRunning) {
-        console.log("⏭️ Discord update ignorado: anterior ainda rodando");
         return;
       }
 
       discordLoopRunning = true;
 
       try {
-        console.log("🔄 Discord tick");
-
         const state = getState();
 
         const globalPlayers = mapPlayers(state.players);
@@ -449,29 +506,42 @@ export async function startDiscordBot() {
         await sendOrEdit(
           globalChannel,
           MESSAGE_FILE_GLOBAL,
-          formatLeaderboardEmbed(globalPlayers, "🏆 **LEADERBOARD GERAL** 🏆"),
+          formatLeaderboardEmbed(globalPlayers, {
+            emoji: "🏆",
+            title: "General Ranking",
+            subtitle: `Count started on ${formatDate(
+              state.globalStartedAt,
+            )} (${getRelativeDays(state.globalStartedAt)})`,
+          }),
         );
 
         await sendOrEdit(
           dailyChannel,
           MESSAGE_FILE_DAILY,
-          formatLeaderboardEmbed(dailyPlayers, "🌅 **LEADERBOARD DO DIA** 🌅"),
+          formatLeaderboardEmbed(dailyPlayers, {
+            emoji: "🌅",
+            title: "Daily Ranking",
+            subtitle: `Count started on ${formatDate(
+              state.lastDailyReset,
+            )} (${getRelativeDays(state.lastDailyReset)})`,
+          }),
         );
 
         await sendOrEdit(
           weeklyChannel,
           MESSAGE_FILE_WEEKLY,
-          formatLeaderboardEmbed(
-            weeklyPlayers,
-            "📆 **LEADERBOARD SEMANAL** 📆",
-          ),
+          formatLeaderboardEmbed(weeklyPlayers, {
+            emoji: "📆",
+            title: "Weekly Ranking",
+            subtitle: `Count started on ${formatDate(
+              state.lastWeeklyReset,
+            )} (${getRelativeDays(state.lastWeeklyReset)})`,
+          }),
         );
 
         await updateOnlineCount();
         await updateOnlineList(state);
         await updateKillFeed(state);
-
-        console.log("🏆 leaderboards atualizados");
       } catch (err) {
         console.error("❌ erro ao atualizar leaderboard", err);
       } finally {
@@ -483,7 +553,7 @@ export async function startDiscordBot() {
       try {
         const command = {
           name: "reset-ranking",
-          description: "Zera todos os rankings sem reprocessar logs antigos.",
+          description: "Reset all rankings without reprocessing old logs.",
           defaultMemberPermissions:
             PermissionsBitField.Flags.Administrator.toString(),
           dmPermission: false,
@@ -493,11 +563,10 @@ export async function startDiscordBot() {
           const guild = await client.guilds.fetch(
             process.env.DISCORD_SERVER_ID,
           );
+
           await guild.commands.create(command);
-          console.log("✅ comando /reset-ranking registrado no servidor");
         } else {
           await client.application?.commands.create(command);
-          console.log("✅ comando /reset-ranking registrado globalmente");
         }
       } catch (err) {
         console.error("❌ erro registrando /reset-ranking:", err);
@@ -515,9 +584,10 @@ export async function startDiscordBot() {
           )
         ) {
           await interaction.reply({
-            content: "❌ Apenas administradores podem usar este comando.",
+            content: "❌ Only administrators can use this command.",
             ephemeral: true,
           });
+
           return;
         }
 
@@ -526,17 +596,15 @@ export async function startDiscordBot() {
         resetRankings();
         await updateLeaderboard();
 
-        await interaction.editReply(
-          "✅ Rankings zerados com sucesso. Os cursores dos logs foram mantidos para evitar reprocessamento antigo.",
-        );
+        await interaction.editReply("✅ Rankings successfully reset.");
       } catch (err) {
         console.error("❌ erro no /reset-ranking:", err);
 
         if (interaction.deferred || interaction.replied) {
-          await interaction.editReply("❌ Erro ao resetar rankings.");
+          await interaction.editReply("❌ Failed to reset rankings.");
         } else {
           await interaction.reply({
-            content: "❌ Erro ao resetar rankings.",
+            content: "❌ Failed to reset rankings.",
             ephemeral: true,
           });
         }
