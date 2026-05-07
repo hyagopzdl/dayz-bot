@@ -173,12 +173,13 @@ export async function startDiscordBot() {
     }
 
     function buildHeader(emoji: string, title: string, subtitle: string) {
-      return `\u200B\n${emoji} **${title}**\n${subtitle}\n\u200B\n`;
+      return `\u200B\n${emoji} **${title}**\n${subtitle}\n\u200B\n\u200B\n`;
     }
 
     function buildFooter() {
       const timestamp = Math.floor(Date.now() / 1000);
-      return `\n\n⏱️ Updated <t:${timestamp}:R>`;
+
+      return `\u200B\n⏱️ Updated <t:${timestamp}:R>`;
     }
 
     function createBaseEmbed(color: string, withAuthor = true) {
