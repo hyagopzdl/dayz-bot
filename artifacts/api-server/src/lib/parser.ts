@@ -76,10 +76,11 @@ function extractLineSeconds(line: string): number | null {
 function createUTCDateFromBaseAndSeconds(baseDate: string, seconds: number) {
   const [year, month, day] = baseDate.split("-").map(Number);
 
-  const date = new Date(Date.UTC(year, month - 1, day, 0, 0, 0));
-  date.setUTCSeconds(seconds);
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const secs = seconds % 60;
 
-  return date;
+  return new Date(year, month - 1, day, hours, minutes, secs);
 }
 
 function addDaysToDateString(baseDate: string, days: number) {
