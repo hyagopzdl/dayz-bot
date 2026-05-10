@@ -26,6 +26,10 @@ const KILLSTREAK_PAGE_SIZE = 10;
 const KILLSTREAK_MAX_EVENTS = 150;
 const KILLSTREAK_MESSAGE_PREFIX = "message_killstreak_page_";
 
+const LONGSHOT_PAGE_SIZE = 10;
+const LONGSHOT_MAX_EVENTS = 150;
+const LONGSHOT_MESSAGE_PREFIX = "message_longshot_page_";
+
 const BOT_NAME = "PZ's DayZ Bot";
 
 const BOT_ICON =
@@ -42,6 +46,7 @@ function ensureBotState(state: any) {
   state.files = state.files || {};
   state.recentEventIds = state.recentEventIds || [];
   state.killFeedEvents = state.killFeedEvents || [];
+  state.longShotEvents = state.longShotEvents || [];
   state.currentKillStreaks = state.currentKillStreaks || {};
   state.killStreakEvents = state.killStreakEvents || [];
   state.discordMessageIds = state.discordMessageIds || {};
@@ -181,6 +186,12 @@ export async function startDiscordBot() {
         )) as TextBasedChannel)
       : null;
 
+    const longShotChannel = process.env.DISCORD_LONGSHOT_CHANNEL_ID
+      ? ((await client.channels.fetch(
+          process.env.DISCORD_LONGSHOT_CHANNEL_ID,
+        )) as TextBasedChannel)
+      : null;
+
     const CATEGORY_ID = process.env.DISCORD_ONLINE_CHANNEL_ID!;
 
     function padEnd(str: string, size: number) {
@@ -210,6 +221,7 @@ export async function startDiscordBot() {
         online: Object.keys(state.onlinePlayers || {}).length,
         killfeed: (state.killFeedEvents || []).length,
         killStreakEvents: (state.killStreakEvents || []).length,
+        longShotEvents: (state.longShotEvents || []).length,
         messages: Object.keys(state.discordMessageIds || {}).length,
       });
 
@@ -317,6 +329,7 @@ export async function startDiscordBot() {
       state.dailyPlayers = {};
       state.weeklyPlayers = {};
       state.killFeedEvents = [];
+      state.longShotEvents = [];
       state.currentKillStreaks = {};
       state.killStreakEvents = [];
       state.activeMatch = null;
@@ -430,7 +443,7 @@ export async function startDiscordBot() {
       state.onlinePlayers = state.onlinePlayers || {};
 
       const now = Date.now();
-      const maxOnlineAgeMs = 30 * 60 * 1000;
+      const maxOnlineAgeMs = 12 * 60 * 60 * 1000;
 
       for (const [player, data] of Object.entries(state.onlinePlayers || {})) {
         const info = data as any;
@@ -514,6 +527,10 @@ export async function startDiscordBot() {
       return `${KILLSTREAK_MESSAGE_PREFIX}${pageIndex}.json`;
     }
 
+    function longShotPageKey(pageIndex: number) {
+      return `${LONGSHOT_MESSAGE_PREFIX}${pageIndex}.json`;
+    }
+
     function formatWeapon(weapon: string | undefined) {
       const clean = weapon?.trim();
 
@@ -593,6 +610,43 @@ export async function startDiscordBot() {
           `${meta.emoji} **${streak}x Kill Streak**\n\n` +
           `**${player}** ${meta.en} ${streak} kill streak\n` +
           `**${player}** ${meta.pt} ${streak} kills\n\n` +
+          `<t:${timestamp}:f>`,
+      );
+    }
+
+
+    function createLongShotEmptyEmbed() {
+      return createBaseEmbed("#00BFFF").setDescription(
+        `\u200B\n` +
+          `🎯 **Long Shot Feed**\n` +
+          `Elite distance eliminations.\n` +
+          `Eliminações de longa distância.\n` +
+          `\u200B\n\u200B\n` +
+          `**No long shots yet**\n` +
+          `Nenhum long shot registrado ainda.\n` +
+          `\n\u200B\n` +
+          buildFooter(),
+      );
+    }
+
+    function formatLongShotEmbed(event: any) {
+      const timestamp = Number(
+        event.timestamp || Math.floor(Date.now() / 1000),
+      );
+
+      const killer = event.killer || "Unknown";
+      const victim = event.victim || "Unknown";
+      const distance = Math.round(Number(event.distance || 0));
+      const weapon = formatWeapon(event.weapon);
+
+      return createBaseEmbed("#00BFFF").setDescription(
+        `\u200B\n` +
+          `🎯 **Long Shot**\n\n` +
+          `**${killer}** killed **${victim}**\n` +
+          `\u200B\n\n` +
+          `Distance: \`${distance}m\` with \`${weapon}\`\n` +
+          `Distância: \`${distance}m\` com \`${weapon}\`\n` +
+          `\u200B\n\n` +
           `<t:${timestamp}:f>`,
       );
     }
@@ -863,6 +917,81 @@ export async function startDiscordBot() {
       );
     }
 
+
+    async function updateLongShotFeed(state: any) {
+      if (!longShotChannel) return;
+
+      const uniqueEventsMap = new Map<string, any>();
+
+      for (const rawEvent of state.longShotEvents || []) {
+        const killer = rawEvent?.killer || "Unknown";
+        const victim = rawEvent?.victim || "Unknown";
+        const weapon = formatWeapon(rawEvent?.weapon);
+        const distance = Math.round(Number(rawEvent?.distance || 0));
+
+        const timestamp = Number(
+          rawEvent?.timestamp ||
+            (rawEvent?.at
+              ? Math.floor(new Date(rawEvent.at).getTime() / 1000)
+              : 0),
+        );
+
+        if (!timestamp || Number.isNaN(timestamp) || distance < 100) continue;
+
+        const key = `${killer}:${victim}:${weapon}:${distance}:${timestamp}`;
+
+        uniqueEventsMap.set(key, {
+          ...rawEvent,
+          killer,
+          victim,
+          weapon,
+          distance,
+          timestamp,
+        });
+      }
+
+      const events = [...uniqueEventsMap.values()]
+        .sort((a, b) => Number(b.timestamp || 0) - Number(a.timestamp || 0))
+        .slice(0, LONGSHOT_MAX_EVENTS);
+
+      state.longShotEvents = [...events].reverse();
+
+      if (!events.length) {
+        await sendOrEdit(state, longShotChannel, longShotPageKey(0), [
+          createLongShotEmptyEmbed(),
+        ]);
+
+        await deleteExtraPages(
+          state,
+          longShotChannel,
+          1,
+          LONGSHOT_MESSAGE_PREFIX,
+        );
+
+        return;
+      }
+
+      const pages = chunkArray(events, LONGSHOT_PAGE_SIZE);
+
+      for (let pageIndex = 0; pageIndex < pages.length; pageIndex++) {
+        const embeds = pages[pageIndex].map(formatLongShotEmbed);
+
+        await sendOrEdit(
+          state,
+          longShotChannel,
+          longShotPageKey(pageIndex),
+          embeds,
+        );
+      }
+
+      await deleteExtraPages(
+        state,
+        longShotChannel,
+        pages.length,
+        LONGSHOT_MESSAGE_PREFIX,
+      );
+    }
+
     async function updateLeaderboard() {
       if (discordLoopRunning) return;
 
@@ -871,7 +1000,6 @@ export async function startDiscordBot() {
       try {
         const state = await getState();
 
-        cleanupOnlineGhosts(state);
 
         if (!state.globalStartedAt) {
           state.globalStartedAt =
@@ -924,6 +1052,7 @@ export async function startDiscordBot() {
         await updateOnlineList(state);
         await updateKillFeed(state);
         await updateKillStreakFeed(state);
+        await updateLongShotFeed(state);
         await updateMatchRanking(state);
 
         await saveState(state);
@@ -1143,8 +1272,6 @@ export async function startDiscordBot() {
               "Start a new tracked match and create its private ranking channel.",
             defaultMemberPermissions: adminPermission,
             dmPermission: false,
-            options: [
-            ],
           },
           {
             name: "stop-match",

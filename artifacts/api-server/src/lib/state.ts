@@ -35,6 +35,14 @@ export type KillFeedEvent = {
   at: string;
 };
 
+export type LongShotEvent = {
+  killer: string;
+  victim: string;
+  weapon: string;
+  distance: number;
+  timestamp: number;
+};
+
 export type KillStreakEvent =
   | {
       type: "streak";
@@ -59,8 +67,6 @@ export type ActiveMatch = {
   endedAt?: string;
   status: "active" | "finished";
   players: Record<string, PlayerStats>;
-  serverPasswordApplied?: boolean;
-  password?: string;
 };
 
 export type AppState = {
@@ -73,6 +79,7 @@ export type AppState = {
   recentEventIds: string[];
 
   killFeedEvents: KillFeedEvent[];
+  longShotEvents: LongShotEvent[];
 
   currentKillStreaks: Record<string, number>;
   killStreakEvents: KillStreakEvent[];
@@ -101,6 +108,7 @@ function defaultState(): AppState {
     files: {},
     recentEventIds: [],
     killFeedEvents: [],
+    longShotEvents: [],
     currentKillStreaks: {},
     killStreakEvents: [],
     discordMessageIds: {},
@@ -150,6 +158,7 @@ function migrateLegacyState(data: any): AppState {
   state.weeklyPlayers = data.weeklyPlayers || {};
   state.recentEventIds = data.recentEventIds || [];
   state.killFeedEvents = data.killFeedEvents || [];
+  state.longShotEvents = (data.longShotEvents || []).slice(-150);
 
   state.currentKillStreaks = data.currentKillStreaks || data.killStreaks || {};
 
@@ -255,6 +264,7 @@ export async function saveStateAsync(data: AppState) {
     files: data.files || {},
     recentEventIds: (data.recentEventIds || []).slice(-10000),
     killFeedEvents: (data.killFeedEvents || []).slice(-100),
+    longShotEvents: (data.longShotEvents || []).slice(-150),
 
     currentKillStreaks: data.currentKillStreaks || {},
     killStreakEvents: (data.killStreakEvents || []).slice(-150),

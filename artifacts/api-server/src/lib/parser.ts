@@ -7,6 +7,8 @@ const KILL_REGEX = /Player "([^"]+)".*?killed by Player "([^"]+)"/;
 const CONNECT_REGEX = /Player "([^"]+)".*?is connected/;
 const DISCONNECT_REGEX = /Player "([^"]+)".*?has been disconnected/;
 
+const LONG_SHOT_MIN_DISTANCE = 100;
+
 type AdmEventTime = {
   dateString: string;
   date: Date;
@@ -139,6 +141,7 @@ function ensureStateDefaults(state: AppState) {
   state.files = state.files || {};
   state.recentEventIds = state.recentEventIds || [];
   state.killFeedEvents = state.killFeedEvents || [];
+  state.longShotEvents = state.longShotEvents || [];
   state.currentKillStreaks = state.currentKillStreaks || {};
   state.killStreakEvents = state.killStreakEvents || [];
   state.discordMessageIds = state.discordMessageIds || {};
@@ -160,6 +163,46 @@ function extractWeapon(line: string): string {
   if (lower.includes("vehicle")) return "Vehicle";
 
   return "Unknown";
+}
+
+
+function extractDistance(line: string): number | null {
+  const match = line.match(/\bfrom\s+(\d+(?:\.\d+)?)\s*(?:m|meter|meters)?\b/i);
+
+  if (!match?.[1]) return null;
+
+  const distance = Number(match[1]);
+
+  if (!Number.isFinite(distance)) return null;
+
+  return distance;
+}
+
+function addLongShotEvent(
+  state: AppState,
+  killer: string,
+  victim: string,
+  weapon: string,
+  distance: number | null,
+  eventTime: AdmEventTime | null,
+) {
+  if (!distance || distance < LONG_SHOT_MIN_DISTANCE) return;
+
+  state.longShotEvents = state.longShotEvents || [];
+
+  state.longShotEvents.push({
+    killer,
+    victim,
+    weapon,
+    distance: Math.round(distance),
+    timestamp: getDiscordTimestamp(eventTime),
+  });
+
+  state.longShotEvents = state.longShotEvents.slice(-150);
+
+  console.log(
+    `🎯 long shot: ${killer} matou ${victim} a ${Math.round(distance)}m com ${weapon}`,
+  );
 }
 
 function addKillFeedEvent(
@@ -193,6 +236,7 @@ function addKillStreakMilestoneEvent(
   });
 
   state.killStreakEvents = state.killStreakEvents.slice(-150);
+  state.longShotEvents = (state.longShotEvents || []).slice(-150);
 
   console.log(`📈 ${player} atingiu ${streak} kill streak`);
 }
@@ -213,6 +257,7 @@ function addKillStreakEndedEvent(
   });
 
   state.killStreakEvents = state.killStreakEvents.slice(-150);
+  state.longShotEvents = (state.longShotEvents || []).slice(-150);
 
   console.log(`🛑 ${killer} encerrou streak de ${streak} de ${player}`);
 }
@@ -248,6 +293,7 @@ function updateKillStreaks(
   }
 
   state.killStreakEvents = state.killStreakEvents.slice(-150);
+  state.longShotEvents = (state.longShotEvents || []).slice(-150);
 }
 
 function addKill(
@@ -255,6 +301,7 @@ function addKill(
   killer: string,
   victim: string,
   weapon: string,
+  distance: number | null,
   eventTime: AdmEventTime | null,
 ) {
   ensurePlayer(state.players, killer);
@@ -289,6 +336,7 @@ function addKill(
 
   updateKillStreaks(state, killer, victim, eventTime);
   addKillFeedEvent(state, killer, victim, weapon, eventTime);
+  addLongShotEvent(state, killer, victim, weapon, distance, eventTime);
 }
 
 function markOnline(
@@ -435,8 +483,9 @@ function processFile(filePath: string, state: AppState) {
       }
 
       const weapon = extractWeapon(line);
+      const distance = extractDistance(line);
 
-      addKill(state, killer, victim, weapon, eventTime);
+      addKill(state, killer, victim, weapon, distance, eventTime);
 
       if (!eventTime) killsWithoutDate++;
       if (eventTime && !isTodayInBrazil(eventTime)) ignoredDailyKills++;
@@ -489,6 +538,7 @@ function processFile(filePath: string, state: AppState) {
   state.recentEventIds = state.recentEventIds.slice(-10000);
   state.killFeedEvents = state.killFeedEvents.slice(-100);
   state.killStreakEvents = state.killStreakEvents.slice(-150);
+  state.longShotEvents = (state.longShotEvents || []).slice(-150);
 
   console.log(`🎯 novas kills: ${newKills}`);
   console.log(`⚠️ kills sem data: ${killsWithoutDate}`);
