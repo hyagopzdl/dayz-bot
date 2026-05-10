@@ -4,15 +4,13 @@ import {
   TextBasedChannel,
   EmbedBuilder,
   PermissionsBitField,
+  ColorResolvable,
 } from "discord.js";
-import fs from "fs";
-import path from "path";
+import { getStateAsync, saveStateAsync } from "./state";
 
 const client = new Client({
   intents: [GatewayIntentBits.Guilds],
 });
-
-const STATE_FILE = path.resolve(process.cwd(), "state.json");
 
 const MESSAGE_FILE_GLOBAL = "message_global.json";
 const MESSAGE_FILE_DAILY = "message_daily.json";
@@ -33,21 +31,18 @@ const BOT_ICON =
 
 let discordLoopRunning = false;
 
-function readState() {
-  try {
-    return JSON.parse(fs.readFileSync(STATE_FILE, "utf-8"));
-  } catch {
-    return {};
-  }
-}
-
-function writeState(state: any) {
-  fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
-}
-
-function ensureKillStreakState(state: any) {
+function ensureBotState(state: any) {
+  state.players = state.players || {};
+  state.dailyPlayers = state.dailyPlayers || {};
+  state.weeklyPlayers = state.weeklyPlayers || {};
+  state.onlinePlayers = state.onlinePlayers || {};
+  state.files = state.files || {};
+  state.recentEventIds = state.recentEventIds || [];
+  state.killFeedEvents = state.killFeedEvents || [];
   state.currentKillStreaks = state.currentKillStreaks || {};
   state.killStreakEvents = state.killStreakEvents || [];
+  state.discordMessageIds = state.discordMessageIds || {};
+
   return state;
 }
 
@@ -96,7 +91,7 @@ function getKillStreakMeta(streak: number) {
   };
 }
 
-export function registerKillStreakFromKill(options: {
+export async function registerKillStreakFromKill(options: {
   killer: string;
   victim: string;
   weapon?: string;
@@ -108,14 +103,13 @@ export function registerKillStreakFromKill(options: {
   if (!killer || !victim) return;
   if (killer.toLowerCase() === victim.toLowerCase()) return;
 
-  const state = ensureKillStreakState(readState());
+  const state = ensureBotState(await getStateAsync());
   const timestamp = options.timestamp || Math.floor(Date.now() / 1000);
 
   const victimCurrentStreak = Number(state.currentKillStreaks[victim] || 0);
 
   if (victimCurrentStreak >= 5) {
     state.killStreakEvents.push({
-      id: `streak-ended-${timestamp}-${killer}-${victim}-${victimCurrentStreak}`,
       type: "ended",
       killer,
       player: victim,
@@ -131,7 +125,6 @@ export function registerKillStreakFromKill(options: {
 
   if (killerCurrentStreak >= 5 && killerCurrentStreak % 5 === 0) {
     state.killStreakEvents.push({
-      id: `streak-${timestamp}-${killer}-${killerCurrentStreak}`,
       type: "streak",
       player: killer,
       streak: killerCurrentStreak,
@@ -141,7 +134,7 @@ export function registerKillStreakFromKill(options: {
 
   state.killStreakEvents = state.killStreakEvents.slice(-KILLSTREAK_MAX_EVENTS);
 
-  writeState(state);
+  await saveStateAsync(state);
 }
 
 export async function startDiscordBot() {
@@ -202,29 +195,24 @@ export async function startDiscordBot() {
       return nums[i - 3] || `${i + 1}️⃣`;
     }
 
-    function getState() {
-      try {
-        const state = JSON.parse(fs.readFileSync(STATE_FILE, "utf-8"));
+    async function getState() {
+      const state = ensureBotState(await getStateAsync());
 
-        console.log("📊 Discord lendo state:", {
-          file: STATE_FILE,
-          global: Object.keys(state.players || {}).length,
-          daily: Object.keys(state.dailyPlayers || {}).length,
-          weekly: Object.keys(state.weeklyPlayers || {}).length,
-          online: Object.keys(state.onlinePlayers || {}).length,
-          killfeed: (state.killFeedEvents || []).length,
-          killStreakEvents: (state.killStreakEvents || []).length,
-        });
+      console.log("📊 Discord lendo state:", {
+        global: Object.keys(state.players || {}).length,
+        daily: Object.keys(state.dailyPlayers || {}).length,
+        weekly: Object.keys(state.weeklyPlayers || {}).length,
+        online: Object.keys(state.onlinePlayers || {}).length,
+        killfeed: (state.killFeedEvents || []).length,
+        killStreakEvents: (state.killStreakEvents || []).length,
+        messages: Object.keys(state.discordMessageIds || {}).length,
+      });
 
-        return ensureKillStreakState(state);
-      } catch (err) {
-        console.error("❌ Discord não conseguiu ler state.json:", err);
-        return ensureKillStreakState({});
-      }
+      return state;
     }
 
-    function saveState(state: any) {
-      writeState(state);
+    async function saveState(state: any) {
+      await saveStateAsync(ensureBotState(state));
       console.log("💾 state salvo pelo Discord");
     }
 
@@ -303,7 +291,7 @@ export async function startDiscordBot() {
       return `\u200B\n⏱️ Updated <t:${timestamp}:R>`;
     }
 
-    function createBaseEmbed(color: string, withAuthor = true) {
+    function createBaseEmbed(color: any, withAuthor = true) {
       const embed = new EmbedBuilder().setColor(color);
 
       if (withAuthor) {
@@ -316,8 +304,8 @@ export async function startDiscordBot() {
       return embed;
     }
 
-    function resetRankings() {
-      const state = getState();
+    async function resetRankings() {
+      const state = await getState();
       const today = new Date().toISOString().slice(0, 10);
 
       state.players = {};
@@ -334,13 +322,9 @@ export async function startDiscordBot() {
       state.files = state.files || {};
       state.recentEventIds = state.recentEventIds || [];
       state.onlinePlayers = state.onlinePlayers || {};
+      state.discordMessageIds = state.discordMessageIds || {};
 
-      saveState(state);
-    }
-
-    function getOnlineCount(): number {
-      const state = getState();
-      return Object.keys(state.onlinePlayers || {}).length;
+      await saveState(state);
     }
 
     function mapPlayers(obj: any) {
@@ -459,11 +443,11 @@ export async function startDiscordBot() {
       return chunks;
     }
 
-    function killfeedPageFile(pageIndex: number) {
+    function killfeedPageKey(pageIndex: number) {
       return `${KILLFEED_MESSAGE_PREFIX}${pageIndex}.json`;
     }
 
-    function killStreakPageFile(pageIndex: number) {
+    function killStreakPageKey(pageIndex: number) {
       return `${KILLSTREAK_MESSAGE_PREFIX}${pageIndex}.json`;
     }
 
@@ -517,47 +501,45 @@ export async function startDiscordBot() {
       );
 
       if (event.type === "ended") {
+        const killer = event.killer || event.endedBy || "Unknown";
+        const player = event.player || "Unknown";
+        const streak = Number(event.streak || 0);
+
         return createBaseEmbed("#FF3333").setDescription(
           `\u200B\n` +
             `🛑 **Kill Streak Ended**\n\n` +
-            `**${event.killer || "Unknown"}** ended **${
-              event.player || "Unknown"
-            }'s** ${event.streak || 0} kill streak\n` +
-            `**${event.killer || "Unknown"}** encerrou a sequência de ${
-              event.streak || 0
-            } kills de **${event.player || "Unknown"}**\n\n` +
+            `**${killer}** ended **${player}'s** ${streak} kill streak\n` +
+            `**${killer}** encerrou a sequência de ${streak} kills de **${player}**\n\n` +
             `<t:${timestamp}:f>`,
         );
       }
 
       const streak = Number(event.streak || 0);
-
+      const player = event.player || "Unknown";
       const meta = getKillStreakMeta(streak);
 
       return createBaseEmbed(meta.color).setDescription(
         `\u200B\n` +
           `${meta.emoji} **${streak}x Kill Streak**\n\n` +
-          `**${event.player || "Unknown"}** ${meta.en} ${streak} kill streak\n` +
-          `**${event.player || "Unknown"}** ${meta.pt} ${streak} kills\n\n` +
+          `**${player}** ${meta.en} ${streak} kill streak\n` +
+          `**${player}** ${meta.pt} ${streak} kills\n\n` +
           `<t:${timestamp}:f>`,
       );
     }
 
-    async function sendOrEdit(channel: any, file: string, embedOrEmbeds: any) {
+    async function sendOrEdit(
+      state: any,
+      channel: any,
+      key: string,
+      embedOrEmbeds: any,
+    ) {
+      state.discordMessageIds = state.discordMessageIds || {};
+
       const embeds = Array.isArray(embedOrEmbeds)
         ? embedOrEmbeds
         : [embedOrEmbeds];
 
-      let messageId: string | null = null;
-
-      if (fs.existsSync(file)) {
-        try {
-          messageId = JSON.parse(fs.readFileSync(file, "utf-8")).id;
-        } catch {
-          messageId = null;
-        }
-      }
-
+      let messageId: string | null = state.discordMessageIds[key] || null;
       let message: any = null;
 
       if (messageId) {
@@ -570,72 +552,59 @@ export async function startDiscordBot() {
 
       if (message) {
         await message.edit({ embeds });
-        console.log(`✏️ mensagem editada: ${file}`);
+        console.log(`✏️ mensagem editada: ${key}`);
         return;
       }
 
       const newMsg = await channel.send({ embeds });
-      fs.writeFileSync(file, JSON.stringify({ id: newMsg.id }, null, 2));
+      state.discordMessageIds[key] = newMsg.id;
 
-      console.log(`📨 nova mensagem enviada: ${file}`);
+      console.log(`📨 nova mensagem enviada: ${key}`);
     }
 
-    async function deleteMessageByFile(channel: any, file: string) {
-      if (!fs.existsSync(file)) return;
+    async function deleteMessageByKey(state: any, channel: any, key: string) {
+      state.discordMessageIds = state.discordMessageIds || {};
 
-      try {
-        const messageId = JSON.parse(fs.readFileSync(file, "utf-8")).id;
+      const messageId = state.discordMessageIds[key];
 
-        if (messageId) {
-          try {
-            const message = await channel.messages.fetch(messageId);
-            await message.delete();
-          } catch {}
-        }
-      } catch {}
+      if (messageId) {
+        try {
+          const message = await channel.messages.fetch(messageId);
+          await message.delete();
+        } catch {}
+      }
 
-      try {
-        fs.unlinkSync(file);
-      } catch {}
+      delete state.discordMessageIds[key];
     }
 
     async function deleteExtraPages(
+      state: any,
       channel: any,
       neededPages: number,
       prefix: string,
     ) {
-      const files = fs
-        .readdirSync(process.cwd())
-        .filter((file) => file.startsWith(prefix) && file.endsWith(".json"));
+      state.discordMessageIds = state.discordMessageIds || {};
 
-      for (const file of files) {
-        const match = file.match(new RegExp(`^${prefix}(\\d+)\\.json$`));
+      const keys = Object.keys(state.discordMessageIds).filter((key) =>
+        key.startsWith(prefix),
+      );
+
+      for (const key of keys) {
+        const match = key.match(new RegExp(`^${prefix}(\\d+)\\.json$`));
 
         if (!match) continue;
 
         const pageIndex = Number(match[1]);
 
         if (pageIndex >= neededPages) {
-          await deleteMessageByFile(channel, file);
+          await deleteMessageByKey(state, channel, key);
         }
       }
     }
 
-    async function deleteExtraKillFeedPages(channel: any, neededPages: number) {
-      await deleteExtraPages(channel, neededPages, KILLFEED_MESSAGE_PREFIX);
-    }
-
-    async function deleteExtraKillStreakPages(
-      channel: any,
-      neededPages: number,
-    ) {
-      await deleteExtraPages(channel, neededPages, KILLSTREAK_MESSAGE_PREFIX);
-    }
-
-    async function updateOnlineCount() {
+    async function updateOnlineCount(state: any) {
       try {
-        const count = getOnlineCount();
-
+        const count = Object.keys(state.onlinePlayers || {}).length;
         const category = await client.channels.fetch(CATEGORY_ID);
 
         if (!category || !("setName" in category)) {
@@ -665,6 +634,7 @@ export async function startDiscordBot() {
       if (!onlineListChannel) return;
 
       await sendOrEdit(
+        state,
         onlineListChannel,
         MESSAGE_FILE_ONLINE_LIST,
         formatOnlineListEmbed(state),
@@ -677,12 +647,16 @@ export async function startDiscordBot() {
       const events = [...(state.killFeedEvents || [])].reverse();
 
       if (!events.length) {
-        await sendOrEdit(killfeedChannel, killfeedPageFile(0), [
+        await sendOrEdit(state, killfeedChannel, killfeedPageKey(0), [
           createKillFeedEmptyEmbed(),
         ]);
 
-        await deleteExtraKillFeedPages(killfeedChannel, 1);
-
+        await deleteExtraPages(
+          state,
+          killfeedChannel,
+          1,
+          KILLFEED_MESSAGE_PREFIX,
+        );
         return;
       }
 
@@ -695,14 +669,22 @@ export async function startDiscordBot() {
           embeds.unshift(createKillFeedHeaderEmbed(events.length));
         }
 
-        await sendOrEdit(killfeedChannel, killfeedPageFile(pageIndex), embeds);
+        await sendOrEdit(
+          state,
+          killfeedChannel,
+          killfeedPageKey(pageIndex),
+          embeds,
+        );
       }
 
-      await deleteExtraKillFeedPages(killfeedChannel, pages.length);
+      await deleteExtraPages(
+        state,
+        killfeedChannel,
+        pages.length,
+        KILLFEED_MESSAGE_PREFIX,
+      );
 
-      const freshState = getState();
-      freshState.killFeedEvents = [];
-      saveState(freshState);
+      state.killFeedEvents = [];
     }
 
     async function updateKillStreakFeed(state: any) {
@@ -713,11 +695,17 @@ export async function startDiscordBot() {
         .reverse();
 
       if (!events.length) {
-        await sendOrEdit(killStreakChannel, killStreakPageFile(0), [
+        await sendOrEdit(state, killStreakChannel, killStreakPageKey(0), [
           createKillStreakEmptyEmbed(),
         ]);
 
-        await deleteExtraKillStreakPages(killStreakChannel, 1);
+        await deleteExtraPages(
+          state,
+          killStreakChannel,
+          1,
+          KILLSTREAK_MESSAGE_PREFIX,
+        );
+
         return;
       }
 
@@ -727,13 +715,19 @@ export async function startDiscordBot() {
         const embeds = pages[pageIndex].map(formatKillStreakEmbed);
 
         await sendOrEdit(
+          state,
           killStreakChannel,
-          killStreakPageFile(pageIndex),
+          killStreakPageKey(pageIndex),
           embeds,
         );
       }
 
-      await deleteExtraKillStreakPages(killStreakChannel, pages.length);
+      await deleteExtraPages(
+        state,
+        killStreakChannel,
+        pages.length,
+        KILLSTREAK_MESSAGE_PREFIX,
+      );
     }
 
     async function updateLeaderboard() {
@@ -742,15 +736,13 @@ export async function startDiscordBot() {
       discordLoopRunning = true;
 
       try {
-        const state = getState();
+        const state = await getState();
 
         if (!state.globalStartedAt) {
           state.globalStartedAt =
             state.lastDailyReset ||
             state.lastWeeklyReset ||
             new Date().toISOString().slice(0, 10);
-
-          saveState(state);
         }
 
         const globalPlayers = mapPlayers(state.players);
@@ -758,6 +750,7 @@ export async function startDiscordBot() {
         const weeklyPlayers = mapPlayers(state.weeklyPlayers);
 
         await sendOrEdit(
+          state,
           globalChannel,
           MESSAGE_FILE_GLOBAL,
           formatLeaderboardEmbed(globalPlayers, {
@@ -771,6 +764,7 @@ export async function startDiscordBot() {
         );
 
         await sendOrEdit(
+          state,
           dailyChannel,
           MESSAGE_FILE_DAILY,
           formatLeaderboardEmbed(dailyPlayers, {
@@ -782,6 +776,7 @@ export async function startDiscordBot() {
         );
 
         await sendOrEdit(
+          state,
           weeklyChannel,
           MESSAGE_FILE_WEEKLY,
           formatLeaderboardEmbed(weeklyPlayers, {
@@ -792,10 +787,12 @@ export async function startDiscordBot() {
           }),
         );
 
-        await updateOnlineCount();
+        await updateOnlineCount(state);
         await updateOnlineList(state);
         await updateKillFeed(state);
         await updateKillStreakFeed(state);
+
+        await saveState(state);
       } catch (err) {
         console.error("❌ erro ao atualizar leaderboard", err);
       } finally {
@@ -847,7 +844,7 @@ export async function startDiscordBot() {
 
         await interaction.deferReply({ ephemeral: true });
 
-        resetRankings();
+        await resetRankings();
         await updateLeaderboard();
 
         await interaction.editReply("✅ Rankings successfully reset.");

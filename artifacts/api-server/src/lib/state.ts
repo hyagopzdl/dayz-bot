@@ -1,7 +1,16 @@
 import fs from "fs";
 import path from "path";
+import postgres from "postgres";
 
 const FILE = path.resolve(process.cwd(), "state.json");
+const STATE_ID = "main";
+
+const sql = process.env.DATABASE_URL
+  ? postgres(process.env.DATABASE_URL, {
+      ssl: "require",
+      max: 1,
+    })
+  : null;
 
 export type PlayerStats = {
   kills: number;
@@ -54,8 +63,14 @@ export type AppState = {
   currentKillStreaks: Record<string, number>;
   killStreakEvents: KillStreakEvent[];
 
+  discordMessageIds: Record<string, string>;
+
   lastDailyReset: string;
   lastWeeklyReset: string;
+
+  globalStartedAt?: string;
+  dailyStartedAt?: string;
+  weeklyStartedAt?: string;
 
   lastLine?: number;
   lastFileName?: string;
@@ -72,6 +87,7 @@ function defaultState(): AppState {
     killFeedEvents: [],
     currentKillStreaks: {},
     killStreakEvents: [],
+    discordMessageIds: {},
     lastDailyReset: "",
     lastWeeklyReset: "",
   };
@@ -125,9 +141,16 @@ function migrateLegacyState(data: any): AppState {
     .filter(Boolean)
     .slice(-150) as KillStreakEvent[];
 
+  state.discordMessageIds = data.discordMessageIds || {};
+
   state.files = data.files || {};
   state.lastDailyReset = data.lastDailyReset || "";
   state.lastWeeklyReset = data.lastWeeklyReset || "";
+
+  state.globalStartedAt = data.globalStartedAt;
+  state.dailyStartedAt = data.dailyStartedAt;
+  state.weeklyStartedAt = data.weeklyStartedAt;
+
   state.lastLine = data.lastLine;
   state.lastFileName = data.lastFileName;
 
@@ -147,7 +170,7 @@ function migrateLegacyState(data: any): AppState {
   return state;
 }
 
-export function getState(): AppState {
+function readLocalState(): AppState {
   if (!fs.existsSync(FILE)) {
     return defaultState();
   }
@@ -156,12 +179,48 @@ export function getState(): AppState {
     const data = JSON.parse(fs.readFileSync(FILE, "utf-8"));
     return migrateLegacyState(data);
   } catch (err) {
-    console.error("❌ erro lendo state.json, usando estado vazio:", err);
+    console.error("❌ erro lendo state.json local:", err);
     return defaultState();
   }
 }
 
-export function saveState(data: AppState) {
+function writeLocalState(data: AppState) {
+  fs.writeFileSync(FILE, JSON.stringify(data, null, 2));
+}
+
+export async function getStateAsync(): Promise<AppState> {
+  if (!sql) {
+    return readLocalState();
+  }
+
+  try {
+    const rows = await sql`
+      SELECT data
+      FROM bot_state
+      WHERE id = ${STATE_ID}
+      LIMIT 1
+    `;
+
+    if (!rows.length) {
+      const state = defaultState();
+
+      await sql`
+        INSERT INTO bot_state (id, data, updated_at)
+        VALUES (${STATE_ID}, ${sql.json(state)}, NOW())
+        ON CONFLICT (id) DO NOTHING
+      `;
+
+      return state;
+    }
+
+    return migrateLegacyState(rows[0].data || {});
+  } catch (err) {
+    console.error("❌ erro lendo state no Neon, usando state.json local:", err);
+    return readLocalState();
+  }
+}
+
+export async function saveStateAsync(data: AppState) {
   const safeData: AppState = {
     players: data.players || {},
     dailyPlayers: data.dailyPlayers || {},
@@ -174,12 +233,47 @@ export function saveState(data: AppState) {
     currentKillStreaks: data.currentKillStreaks || {},
     killStreakEvents: (data.killStreakEvents || []).slice(-150),
 
+    discordMessageIds: data.discordMessageIds || {},
+
     lastDailyReset: data.lastDailyReset || "",
     lastWeeklyReset: data.lastWeeklyReset || "",
+
+    globalStartedAt: data.globalStartedAt,
+    dailyStartedAt: data.dailyStartedAt,
+    weeklyStartedAt: data.weeklyStartedAt,
+
     lastLine: data.lastLine,
     lastFileName: data.lastFileName,
   };
 
-  fs.writeFileSync(FILE, JSON.stringify(safeData, null, 2));
-  console.log("💾 STATE SALVO EM:", FILE);
+  writeLocalState(safeData);
+
+  if (!sql) {
+    console.log("💾 STATE SALVO EM:", FILE);
+    return;
+  }
+
+  try {
+    await sql`
+      INSERT INTO bot_state (id, data, updated_at)
+      VALUES (${STATE_ID}, ${sql.json(safeData)}, NOW())
+      ON CONFLICT (id)
+      DO UPDATE SET
+        data = EXCLUDED.data,
+        updated_at = NOW()
+    `;
+
+    console.log("💾 STATE SALVO NO NEON");
+  } catch (err) {
+    console.error("❌ erro salvando state no Neon:", err);
+  }
+}
+
+export function getState(): AppState {
+  return readLocalState();
+}
+
+export function saveState(data: AppState) {
+  writeLocalState(data);
+  console.log("💾 STATE SALVO LOCALMENTE:", FILE);
 }

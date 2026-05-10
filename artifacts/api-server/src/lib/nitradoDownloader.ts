@@ -37,7 +37,7 @@ function extractDateFromAdmPath(filePath: string) {
   return new Date(`${match[1]}T${match[2].replace(/-/g, ":")}`).getTime();
 }
 
-async function fetchJson(url: string) {
+async function fetchJson(url: string): Promise<any> {
   const res = await fetch(url, {
     headers: {
       Authorization: `Bearer ${process.env.NITRADO_TOKEN}`,
@@ -48,7 +48,7 @@ async function fetchJson(url: string) {
     throw new Error(`Nitrado HTTP ${res.status}: ${await res.text()}`);
   }
 
-  return res.json();
+  return (await res.json()) as any;
 }
 
 async function getDownloadUrl(filePath: string): Promise<string | null> {

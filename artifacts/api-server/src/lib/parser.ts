@@ -1,13 +1,11 @@
 import fs from "fs";
 import crypto from "crypto";
-import { getState, saveState, AppState, PlayerStats } from "./state";
+import { getStateAsync, saveStateAsync, AppState, PlayerStats } from "./state";
 import { MANIFEST_FILE } from "./nitradoDownloader";
 
 const KILL_REGEX = /Player "([^"]+)".*?killed by Player "([^"]+)"/;
 const CONNECT_REGEX = /Player "([^"]+)".*?is connected/;
 const DISCONNECT_REGEX = /Player "([^"]+)".*?has been disconnected/;
-
-const KILL_STREAK_MILESTONES = [5, 10, 15, 20, 25];
 
 type AdmEventTime = {
   dateString: string;
@@ -46,11 +44,10 @@ function getWeekKeyFromDateString(dateString: string) {
   const monday = new Date(localDate);
   monday.setDate(localDate.getDate() + diffToMonday);
 
-  const mondayYear = monday.getFullYear();
-  const mondayMonth = String(monday.getMonth() + 1).padStart(2, "0");
-  const mondayDay = String(monday.getDate()).padStart(2, "0");
-
-  return `${mondayYear}-${mondayMonth}-${mondayDay}`;
+  return `${monday.getFullYear()}-${String(monday.getMonth() + 1).padStart(
+    2,
+    "0",
+  )}-${String(monday.getDate()).padStart(2, "0")}`;
 }
 
 function getBrazilWeekKey(date = new Date()) {
@@ -75,11 +72,7 @@ function extractLineSeconds(line: string): number | null {
   const match = line.match(/^(\d{2}):(\d{2}):(\d{2})\s*\|/);
   if (!match) return null;
 
-  const hours = Number(match[1]);
-  const minutes = Number(match[2]);
-  const seconds = Number(match[3]);
-
-  return hours * 3600 + minutes * 60 + seconds;
+  return Number(match[1]) * 3600 + Number(match[2]) * 60 + Number(match[3]);
 }
 
 function addDaysToDateString(baseDate: string, days: number) {
@@ -88,11 +81,10 @@ function addDaysToDateString(baseDate: string, days: number) {
 
   date.setDate(date.getDate() + days);
 
-  const nextYear = date.getFullYear();
-  const nextMonth = String(date.getMonth() + 1).padStart(2, "0");
-  const nextDay = String(date.getDate()).padStart(2, "0");
-
-  return `${nextYear}-${nextMonth}-${nextDay}`;
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(
+    2,
+    "0",
+  )}-${String(date.getDate()).padStart(2, "0")}`;
 }
 
 function createAdmEventTime(
@@ -114,6 +106,10 @@ function createAdmEventTime(
   };
 }
 
+function getDiscordTimestamp(eventTime: AdmEventTime | null) {
+  return Math.floor((eventTime?.date || new Date()).getTime() / 1000);
+}
+
 function isTodayInBrazil(eventTime: AdmEventTime) {
   return eventTime.dateString === getBrazilDateParts().date;
 }
@@ -133,6 +129,21 @@ function ensurePlayer(obj: Record<string, PlayerStats>, name: string) {
   if (!obj[name]) {
     obj[name] = { kills: 0, deaths: 0 };
   }
+}
+
+function ensureStateDefaults(state: AppState) {
+  state.players = state.players || {};
+  state.dailyPlayers = state.dailyPlayers || {};
+  state.weeklyPlayers = state.weeklyPlayers || {};
+  state.onlinePlayers = state.onlinePlayers || {};
+  state.files = state.files || {};
+  state.recentEventIds = state.recentEventIds || [];
+  state.killFeedEvents = state.killFeedEvents || [];
+  state.currentKillStreaks = state.currentKillStreaks || {};
+  state.killStreakEvents = state.killStreakEvents || [];
+  state.discordMessageIds = state.discordMessageIds || {};
+
+  return state;
 }
 
 function extractWeapon(line: string): string {
@@ -157,8 +168,6 @@ function addKillFeedEvent(
   weapon: string,
   eventTime: AdmEventTime | null,
 ) {
-  state.killFeedEvents = state.killFeedEvents || [];
-
   state.killFeedEvents.push({
     killer,
     victim,
@@ -175,13 +184,11 @@ function addKillStreakMilestoneEvent(
   streak: number,
   eventTime: AdmEventTime | null,
 ) {
-  state.killStreakEvents = state.killStreakEvents || [];
-
   state.killStreakEvents.push({
-    type: "milestone",
+    type: "streak",
     player,
     streak,
-    at: (eventTime?.date || new Date()).toISOString(),
+    timestamp: getDiscordTimestamp(eventTime),
   });
 
   state.killStreakEvents = state.killStreakEvents.slice(-150);
@@ -193,22 +200,20 @@ function addKillStreakEndedEvent(
   state: AppState,
   player: string,
   streak: number,
-  endedBy: string,
+  killer: string,
   eventTime: AdmEventTime | null,
 ) {
-  state.killStreakEvents = state.killStreakEvents || [];
-
   state.killStreakEvents.push({
     type: "ended",
     player,
     streak,
-    endedBy,
-    at: (eventTime?.date || new Date()).toISOString(),
+    killer,
+    timestamp: getDiscordTimestamp(eventTime),
   });
 
   state.killStreakEvents = state.killStreakEvents.slice(-150);
 
-  console.log(`💀 ${endedBy} encerrou streak de ${streak} de ${player}`);
+  console.log(`🛑 ${killer} encerrou streak de ${streak} de ${player}`);
 }
 
 function updateKillStreaks(
@@ -217,10 +222,10 @@ function updateKillStreaks(
   victim: string,
   eventTime: AdmEventTime | null,
 ) {
-  state.killStreaks = state.killStreaks || {};
-  state.killStreakEvents = state.killStreakEvents || [];
+  if (!killer || !victim) return;
+  if (killer.toLowerCase() === victim.toLowerCase()) return;
 
-  const victimCurrentStreak = state.killStreaks[victim] || 0;
+  const victimCurrentStreak = state.currentKillStreaks[victim] || 0;
 
   if (victimCurrentStreak >= 5) {
     addKillStreakEndedEvent(
@@ -232,15 +237,12 @@ function updateKillStreaks(
     );
   }
 
-  state.killStreaks[victim] = 0;
+  state.currentKillStreaks[victim] = 0;
 
-  const killerCurrentStreak = (state.killStreaks[killer] || 0) + 1;
-  state.killStreaks[killer] = killerCurrentStreak;
+  const killerCurrentStreak = (state.currentKillStreaks[killer] || 0) + 1;
+  state.currentKillStreaks[killer] = killerCurrentStreak;
 
-  if (
-    KILL_STREAK_MILESTONES.includes(killerCurrentStreak) ||
-    (killerCurrentStreak > 25 && killerCurrentStreak % 5 === 0)
-  ) {
+  if (killerCurrentStreak >= 5 && killerCurrentStreak % 5 === 0) {
     addKillStreakMilestoneEvent(state, killer, killerCurrentStreak, eventTime);
   }
 
@@ -354,10 +356,6 @@ function processFile(filePath: string, state: AppState) {
     start = 0;
   }
 
-  console.log(`📄 ${fileName}`);
-  console.log(`📄 total linhas: ${lines.length}`);
-  console.log(`📍 processando de: ${start}`);
-
   let currentDayOffset = 0;
   let previousSeconds: number | null = null;
 
@@ -409,9 +407,16 @@ function processFile(filePath: string, state: AppState) {
     }
 
     const killMatch = line.match(KILL_REGEX);
+
     if (killMatch) {
-      const victim = killMatch[1];
-      const killer = killMatch[2];
+      const victim = killMatch[1]?.trim();
+      const killer = killMatch[2]?.trim();
+
+      if (!killer || !victim) {
+        console.log("⚠️ kill inválida sem killer/victim:", line);
+        continue;
+      }
+
       const weapon = extractWeapon(line);
 
       addKill(state, killer, victim, weapon, eventTime);
@@ -429,6 +434,7 @@ function processFile(filePath: string, state: AppState) {
     }
 
     const connectMatch = line.match(CONNECT_REGEX);
+
     if (connectMatch) {
       const player = connectMatch[1];
 
@@ -442,6 +448,7 @@ function processFile(filePath: string, state: AppState) {
     }
 
     const disconnectMatch = line.match(DISCONNECT_REGEX);
+
     if (disconnectMatch) {
       const player = disconnectMatch[1];
 
@@ -463,8 +470,8 @@ function processFile(filePath: string, state: AppState) {
   state.lastFileName = fileName;
 
   state.recentEventIds = state.recentEventIds.slice(-10000);
-  state.killFeedEvents = (state.killFeedEvents || []).slice(-100);
-  state.killStreakEvents = (state.killStreakEvents || []).slice(-150);
+  state.killFeedEvents = state.killFeedEvents.slice(-100);
+  state.killStreakEvents = state.killStreakEvents.slice(-150);
 
   console.log(`🎯 novas kills: ${newKills}`);
   console.log(`⚠️ kills sem data: ${killsWithoutDate}`);
@@ -478,10 +485,10 @@ function processFile(filePath: string, state: AppState) {
   console.log(`🔴 desconexões: ${newDisconnections}`);
 }
 
-export function getLeaderboard() {
+export async function getLeaderboard() {
   console.log("🔥 PARSER FOI CHAMADO");
 
-  const state = getState();
+  const state = ensureStateDefaults(await getStateAsync());
 
   applyResets(state);
 
@@ -489,8 +496,9 @@ export function getLeaderboard() {
 
   if (!files.length) {
     console.log("⚠️ nenhum arquivo ADM local encontrado");
+
     cleanupOnlinePlayers(state);
-    saveState(state);
+    await saveStateAsync(state);
 
     return {
       global: state.players,
@@ -511,7 +519,7 @@ export function getLeaderboard() {
 
   console.log(`🟢 online agora: ${Object.keys(state.onlinePlayers).length}`);
 
-  saveState(state);
+  await saveStateAsync(state);
 
   return {
     global: state.players,
