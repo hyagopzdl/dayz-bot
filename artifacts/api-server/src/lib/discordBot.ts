@@ -895,7 +895,9 @@ export async function startDiscordBot() {
 
         const timestamp = Number(
           rawEvent?.timestamp ||
-            (rawEvent?.at ? Math.floor(new Date(rawEvent.at).getTime() / 1000) : 0),
+            (rawEvent?.at
+              ? Math.floor(new Date(rawEvent.at).getTime() / 1000)
+              : 0),
         );
 
         if (!timestamp || Number.isNaN(timestamp)) continue;
@@ -1623,13 +1625,17 @@ export async function startDiscordBot() {
       } catch (err) {
         console.error("❌ erro processando comando Discord:", err);
 
-        if (interaction.deferred || interaction.replied) {
-          await interaction.editReply("❌ Command failed.");
-        } else {
-          await interaction.reply({
-            content: "❌ Command failed.",
-            ephemeral: true,
-          });
+        try {
+          if (interaction.deferred || interaction.replied) {
+            await interaction.editReply("❌ Command failed.");
+          } else {
+            await interaction.reply({
+              content: "❌ Command failed.",
+              ephemeral: true,
+            });
+          }
+        } catch (replyErr) {
+          console.error("❌ erro respondendo interaction:", replyErr);
         }
       }
     });
