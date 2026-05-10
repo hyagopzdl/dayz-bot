@@ -804,47 +804,7 @@ export async function startDiscordBot() {
         }
 
         await (category as any).setName(newName);
-      
-        if (interaction.commandName === "clear-channel") {
-          const amount = interaction.options.getInteger("amount") || 100;
-          const channel = interaction.channel as any;
-
-          if (!channel || !("messages" in channel)) {
-            await interaction.editReply("❌ This channel cannot be cleared.");
-            return;
-          }
-
-          try {
-            const messages = await channel.messages.fetch({ limit: amount });
-
-            const recentMessages = messages.filter((message: any) => {
-              const ageMs = Date.now() - message.createdTimestamp;
-              const fourteenDaysMs = 14 * 24 * 60 * 60 * 1000;
-
-              return ageMs < fourteenDaysMs;
-            });
-
-            if (recentMessages.size > 0) {
-              await channel.bulkDelete(recentMessages, true);
-            }
-
-            await interaction.followUp({
-              content: `✅ Cleared ${recentMessages.size} messages.`,
-              ephemeral: true,
-            });
-          } catch (err) {
-            console.error("❌ erro no /clear-channel:", err);
-
-            await interaction.followUp({
-              content: "❌ Failed to clear channel.",
-              ephemeral: true,
-            });
-          }
-
-          return;
-        }
-
-} catch (err) {
+      } catch (err) {
         console.error("❌ erro ao atualizar categoria online", err);
       }
     }
@@ -1286,24 +1246,22 @@ export async function startDiscordBot() {
                 type: 3,
                 required: true,
               },
-
-        {
-          name: "clear-channel",
-          description: "Clear recent messages from the current channel.",
-          defaultMemberPermissions:
-            PermissionsBitField.Flags.Administrator.toString(),
-          dmPermission: false,
-          options: [
-            {
-              name: "amount",
-              description: "Number of recent messages to delete.",
-              type: 4,
-              required: false,
-              min_value: 1,
-              max_value: 100,
-            },
-          ],
-        },
+            ],
+          },
+          {
+            name: "clear-channel",
+            description: "Clear recent messages from the current channel.",
+            defaultMemberPermissions: adminPermission,
+            dmPermission: false,
+            options: [
+              {
+                name: "amount",
+                description: "Number of recent messages to delete.",
+                type: 4,
+                required: false,
+                min_value: 1,
+                max_value: 100,
+              },
             ],
           },
           {
@@ -1354,6 +1312,41 @@ export async function startDiscordBot() {
         if (!(await assertAdmin(interaction))) return;
 
         await interaction.deferReply({ ephemeral: true });
+
+        if (interaction.commandName === "clear-channel") {
+          const amount = interaction.options.getInteger("amount") || 100;
+          const channel = interaction.channel as any;
+
+          if (!channel || !("messages" in channel)) {
+            await interaction.editReply("❌ This channel cannot be cleared.");
+            return;
+          }
+
+          try {
+            const messages = await channel.messages.fetch({ limit: amount });
+
+            const recentMessages = messages.filter((message: any) => {
+              const ageMs = Date.now() - message.createdTimestamp;
+              const fourteenDaysMs = 14 * 24 * 60 * 60 * 1000;
+
+              return ageMs < fourteenDaysMs;
+            });
+
+            if (recentMessages.size > 0) {
+              await channel.bulkDelete(recentMessages, true);
+            }
+
+            await interaction.editReply(
+              `✅ Cleared ${recentMessages.size} messages.`,
+            );
+          } catch (err) {
+            console.error("❌ erro no /clear-channel:", err);
+
+            await interaction.editReply("❌ Failed to clear channel.");
+          }
+
+          return;
+        }
 
         if (interaction.commandName === "reset-ranking") {
           await resetRankings();
