@@ -159,8 +159,6 @@ function migrateLegacyState(data: any): AppState {
     .slice(-150) as KillStreakEvent[];
 
   state.discordMessageIds = data.discordMessageIds || {};
-  state.activeMatch = data.activeMatch || null;
-
   state.files = data.files || {};
   state.lastDailyReset = data.lastDailyReset || "";
   state.lastWeeklyReset = data.lastWeeklyReset || "";
@@ -169,21 +167,29 @@ function migrateLegacyState(data: any): AppState {
   state.dailyStartedAt = data.dailyStartedAt;
   state.weeklyStartedAt = data.weeklyStartedAt;
 
+  state.activeMatch = data.activeMatch || null;
+
   state.lastLine = data.lastLine;
   state.lastFileName = data.lastFileName;
 
   const rawOnlinePlayers = data.onlinePlayers || {};
+  const now = new Date().toISOString();
 
   for (const [name, value] of Object.entries(rawOnlinePlayers)) {
     if (value === true) {
-      const now = new Date().toISOString();
       state.onlinePlayers[name] = {
         online: true,
         connectedAt: now,
         lastSeenAt: now,
       };
     } else if (typeof value === "object" && value) {
-      state.onlinePlayers[name] = value as OnlinePlayer;
+      const existing = value as any;
+
+      state.onlinePlayers[name] = {
+        online: true,
+        connectedAt: existing.connectedAt || existing.lastSeenAt || now,
+        lastSeenAt: existing.lastSeenAt || now,
+      };
     }
   }
 
