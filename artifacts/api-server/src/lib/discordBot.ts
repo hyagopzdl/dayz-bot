@@ -22,12 +22,90 @@ const MESSAGE_FILE_ONLINE_LIST = "message_online_list.json";
 const KILLFEED_PAGE_SIZE = 9;
 const KILLFEED_MESSAGE_PREFIX = "message_killfeed_page_";
 
+const KILLSTREAK_PAGE_SIZE = 10;
+const KILLSTREAK_MAX_EVENTS = 150;
+const KILLSTREAK_MESSAGE_PREFIX = "message_killstreak_page_";
+
 const BOT_NAME = "PZ's DayZ Bot";
 
 const BOT_ICON =
   "https://media.discordapp.net/attachments/1501806293583659048/1501832841703723088/pz-avatar.png?ex=69fd8254&is=69fc30d4&hm=2075bd7c316893afbf66950ab1373fc5d5a076662bc5ad1033b6763f6689b63c&=&format=webp&quality=lossless&width=1526&height=1526";
 
 let discordLoopRunning = false;
+
+function readState() {
+  try {
+    return JSON.parse(fs.readFileSync(STATE_FILE, "utf-8"));
+  } catch {
+    return {};
+  }
+}
+
+function writeState(state: any) {
+  fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
+}
+
+function ensureKillStreakState(state: any) {
+  state.currentKillStreaks = state.currentKillStreaks || {};
+  state.killStreakEvents = state.killStreakEvents || [];
+  return state;
+}
+
+function getKillStreakMeta(streak: number) {
+  if (streak >= 25) return { emoji: "👑", color: "#FFD700" };
+  if (streak >= 20) return { emoji: "🔥", color: "#FFD700" };
+  if (streak >= 15) return { emoji: "⚡", color: "#FFD700" };
+  if (streak >= 10) return { emoji: "💀", color: "#8000FF" };
+  return { emoji: "📈", color: "#00FF88" };
+}
+
+export function registerKillStreakFromKill(options: {
+  killer: string;
+  victim: string;
+  weapon?: string;
+  timestamp?: number;
+}) {
+  const killer = options.killer?.trim();
+  const victim = options.victim?.trim();
+
+  if (!killer || !victim) return;
+  if (killer.toLowerCase() === victim.toLowerCase()) return;
+
+  const state = ensureKillStreakState(readState());
+  const timestamp = options.timestamp || Math.floor(Date.now() / 1000);
+
+  const victimCurrentStreak = Number(state.currentKillStreaks[victim] || 0);
+
+  if (victimCurrentStreak >= 5) {
+    state.killStreakEvents.push({
+      id: `streak-ended-${timestamp}-${killer}-${victim}-${victimCurrentStreak}`,
+      type: "ended",
+      killer,
+      player: victim,
+      streak: victimCurrentStreak,
+      timestamp,
+    });
+  }
+
+  state.currentKillStreaks[victim] = 0;
+
+  const killerCurrentStreak = Number(state.currentKillStreaks[killer] || 0) + 1;
+  state.currentKillStreaks[killer] = killerCurrentStreak;
+
+  if (killerCurrentStreak >= 5 && killerCurrentStreak % 5 === 0) {
+    state.killStreakEvents.push({
+      id: `streak-${timestamp}-${killer}-${killerCurrentStreak}`,
+      type: "streak",
+      player: killer,
+      streak: killerCurrentStreak,
+      timestamp,
+    });
+  }
+
+  state.killStreakEvents = state.killStreakEvents.slice(-KILLSTREAK_MAX_EVENTS);
+
+  writeState(state);
+}
 
 export async function startDiscordBot() {
   if (!process.env.DISCORD_TOKEN) {
@@ -62,6 +140,12 @@ export async function startDiscordBot() {
         )) as TextBasedChannel)
       : null;
 
+    const killStreakChannel = process.env.DISCORD_KILLSTREAK_CHANNEL_ID
+      ? ((await client.channels.fetch(
+          process.env.DISCORD_KILLSTREAK_CHANNEL_ID,
+        )) as TextBasedChannel)
+      : null;
+
     const CATEGORY_ID = process.env.DISCORD_ONLINE_CHANNEL_ID!;
 
     function padEnd(str: string, size: number) {
@@ -92,17 +176,18 @@ export async function startDiscordBot() {
           weekly: Object.keys(state.weeklyPlayers || {}).length,
           online: Object.keys(state.onlinePlayers || {}).length,
           killfeed: (state.killFeedEvents || []).length,
+          killStreakEvents: (state.killStreakEvents || []).length,
         });
 
-        return state;
+        return ensureKillStreakState(state);
       } catch (err) {
         console.error("❌ Discord não conseguiu ler state.json:", err);
-        return {};
+        return ensureKillStreakState({});
       }
     }
 
     function saveState(state: any) {
-      fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
+      writeState(state);
       console.log("💾 state salvo pelo Discord");
     }
 
@@ -178,7 +263,6 @@ export async function startDiscordBot() {
 
     function buildFooter() {
       const timestamp = Math.floor(Date.now() / 1000);
-
       return `\u200B\n⏱️ Updated <t:${timestamp}:R>`;
     }
 
@@ -203,6 +287,8 @@ export async function startDiscordBot() {
       state.dailyPlayers = {};
       state.weeklyPlayers = {};
       state.killFeedEvents = [];
+      state.currentKillStreaks = {};
+      state.killStreakEvents = [];
 
       state.globalStartedAt = today;
       state.dailyStartedAt = today;
@@ -340,6 +426,10 @@ export async function startDiscordBot() {
       return `${KILLFEED_MESSAGE_PREFIX}${pageIndex}.json`;
     }
 
+    function killStreakPageFile(pageIndex: number) {
+      return `${KILLSTREAK_MESSAGE_PREFIX}${pageIndex}.json`;
+    }
+
     function formatWeapon(weapon: string | undefined) {
       const clean = weapon?.trim();
 
@@ -374,6 +464,42 @@ export async function startDiscordBot() {
 
       return createBaseEmbed("#FF3333", false).setDescription(
         `**${killer}** \`[${weapon}]\` killed 💀 **${victim}**`,
+      );
+    }
+
+    function createKillStreakEmptyEmbed() {
+      return createBaseEmbed("#FF3333").setDescription(
+        buildHeader("📈", "Kill Streak Feed", "Persistent streak history") +
+          `**No streak events yet**\nReach 5 kills in a row to enter the feed!`,
+      );
+    }
+
+    function formatKillStreakEmbed(event: any) {
+      const timestamp = Number(
+        event.timestamp || Math.floor(Date.now() / 1000),
+      );
+
+      if (event.type === "ended") {
+        return createBaseEmbed("#FF3333").setDescription(
+          `\u200B\n🛑 **Kill Streak Ended**\n` +
+            `${event.killer || "Unknown"} ended ${
+              event.player || "Unknown"
+            }'s ${event.streak || 0} kill streak\n` +
+            `${event.killer || "Unknown"} encerrou a sequência de ${
+              event.streak || 0
+            } kills de ${event.player || "Unknown"}\n` +
+            `\u200B\n\u200B\n<t:${timestamp}:F>`,
+        );
+      }
+
+      const streak = Number(event.streak || 0);
+      const meta = getKillStreakMeta(streak);
+
+      return createBaseEmbed(meta.color).setDescription(
+        `\u200B\n${meta.emoji} **${streak}x Kill Streak**\n` +
+          `${event.player || "Unknown"} is on a ${streak} kill streak\n` +
+          `${event.player || "Unknown"} está em uma sequência de ${streak} kills\n` +
+          `\u200B\n\u200B\n<t:${timestamp}:F>`,
       );
     }
 
@@ -433,18 +559,17 @@ export async function startDiscordBot() {
       } catch {}
     }
 
-    async function deleteExtraKillFeedPages(channel: any, neededPages: number) {
+    async function deleteExtraPages(
+      channel: any,
+      neededPages: number,
+      prefix: string,
+    ) {
       const files = fs
         .readdirSync(process.cwd())
-        .filter(
-          (file) =>
-            file.startsWith(KILLFEED_MESSAGE_PREFIX) && file.endsWith(".json"),
-        );
+        .filter((file) => file.startsWith(prefix) && file.endsWith(".json"));
 
       for (const file of files) {
-        const match = file.match(
-          new RegExp(`^${KILLFEED_MESSAGE_PREFIX}(\\d+)\\.json$`),
-        );
+        const match = file.match(new RegExp(`^${prefix}(\\d+)\\.json$`));
 
         if (!match) continue;
 
@@ -454,6 +579,17 @@ export async function startDiscordBot() {
           await deleteMessageByFile(channel, file);
         }
       }
+    }
+
+    async function deleteExtraKillFeedPages(channel: any, neededPages: number) {
+      await deleteExtraPages(channel, neededPages, KILLFEED_MESSAGE_PREFIX);
+    }
+
+    async function deleteExtraKillStreakPages(
+      channel: any,
+      neededPages: number,
+    ) {
+      await deleteExtraPages(channel, neededPages, KILLSTREAK_MESSAGE_PREFIX);
     }
 
     async function updateOnlineCount() {
@@ -486,9 +622,7 @@ export async function startDiscordBot() {
     }
 
     async function updateOnlineList(state: any) {
-      if (!onlineListChannel) {
-        return;
-      }
+      if (!onlineListChannel) return;
 
       await sendOrEdit(
         onlineListChannel,
@@ -498,9 +632,7 @@ export async function startDiscordBot() {
     }
 
     async function updateKillFeed(state: any) {
-      if (!killfeedChannel) {
-        return;
-      }
+      if (!killfeedChannel) return;
 
       const events = [...(state.killFeedEvents || [])].reverse();
 
@@ -533,10 +665,39 @@ export async function startDiscordBot() {
       saveState(freshState);
     }
 
-    async function updateLeaderboard() {
-      if (discordLoopRunning) {
+    async function updateKillStreakFeed(state: any) {
+      if (!killStreakChannel) return;
+
+      const events = [...(state.killStreakEvents || [])]
+        .slice(-KILLSTREAK_MAX_EVENTS)
+        .reverse();
+
+      if (!events.length) {
+        await sendOrEdit(killStreakChannel, killStreakPageFile(0), [
+          createKillStreakEmptyEmbed(),
+        ]);
+
+        await deleteExtraKillStreakPages(killStreakChannel, 1);
         return;
       }
+
+      const pages = chunkArray(events, KILLSTREAK_PAGE_SIZE);
+
+      for (let pageIndex = 0; pageIndex < pages.length; pageIndex++) {
+        const embeds = pages[pageIndex].map(formatKillStreakEmbed);
+
+        await sendOrEdit(
+          killStreakChannel,
+          killStreakPageFile(pageIndex),
+          embeds,
+        );
+      }
+
+      await deleteExtraKillStreakPages(killStreakChannel, pages.length);
+    }
+
+    async function updateLeaderboard() {
+      if (discordLoopRunning) return;
 
       discordLoopRunning = true;
 
@@ -561,7 +722,7 @@ export async function startDiscordBot() {
           MESSAGE_FILE_GLOBAL,
           formatLeaderboardEmbed(globalPlayers, {
             emoji: "🏆",
-            title: "General Ranking",
+            title: "General Ranking (Geral)",
             subtitle: `Count started on ${formatDate(
               state.globalStartedAt,
             )} (${getRelativeDays(state.globalStartedAt)})`,
@@ -574,7 +735,7 @@ export async function startDiscordBot() {
           MESSAGE_FILE_DAILY,
           formatLeaderboardEmbed(dailyPlayers, {
             emoji: "🌅",
-            title: "Daily Ranking",
+            title: "Daily Ranking (Diário)",
             subtitle: getDailyResetTime(),
             color: "#FF00AA",
           }),
@@ -585,7 +746,7 @@ export async function startDiscordBot() {
           MESSAGE_FILE_WEEKLY,
           formatLeaderboardEmbed(weeklyPlayers, {
             emoji: "📆",
-            title: "Weekly Ranking",
+            title: "Weekly Ranking (Semanal)",
             subtitle: getWeeklyResetTime(),
             color: "#0099FF",
           }),
@@ -594,6 +755,7 @@ export async function startDiscordBot() {
         await updateOnlineCount();
         await updateOnlineList(state);
         await updateKillFeed(state);
+        await updateKillStreakFeed(state);
       } catch (err) {
         console.error("❌ erro ao atualizar leaderboard", err);
       } finally {

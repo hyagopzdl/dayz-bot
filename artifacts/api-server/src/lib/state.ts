@@ -21,8 +21,24 @@ export type FileCursor = {
 export type KillFeedEvent = {
   killer: string;
   victim: string;
+  weapon?: string;
   at: string;
 };
+
+export type KillStreakEvent =
+  | {
+      type: "streak";
+      player: string;
+      streak: number;
+      timestamp: number;
+    }
+  | {
+      type: "ended";
+      player: string;
+      streak: number;
+      killer: string;
+      timestamp: number;
+    };
 
 export type AppState = {
   players: Record<string, PlayerStats>;
@@ -34,6 +50,9 @@ export type AppState = {
   recentEventIds: string[];
 
   killFeedEvents: KillFeedEvent[];
+
+  currentKillStreaks: Record<string, number>;
+  killStreakEvents: KillStreakEvent[];
 
   lastDailyReset: string;
   lastWeeklyReset: string;
@@ -51,9 +70,43 @@ function defaultState(): AppState {
     files: {},
     recentEventIds: [],
     killFeedEvents: [],
+    currentKillStreaks: {},
+    killStreakEvents: [],
     lastDailyReset: "",
     lastWeeklyReset: "",
   };
+}
+
+function normalizeKillStreakEvent(event: any): KillStreakEvent | null {
+  if (!event || typeof event !== "object") return null;
+
+  const timestamp =
+    typeof event.timestamp === "number"
+      ? event.timestamp
+      : event.at
+        ? Math.floor(new Date(event.at).getTime() / 1000)
+        : Math.floor(Date.now() / 1000);
+
+  if (event.type === "streak" || event.type === "milestone") {
+    return {
+      type: "streak",
+      player: event.player || "Unknown",
+      streak: Number(event.streak || 0),
+      timestamp,
+    };
+  }
+
+  if (event.type === "ended") {
+    return {
+      type: "ended",
+      player: event.player || "Unknown",
+      streak: Number(event.streak || 0),
+      killer: event.killer || event.endedBy || "Unknown",
+      timestamp,
+    };
+  }
+
+  return null;
 }
 
 function migrateLegacyState(data: any): AppState {
@@ -64,6 +117,14 @@ function migrateLegacyState(data: any): AppState {
   state.weeklyPlayers = data.weeklyPlayers || {};
   state.recentEventIds = data.recentEventIds || [];
   state.killFeedEvents = data.killFeedEvents || [];
+
+  state.currentKillStreaks = data.currentKillStreaks || data.killStreaks || {};
+
+  state.killStreakEvents = (data.killStreakEvents || [])
+    .map(normalizeKillStreakEvent)
+    .filter(Boolean)
+    .slice(-150) as KillStreakEvent[];
+
   state.files = data.files || {};
   state.lastDailyReset = data.lastDailyReset || "";
   state.lastWeeklyReset = data.lastWeeklyReset || "";
@@ -108,7 +169,11 @@ export function saveState(data: AppState) {
     onlinePlayers: data.onlinePlayers || {},
     files: data.files || {},
     recentEventIds: (data.recentEventIds || []).slice(-10000),
-    killFeedEvents: (data.killFeedEvents || []).slice(-50),
+    killFeedEvents: (data.killFeedEvents || []).slice(-100),
+
+    currentKillStreaks: data.currentKillStreaks || {},
+    killStreakEvents: (data.killStreakEvents || []).slice(-150),
+
     lastDailyReset: data.lastDailyReset || "",
     lastWeeklyReset: data.lastWeeklyReset || "",
     lastLine: data.lastLine,

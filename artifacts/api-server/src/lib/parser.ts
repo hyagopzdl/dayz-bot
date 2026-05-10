@@ -7,6 +7,8 @@ const KILL_REGEX = /Player "([^"]+)".*?killed by Player "([^"]+)"/;
 const CONNECT_REGEX = /Player "([^"]+)".*?is connected/;
 const DISCONNECT_REGEX = /Player "([^"]+)".*?has been disconnected/;
 
+const KILL_STREAK_MILESTONES = [5, 10, 15, 20, 25];
+
 type AdmEventTime = {
   dateString: string;
   date: Date;
@@ -167,6 +169,84 @@ function addKillFeedEvent(
   state.killFeedEvents = state.killFeedEvents.slice(-100);
 }
 
+function addKillStreakMilestoneEvent(
+  state: AppState,
+  player: string,
+  streak: number,
+  eventTime: AdmEventTime | null,
+) {
+  state.killStreakEvents = state.killStreakEvents || [];
+
+  state.killStreakEvents.push({
+    type: "milestone",
+    player,
+    streak,
+    at: (eventTime?.date || new Date()).toISOString(),
+  });
+
+  state.killStreakEvents = state.killStreakEvents.slice(-150);
+
+  console.log(`📈 ${player} atingiu ${streak} kill streak`);
+}
+
+function addKillStreakEndedEvent(
+  state: AppState,
+  player: string,
+  streak: number,
+  endedBy: string,
+  eventTime: AdmEventTime | null,
+) {
+  state.killStreakEvents = state.killStreakEvents || [];
+
+  state.killStreakEvents.push({
+    type: "ended",
+    player,
+    streak,
+    endedBy,
+    at: (eventTime?.date || new Date()).toISOString(),
+  });
+
+  state.killStreakEvents = state.killStreakEvents.slice(-150);
+
+  console.log(`💀 ${endedBy} encerrou streak de ${streak} de ${player}`);
+}
+
+function updateKillStreaks(
+  state: AppState,
+  killer: string,
+  victim: string,
+  eventTime: AdmEventTime | null,
+) {
+  state.killStreaks = state.killStreaks || {};
+  state.killStreakEvents = state.killStreakEvents || [];
+
+  const victimCurrentStreak = state.killStreaks[victim] || 0;
+
+  if (victimCurrentStreak >= 5) {
+    addKillStreakEndedEvent(
+      state,
+      victim,
+      victimCurrentStreak,
+      killer,
+      eventTime,
+    );
+  }
+
+  state.killStreaks[victim] = 0;
+
+  const killerCurrentStreak = (state.killStreaks[killer] || 0) + 1;
+  state.killStreaks[killer] = killerCurrentStreak;
+
+  if (
+    KILL_STREAK_MILESTONES.includes(killerCurrentStreak) ||
+    (killerCurrentStreak > 25 && killerCurrentStreak % 5 === 0)
+  ) {
+    addKillStreakMilestoneEvent(state, killer, killerCurrentStreak, eventTime);
+  }
+
+  state.killStreakEvents = state.killStreakEvents.slice(-150);
+}
+
 function addKill(
   state: AppState,
   killer: string,
@@ -196,6 +276,7 @@ function addKill(
     state.weeklyPlayers[victim].deaths += 1;
   }
 
+  updateKillStreaks(state, killer, victim, eventTime);
   addKillFeedEvent(state, killer, victim, weapon, eventTime);
 }
 
@@ -383,6 +464,7 @@ function processFile(filePath: string, state: AppState) {
 
   state.recentEventIds = state.recentEventIds.slice(-10000);
   state.killFeedEvents = (state.killFeedEvents || []).slice(-100);
+  state.killStreakEvents = (state.killStreakEvents || []).slice(-150);
 
   console.log(`🎯 novas kills: ${newKills}`);
   console.log(`⚠️ kills sem data: ${killsWithoutDate}`);
