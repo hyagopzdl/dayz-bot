@@ -19,6 +19,7 @@ export type PlayerStats = {
 
 export type OnlinePlayer = {
   online: true;
+  connectedAt?: string;
   lastSeenAt: string;
 };
 
@@ -49,8 +50,7 @@ export type KillStreakEvent =
       timestamp: number;
     };
 
-
-export type MatchState = {
+export type ActiveMatch = {
   id: string;
   name: string;
   channelId: string;
@@ -59,6 +59,8 @@ export type MatchState = {
   endedAt?: string;
   status: "active" | "finished";
   players: Record<string, PlayerStats>;
+  serverPasswordApplied?: boolean;
+  password?: string;
 };
 
 export type AppState = {
@@ -77,7 +79,7 @@ export type AppState = {
 
   discordMessageIds: Record<string, string>;
 
-  activeMatch?: MatchState;
+  activeMatch?: ActiveMatch | null;
 
   lastDailyReset: string;
   lastWeeklyReset: string;
@@ -102,6 +104,7 @@ function defaultState(): AppState {
     currentKillStreaks: {},
     killStreakEvents: [],
     discordMessageIds: {},
+    activeMatch: null,
     lastDailyReset: "",
     lastWeeklyReset: "",
   };
@@ -156,19 +159,7 @@ function migrateLegacyState(data: any): AppState {
     .slice(-150) as KillStreakEvent[];
 
   state.discordMessageIds = data.discordMessageIds || {};
-
-  if (data.activeMatch && typeof data.activeMatch === "object") {
-    state.activeMatch = {
-      id: data.activeMatch.id || `match-${Date.now()}`,
-      name: data.activeMatch.name || "Match",
-      channelId: data.activeMatch.channelId || "",
-      messageId: data.activeMatch.messageId,
-      startedAt: data.activeMatch.startedAt || new Date().toISOString(),
-      endedAt: data.activeMatch.endedAt,
-      status: data.activeMatch.status === "finished" ? "finished" : "active",
-      players: data.activeMatch.players || {},
-    };
-  }
+  state.activeMatch = data.activeMatch || null;
 
   state.files = data.files || {};
   state.lastDailyReset = data.lastDailyReset || "";
@@ -185,9 +176,11 @@ function migrateLegacyState(data: any): AppState {
 
   for (const [name, value] of Object.entries(rawOnlinePlayers)) {
     if (value === true) {
+      const now = new Date().toISOString();
       state.onlinePlayers[name] = {
         online: true,
-        lastSeenAt: new Date().toISOString(),
+        connectedAt: now,
+        lastSeenAt: now,
       };
     } else if (typeof value === "object" && value) {
       state.onlinePlayers[name] = value as OnlinePlayer;
@@ -261,8 +254,7 @@ export async function saveStateAsync(data: AppState) {
     killStreakEvents: (data.killStreakEvents || []).slice(-150),
 
     discordMessageIds: data.discordMessageIds || {},
-
-    activeMatch: data.activeMatch,
+    activeMatch: data.activeMatch || null,
 
     lastDailyReset: data.lastDailyReset || "",
     lastWeeklyReset: data.lastWeeklyReset || "",

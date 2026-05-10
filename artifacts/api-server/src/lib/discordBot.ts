@@ -4,6 +4,8 @@ import {
   TextBasedChannel,
   EmbedBuilder,
   PermissionsBitField,
+  PermissionFlagsBits,
+  ColorResolvable,
   ChannelType,
 } from "discord.js";
 import { getStateAsync, saveStateAsync } from "./state";
@@ -29,6 +31,11 @@ const BOT_NAME = "PZ's DayZ Bot";
 const BOT_ICON =
   "https://media.discordapp.net/attachments/1501806293583659048/1501832841703723088/pz-avatar.png?ex=69fd8254&is=69fc30d4&hm=2075bd7c316893afbf66950ab1373fc5d5a076662bc5ad1033b6763f6689b63c&=&format=webp&quality=lossless&width=1526&height=1526";
 
+const NITRADO_SERVICE_ID = process.env.NITRADO_SERVICE_ID || "19149785";
+const NITRADO_SERVER_CONFIG_FILE =
+  process.env.NITRADO_SERVER_CONFIG_FILE ||
+  "/games/ni13029176_1/noftp/dayzps/config/serverDZ.cfg";
+
 let discordLoopRunning = false;
 
 function ensureBotState(state: any) {
@@ -42,10 +49,7 @@ function ensureBotState(state: any) {
   state.currentKillStreaks = state.currentKillStreaks || {};
   state.killStreakEvents = state.killStreakEvents || [];
   state.discordMessageIds = state.discordMessageIds || {};
-
-  if (state.activeMatch) {
-    state.activeMatch.players = state.activeMatch.players || {};
-  }
+  state.activeMatch = state.activeMatch || null;
 
   return state;
 }
@@ -93,6 +97,126 @@ function getKillStreakMeta(streak: number) {
     en: "is on a",
     pt: "está em uma sequência de",
   };
+}
+
+
+function requireNitradoToken() {
+  if (!process.env.NITRADO_TOKEN) {
+    throw new Error("NITRADO_TOKEN não definido");
+  }
+
+  return process.env.NITRADO_TOKEN;
+}
+
+async function nitradoFetchJson(url: string, init: RequestInit = {}): Promise<any> {
+  const token = requireNitradoToken();
+  const response = await fetch(url, {
+    ...init,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      ...(init.headers || {}),
+    },
+  });
+
+  const text = await response.text();
+
+  if (!response.ok) {
+    throw new Error(`Nitrado HTTP ${response.status}: ${text}`);
+  }
+
+  if (!text) return {};
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { raw: text };
+  }
+}
+
+async function getNitradoFileDownloadUrl(filePath: string): Promise<string> {
+  const json = await nitradoFetchJson(
+    `https://api.nitrado.net/services/${NITRADO_SERVICE_ID}/gameservers/file_server/download?file=${encodeURIComponent(
+      filePath,
+    )}`,
+  );
+
+  const url = json?.data?.token?.url;
+
+  if (!url) {
+    throw new Error("Nitrado não retornou URL de download do server config");
+  }
+
+  return url;
+}
+
+async function getNitradoFileUploadUrl(filePath: string): Promise<string> {
+  const json = await nitradoFetchJson(
+    `https://api.nitrado.net/services/${NITRADO_SERVICE_ID}/gameservers/file_server/upload?file=${encodeURIComponent(
+      filePath,
+    )}`,
+  );
+
+  const url = json?.data?.token?.url;
+
+  if (!url) {
+    throw new Error("Nitrado não retornou URL de upload do server config");
+  }
+
+  return url;
+}
+
+async function readNitradoServerConfig() {
+  const url = await getNitradoFileDownloadUrl(NITRADO_SERVER_CONFIG_FILE);
+  const response = await fetch(`${url}&t=${Date.now()}`);
+
+  if (!response.ok) {
+    throw new Error(`ADM config download HTTP ${response.status}: ${await response.text()}`);
+  }
+
+  return response.text();
+}
+
+async function writeNitradoServerConfig(content: string) {
+  const url = await getNitradoFileUploadUrl(NITRADO_SERVER_CONFIG_FILE);
+  const response = await fetch(`${url}&t=${Date.now()}`, {
+    method: "PUT",
+    body: content,
+    headers: {
+      "Content-Type": "text/plain; charset=utf-8",
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`ADM config upload HTTP ${response.status}: ${await response.text()}`);
+  }
+}
+
+function setDayZServerPassword(config: string, password: string) {
+  const escapedPassword = password.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  const line = `password = "${escapedPassword}";`;
+
+  if (/^\s*password\s*=.*;\s*$/im.test(config)) {
+    return config.replace(/^\s*password\s*=.*;\s*$/im, line);
+  }
+
+  return `${config.trimEnd()}\n${line}\n`;
+}
+
+async function applyServerPassword(password: string) {
+  const config = await readNitradoServerConfig();
+  await writeNitradoServerConfig(setDayZServerPassword(config, password));
+}
+
+async function removeServerPassword() {
+  const config = await readNitradoServerConfig();
+  await writeNitradoServerConfig(setDayZServerPassword(config, ""));
+}
+
+async function restartNitradoServer() {
+  await nitradoFetchJson(
+    `https://api.nitrado.net/services/${NITRADO_SERVICE_ID}/gameservers/restart`,
+    { method: "POST" },
+  );
 }
 
 export async function registerKillStreakFromKill(options: {
@@ -318,6 +442,7 @@ export async function startDiscordBot() {
       state.killFeedEvents = [];
       state.currentKillStreaks = {};
       state.killStreakEvents = [];
+      state.activeMatch = null;
 
       state.globalStartedAt = today;
       state.dailyStartedAt = today;
@@ -341,6 +466,21 @@ export async function startDiscordBot() {
       return Object.keys(state.onlinePlayers || {}).sort((a, b) =>
         a.localeCompare(b),
       );
+    }
+
+    function formatDuration(ms: number) {
+      const totalMinutes = Math.max(0, Math.floor(ms / 60000));
+      const hours = Math.floor(totalMinutes / 60);
+      const minutes = totalMinutes % 60;
+
+      return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+    }
+
+    function getOnlineSessionTime(player: any) {
+      const startedAt = player?.connectedAt || player?.lastSeenAt;
+      const start = startedAt ? new Date(startedAt).getTime() : Date.now();
+
+      return formatDuration(Date.now() - start);
     }
 
     function formatLeaderboardEmbed(
@@ -408,202 +548,6 @@ export async function startDiscordBot() {
       return embed;
     }
 
-    function sanitizeChannelName(value: string) {
-      return value
-        .normalize("NFD")
-        .replace(/[\u0300-\u036f]/g, "")
-        .toLowerCase()
-        .replace(/[^a-z0-9-]+/g, "-")
-        .replace(/^-+|-+$/g, "")
-        .slice(0, 80);
-    }
-
-    function createMatchChannelName() {
-      const now = new Date();
-      const date = now.toISOString().slice(0, 10);
-      const time = now.toISOString().slice(11, 16).replace(":", "-");
-      return sanitizeChannelName(`match-${date}-${time}`);
-    }
-
-    function getUnixTimestamp(dateString?: string) {
-      const time = dateString ? new Date(dateString).getTime() : Date.now();
-      return Math.floor(time / 1000);
-    }
-
-    function formatDuration(startedAt?: string, endedAt?: string) {
-      if (!startedAt) return "Unknown";
-
-      const start = new Date(startedAt).getTime();
-      const end = endedAt ? new Date(endedAt).getTime() : Date.now();
-      const minutes = Math.max(0, Math.floor((end - start) / 60000));
-
-      if (minutes < 60) return `${minutes} min`;
-
-      const hours = Math.floor(minutes / 60);
-      const rest = minutes % 60;
-      return `${hours}h ${rest}m`;
-    }
-
-    function getRankPosition(players: any[], playerName: string) {
-      const index = players.findIndex(
-        (p) => p.name.toLowerCase() === playerName.toLowerCase(),
-      );
-
-      return index >= 0 ? index + 1 : null;
-    }
-
-    function findPlayerName(state: any, query: string) {
-      const normalized = query.trim().toLowerCase();
-      const pools = [
-        state.players || {},
-        state.dailyPlayers || {},
-        state.weeklyPlayers || {},
-        state.currentKillStreaks || {},
-        state.onlinePlayers || {},
-        state.activeMatch?.players || {},
-      ];
-
-      for (const pool of pools) {
-        const match = Object.keys(pool).find(
-          (name) => name.toLowerCase() === normalized,
-        );
-        if (match) return match;
-      }
-
-      for (const pool of pools) {
-        const match = Object.keys(pool).find((name) =>
-          name.toLowerCase().includes(normalized),
-        );
-        if (match) return match;
-      }
-
-      return query.trim();
-    }
-
-    function getPlayerStatsLine(stats: any) {
-      const kills = Number(stats?.kills || 0);
-      const deaths = Number(stats?.deaths || 0);
-      const kd = deaths > 0 ? (kills / deaths).toFixed(2) : kills.toFixed(2);
-
-      return { kills, deaths, kd };
-    }
-
-    function formatPlayerStatsEmbed(state: any, playerQuery: string) {
-      const player = findPlayerName(state, playerQuery);
-      const globalStats = state.players?.[player];
-      const dailyStats = state.dailyPlayers?.[player];
-      const weeklyStats = state.weeklyPlayers?.[player];
-      const matchStats = state.activeMatch?.players?.[player];
-
-      const globalPlayers = mapPlayers(state.players);
-      const dailyPlayers = mapPlayers(state.dailyPlayers);
-      const weeklyPlayers = mapPlayers(state.weeklyPlayers);
-      const matchPlayers = mapPlayers(state.activeMatch?.players || {});
-
-      if (!globalStats && !dailyStats && !weeklyStats && !matchStats) {
-        return createBaseEmbed("#FF3333").setDescription(
-          buildHeader("🔎", "Player Stats", `Search: ${playerQuery}`) +
-            `**Player not found**\nNo stats found for \`${playerQuery}\`.` +
-            buildFooter(),
-        );
-      }
-
-      const global = getPlayerStatsLine(globalStats);
-      const daily = getPlayerStatsLine(dailyStats);
-      const weekly = getPlayerStatsLine(weeklyStats);
-      const match = getPlayerStatsLine(matchStats);
-      const currentStreak = Number(state.currentKillStreaks?.[player] || 0);
-      const online = Boolean(state.onlinePlayers?.[player]);
-
-      const globalRank = getRankPosition(globalPlayers, player);
-      const dailyRank = getRankPosition(dailyPlayers, player);
-      const weeklyRank = getRankPosition(weeklyPlayers, player);
-      const matchRank = getRankPosition(matchPlayers, player);
-
-      let description = buildHeader(
-        "📊",
-        "Player Stats",
-        `Detailed stats for **${player}**`,
-      );
-
-      description +=
-        `**Status:** ${online ? "🟢 Online" : "⚫ Offline"}\n` +
-        `**Current Streak:** ${currentStreak} kill${currentStreak === 1 ? "" : "s"}\n\n` +
-        `🏆 **Global**\n` +
-        `Kills: **${global.kills}** • Deaths: **${global.deaths}** • K/D: **${global.kd}**${globalRank ? ` • Rank: **#${globalRank}**` : ""}\n\n` +
-        `🌅 **Daily**\n` +
-        `Kills: **${daily.kills}** • Deaths: **${daily.deaths}** • K/D: **${daily.kd}**${dailyRank ? ` • Rank: **#${dailyRank}**` : ""}\n\n` +
-        `📆 **Weekly**\n` +
-        `Kills: **${weekly.kills}** • Deaths: **${weekly.deaths}** • K/D: **${weekly.kd}**${weeklyRank ? ` • Rank: **#${weeklyRank}**` : ""}`;
-
-      if (state.activeMatch) {
-        description +=
-          `\n\n🎮 **Current Match**\n` +
-          `Kills: **${match.kills}** • Deaths: **${match.deaths}** • K/D: **${match.kd}**${matchRank ? ` • Rank: **#${matchRank}**` : ""}`;
-      }
-
-      description += buildFooter();
-
-      return createBaseEmbed("#0099FF").setDescription(description);
-    }
-
-    function formatMatchRankingEmbed(match: any) {
-      const players = mapPlayers(match?.players || {});
-      const status = match?.status === "finished" ? "Finished" : "Live";
-      const statusEmoji = match?.status === "finished" ? "🏁" : "🎮";
-      const startedTs = getUnixTimestamp(match?.startedAt);
-      const endedTs = match?.endedAt ? getUnixTimestamp(match.endedAt) : null;
-
-      const embed = createBaseEmbed(match?.status === "finished" ? "#FFD700" : "#00FF88");
-
-      let description = buildHeader(
-        statusEmoji,
-        `Match Ranking (${status})`,
-        `${match?.name || "Match"} • Started <t:${startedTs}:R>`,
-      );
-
-      if (match?.status === "finished" && endedTs) {
-        description += `🏁 Finished <t:${endedTs}:R> • Duration: **${formatDuration(
-          match.startedAt,
-          match.endedAt,
-        )}**\n\n`;
-      }
-
-      if (!players.length) {
-        description += `**No kills registered yet**\nKills during this match will appear here.\n`;
-      } else {
-        const maxName = Math.min(
-          Math.max(...players.map((p) => p.name.length)),
-          18,
-        );
-        const maxKillsLength = Math.max(
-          ...players.map((p) => `${p.kills} kills`.length),
-        );
-        const KD_WIDTH = 8;
-
-        players.slice(0, 10).forEach((p, i) => {
-          const rank = getRank(i);
-          const trimmedName =
-            p.name.length > maxName
-              ? p.name.slice(0, maxName - 1) + "…"
-              : p.name;
-          const name = padEnd(trimmedName, maxName);
-          const killsText = `${p.kills} kills`;
-          const kills = padStart(killsText, maxKillsLength);
-          const kd =
-            p.deaths > 0 ? (p.kills / p.deaths).toFixed(2) : p.kills.toFixed(2);
-          const kdText = `K/D ${kd}`;
-          const kdFormatted = padStart(kdText, KD_WIDTH);
-
-          description += `${rank} \`${name}\` \`${kills}\` \`${kdFormatted}\`\n\n`;
-        });
-      }
-
-      description += buildFooter();
-
-      return embed.setDescription(description);
-    }
-
     function formatOnlineListEmbed(state: any) {
       const players = getOnlinePlayerNames(state);
       const embed = createBaseEmbed("#00FF88");
@@ -618,7 +562,24 @@ export async function startDiscordBot() {
         return embed;
       }
 
-      const list = players.map((name) => `• ${name}`).join("\n");
+      const lines = players
+        .map((name) => {
+          const globalKey = findPlayerKey(state.players, name) || name;
+          const stats = state.players?.[globalKey] || { kills: 0, deaths: 0 };
+          const streakKey = findPlayerKey(state.currentKillStreaks, name) || name;
+          const streak = Number(state.currentKillStreaks?.[streakKey] || 0);
+          const onlineKey = findPlayerKey(state.onlinePlayers, name) || name;
+          const session = getOnlineSessionTime(state.onlinePlayers?.[onlineKey]);
+
+          return (
+            `**${name}**\n` +
+            `\`Kill(s): ${stats.kills || 0}\` • ` +
+            `\`Death(s): ${stats.deaths || 0}\` • ` +
+            `\`Streak: ${streak}\` • ` +
+            `\`Session: ${session}\``
+          );
+        })
+        .join("\n\n");
 
       embed.setDescription(
         buildHeader(
@@ -626,7 +587,7 @@ export async function startDiscordBot() {
           "Players Online",
           `${players.length}/10 survivors currently connected`,
         ) +
-          `${list}` +
+          lines +
           buildFooter(),
       );
 
@@ -667,7 +628,7 @@ export async function startDiscordBot() {
           "🔫",
           "Kill Feed",
           `${eventsCount} recent kill${eventsCount === 1 ? "" : "s"} detected`,
-        ) + `Tracking the latest PvP activity across the server.`,
+        ) + `Tracking the latest PvP activity across the server.` + buildFooter(),
       );
     }
 
@@ -930,31 +891,6 @@ export async function startDiscordBot() {
       );
     }
 
-    async function updateMatchRanking(state: any) {
-      if (!state.activeMatch?.channelId) return;
-
-      try {
-        const channel = (await client.channels.fetch(
-          state.activeMatch.channelId,
-        )) as TextBasedChannel | null;
-
-        if (!channel) return;
-
-        await sendOrEdit(
-          state,
-          channel,
-          "message_active_match.json",
-          formatMatchRankingEmbed(state.activeMatch),
-        );
-
-        state.activeMatch.messageId =
-          state.discordMessageIds?.["message_active_match.json"] ||
-          state.activeMatch.messageId;
-      } catch (err) {
-        console.error("❌ erro ao atualizar ranking da match", err);
-      }
-    }
-
     async function updateLeaderboard() {
       if (discordLoopRunning) return;
 
@@ -1026,42 +962,229 @@ export async function startDiscordBot() {
       }
     }
 
-    function adminOnlyCommand(name: string, description: string, options: any[] = []) {
-      return {
-        name,
-        description,
-        defaultMemberPermissions:
-          PermissionsBitField.Flags.Administrator.toString(),
-        dmPermission: false,
-        options,
-      };
+
+    function getRankPosition(playersObj: any, playerName: string) {
+      const players = mapPlayers(playersObj);
+      const index = players.findIndex(
+        (player) => player.name.toLowerCase() === playerName.toLowerCase(),
+      );
+
+      return index >= 0 ? index + 1 : null;
+    }
+
+    function findPlayerKey(obj: any, playerName: string) {
+      return Object.keys(obj || {}).find(
+        (name) => name.toLowerCase() === playerName.toLowerCase(),
+      );
+    }
+
+    function createPlayerStatsEmbed(state: any, playerName: string) {
+      const globalKey = findPlayerKey(state.players, playerName);
+      const dailyKey = findPlayerKey(state.dailyPlayers, playerName);
+      const weeklyKey = findPlayerKey(state.weeklyPlayers, playerName);
+      const streakKey = findPlayerKey(state.currentKillStreaks, playerName);
+      const onlineKey = findPlayerKey(state.onlinePlayers, playerName);
+
+      const canonicalName = globalKey || dailyKey || weeklyKey || streakKey || onlineKey || playerName;
+      const stats = state.players?.[globalKey || canonicalName] || { kills: 0, deaths: 0 };
+      const dailyStats = state.dailyPlayers?.[dailyKey || canonicalName] || { kills: 0, deaths: 0 };
+      const weeklyStats = state.weeklyPlayers?.[weeklyKey || canonicalName] || { kills: 0, deaths: 0 };
+      const currentStreak = Number(state.currentKillStreaks?.[streakKey || canonicalName] || 0);
+      const kd = stats.deaths > 0 ? (stats.kills / stats.deaths).toFixed(2) : stats.kills.toFixed(2);
+      const globalRank = getRankPosition(state.players, canonicalName);
+      const dailyRank = getRankPosition(state.dailyPlayers, canonicalName);
+      const weeklyRank = getRankPosition(state.weeklyPlayers, canonicalName);
+      const isOnline = Boolean(onlineKey);
+
+      return createBaseEmbed("#0099FF").setDescription(
+        `\u200B\n` +
+          `👤 **Player Stats**\n` +
+          `${canonicalName}\n\u200B\n\u200B\n` +
+          `**Kills:** ${stats.kills}\n` +
+          `**Deaths:** ${stats.deaths}\n` +
+          `**K/D:** ${kd}\n` +
+          `**Current Streak:** ${currentStreak}\n\n` +
+          `**Daily:** ${dailyStats.kills} kills / ${dailyStats.deaths} deaths${dailyRank ? ` • #${dailyRank}` : ""}\n` +
+          `**Weekly:** ${weeklyStats.kills} kills / ${weeklyStats.deaths} deaths${weeklyRank ? ` • #${weeklyRank}` : ""}\n` +
+          `**Global Rank:** ${globalRank ? `#${globalRank}` : "Unranked"}\n` +
+          `**Status:** ${isOnline ? "🟢 Online" : "⚫ Offline"}` +
+          buildFooter(),
+      );
+    }
+
+    function createMatchEmbed(state: any) {
+      const match = state.activeMatch;
+
+      if (!match) {
+        return createBaseEmbed("#FF3333").setDescription(
+          buildHeader("🎮", "Match Ranking", "No active match") +
+            `There is no match data available.` +
+            buildFooter(),
+        );
+      }
+
+      const players = mapPlayers(match.players || {});
+      const statusText = match.status === "active" ? "Live match in progress" : "Final match result";
+      const startedTs = Math.floor(new Date(match.startedAt).getTime() / 1000);
+      const endedTs = match.endedAt ? Math.floor(new Date(match.endedAt).getTime() / 1000) : null;
+
+      const embed = formatLeaderboardEmbed(players, {
+        emoji: match.status === "active" ? "🎮" : "🏁",
+        title: match.status === "active" ? "Match Ranking" : "Final Match Ranking",
+        subtitle: `${statusText} • Started <t:${startedTs}:f>${endedTs ? ` • Ended <t:${endedTs}:f>` : ""}`,
+        color: match.status === "active" ? "#00FF88" : "#FFD700",
+      });
+
+      return embed;
+    }
+
+    async function updateMatchRanking(state: any) {
+      if (!state.activeMatch?.channelId) return;
+
+      try {
+        const channel = await client.channels.fetch(state.activeMatch.channelId);
+        if (!channel || !("send" in channel)) return;
+
+        const key = `match_${state.activeMatch.id}_ranking`;
+        await sendOrEdit(state, channel as any, key, createMatchEmbed(state));
+        state.activeMatch.messageId = state.discordMessageIds?.[key];
+      } catch (err) {
+        console.error("❌ erro ao atualizar ranking da match", err);
+      }
+    }
+
+    function resetDaily(state: any) {
+      state.dailyPlayers = {};
+      state.dailyStartedAt = new Date().toISOString().slice(0, 10);
+      state.lastDailyReset = state.dailyStartedAt;
+    }
+
+    function resetWeekly(state: any) {
+      state.weeklyPlayers = {};
+      state.weeklyStartedAt = new Date().toISOString().slice(0, 10);
+      state.lastWeeklyReset = state.weeklyStartedAt;
+    }
+
+    function resetStreaks(state: any) {
+      state.currentKillStreaks = {};
+      state.killStreakEvents = [];
+    }
+
+    function wipePlayer(state: any, playerName: string) {
+      const collections = [
+        state.players,
+        state.dailyPlayers,
+        state.weeklyPlayers,
+        state.currentKillStreaks,
+        state.onlinePlayers,
+      ];
+
+      for (const collection of collections) {
+        const key = findPlayerKey(collection, playerName);
+        if (key) delete collection[key];
+      }
+
+      if (state.activeMatch?.players) {
+        const key = findPlayerKey(state.activeMatch.players, playerName);
+        if (key) delete state.activeMatch.players[key];
+      }
+    }
+
+    async function assertAdmin(interaction: any) {
+      if (
+        !interaction.memberPermissions?.has(
+          PermissionsBitField.Flags.Administrator,
+        )
+      ) {
+        await interaction.reply({
+          content: "❌ Only administrators can use this command.",
+          ephemeral: true,
+        });
+
+        return false;
+      }
+
+      return true;
     }
 
     async function registerCommands() {
       try {
+        const adminPermission = PermissionsBitField.Flags.Administrator.toString();
+
         const commands = [
-          adminOnlyCommand(
-            "reset-ranking",
-            "Reset all rankings without reprocessing old logs.",
-          ),
-          adminOnlyCommand("start-match", "Start a match and create its ranking channel."),
-          adminOnlyCommand("stop-match", "Stop the active match and freeze its ranking."),
-          adminOnlyCommand("delete-match", "Delete the active/finished match channel and data."),
-          adminOnlyCommand("wipe-daily", "Reset only the daily ranking."),
-          adminOnlyCommand("wipe-weekly", "Reset only the weekly ranking."),
-          adminOnlyCommand("wipe-streaks", "Reset kill streaks and streak feed."),
-          adminOnlyCommand("wipe-all", "Reset all rankings, feeds, streaks and active match data."),
-          adminOnlyCommand("wipe-player", "Remove a player from all rankings and streaks.", [
-            {
-              name: "player",
-              description: "Player name to wipe.",
-              type: 3,
-              required: true,
-            },
-          ]),
+          {
+            name: "reset-ranking",
+            description: "Reset all rankings without reprocessing old logs.",
+            defaultMemberPermissions: adminPermission,
+            dmPermission: false,
+          },
+          {
+            name: "start-match",
+            description: "Start a new tracked match and create its private ranking channel.",
+            defaultMemberPermissions: adminPermission,
+            dmPermission: false,
+            options: [
+              {
+                name: "password",
+                description: "Optional server password. If provided, the bot applies it and restarts the server.",
+                type: 3,
+                required: false,
+              },
+            ],
+          },
+          {
+            name: "stop-match",
+            description: "Stop the active match and freeze its ranking.",
+            defaultMemberPermissions: adminPermission,
+            dmPermission: false,
+          },
+          {
+            name: "delete-match",
+            description: "Delete the active/finished match channel and match data.",
+            defaultMemberPermissions: adminPermission,
+            dmPermission: false,
+          },
+          {
+            name: "wipe-daily",
+            description: "Wipe only the daily ranking.",
+            defaultMemberPermissions: adminPermission,
+            dmPermission: false,
+          },
+          {
+            name: "wipe-weekly",
+            description: "Wipe only the weekly ranking.",
+            defaultMemberPermissions: adminPermission,
+            dmPermission: false,
+          },
+          {
+            name: "wipe-streaks",
+            description: "Wipe current streaks and streak feed history.",
+            defaultMemberPermissions: adminPermission,
+            dmPermission: false,
+          },
+          {
+            name: "wipe-all",
+            description: "Wipe all competitive stats while keeping parser/message infrastructure.",
+            defaultMemberPermissions: adminPermission,
+            dmPermission: false,
+          },
+          {
+            name: "wipe-player",
+            description: "Remove one player from rankings, streaks and active match.",
+            defaultMemberPermissions: adminPermission,
+            dmPermission: false,
+            options: [
+              {
+                name: "player",
+                description: "Player name to remove.",
+                type: 3,
+                required: true,
+              },
+            ],
+          },
           {
             name: "player-stats",
-            description: "Show player stats.",
+            description: "Show stats for a player.",
             dmPermission: false,
             options: [
               {
@@ -1084,313 +1207,233 @@ export async function startDiscordBot() {
           await client.application?.commands.set(commands);
         }
       } catch (err) {
-        console.error("❌ erro registrando slash commands:", err);
+        console.error("❌ erro registrando comandos:", err);
       }
-    }
-
-    function isAdminInteraction(interaction: any) {
-      return interaction.memberPermissions?.has(
-        PermissionsBitField.Flags.Administrator,
-      );
-    }
-
-    async function requireAdmin(interaction: any) {
-      if (isAdminInteraction(interaction)) return true;
-
-      await interaction.reply({
-        content: "❌ Only administrators can use this command.",
-        ephemeral: true,
-      });
-
-      return false;
-    }
-
-    async function handleStartMatch(interaction: any) {
-      if (!(await requireAdmin(interaction))) return;
-
-      await interaction.deferReply({ ephemeral: true });
-
-      const state = await getState();
-
-      if (state.activeMatch?.status === "active") {
-        await interaction.editReply(
-          `❌ There is already an active match: <#${state.activeMatch.channelId}>`,
-        );
-        return;
-      }
-
-      const guild = interaction.guild ||
-        (process.env.DISCORD_SERVER_ID
-          ? await client.guilds.fetch(process.env.DISCORD_SERVER_ID)
-          : null);
-
-      if (!guild) {
-        await interaction.editReply("❌ Could not resolve the Discord server.");
-        return;
-      }
-
-      const channelName = createMatchChannelName();
-      const channelOptions: any = {
-        name: channelName,
-        type: ChannelType.GuildText,
-        reason: "DayZ match started by bot command",
-      };
-
-      if (process.env.DISCORD_MATCH_CATEGORY_ID) {
-        channelOptions.parent = process.env.DISCORD_MATCH_CATEGORY_ID;
-      }
-
-      const channel = await guild.channels.create(channelOptions);
-      const now = new Date().toISOString();
-
-      state.activeMatch = {
-        id: `match-${Date.now()}`,
-        name: channelName,
-        channelId: channel.id,
-        startedAt: now,
-        status: "active",
-        players: {},
-      };
-
-      await sendOrEdit(
-        state,
-        channel,
-        "message_active_match.json",
-        formatMatchRankingEmbed(state.activeMatch),
-      );
-
-      state.activeMatch.messageId = state.discordMessageIds["message_active_match.json"];
-
-      await saveState(state);
-
-      await interaction.editReply(`✅ Match started: <#${channel.id}>`);
-    }
-
-    async function handleStopMatch(interaction: any) {
-      if (!(await requireAdmin(interaction))) return;
-
-      await interaction.deferReply({ ephemeral: true });
-
-      const state = await getState();
-
-      if (!state.activeMatch) {
-        await interaction.editReply("❌ There is no active match to stop.");
-        return;
-      }
-
-      if (state.activeMatch.status === "finished") {
-        await interaction.editReply("❌ The current match is already finished.");
-        return;
-      }
-
-      state.activeMatch.status = "finished";
-      state.activeMatch.endedAt = new Date().toISOString();
-
-      await updateMatchRanking(state);
-      await saveState(state);
-
-      await interaction.editReply(
-        `🏁 Match finished: <#${state.activeMatch.channelId}>`,
-      );
-    }
-
-    async function handleDeleteMatch(interaction: any) {
-      if (!(await requireAdmin(interaction))) return;
-
-      await interaction.deferReply({ ephemeral: true });
-
-      const state = await getState();
-
-      if (!state.activeMatch) {
-        await interaction.editReply("❌ There is no match to delete.");
-        return;
-      }
-
-      const channelId = state.activeMatch.channelId;
-
-      try {
-        const channel = await client.channels.fetch(channelId);
-        if (channel && "delete" in channel) {
-          await (channel as any).delete("DayZ match deleted by bot command");
-        }
-      } catch (err) {
-        console.error("❌ erro deletando canal da match", err);
-      }
-
-      delete state.activeMatch;
-      delete state.discordMessageIds["message_active_match.json"];
-
-      await saveState(state);
-
-      await interaction.editReply("🗑️ Match deleted.");
-    }
-
-    async function handleWipeDaily(interaction: any) {
-      if (!(await requireAdmin(interaction))) return;
-      await interaction.deferReply({ ephemeral: true });
-
-      const state = await getState();
-      state.dailyPlayers = {};
-      state.dailyStartedAt = new Date().toISOString().slice(0, 10);
-      state.lastDailyReset = state.dailyStartedAt;
-
-      await saveState(state);
-      await updateLeaderboard();
-      await interaction.editReply("✅ Daily ranking wiped.");
-    }
-
-    async function handleWipeWeekly(interaction: any) {
-      if (!(await requireAdmin(interaction))) return;
-      await interaction.deferReply({ ephemeral: true });
-
-      const state = await getState();
-      state.weeklyPlayers = {};
-      state.weeklyStartedAt = new Date().toISOString().slice(0, 10);
-      state.lastWeeklyReset = state.weeklyStartedAt;
-
-      await saveState(state);
-      await updateLeaderboard();
-      await interaction.editReply("✅ Weekly ranking wiped.");
-    }
-
-    async function handleWipeStreaks(interaction: any) {
-      if (!(await requireAdmin(interaction))) return;
-      await interaction.deferReply({ ephemeral: true });
-
-      const state = await getState();
-      state.currentKillStreaks = {};
-      state.killStreakEvents = [];
-
-      await saveState(state);
-      await updateLeaderboard();
-      await interaction.editReply("✅ Kill streaks wiped.");
-    }
-
-    async function handleWipePlayer(interaction: any) {
-      if (!(await requireAdmin(interaction))) return;
-      await interaction.deferReply({ ephemeral: true });
-
-      const state = await getState();
-      const playerInput = interaction.options.getString("player", true);
-      const player = findPlayerName(state, playerInput);
-
-      delete state.players[player];
-      delete state.dailyPlayers[player];
-      delete state.weeklyPlayers[player];
-      delete state.currentKillStreaks[player];
-      delete state.onlinePlayers[player];
-
-      if (state.activeMatch?.players) {
-        delete state.activeMatch.players[player];
-      }
-
-      state.killStreakEvents = (state.killStreakEvents || []).filter(
-        (event: any) =>
-          event.player?.toLowerCase() !== player.toLowerCase() &&
-          event.killer?.toLowerCase() !== player.toLowerCase(),
-      );
-
-      state.killFeedEvents = (state.killFeedEvents || []).filter(
-        (event: any) =>
-          event.killer?.toLowerCase() !== player.toLowerCase() &&
-          event.victim?.toLowerCase() !== player.toLowerCase(),
-      );
-
-      await saveState(state);
-      await updateLeaderboard();
-
-      await interaction.editReply(`✅ Player wiped: ${player}`);
-    }
-
-    async function handleWipeAll(interaction: any) {
-      if (!(await requireAdmin(interaction))) return;
-      await interaction.deferReply({ ephemeral: true });
-
-      const state = await getState();
-      const today = new Date().toISOString().slice(0, 10);
-
-      state.players = {};
-      state.dailyPlayers = {};
-      state.weeklyPlayers = {};
-      state.onlinePlayers = {};
-      state.killFeedEvents = [];
-      state.currentKillStreaks = {};
-      state.killStreakEvents = [];
-      delete state.activeMatch;
-
-      state.globalStartedAt = today;
-      state.dailyStartedAt = today;
-      state.weeklyStartedAt = today;
-      state.lastDailyReset = today;
-      state.lastWeeklyReset = today;
-
-      await saveState(state);
-      await updateLeaderboard();
-
-      await interaction.editReply("✅ All rankings, feeds, streaks and active match data wiped.");
-    }
-
-    async function handlePlayerStats(interaction: any) {
-      const player = interaction.options.getString("player", true);
-      const state = await getState();
-
-      await interaction.reply({
-        embeds: [formatPlayerStatsEmbed(state, player)],
-        ephemeral: true,
-      });
     }
 
     client.on("interactionCreate", async (interaction) => {
       if (!interaction.isChatInputCommand()) return;
 
       try {
-        switch (interaction.commandName) {
-          case "reset-ranking":
-            if (!(await requireAdmin(interaction))) return;
-            await interaction.deferReply({ ephemeral: true });
-            await resetRankings();
-            await updateLeaderboard();
-            await interaction.editReply("✅ Rankings successfully reset.");
+        if (interaction.commandName === "player-stats") {
+          const player = interaction.options.getString("player", true);
+          const state = await getState();
+
+          await interaction.reply({
+            embeds: [createPlayerStatsEmbed(state, player)],
+            ephemeral: true,
+          });
+
+          return;
+        }
+
+        if (!(await assertAdmin(interaction))) return;
+
+        await interaction.deferReply({ ephemeral: true });
+
+        if (interaction.commandName === "reset-ranking") {
+          await resetRankings();
+          await updateLeaderboard();
+          await interaction.editReply("✅ Rankings successfully reset.");
+          return;
+        }
+
+        if (interaction.commandName === "start-match") {
+          const state = await getState();
+          const password = interaction.options.getString("password", false)?.trim();
+
+          if (state.activeMatch) {
+            await interaction.editReply(
+              `❌ There is already a match saved: ${state.activeMatch.name}. Use /stop-match or /delete-match before starting another one.`,
+            );
             return;
-          case "start-match":
-            await handleStartMatch(interaction);
+          }
+
+          const guild = interaction.guild;
+          if (!guild) {
+            await interaction.editReply("❌ This command must be used inside a server.");
             return;
-          case "stop-match":
-            await handleStopMatch(interaction);
+          }
+
+          if (password) {
+            await interaction.editReply("🔒 Applying server password and restarting the server...");
+            await applyServerPassword(password);
+            await restartNitradoServer();
+          }
+
+          const date = new Date().toISOString().slice(0, 10);
+          const id = `${Date.now()}`;
+          const channelName = `match-${date}`;
+          const channel = await guild.channels.create({
+            name: channelName,
+            type: ChannelType.GuildText,
+            parent: process.env.DISCORD_MATCH_CATEGORY_ID || undefined,
+            permissionOverwrites: [
+              {
+                id: guild.roles.everyone.id,
+                deny: [PermissionFlagsBits.ViewChannel],
+              },
+              {
+                id: interaction.user.id,
+                allow: [
+                  PermissionFlagsBits.ViewChannel,
+                  PermissionFlagsBits.SendMessages,
+                  PermissionFlagsBits.ReadMessageHistory,
+                ],
+              },
+              {
+                id: client.user!.id,
+                allow: [
+                  PermissionFlagsBits.ViewChannel,
+                  PermissionFlagsBits.SendMessages,
+                  PermissionFlagsBits.ReadMessageHistory,
+                  PermissionFlagsBits.ManageChannels,
+                ],
+              },
+            ],
+          });
+
+          state.activeMatch = {
+            id,
+            name: channelName,
+            channelId: channel.id,
+            startedAt: new Date().toISOString(),
+            status: "active",
+            players: {},
+            serverPasswordApplied: Boolean(password),
+            password: password || undefined,
+          };
+
+          await updateMatchRanking(state);
+          await saveState(state);
+
+          await interaction.editReply(
+            password
+              ? `✅ Match started in <#${channel.id}>. Server password applied and restart requested.`
+              : `✅ Match started in <#${channel.id}>. No server password was applied.`,
+          );
+          return;
+        }
+
+        if (interaction.commandName === "stop-match") {
+          const state = await getState();
+
+          if (!state.activeMatch) {
+            await interaction.editReply("❌ There is no match to stop.");
             return;
-          case "delete-match":
-            await handleDeleteMatch(interaction);
+          }
+
+          if (state.activeMatch.status === "finished") {
+            await interaction.editReply("⚠️ The current match is already finished.");
             return;
-          case "wipe-daily":
-            await handleWipeDaily(interaction);
+          }
+
+          const hadServerPassword = Boolean(state.activeMatch.serverPasswordApplied);
+
+          if (hadServerPassword) {
+            await interaction.editReply("🔓 Removing server password and restarting the server...");
+            await removeServerPassword();
+            await restartNitradoServer();
+          }
+
+          state.activeMatch.status = "finished";
+          state.activeMatch.endedAt = new Date().toISOString();
+          state.activeMatch.serverPasswordApplied = false;
+          delete state.activeMatch.password;
+
+          await updateMatchRanking(state);
+          await saveState(state);
+          await interaction.editReply(
+            hadServerPassword
+              ? "🏁 Match stopped, ranking frozen, password removed and restart requested."
+              : "🏁 Match stopped and ranking frozen.",
+          );
+          return;
+        }
+
+        if (interaction.commandName === "delete-match") {
+          const state = await getState();
+
+          if (!state.activeMatch) {
+            await interaction.editReply("❌ There is no match to delete.");
             return;
-          case "wipe-weekly":
-            await handleWipeWeekly(interaction);
-            return;
-          case "wipe-streaks":
-            await handleWipeStreaks(interaction);
-            return;
-          case "wipe-all":
-            await handleWipeAll(interaction);
-            return;
-          case "wipe-player":
-            await handleWipePlayer(interaction);
-            return;
-          case "player-stats":
-            await handlePlayerStats(interaction);
-            return;
-          default:
-            return;
+          }
+
+          try {
+            const channel = await client.channels.fetch(state.activeMatch.channelId);
+            if (channel && "delete" in channel) {
+              await (channel as any).delete();
+            }
+          } catch (err) {
+            console.error("❌ erro deletando canal da match", err);
+          }
+
+          const matchKeyPrefix = `match_${state.activeMatch.id}_`;
+          for (const key of Object.keys(state.discordMessageIds || {})) {
+            if (key.startsWith(matchKeyPrefix)) {
+              delete state.discordMessageIds[key];
+            }
+          }
+
+          state.activeMatch = null;
+          await saveState(state);
+          await interaction.editReply("🗑️ Match channel and data deleted.");
+          return;
+        }
+
+        if (interaction.commandName === "wipe-daily") {
+          const state = await getState();
+          resetDaily(state);
+          await saveState(state);
+          await updateLeaderboard();
+          await interaction.editReply("✅ Daily ranking wiped.");
+          return;
+        }
+
+        if (interaction.commandName === "wipe-weekly") {
+          const state = await getState();
+          resetWeekly(state);
+          await saveState(state);
+          await updateLeaderboard();
+          await interaction.editReply("✅ Weekly ranking wiped.");
+          return;
+        }
+
+        if (interaction.commandName === "wipe-streaks") {
+          const state = await getState();
+          resetStreaks(state);
+          await saveState(state);
+          await updateLeaderboard();
+          await interaction.editReply("✅ Kill streaks wiped.");
+          return;
+        }
+
+        if (interaction.commandName === "wipe-all") {
+          await resetRankings();
+          await updateLeaderboard();
+          await interaction.editReply("✅ All competitive stats wiped.");
+          return;
+        }
+
+        if (interaction.commandName === "wipe-player") {
+          const player = interaction.options.getString("player", true);
+          const state = await getState();
+          wipePlayer(state, player);
+          await saveState(state);
+          await updateLeaderboard();
+          await interaction.editReply(`✅ Player wiped: ${player}`);
+          return;
         }
       } catch (err) {
-        console.error(`❌ erro no /${interaction.commandName}:`, err);
-
-        const message = "❌ Command failed.";
+        console.error("❌ erro processando comando Discord:", err);
 
         if (interaction.deferred || interaction.replied) {
-          await interaction.editReply(message);
+          await interaction.editReply("❌ Command failed.");
         } else {
-          await interaction.reply({ content: message, ephemeral: true });
+          await interaction.reply({
+            content: "❌ Command failed.",
+            ephemeral: true,
+          });
         }
       }
     });

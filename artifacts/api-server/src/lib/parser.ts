@@ -142,10 +142,7 @@ function ensureStateDefaults(state: AppState) {
   state.currentKillStreaks = state.currentKillStreaks || {};
   state.killStreakEvents = state.killStreakEvents || [];
   state.discordMessageIds = state.discordMessageIds || {};
-
-  if (state.activeMatch) {
-    state.activeMatch.players = state.activeMatch.players || {};
-  }
+  state.activeMatch = state.activeMatch || null;
 
   return state;
 }
@@ -253,24 +250,6 @@ function updateKillStreaks(
   state.killStreakEvents = state.killStreakEvents.slice(-150);
 }
 
-function addMatchKill(
-  state: AppState,
-  killer: string,
-  victim: string,
-) {
-  if (!state.activeMatch || state.activeMatch.status !== "active") {
-    return;
-  }
-
-  state.activeMatch.players = state.activeMatch.players || {};
-
-  ensurePlayer(state.activeMatch.players, killer);
-  ensurePlayer(state.activeMatch.players, victim);
-
-  state.activeMatch.players[killer].kills += 1;
-  state.activeMatch.players[victim].deaths += 1;
-}
-
 function addKill(
   state: AppState,
   killer: string,
@@ -300,15 +279,30 @@ function addKill(
     state.weeklyPlayers[victim].deaths += 1;
   }
 
-  addMatchKill(state, killer, victim);
+  if (state.activeMatch?.status === "active") {
+    ensurePlayer(state.activeMatch.players, killer);
+    ensurePlayer(state.activeMatch.players, victim);
+
+    state.activeMatch.players[killer].kills += 1;
+    state.activeMatch.players[victim].deaths += 1;
+  }
+
   updateKillStreaks(state, killer, victim, eventTime);
   addKillFeedEvent(state, killer, victim, weapon, eventTime);
 }
 
-function markOnline(state: AppState, player: string) {
+function markOnline(
+  state: AppState,
+  player: string,
+  eventTime: AdmEventTime | null,
+) {
+  const now = (eventTime?.date || new Date()).toISOString();
+  const current = state.onlinePlayers[player];
+
   state.onlinePlayers[player] = {
     online: true,
-    lastSeenAt: new Date().toISOString(),
+    connectedAt: current?.connectedAt || now,
+    lastSeenAt: now,
   };
 }
 
@@ -461,7 +455,7 @@ function processFile(filePath: string, state: AppState) {
     if (connectMatch) {
       const player = connectMatch[1];
 
-      markOnline(state, player);
+      markOnline(state, player, eventTime);
       state.recentEventIds.push(id);
       dedupe.add(id);
 
