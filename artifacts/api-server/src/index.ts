@@ -24,7 +24,7 @@ async function runCycle() {
 
   try {
     console.log("🔥 PARSER AUTOMÁTICO");
-    getLeaderboard();
+    await getLeaderboard();
   } catch (err) {
     console.error("❌ erro parser:", err);
   } finally {
@@ -48,7 +48,7 @@ function startServer(port: number) {
 
     try {
       console.log("🚀 iniciando bot do Discord...");
-      startDiscordBot();
+      await startDiscordBot();
     } catch (err) {
       console.error("❌ erro ao iniciar Discord:", err);
     }

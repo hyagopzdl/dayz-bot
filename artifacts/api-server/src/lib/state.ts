@@ -49,6 +49,18 @@ export type KillStreakEvent =
       timestamp: number;
     };
 
+
+export type MatchState = {
+  id: string;
+  name: string;
+  channelId: string;
+  messageId?: string;
+  startedAt: string;
+  endedAt?: string;
+  status: "active" | "finished";
+  players: Record<string, PlayerStats>;
+};
+
 export type AppState = {
   players: Record<string, PlayerStats>;
   dailyPlayers: Record<string, PlayerStats>;
@@ -64,6 +76,8 @@ export type AppState = {
   killStreakEvents: KillStreakEvent[];
 
   discordMessageIds: Record<string, string>;
+
+  activeMatch?: MatchState;
 
   lastDailyReset: string;
   lastWeeklyReset: string;
@@ -142,6 +156,19 @@ function migrateLegacyState(data: any): AppState {
     .slice(-150) as KillStreakEvent[];
 
   state.discordMessageIds = data.discordMessageIds || {};
+
+  if (data.activeMatch && typeof data.activeMatch === "object") {
+    state.activeMatch = {
+      id: data.activeMatch.id || `match-${Date.now()}`,
+      name: data.activeMatch.name || "Match",
+      channelId: data.activeMatch.channelId || "",
+      messageId: data.activeMatch.messageId,
+      startedAt: data.activeMatch.startedAt || new Date().toISOString(),
+      endedAt: data.activeMatch.endedAt,
+      status: data.activeMatch.status === "finished" ? "finished" : "active",
+      players: data.activeMatch.players || {},
+    };
+  }
 
   state.files = data.files || {};
   state.lastDailyReset = data.lastDailyReset || "";
@@ -234,6 +261,8 @@ export async function saveStateAsync(data: AppState) {
     killStreakEvents: (data.killStreakEvents || []).slice(-150),
 
     discordMessageIds: data.discordMessageIds || {},
+
+    activeMatch: data.activeMatch,
 
     lastDailyReset: data.lastDailyReset || "",
     lastWeeklyReset: data.lastWeeklyReset || "",
