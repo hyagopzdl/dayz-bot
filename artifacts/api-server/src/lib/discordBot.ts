@@ -1485,12 +1485,9 @@ export async function startDiscordBot() {
           resetStreaks(state);
 
           if (killStreakChannel) {
-            await sendOrEdit(
-              state,
-              killStreakChannel,
-              killStreakPageKey(0),
-              [createKillStreakEmptyEmbed()],
-            );
+            await sendOrEdit(state, killStreakChannel, killStreakPageKey(0), [
+              createKillStreakEmptyEmbed(),
+            ]);
 
             await deleteExtraPages(
               state,
@@ -1506,14 +1503,6 @@ export async function startDiscordBot() {
             content: "✅ Kill streak feed wiped successfully.",
           });
 
-          return;
-        }
-
-          await saveState(state);
-          await updateLeaderboard();
-          await interaction.editReply(
-            "✅ Kill streaks wiped and streak feed messages cleared.",
-          );
           return;
         }
 
