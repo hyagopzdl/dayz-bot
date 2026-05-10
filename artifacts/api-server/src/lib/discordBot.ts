@@ -31,10 +31,6 @@ const BOT_NAME = "PZ's DayZ Bot";
 const BOT_ICON =
   "https://media.discordapp.net/attachments/1501806293583659048/1501832841703723088/pz-avatar.png?ex=69fd8254&is=69fc30d4&hm=2075bd7c316893afbf66950ab1373fc5d5a076662bc5ad1033b6763f6689b63c&=&format=webp&quality=lossless&width=1526&height=1526";
 
-const NITRADO_SERVICE_ID = process.env.NITRADO_SERVICE_ID || "19149785";
-const NITRADO_SERVER_CONFIG_FILE =
-  process.env.NITRADO_SERVER_CONFIG_FILE ||
-  "/games/ni13029176_1/noftp/dayzps/config/serverDZ.cfg";
 
 let discordLoopRunning = false;
 
@@ -99,149 +95,6 @@ function getKillStreakMeta(streak: number) {
   };
 }
 
-function requireNitradoToken() {
-  if (!process.env.NITRADO_TOKEN) {
-    throw new Error("NITRADO_TOKEN não definido");
-  }
-
-  return process.env.NITRADO_TOKEN;
-}
-
-async function nitradoFetchJson(
-  url: string,
-  init: RequestInit = {},
-): Promise<any> {
-  const token = requireNitradoToken();
-  const response = await fetch(url, {
-    ...init,
-    headers: {
-      Authorization: `Bearer ${token}`,
-      ...(init.headers || {}),
-    },
-  });
-
-  const text = await response.text();
-
-  if (!response.ok) {
-    throw new Error(`Nitrado HTTP ${response.status}: ${text}`);
-  }
-
-  if (!text) return {};
-
-  try {
-    return JSON.parse(text);
-  } catch {
-    return { raw: text };
-  }
-}
-
-async function getNitradoFileDownloadUrl(filePath: string): Promise<string> {
-  const json = await nitradoFetchJson(
-    `https://api.nitrado.net/services/${NITRADO_SERVICE_ID}/gameservers/file_server/download?file=${encodeURIComponent(
-      filePath,
-    )}`,
-  );
-
-  const url = json?.data?.token?.url;
-
-  if (!url) {
-    throw new Error("Nitrado não retornou URL de download do server config");
-  }
-
-  return url;
-}
-
-async function getNitradoFileUploadUrl(filePath: string): Promise<string> {
-  const json = await nitradoFetchJson(
-    `https://api.nitrado.net/services/${NITRADO_SERVICE_ID}/gameservers/file_server/upload?file=${encodeURIComponent(
-      filePath,
-    )}`,
-  );
-
-  const url = json?.data?.token?.url;
-
-  if (!url) {
-    throw new Error("Nitrado não retornou URL de upload do server config");
-  }
-
-  return url;
-}
-
-async function readNitradoServerConfig() {
-  const url = await getNitradoFileDownloadUrl(NITRADO_SERVER_CONFIG_FILE);
-  const response = await fetch(`${url}&t=${Date.now()}`);
-
-  if (!response.ok) {
-    throw new Error(
-      `ADM config download HTTP ${response.status}: ${await response.text()}`,
-    );
-  }
-
-  return response.text();
-}
-
-async function writeNitradoServerConfig(content: string) {
-  const url = await getNitradoFileUploadUrl(NITRADO_SERVER_CONFIG_FILE);
-  const response = await fetch(`${url}&t=${Date.now()}`, {
-    method: "PUT",
-    body: content,
-    headers: {
-      "Content-Type": "text/plain; charset=utf-8",
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error(
-      `ADM config upload HTTP ${response.status}: ${await response.text()}`,
-    );
-  }
-}
-
-function setDayZServerPassword(config: string, password: string) {
-  const escapedPassword = password.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-  const line = `password = "${escapedPassword}";`;
-
-  if (/^\s*password\s*=.*;\s*$/im.test(config)) {
-    return config.replace(/^\s*password\s*=.*;\s*$/im, line);
-  }
-
-  return `${config.trimEnd()}\n${line}\n`;
-}
-
-async function applyServerPassword(password: string) {
-  console.log("🔒 aplicando senha no server config Nitrado...");
-
-  const config = await readNitradoServerConfig();
-  const updatedConfig = setDayZServerPassword(config, password);
-
-  await writeNitradoServerConfig(updatedConfig);
-
-  console.log("✅ senha aplicada no server config Nitrado");
-}
-
-async function removeServerPassword() {
-  console.log("🔓 removendo senha do server config Nitrado...");
-
-  const config = await readNitradoServerConfig();
-  const updatedConfig = setDayZServerPassword(config, "");
-
-  await writeNitradoServerConfig(updatedConfig);
-
-  console.log("✅ senha removida do server config Nitrado");
-}
-
-async function restartNitradoServer() {
-  console.log("🔄 solicitando restart do servidor Nitrado...");
-
-  const result = await nitradoFetchJson(
-    `https://api.nitrado.net/services/${NITRADO_SERVICE_ID}/gameservers/restart`,
-    { method: "POST" },
-  );
-
-  console.log("✅ resposta restart Nitrado:", JSON.stringify(result));
-
-  return result;
-}
 
 export async function registerKillStreakFromKill(options: {
   killer: string;
@@ -572,6 +425,26 @@ export async function startDiscordBot() {
       return embed;
     }
 
+
+    function cleanupOnlineGhosts(state: any) {
+      state.onlinePlayers = state.onlinePlayers || {};
+
+      const now = Date.now();
+      const maxOnlineAgeMs = 30 * 60 * 1000;
+
+      for (const [player, data] of Object.entries(state.onlinePlayers || {})) {
+        const info = data as any;
+        const lastSeen = new Date(
+          info.lastSeenAt || info.connectedAt || 0,
+        ).getTime();
+
+        if (!lastSeen || now - lastSeen > maxOnlineAgeMs) {
+          delete state.onlinePlayers[player];
+          console.log(`🧹 removendo online fantasma: ${player}`);
+        }
+      }
+    }
+
     function formatOnlineListEmbed(state: any) {
       const players = getOnlinePlayerNames(state);
       const embed = createBaseEmbed("#00FF88");
@@ -774,6 +647,40 @@ export async function startDiscordBot() {
       delete state.discordMessageIds[key];
     }
 
+
+    async function deleteBotMessagesFromChannel(channel: any) {
+      try {
+        let deleted = 0;
+        let before: string | undefined;
+
+        for (let batch = 0; batch < 5; batch++) {
+          const messages = await channel.messages.fetch({
+            limit: 100,
+            ...(before ? { before } : {}),
+          });
+
+          if (!messages.size) break;
+
+          before = messages.last()?.id;
+
+          for (const message of messages.values()) {
+            if (message.author?.id !== client.user?.id) continue;
+
+            try {
+              await message.delete();
+              deleted++;
+            } catch {}
+          }
+
+          if (messages.size < 100) break;
+        }
+
+        console.log(`🧹 mensagens antigas do bot removidas: ${deleted}`);
+      } catch (err) {
+        console.error("❌ erro limpando mensagens antigas do canal", err);
+      }
+    }
+
     async function deleteExtraPages(
       state: any,
       channel: any,
@@ -963,6 +870,8 @@ export async function startDiscordBot() {
 
       try {
         const state = await getState();
+
+        cleanupOnlineGhosts(state);
 
         if (!state.globalStartedAt) {
           state.globalStartedAt =
@@ -1235,13 +1144,6 @@ export async function startDiscordBot() {
             defaultMemberPermissions: adminPermission,
             dmPermission: false,
             options: [
-              {
-                name: "password",
-                description:
-                  "Optional server password. If provided, the bot applies it and restarts the server.",
-                type: 3,
-                required: false,
-              },
             ],
           },
           {
@@ -1406,9 +1308,6 @@ export async function startDiscordBot() {
 
         if (interaction.commandName === "start-match") {
           const state = await getState();
-          const password = interaction.options
-            .getString("password", false)
-            ?.trim();
 
           if (state.activeMatch) {
             await interaction.editReply(
@@ -1423,14 +1322,6 @@ export async function startDiscordBot() {
               "❌ This command must be used inside a server.",
             );
             return;
-          }
-
-          if (password) {
-            await interaction.editReply(
-              "🔒 Applying server password and restarting the server...",
-            );
-            await applyServerPassword(password);
-            await restartNitradoServer();
           }
 
           const date = new Date().toISOString().slice(0, 10);
@@ -1472,17 +1363,13 @@ export async function startDiscordBot() {
             startedAt: new Date().toISOString(),
             status: "active",
             players: {},
-            serverPasswordApplied: Boolean(password),
-            password: password || undefined,
           };
 
           await updateMatchRanking(state);
           await saveState(state);
 
           await interaction.editReply(
-            password
-              ? `✅ Match started in <#${channel.id}>. Server password applied and restart requested.`
-              : `✅ Match started in <#${channel.id}>. No server password was applied.`,
+            `✅ Match started in <#${channel.id}>.`,
           );
           return;
         }
@@ -1502,29 +1389,13 @@ export async function startDiscordBot() {
             return;
           }
 
-          const hadServerPassword = Boolean(
-            state.activeMatch.serverPasswordApplied,
-          );
-
-          if (hadServerPassword) {
-            await interaction.editReply(
-              "🔓 Removing server password and restarting the server...",
-            );
-            await removeServerPassword();
-            await restartNitradoServer();
-          }
-
           state.activeMatch.status = "finished";
           state.activeMatch.endedAt = new Date().toISOString();
-          state.activeMatch.serverPasswordApplied = false;
-          delete state.activeMatch.password;
 
           await updateMatchRanking(state);
           await saveState(state);
           await interaction.editReply(
-            hadServerPassword
-              ? "🏁 Match stopped, ranking frozen, password removed and restart requested."
-              : "🏁 Match stopped and ranking frozen.",
+            "🏁 Match stopped and ranking frozen.",
           );
           return;
         }
@@ -1578,22 +1449,27 @@ export async function startDiscordBot() {
           await interaction.editReply("✅ Weekly ranking wiped.");
           return;
         }
-
         if (interaction.commandName === "wipe-streaks") {
           const state = await getState();
 
           resetStreaks(state);
 
-          if (killStreakChannel) {
-            await sendOrEdit(state, killStreakChannel, killStreakPageKey(0), [
-              createKillStreakEmptyEmbed(),
-            ]);
+          state.discordMessageIds = state.discordMessageIds || {};
 
-            await deleteExtraPages(
+          for (const key of Object.keys(state.discordMessageIds)) {
+            if (key.startsWith(KILLSTREAK_MESSAGE_PREFIX)) {
+              delete state.discordMessageIds[key];
+            }
+          }
+
+          if (killStreakChannel) {
+            await deleteBotMessagesFromChannel(killStreakChannel);
+
+            await sendOrEdit(
               state,
               killStreakChannel,
-              1,
-              KILLSTREAK_MESSAGE_PREFIX,
+              killStreakPageKey(0),
+              [createKillStreakEmptyEmbed()],
             );
           }
 
