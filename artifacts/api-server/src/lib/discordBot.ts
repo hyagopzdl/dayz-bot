@@ -885,9 +885,38 @@ export async function startDiscordBot() {
     async function updateKillStreakFeed(state: any) {
       if (!killStreakChannel) return;
 
-      const events = [...(state.killStreakEvents || [])]
-        .slice(-KILLSTREAK_MAX_EVENTS)
-        .reverse();
+      const uniqueEventsMap = new Map<string, any>();
+
+      for (const rawEvent of state.killStreakEvents || []) {
+        const type = rawEvent?.type || "unknown";
+        const player = rawEvent?.player || "Unknown";
+        const killer = rawEvent?.killer || rawEvent?.endedBy || "";
+        const streak = Number(rawEvent?.streak || 0);
+
+        const timestamp = Number(
+          rawEvent?.timestamp ||
+            (rawEvent?.at ? Math.floor(new Date(rawEvent.at).getTime() / 1000) : 0),
+        );
+
+        if (!timestamp || Number.isNaN(timestamp)) continue;
+
+        const key = `${type}:${player}:${killer}:${streak}:${timestamp}`;
+
+        uniqueEventsMap.set(key, {
+          ...rawEvent,
+          type,
+          player,
+          killer,
+          streak,
+          timestamp,
+        });
+      }
+
+      const events = [...uniqueEventsMap.values()]
+        .sort((a, b) => Number(b.timestamp || 0) - Number(a.timestamp || 0))
+        .slice(0, KILLSTREAK_MAX_EVENTS);
+
+      state.killStreakEvents = [...events].reverse();
 
       if (!events.length) {
         await sendOrEdit(state, killStreakChannel, killStreakPageKey(0), [
