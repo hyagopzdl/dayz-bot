@@ -209,20 +209,38 @@ function setDayZServerPassword(config: string, password: string) {
 }
 
 async function applyServerPassword(password: string) {
+  console.log("🔒 aplicando senha no server config Nitrado...");
+
   const config = await readNitradoServerConfig();
-  await writeNitradoServerConfig(setDayZServerPassword(config, password));
+  const updatedConfig = setDayZServerPassword(config, password);
+
+  await writeNitradoServerConfig(updatedConfig);
+
+  console.log("✅ senha aplicada no server config Nitrado");
 }
 
 async function removeServerPassword() {
+  console.log("🔓 removendo senha do server config Nitrado...");
+
   const config = await readNitradoServerConfig();
-  await writeNitradoServerConfig(setDayZServerPassword(config, ""));
+  const updatedConfig = setDayZServerPassword(config, "");
+
+  await writeNitradoServerConfig(updatedConfig);
+
+  console.log("✅ senha removida do server config Nitrado");
 }
 
 async function restartNitradoServer() {
-  await nitradoFetchJson(
+  console.log("🔄 solicitando restart do servidor Nitrado...");
+
+  const result = await nitradoFetchJson(
     `https://api.nitrado.net/services/${NITRADO_SERVICE_ID}/gameservers/restart`,
     { method: "POST" },
   );
+
+  console.log("✅ resposta restart Nitrado:", JSON.stringify(result));
+
+  return result;
 }
 
 export async function registerKillStreakFromKill(options: {
