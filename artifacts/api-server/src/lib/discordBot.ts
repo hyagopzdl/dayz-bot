@@ -52,11 +52,48 @@ function ensureKillStreakState(state: any) {
 }
 
 function getKillStreakMeta(streak: number) {
-  if (streak >= 25) return { emoji: "👑", color: "#FFD700" };
-  if (streak >= 20) return { emoji: "🔥", color: "#FFD700" };
-  if (streak >= 15) return { emoji: "⚡", color: "#FFD700" };
-  if (streak >= 10) return { emoji: "💀", color: "#8000FF" };
-  return { emoji: "📈", color: "#00FF88" };
+  if (streak >= 25) {
+    return {
+      emoji: "🌌",
+      color: "#FF4FD8",
+      en: "reached a GODLIKE",
+      pt: "alcançou uma sequência DIVINA de",
+    };
+  }
+
+  if (streak >= 20) {
+    return {
+      emoji: "☢️",
+      color: "#A020F0",
+      en: "is ANNIHILATING the server with a",
+      pt: "está ANIQUILANDO o servidor com uma sequência de",
+    };
+  }
+
+  if (streak >= 15) {
+    return {
+      emoji: "⚡️",
+      color: "#FFD700",
+      en: "became UNSTOPPABLE with a",
+      pt: "se tornou IMPARÁVEL com uma sequência de",
+    };
+  }
+
+  if (streak >= 10) {
+    return {
+      emoji: "🔥",
+      color: "#00FF88",
+      en: "is DOMINATING with a",
+      pt: "está DOMINANDO com uma sequência de",
+    };
+  }
+
+  return {
+    emoji: "📈",
+    color: "#0099FF",
+    en: "is on a",
+    pt: "está em uma sequência de",
+  };
 }
 
 export function registerKillStreakFromKill(options: {
@@ -481,25 +518,28 @@ export async function startDiscordBot() {
 
       if (event.type === "ended") {
         return createBaseEmbed("#FF3333").setDescription(
-          `\u200B\n🛑 **Kill Streak Ended**\n` +
-            `${event.killer || "Unknown"} ended ${
+          `\u200B\n` +
+            `🛑 **Kill Streak Ended**\n\n` +
+            `**${event.killer || "Unknown"}** ended **${
               event.player || "Unknown"
-            }'s ${event.streak || 0} kill streak\n` +
-            `${event.killer || "Unknown"} encerrou a sequência de ${
+            }'s** ${event.streak || 0} kill streak\n` +
+            `**${event.killer || "Unknown"}** encerrou a sequência de ${
               event.streak || 0
-            } kills de ${event.player || "Unknown"}\n` +
-            `\u200B\n\u200B\n<t:${timestamp}:F>`,
+            } kills de **${event.player || "Unknown"}**\n\n` +
+            `<t:${timestamp}:f>`,
         );
       }
 
       const streak = Number(event.streak || 0);
+
       const meta = getKillStreakMeta(streak);
 
       return createBaseEmbed(meta.color).setDescription(
-        `\u200B\n${meta.emoji} **${streak}x Kill Streak**\n` +
-          `${event.player || "Unknown"} is on a ${streak} kill streak\n` +
-          `${event.player || "Unknown"} está em uma sequência de ${streak} kills\n` +
-          `\u200B\n\u200B\n<t:${timestamp}:F>`,
+        `\u200B\n` +
+          `${meta.emoji} **${streak}x Kill Streak**\n\n` +
+          `**${event.player || "Unknown"}** ${meta.en} ${streak} kill streak\n` +
+          `**${event.player || "Unknown"}** ${meta.pt} ${streak} kills\n\n` +
+          `<t:${timestamp}:f>`,
       );
     }
 
