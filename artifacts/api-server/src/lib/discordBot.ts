@@ -99,7 +99,6 @@ function getKillStreakMeta(streak: number) {
   };
 }
 
-
 function requireNitradoToken() {
   if (!process.env.NITRADO_TOKEN) {
     throw new Error("NITRADO_TOKEN não definido");
@@ -108,7 +107,10 @@ function requireNitradoToken() {
   return process.env.NITRADO_TOKEN;
 }
 
-async function nitradoFetchJson(url: string, init: RequestInit = {}): Promise<any> {
+async function nitradoFetchJson(
+  url: string,
+  init: RequestInit = {},
+): Promise<any> {
   const token = requireNitradoToken();
   const response = await fetch(url, {
     ...init,
@@ -170,7 +172,9 @@ async function readNitradoServerConfig() {
   const response = await fetch(`${url}&t=${Date.now()}`);
 
   if (!response.ok) {
-    throw new Error(`ADM config download HTTP ${response.status}: ${await response.text()}`);
+    throw new Error(
+      `ADM config download HTTP ${response.status}: ${await response.text()}`,
+    );
   }
 
   return response.text();
@@ -187,7 +191,9 @@ async function writeNitradoServerConfig(content: string) {
   });
 
   if (!response.ok) {
-    throw new Error(`ADM config upload HTTP ${response.status}: ${await response.text()}`);
+    throw new Error(
+      `ADM config upload HTTP ${response.status}: ${await response.text()}`,
+    );
   }
 }
 
@@ -567,10 +573,13 @@ export async function startDiscordBot() {
         .map((name) => {
           const globalKey = findPlayerKey(state.players, name) || name;
           const stats = state.players?.[globalKey] || { kills: 0, deaths: 0 };
-          const streakKey = findPlayerKey(state.currentKillStreaks, name) || name;
+          const streakKey =
+            findPlayerKey(state.currentKillStreaks, name) || name;
           const streak = Number(state.currentKillStreaks?.[streakKey] || 0);
           const onlineKey = findPlayerKey(state.onlinePlayers, name) || name;
-          const session = getOnlineSessionTime(state.onlinePlayers?.[onlineKey]);
+          const session = getOnlineSessionTime(
+            state.onlinePlayers?.[onlineKey],
+          );
 
           return (
             `**${name}**\n` +
@@ -967,7 +976,6 @@ export async function startDiscordBot() {
       }
     }
 
-
     function getRankPosition(playersObj: any, playerName: string) {
       const players = mapPlayers(playersObj);
       const index = players.findIndex(
@@ -990,12 +998,32 @@ export async function startDiscordBot() {
       const streakKey = findPlayerKey(state.currentKillStreaks, playerName);
       const onlineKey = findPlayerKey(state.onlinePlayers, playerName);
 
-      const canonicalName = globalKey || dailyKey || weeklyKey || streakKey || onlineKey || playerName;
-      const stats = state.players?.[globalKey || canonicalName] || { kills: 0, deaths: 0 };
-      const dailyStats = state.dailyPlayers?.[dailyKey || canonicalName] || { kills: 0, deaths: 0 };
-      const weeklyStats = state.weeklyPlayers?.[weeklyKey || canonicalName] || { kills: 0, deaths: 0 };
-      const currentStreak = Number(state.currentKillStreaks?.[streakKey || canonicalName] || 0);
-      const kd = stats.deaths > 0 ? (stats.kills / stats.deaths).toFixed(2) : stats.kills.toFixed(2);
+      const canonicalName =
+        globalKey ||
+        dailyKey ||
+        weeklyKey ||
+        streakKey ||
+        onlineKey ||
+        playerName;
+      const stats = state.players?.[globalKey || canonicalName] || {
+        kills: 0,
+        deaths: 0,
+      };
+      const dailyStats = state.dailyPlayers?.[dailyKey || canonicalName] || {
+        kills: 0,
+        deaths: 0,
+      };
+      const weeklyStats = state.weeklyPlayers?.[weeklyKey || canonicalName] || {
+        kills: 0,
+        deaths: 0,
+      };
+      const currentStreak = Number(
+        state.currentKillStreaks?.[streakKey || canonicalName] || 0,
+      );
+      const kd =
+        stats.deaths > 0
+          ? (stats.kills / stats.deaths).toFixed(2)
+          : stats.kills.toFixed(2);
       const globalRank = getRankPosition(state.players, canonicalName);
       const dailyRank = getRankPosition(state.dailyPlayers, canonicalName);
       const weeklyRank = getRankPosition(state.weeklyPlayers, canonicalName);
@@ -1029,13 +1057,19 @@ export async function startDiscordBot() {
       }
 
       const players = mapPlayers(match.players || {});
-      const statusText = match.status === "active" ? "Live match in progress" : "Final match result";
+      const statusText =
+        match.status === "active"
+          ? "Live match in progress"
+          : "Final match result";
       const startedTs = Math.floor(new Date(match.startedAt).getTime() / 1000);
-      const endedTs = match.endedAt ? Math.floor(new Date(match.endedAt).getTime() / 1000) : null;
+      const endedTs = match.endedAt
+        ? Math.floor(new Date(match.endedAt).getTime() / 1000)
+        : null;
 
       const embed = formatLeaderboardEmbed(players, {
         emoji: match.status === "active" ? "🎮" : "🏁",
-        title: match.status === "active" ? "Match Ranking" : "Final Match Ranking",
+        title:
+          match.status === "active" ? "Match Ranking" : "Final Match Ranking",
         subtitle: `${statusText} • Started <t:${startedTs}:f>${endedTs ? ` • Ended <t:${endedTs}:f>` : ""}`,
         color: match.status === "active" ? "#00FF88" : "#FFD700",
       });
@@ -1047,13 +1081,34 @@ export async function startDiscordBot() {
       if (!state.activeMatch?.channelId) return;
 
       try {
-        const channel = await client.channels.fetch(state.activeMatch.channelId);
-        if (!channel || !("send" in channel)) return;
+        const channel = await client.channels.fetch(
+          state.activeMatch.channelId,
+        );
+
+        if (!channel || !("send" in channel)) {
+          console.log("⚠️ canal da match inválido, limpando activeMatch");
+
+          state.activeMatch = null;
+
+          return;
+        }
 
         const key = `match_${state.activeMatch.id}_ranking`;
+
         await sendOrEdit(state, channel as any, key, createMatchEmbed(state));
+
         state.activeMatch.messageId = state.discordMessageIds?.[key];
-      } catch (err) {
+      } catch (err: any) {
+        if (err?.code === 10003) {
+          console.log(
+            "⚠️ canal da match não existe mais, limpando activeMatch",
+          );
+
+          state.activeMatch = null;
+
+          return;
+        }
+
         console.error("❌ erro ao atualizar ranking da match", err);
       }
     }
@@ -1114,7 +1169,8 @@ export async function startDiscordBot() {
 
     async function registerCommands() {
       try {
-        const adminPermission = PermissionsBitField.Flags.Administrator.toString();
+        const adminPermission =
+          PermissionsBitField.Flags.Administrator.toString();
 
         const commands = [
           {
@@ -1125,13 +1181,15 @@ export async function startDiscordBot() {
           },
           {
             name: "start-match",
-            description: "Start a new tracked match and create its private ranking channel.",
+            description:
+              "Start a new tracked match and create its private ranking channel.",
             defaultMemberPermissions: adminPermission,
             dmPermission: false,
             options: [
               {
                 name: "password",
-                description: "Optional server password. If provided, the bot applies it and restarts the server.",
+                description:
+                  "Optional server password. If provided, the bot applies it and restarts the server.",
                 type: 3,
                 required: false,
               },
@@ -1145,7 +1203,8 @@ export async function startDiscordBot() {
           },
           {
             name: "delete-match",
-            description: "Delete the active/finished match channel and match data.",
+            description:
+              "Delete the active/finished match channel and match data.",
             defaultMemberPermissions: adminPermission,
             dmPermission: false,
           },
@@ -1169,13 +1228,15 @@ export async function startDiscordBot() {
           },
           {
             name: "wipe-all",
-            description: "Wipe all competitive stats while keeping parser/message infrastructure.",
+            description:
+              "Wipe all competitive stats while keeping parser/message infrastructure.",
             defaultMemberPermissions: adminPermission,
             dmPermission: false,
           },
           {
             name: "wipe-player",
-            description: "Remove one player from rankings, streaks and active match.",
+            description:
+              "Remove one player from rankings, streaks and active match.",
             defaultMemberPermissions: adminPermission,
             dmPermission: false,
             options: [
@@ -1245,7 +1306,9 @@ export async function startDiscordBot() {
 
         if (interaction.commandName === "start-match") {
           const state = await getState();
-          const password = interaction.options.getString("password", false)?.trim();
+          const password = interaction.options
+            .getString("password", false)
+            ?.trim();
 
           if (state.activeMatch) {
             await interaction.editReply(
@@ -1256,12 +1319,16 @@ export async function startDiscordBot() {
 
           const guild = interaction.guild;
           if (!guild) {
-            await interaction.editReply("❌ This command must be used inside a server.");
+            await interaction.editReply(
+              "❌ This command must be used inside a server.",
+            );
             return;
           }
 
           if (password) {
-            await interaction.editReply("🔒 Applying server password and restarting the server...");
+            await interaction.editReply(
+              "🔒 Applying server password and restarting the server...",
+            );
             await applyServerPassword(password);
             await restartNitradoServer();
           }
@@ -1329,14 +1396,20 @@ export async function startDiscordBot() {
           }
 
           if (state.activeMatch.status === "finished") {
-            await interaction.editReply("⚠️ The current match is already finished.");
+            await interaction.editReply(
+              "⚠️ The current match is already finished.",
+            );
             return;
           }
 
-          const hadServerPassword = Boolean(state.activeMatch.serverPasswordApplied);
+          const hadServerPassword = Boolean(
+            state.activeMatch.serverPasswordApplied,
+          );
 
           if (hadServerPassword) {
-            await interaction.editReply("🔓 Removing server password and restarting the server...");
+            await interaction.editReply(
+              "🔓 Removing server password and restarting the server...",
+            );
             await removeServerPassword();
             await restartNitradoServer();
           }
@@ -1365,7 +1438,9 @@ export async function startDiscordBot() {
           }
 
           try {
-            const channel = await client.channels.fetch(state.activeMatch.channelId);
+            const channel = await client.channels.fetch(
+              state.activeMatch.channelId,
+            );
             if (channel && "delete" in channel) {
               await (channel as any).delete();
             }
@@ -1419,7 +1494,9 @@ export async function startDiscordBot() {
 
           await saveState(state);
           await updateLeaderboard();
-          await interaction.editReply("✅ Kill streaks wiped and streak feed messages cleared.");
+          await interaction.editReply(
+            "✅ Kill streaks wiped and streak feed messages cleared.",
+          );
           return;
         }
 
