@@ -556,6 +556,7 @@ export async function startDiscordBot() {
         embed.setDescription(
           buildHeader("🟢", "Players Online", "Live server activity") +
             `**No players online**\nThe server is currently quiet.` +
+            `\n\u200B\n` +
             buildFooter(),
         );
 
@@ -573,10 +574,10 @@ export async function startDiscordBot() {
 
           return (
             `**${name}**\n` +
-            `\`Kill(s): ${stats.kills || 0}\` • ` +
-            `\`Death(s): ${stats.deaths || 0}\` • ` +
-            `\`Streak: ${streak}\` • ` +
-            `\`Session: ${session}\``
+            `Kill(s): \`${stats.kills || 0}\` • ` +
+            `Death(s): \`${stats.deaths || 0}\` • ` +
+            `Streak: \`${streak}\` • ` +
+            `Session: \`${session}\``
           );
         })
         .join("\n\n");
@@ -588,6 +589,7 @@ export async function startDiscordBot() {
           `${players.length}/10 survivors currently connected`,
         ) +
           lines +
+          `\n\u200B\n` +
           buildFooter(),
       );
 
@@ -628,14 +630,19 @@ export async function startDiscordBot() {
           "🔫",
           "Kill Feed",
           `${eventsCount} recent kill${eventsCount === 1 ? "" : "s"} detected`,
-        ) + `Tracking the latest PvP activity across the server.` + buildFooter(),
+        ) +
+          `Tracking the latest PvP activity across the server.` +
+          `\n\u200B\n` +
+          buildFooter(),
       );
     }
 
     function createKillFeedEmptyEmbed() {
       return createBaseEmbed("#FF3333").setDescription(
         buildHeader("🔫", "Kill Feed", "Live PvP activity") +
-          `**No recent kills**\nKill someone and keep the feed alive!`,
+          `**No recent kills yet**\nNenhuma kill recente ainda.` +
+          `\n\u200B\n` +
+          buildFooter(),
       );
     }
 
@@ -652,7 +659,9 @@ export async function startDiscordBot() {
     function createKillStreakEmptyEmbed() {
       return createBaseEmbed("#FF3333").setDescription(
         buildHeader("📈", "Kill Streak Feed", "Persistent streak history") +
-          `**No streak events yet**\nReach 5 kills in a row to enter the feed!`,
+          `**No streak events yet**\nReach 5 kills in a row to enter the feed!` +
+          `\n\u200B\n` +
+          buildFooter(),
       );
     }
 
@@ -844,8 +853,6 @@ export async function startDiscordBot() {
         pages.length,
         KILLFEED_MESSAGE_PREFIX,
       );
-
-      state.killFeedEvents = [];
     }
 
     async function updateKillStreakFeed(state: any) {
@@ -916,10 +923,8 @@ export async function startDiscordBot() {
           MESSAGE_FILE_GLOBAL,
           formatLeaderboardEmbed(globalPlayers, {
             emoji: "🏆",
-            title: "General Ranking (Geral)",
-            subtitle: `Count started on ${formatDate(
-              state.globalStartedAt,
-            )} (${getRelativeDays(state.globalStartedAt)})`,
+            title: "Global Ranking",
+            subtitle: `${globalPlayers.length} player${globalPlayers.length === 1 ? "" : "s"} on the global ranking.`,
             color: "#FFD700",
           }),
         );
@@ -1402,9 +1407,19 @@ export async function startDiscordBot() {
         if (interaction.commandName === "wipe-streaks") {
           const state = await getState();
           resetStreaks(state);
+
+          if (killStreakChannel) {
+            await deleteExtraPages(
+              state,
+              killStreakChannel,
+              0,
+              KILLSTREAK_MESSAGE_PREFIX,
+            );
+          }
+
           await saveState(state);
           await updateLeaderboard();
-          await interaction.editReply("✅ Kill streaks wiped.");
+          await interaction.editReply("✅ Kill streaks wiped and streak feed messages cleared.");
           return;
         }
 
