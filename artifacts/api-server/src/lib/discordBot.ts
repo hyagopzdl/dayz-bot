@@ -1481,16 +1481,33 @@ export async function startDiscordBot() {
 
         if (interaction.commandName === "wipe-streaks") {
           const state = await getState();
+
           resetStreaks(state);
 
           if (killStreakChannel) {
+            await sendOrEdit(
+              state,
+              killStreakChannel,
+              killStreakPageKey(0),
+              [createKillStreakEmptyEmbed()],
+            );
+
             await deleteExtraPages(
               state,
               killStreakChannel,
-              0,
+              1,
               KILLSTREAK_MESSAGE_PREFIX,
             );
           }
+
+          await saveState(state);
+
+          await interaction.editReply({
+            content: "✅ Kill streak feed wiped successfully.",
+          });
+
+          return;
+        }
 
           await saveState(state);
           await updateLeaderboard();
