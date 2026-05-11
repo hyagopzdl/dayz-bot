@@ -785,7 +785,7 @@ export async function startDiscordBot() {
 
 
     function createLongShotEmptyEmbed() {
-      return createBaseEmbed("#00BFFF").setDescription(
+      return createBaseEmbed("#FF3333").setDescription(
         `\u200B\n` +
           `🎯 **Long Shot Feed**\n` +
           `Elite distance eliminations.\n` +
@@ -808,7 +808,7 @@ export async function startDiscordBot() {
       const distance = Math.round(Number(event.distance || 0));
       const weapon = formatWeapon(event.weapon);
 
-      return createBaseEmbed("#00BFFF").setDescription(
+      return createBaseEmbed("#FF3333").setDescription(
         `\u200B\n` +
           `🎯 **Long Shot**\n\n` +
           `**${killer}** killed 💀**${victim}**\n` +
@@ -1199,7 +1199,7 @@ export async function startDiscordBot() {
             emoji: "🌅",
             title: "Daily Ranking (Diário)",
             subtitle: getDailyResetTime(),
-            color: "#FF00AA",
+            color: "#0099FF",
           }),
         );
 
@@ -1211,7 +1211,7 @@ export async function startDiscordBot() {
             emoji: "📆",
             title: "Weekly Ranking (Semanal)",
             subtitle: getWeeklyResetTime(),
-            color: "#0099FF",
+            color: "#00FF88",
           }),
         );
 
@@ -1263,143 +1263,219 @@ export async function startDiscordBot() {
       );
     }
 
-    function createPlayerStatsEmbed(state: any, playerName: string) {
-      const globalKey = findPlayerKey(state.players, playerName);
-      const dailyKey = findPlayerKey(state.dailyPlayers, playerName);
-      const weeklyKey = findPlayerKey(state.weeklyPlayers, playerName);
-      const streakKey = findPlayerKey(state.currentKillStreaks, playerName);
-      const onlineKey = findPlayerKey(state.onlinePlayers, playerName);
+    
+    function findPlayerName(state: any, query: string) {
+      const normalized = query.toLowerCase();
 
-      const canonicalName =
-        globalKey ||
-        dailyKey ||
-        weeklyKey ||
-        streakKey ||
-        onlineKey ||
-        playerName;
+      const pools = [
+        state.players || {},
+        state.dailyPlayers || {},
+        state.weeklyPlayers || {},
+        state.onlinePlayers || {},
+      ];
 
-      const stats = state.players?.[globalKey || canonicalName] || {
-        kills: 0,
-        deaths: 0,
-      };
-
-      const weeklyStats = state.weeklyPlayers?.[weeklyKey || canonicalName] || {
-        kills: 0,
-        deaths: 0,
-      };
-
-      const currentStreak = Number(
-        state.currentKillStreaks?.[streakKey || canonicalName] || 0,
-      );
-
-      const kd =
-        stats.deaths > 0
-          ? (stats.kills / stats.deaths).toFixed(2)
-          : stats.kills.toFixed(2);
-
-      const globalRank = getRankPosition(state.players, canonicalName);
-      const weeklyRank = getRankPosition(state.weeklyPlayers, canonicalName);
-
-      const onlineData = onlineKey ? state.onlinePlayers?.[onlineKey] : null;
-      const isOnline = Boolean(onlineData?.online);
-      const connectedTimestamp = onlineData?.connectedAt
-        ? Math.floor(new Date(onlineData.connectedAt).getTime() / 1000)
-        : null;
-      const lastActivityTimestamp = onlineData?.lastSeenAt
-        ? Math.floor(new Date(onlineData.lastSeenAt).getTime() / 1000)
-        : Math.floor(Date.now() / 1000);
-
-      const bestStreakRecord = getBestStreaks(state).find(
-        (record) => record.player.toLowerCase() === canonicalName.toLowerCase(),
-      );
-      const bestStreak = Math.max(
-        Number(bestStreakRecord?.streak || 0),
-        currentStreak,
-      );
-
-      const playerLongShots = (state.longShotEvents || [])
-        .filter(
-          (event: any) =>
-            (event.killer || "").toLowerCase() === canonicalName.toLowerCase(),
-        )
-        .sort(
-          (a: any, b: any) =>
-            Number(b.distance || 0) - Number(a.distance || 0),
+      for (const pool of pools) {
+        const found = Object.keys(pool).find(
+          (name) => name.toLowerCase() === normalized,
         );
 
-      const longestShot = playerLongShots[0] || null;
+        if (found) return found;
+      }
 
+      for (const pool of pools) {
+        const found = Object.keys(pool).find((name) =>
+          name.toLowerCase().includes(normalized),
+        );
+
+        if (found) return found;
+      }
+
+      return null;
+    }
+
+    function getPlayerRank(playersObj: any, playerName: string) {
+      const players = Object.entries(playersObj || {})
+        .map(([name, data]: any) => ({
+          name,
+          kills: Number(data?.kills || 0),
+        }))
+        .filter((player) => player.kills > 0)
+        .sort((a, b) => b.kills - a.kills);
+
+      const index = players.findIndex((player) => player.name === playerName);
+
+      return index >= 0 ? index + 1 : null;
+    }
+
+    function getBestStreakForPlayer(state: any, playerName: string) {
+      const streakEvents = state.killStreakEvents || [];
+      const bestFromEvents = streakEvents
+        .filter((event: any) => event.player === playerName)
+        .reduce(
+          (max: number, event: any) =>
+            Math.max(max, Number(event.streak || 0)),
+          0,
+        );
+
+      const current = Number(state.currentKillStreaks?.[playerName] || 0);
+
+      return Math.max(bestFromEvents, current);
+    }
+
+    function getLongestShotForPlayer(state: any, playerName: string) {
+      const events = state.longShotEvents || [];
+
+      return (
+        events
+          .filter((event: any) => event.killer === playerName)
+          .sort(
+            (a: any, b: any) =>
+              Number(b.distance || 0) - Number(a.distance || 0),
+          )[0] || null
+      );
+    }
+
+    function getFavoriteWeaponForPlayer(state: any, playerName: string) {
       const weaponCounts = new Map<string, number>();
 
       for (const event of state.killFeedEvents || []) {
-        if ((event.killer || "").toLowerCase() !== canonicalName.toLowerCase()) {
-          continue;
-        }
+        if (event.killer !== playerName) continue;
 
         const weapon = formatWeapon(event.weapon);
-        if (weapon === "Unknown") continue;
 
-        weaponCounts.set(weapon, Number(weaponCounts.get(weapon) || 0) + 1);
+        if (!weapon || weapon.toLowerCase() === "unknown") continue;
+
+        weaponCounts.set(weapon, (weaponCounts.get(weapon) || 0) + 1);
       }
+
+      const sorted = [...weaponCounts.entries()].sort((a, b) => b[1] - a[1]);
+
+      return sorted[0]?.[0] || null;
+    }
+
+    function getLongShotRank(state: any, playerName: string) {
+      const bestByPlayer = new Map<string, number>();
 
       for (const event of state.longShotEvents || []) {
-        if ((event.killer || "").toLowerCase() !== canonicalName.toLowerCase()) {
-          continue;
-        }
+        const killer = event.killer;
+        const distance = Number(event.distance || 0);
 
-        const weapon = formatWeapon(event.weapon);
-        if (weapon === "Unknown") continue;
+        if (!killer || distance <= 0) continue;
 
-        weaponCounts.set(weapon, Number(weaponCounts.get(weapon) || 0) + 1);
+        bestByPlayer.set(
+          killer,
+          Math.max(bestByPlayer.get(killer) || 0, distance),
+        );
       }
 
-      const favoriteWeapon =
-        [...weaponCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ||
-        "Unknown";
+      const ranking = [...bestByPlayer.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .map(([player]) => player);
 
-      const longShotRank =
-        getBestLongShots(state).findIndex(
-          (record) =>
-            (record.killer || "").toLowerCase() === canonicalName.toLowerCase(),
-        ) + 1;
+      const index = ranking.indexOf(playerName);
 
-      const streakRank =
-        getBestStreaks(state).findIndex(
-          (record) =>
-            (record.player || "").toLowerCase() === canonicalName.toLowerCase(),
-        ) + 1;
+      return index >= 0 ? index + 1 : null;
+    }
 
-      return createBaseEmbed("#0099FF").setDescription(
+    function getStreakRank(state: any, playerName: string) {
+      const bestByPlayer = new Map<string, number>();
+
+      for (const event of state.killStreakEvents || []) {
+        const player = event.player;
+        const streak = Number(event.streak || 0);
+
+        if (!player || streak <= 0) continue;
+
+        bestByPlayer.set(
+          player,
+          Math.max(bestByPlayer.get(player) || 0, streak),
+        );
+      }
+
+      for (const [player, streak] of Object.entries(
+        state.currentKillStreaks || {},
+      )) {
+        bestByPlayer.set(
+          player,
+          Math.max(bestByPlayer.get(player) || 0, Number(streak || 0)),
+        );
+      }
+
+      const ranking = [...bestByPlayer.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .map(([player]) => player);
+
+      const index = ranking.indexOf(playerName);
+
+      return index >= 0 ? index + 1 : null;
+    }
+
+
+function createPlayerStatsEmbed(state: any, playerQuery: string) {
+      const playerName = findPlayerName(state, playerQuery) || playerQuery;
+      const stats = state.players?.[playerName] || { kills: 0, deaths: 0 };
+      const dailyStats = state.dailyPlayers?.[playerName] || { kills: 0, deaths: 0 };
+      const weeklyStats = state.weeklyPlayers?.[playerName] || { kills: 0, deaths: 0 };
+      const onlineInfo = state.onlinePlayers?.[playerName];
+
+      const kills = Number(stats.kills || 0);
+      const deaths = Number(stats.deaths || 0);
+      const kd = deaths > 0 ? (kills / deaths).toFixed(2) : kills.toFixed(2);
+
+      const bestStreak = getBestStreakForPlayer(state, playerName);
+      const longestShot = getLongestShotForPlayer(state, playerName);
+      const favoriteWeapon = getFavoriteWeaponForPlayer(state, playerName);
+
+      const globalRank = getPlayerRank(state.players, playerName);
+      const weeklyRank = getPlayerRank(state.weeklyPlayers, playerName);
+      const longShotRank = getLongShotRank(state, playerName);
+      const streakRank = getStreakRank(state, playerName);
+
+      const connectedAt = onlineInfo?.connectedAt
+        ? Math.floor(new Date(onlineInfo.connectedAt).getTime() / 1000)
+        : null;
+
+      const statusLine = onlineInfo
+        ? `🟢 Online • Connected <t:${connectedAt}:R>`
+        : `⚫ Offline`;
+
+      const precisionLines = [
+        longestShot
+          ? `Longest Shot: **${Math.round(Number(longestShot.distance || 0))}m** with **${formatWeapon(longestShot.weapon)}**`
+          : `Longest Shot: **None**`,
+      ];
+
+      if (
+        favoriteWeapon &&
+        favoriteWeapon.toLowerCase() !== "unknown" &&
+        favoriteWeapon.toLowerCase() !== "none"
+      ) {
+        precisionLines.push(`Favorite Weapon: **${favoriteWeapon}**`);
+      }
+
+      const description =
         `\u200B\n` +
-          `🎖️ **PLAYER STATS**\n\n` +
-          `**${canonicalName}**\n` +
-          `${isOnline ? "🟢 Online" : "⚫ Offline"}${
-            isOnline && connectedTimestamp
-              ? ` • Connected <t:${connectedTimestamp}:R>`
-              : ""
-          }\n` +
-          `\u200B\n\u200B\n` +
-          `⚔️ **Combat Performance**\n\n` +
-          `Kills: \`${stats.kills}\`\n\n` +
-          `Deaths: \`${stats.deaths}\`\n\n` +
-          `K/D Ratio: \`${kd}\`\n\n` +
-          `Best Streak: \`${bestStreak}x\`\n` +
-          `\u200B\n\u200B\n` +
-          `🎯 **Precision**\n\n` +
-          `Longest Shot: \`${
-            longestShot ? `${Math.round(Number(longestShot.distance || 0))}m` : "N/A"
-          }\`${longestShot ? ` with \`${formatWeapon(longestShot.weapon)}\`` : ""}\n\n` +
-          `Favorite Weapon: \`${favoriteWeapon}\`\n` +
-          `\u200B\n\u200B\n` +
-          `📊 **Rankings**\n\n` +
-          `Global (Geral): \`${globalRank ? `#${globalRank}` : "Unranked"}\`\n\n` +
-          `Weekly (Semanal): \`${weeklyRank ? `#${weeklyRank}` : "Unranked"}\`\n\n` +
-          `Long Shots: \`${longShotRank > 0 ? `#${longShotRank}` : "Unranked"}\`\n\n` +
-          `Streaks: \`${streakRank > 0 ? `#${streakRank}` : "Unranked"}\`\n` +
-          `\u200B\n\u200B\n` +
-          `Last Activity\n` +
-          `<t:${lastActivityTimestamp}:f>`,
-      );
+        `🎖️ **PLAYER STATS**\n\n` +
+        `**${playerName}**\n` +
+        `${statusLine}\n\n` +
+        `━━━━━━━━━━━━━━━━━━\n\n` +
+        `⚔️ **Combat Performance**\n\n` +
+        `Kills: **${kills}**\n` +
+        `Deaths: **${deaths}**\n` +
+        `K/D Ratio: **${kd}**\n` +
+        `Best Streak: **${bestStreak}x**\n\n` +
+        `━━━━━━━━━━━━━━━━━━\n\n` +
+        `🎯 **Precision**\n\n` +
+        `${precisionLines.join("\n")}\n\n` +
+        `━━━━━━━━━━━━━━━━━━\n\n` +
+        `📊 **Rankings**\n\n` +
+        `Global (Geral): **${globalRank ? `#${globalRank}` : "Unranked"}**\n` +
+        `Weekly (Semanal): **${weeklyRank ? `#${weeklyRank}` : "Unranked"}**\n` +
+        `Long Shots: **${longShotRank ? `#${longShotRank}` : "Unranked"}**\n` +
+        `Streaks: **${streakRank ? `#${streakRank}` : "Unranked"}**\n` +
+        `\u200B\n`;
+
+      return createBaseEmbed("#FFD700").setDescription(description);
     }
 
     function createMatchEmbed(state: any) {
