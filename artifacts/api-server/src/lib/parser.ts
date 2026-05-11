@@ -296,6 +296,22 @@ function updateKillStreaks(
   state.longShotEvents = (state.longShotEvents || []).slice(-150);
 }
 
+function updateOnlineSessionStats(state: AppState, killer: string, victim: string) {
+  const killerOnline = state.onlinePlayers?.[killer];
+
+  if (killerOnline) {
+    killerOnline.sessionKills = Number(killerOnline.sessionKills || 0) + 1;
+    killerOnline.sessionStreak = Number(killerOnline.sessionStreak || 0) + 1;
+  }
+
+  const victimOnline = state.onlinePlayers?.[victim];
+
+  if (victimOnline) {
+    victimOnline.sessionDeaths = Number(victimOnline.sessionDeaths || 0) + 1;
+    victimOnline.sessionStreak = 0;
+  }
+}
+
 function addKill(
   state: AppState,
   killer: string,
@@ -334,6 +350,8 @@ function addKill(
     state.activeMatch.players[victim].deaths += 1;
   }
 
+  updateOnlineSessionStats(state, killer, victim);
+
   updateKillStreaks(state, killer, victim, eventTime);
   addKillFeedEvent(state, killer, victim, weapon, eventTime);
   addLongShotEvent(state, killer, victim, weapon, distance, eventTime);
@@ -351,6 +369,9 @@ function markOnline(
     online: true,
     connectedAt: current?.connectedAt || now,
     lastSeenAt: now,
+    sessionKills: Number(current?.sessionKills || 0),
+    sessionDeaths: Number(current?.sessionDeaths || 0),
+    sessionStreak: Number(current?.sessionStreak || 0),
   };
 }
 

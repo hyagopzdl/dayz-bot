@@ -18,6 +18,8 @@ const MESSAGE_FILE_GLOBAL = "message_global.json";
 const MESSAGE_FILE_DAILY = "message_daily.json";
 const MESSAGE_FILE_WEEKLY = "message_weekly.json";
 const MESSAGE_FILE_ONLINE_LIST = "message_online_list.json";
+const MESSAGE_FILE_LONGSHOT_RANKING = "message_longshot_ranking.json";
+const MESSAGE_FILE_STREAK_RANKING = "message_streak_ranking.json";
 
 const KILLFEED_PAGE_SIZE = 9;
 const KILLFEED_MESSAGE_PREFIX = "message_killfeed_page_";
@@ -189,6 +191,18 @@ export async function startDiscordBot() {
     const longShotChannel = process.env.DISCORD_LONGSHOT_CHANNEL_ID
       ? ((await client.channels.fetch(
           process.env.DISCORD_LONGSHOT_CHANNEL_ID,
+        )) as TextBasedChannel)
+      : null;
+
+    const longShotRankingChannel = process.env.DISCORD_LONGSHOT_RANKING_CHANNEL_ID
+      ? ((await client.channels.fetch(
+          process.env.DISCORD_LONGSHOT_RANKING_CHANNEL_ID,
+        )) as TextBasedChannel)
+      : null;
+
+    const streakRankingChannel = process.env.DISCORD_STREAK_RANKING_CHANNEL_ID
+      ? ((await client.channels.fetch(
+          process.env.DISCORD_STREAK_RANKING_CHANNEL_ID,
         )) as TextBasedChannel)
       : null;
 
@@ -439,6 +453,163 @@ export async function startDiscordBot() {
     }
 
 
+    function getBestLongShots(state: any) {
+      const unique = new Map<string, any>();
+
+      for (const event of state.longShotEvents || []) {
+        const killer = event?.killer || "Unknown";
+        const victim = event?.victim || "Unknown";
+        const weapon = formatWeapon(event?.weapon);
+        const distance = Math.round(Number(event?.distance || 0));
+        const timestamp = Number(event?.timestamp || 0);
+
+        if (!distance || distance < 100) continue;
+
+        const key = `${killer}:${victim}:${weapon}:${distance}:${timestamp}`;
+        unique.set(key, { killer, victim, weapon, distance, timestamp });
+      }
+
+      return [...unique.values()]
+        .sort((a, b) => Number(b.distance || 0) - Number(a.distance || 0))
+        .slice(0, 10);
+    }
+
+    function getBestStreaks(state: any) {
+      const bestByPlayer = new Map<string, number>();
+
+      for (const event of state.killStreakEvents || []) {
+        if (event?.type !== "streak") continue;
+
+        const player = event.player || "Unknown";
+        const streak = Number(event.streak || 0);
+
+        if (streak > Number(bestByPlayer.get(player) || 0)) {
+          bestByPlayer.set(player, streak);
+        }
+      }
+
+      for (const [player, streak] of Object.entries(
+        state.currentKillStreaks || {},
+      )) {
+        const value = Number(streak || 0);
+
+        if (value > Number(bestByPlayer.get(player) || 0)) {
+          bestByPlayer.set(player, value);
+        }
+      }
+
+      return [...bestByPlayer.entries()]
+        .map(([player, streak]) => ({ player, streak }))
+        .sort((a, b) => Number(b.streak || 0) - Number(a.streak || 0))
+        .slice(0, 10);
+    }
+
+    function createLongShotRankingEmbed(state: any) {
+      const records = getBestLongShots(state);
+      const embed = createBaseEmbed("#00BFFF");
+
+      if (!records.length) {
+        embed.setDescription(
+          buildHeader(
+            "🎯",
+            "Long Shot Ranking",
+            "Top distance eliminations.",
+          ) +
+            `**No long shots yet**\nReach 100m+ to enter this ranking!` +
+            `\n\u200B\n` +
+            buildFooter(),
+        );
+
+        return embed;
+      }
+
+      const maxName = Math.min(
+        Math.max(...records.map((record) => record.killer.length)),
+        18,
+      );
+
+      const maxDistance = Math.max(
+        ...records.map((record) => `${record.distance}m`.length),
+      );
+
+      let description = buildHeader(
+        "🎯",
+        "Long Shot Ranking",
+        `${records.length} top long shot${records.length === 1 ? "" : "s"}.`,
+      );
+
+      records.forEach((record, index) => {
+        const rank = getRank(index);
+        const trimmedName =
+          record.killer.length > maxName
+            ? record.killer.slice(0, maxName - 1) + "…"
+            : record.killer;
+
+        const name = padEnd(trimmedName, maxName);
+        const distance = padStart(`${record.distance}m`, maxDistance);
+        const weapon = formatWeapon(record.weapon);
+
+        description += `${rank} \`${name}\` \`${distance}\` \`${weapon}\`\n\n`;
+      });
+
+      description += buildFooter();
+
+      embed.setDescription(description);
+
+      return embed;
+    }
+
+    function createStreakRankingEmbed(state: any) {
+      const records = getBestStreaks(state);
+      const embed = createBaseEmbed("#FF4FD8");
+
+      if (!records.length) {
+        embed.setDescription(
+          buildHeader("🔥", "Streaks Ranking", "Top kill streak records.") +
+            `**No streak records yet**\nReach a 5x streak to enter this ranking!` +
+            `\n\u200B\n` +
+            buildFooter(),
+        );
+
+        return embed;
+      }
+
+      const maxName = Math.min(
+        Math.max(...records.map((record) => record.player.length)),
+        18,
+      );
+
+      const maxStreak = Math.max(
+        ...records.map((record) => `${record.streak}x Streak`.length),
+      );
+
+      let description = buildHeader(
+        "🔥",
+        "Streaks Ranking",
+        `${records.length} top streak record${records.length === 1 ? "" : "s"}.`,
+      );
+
+      records.forEach((record, index) => {
+        const rank = getRank(index);
+        const trimmedName =
+          record.player.length > maxName
+            ? record.player.slice(0, maxName - 1) + "…"
+            : record.player;
+
+        const name = padEnd(trimmedName, maxName);
+        const streak = padStart(`${record.streak}x Streak`, maxStreak);
+
+        description += `${rank} \`${name}\` \`${streak}\`\n\n`;
+      });
+
+      description += buildFooter();
+
+      embed.setDescription(description);
+
+      return embed;
+    }
+
+
     function cleanupOnlineGhosts(state: any) {
       state.onlinePlayers = state.onlinePlayers || {};
 
@@ -475,21 +646,18 @@ export async function startDiscordBot() {
 
       const lines = players
         .map((name) => {
-          const globalKey = findPlayerKey(state.players, name) || name;
-          const stats = state.players?.[globalKey] || { kills: 0, deaths: 0 };
-          const streakKey =
-            findPlayerKey(state.currentKillStreaks, name) || name;
-          const streak = Number(state.currentKillStreaks?.[streakKey] || 0);
           const onlineKey = findPlayerKey(state.onlinePlayers, name) || name;
-          const session = getOnlineSessionTime(
-            state.onlinePlayers?.[onlineKey],
-          );
+          const onlinePlayer = state.onlinePlayers?.[onlineKey] || {};
+          const session = getOnlineSessionTime(onlinePlayer);
+          const sessionKills = Number(onlinePlayer.sessionKills || 0);
+          const sessionDeaths = Number(onlinePlayer.sessionDeaths || 0);
+          const sessionStreak = Number(onlinePlayer.sessionStreak || 0);
 
           return (
             `**${name}**\n` +
-            `Kill(s): \`${stats.kills || 0}\` • ` +
-            `Death(s): \`${stats.deaths || 0}\` • ` +
-            `Streak: \`${streak}\` • ` +
+            `Kill(s): \`${sessionKills}\` • ` +
+            `Death(s): \`${sessionDeaths}\` • ` +
+            `Streak: \`${sessionStreak}\` • ` +
             `Session: \`${session}\``
           );
         })
@@ -642,10 +810,8 @@ export async function startDiscordBot() {
       return createBaseEmbed("#00BFFF").setDescription(
         `\u200B\n` +
           `🎯 **Long Shot**\n\n` +
-          `**${killer}** killed **${victim}**\n` +
-          `\u200B\n\n` +
-          `Distance: \`${distance}m\` with \`${weapon}\`\n` +
-          `Distância: \`${distance}m\` com \`${weapon}\`\n` +
+          `**${killer}** killed 💀**${victim}**\n` +
+          `at **${distance}m** with **${weapon}**\n` +
           `\u200B\n\n` +
           `<t:${timestamp}:f>`,
       );
@@ -1047,6 +1213,24 @@ export async function startDiscordBot() {
             color: "#0099FF",
           }),
         );
+
+        if (longShotRankingChannel) {
+          await sendOrEdit(
+            state,
+            longShotRankingChannel,
+            MESSAGE_FILE_LONGSHOT_RANKING,
+            createLongShotRankingEmbed(state),
+          );
+        }
+
+        if (streakRankingChannel) {
+          await sendOrEdit(
+            state,
+            streakRankingChannel,
+            MESSAGE_FILE_STREAK_RANKING,
+            createStreakRankingEmbed(state),
+          );
+        }
 
         await updateOnlineCount(state);
         await updateOnlineList(state);

@@ -21,6 +21,9 @@ export type OnlinePlayer = {
   online: true;
   connectedAt?: string;
   lastSeenAt: string;
+  sessionKills?: number;
+  sessionDeaths?: number;
+  sessionStreak?: number;
 };
 
 export type FileCursor = {
@@ -190,6 +193,9 @@ function migrateLegacyState(data: any): AppState {
         online: true,
         connectedAt: now,
         lastSeenAt: now,
+        sessionKills: 0,
+        sessionDeaths: 0,
+        sessionStreak: 0,
       };
     } else if (typeof value === "object" && value) {
       const existing = value as any;
@@ -198,6 +204,9 @@ function migrateLegacyState(data: any): AppState {
         online: true,
         connectedAt: existing.connectedAt || existing.lastSeenAt || now,
         lastSeenAt: existing.lastSeenAt || now,
+        sessionKills: Number(existing.sessionKills || 0),
+        sessionDeaths: Number(existing.sessionDeaths || 0),
+        sessionStreak: Number(existing.sessionStreak || 0),
       };
     }
   }
