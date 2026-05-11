@@ -109,7 +109,7 @@ function createAdmEventTime(
 }
 
 function getDiscordTimestamp(eventTime: AdmEventTime | null) {
-  return Math.floor((eventTime?.date || new Date()).getTime() / 1000);
+  return Math.floor(Date.now() / 1000);
 }
 
 function isTodayInBrazil(eventTime: AdmEventTime) {

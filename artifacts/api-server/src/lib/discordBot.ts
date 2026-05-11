@@ -401,7 +401,8 @@ export async function startDiscordBot() {
       if (!players.length) {
         embed.setDescription(
           buildHeader(options.emoji, options.title, options.subtitle) +
-            `**No data available yet**\nStart playing and claim the top spot!` +
+            `**No data available yet**\nNenhum dado disponível ainda.` +
+            `\n\u200B\n\u200B\n` +
             buildFooter(),
         );
 
@@ -515,8 +516,8 @@ export async function startDiscordBot() {
             "Long Shot Ranking",
             "Top distance eliminations.",
           ) +
-            `**No long shots yet**\nReach 100m+ to enter this ranking!` +
-            `\n\u200B\n` +
+            `**No long shots yet**\nNenhum long shot registrado ainda.` +
+            `\n\u200B\n\u200B\n` +
             buildFooter(),
         );
 
@@ -566,8 +567,8 @@ export async function startDiscordBot() {
       if (!records.length) {
         embed.setDescription(
           buildHeader("🔥", "Streaks Ranking", "Top kill streak records.") +
-            `**No streak records yet**\nReach a 5x streak to enter this ranking!` +
-            `\n\u200B\n` +
+            `**No streak records yet**\nNenhum recorde de streak ainda.` +
+            `\n\u200B\n\u200B\n` +
             buildFooter(),
         );
 
@@ -726,7 +727,7 @@ export async function startDiscordBot() {
       return createBaseEmbed("#FF3333").setDescription(
         buildHeader("🔫", "Kill Feed", "Live PvP activity") +
           `**No recent kills yet**\nNenhuma kill recente ainda.` +
-          `\n\u200B\n` +
+          `\n\u200B\n\u200B\n` +
           buildFooter(),
       );
     }
@@ -744,8 +745,8 @@ export async function startDiscordBot() {
     function createKillStreakEmptyEmbed() {
       return createBaseEmbed("#FF3333").setDescription(
         buildHeader("📈", "Kill Streak Feed", "Persistent streak history") +
-          `**No streak events yet**\nReach 5 kills in a row to enter the feed!` +
-          `\n\u200B\n` +
+          `**No streak events yet**\nNenhuma sequência registrada ainda.` +
+          `\n\u200B\n\u200B\n` +
           buildFooter(),
       );
     }
@@ -792,7 +793,7 @@ export async function startDiscordBot() {
           `\u200B\n\u200B\n` +
           `**No long shots yet**\n` +
           `Nenhum long shot registrado ainda.\n` +
-          `\n\u200B\n` +
+          `\n\u200B\n\u200B\n` +
           buildFooter(),
       );
     }
@@ -812,7 +813,7 @@ export async function startDiscordBot() {
           `🎯 **Long Shot**\n\n` +
           `**${killer}** killed 💀**${victim}**\n` +
           `at **${distance}m** with **${weapon}**\n` +
-          `\u200B\n\n` +
+          `\u200B\n\u200B\n` +
           `<t:${timestamp}:f>`,
       );
     }
@@ -1276,43 +1277,128 @@ export async function startDiscordBot() {
         streakKey ||
         onlineKey ||
         playerName;
+
       const stats = state.players?.[globalKey || canonicalName] || {
         kills: 0,
         deaths: 0,
       };
-      const dailyStats = state.dailyPlayers?.[dailyKey || canonicalName] || {
-        kills: 0,
-        deaths: 0,
-      };
+
       const weeklyStats = state.weeklyPlayers?.[weeklyKey || canonicalName] || {
         kills: 0,
         deaths: 0,
       };
+
       const currentStreak = Number(
         state.currentKillStreaks?.[streakKey || canonicalName] || 0,
       );
+
       const kd =
         stats.deaths > 0
           ? (stats.kills / stats.deaths).toFixed(2)
           : stats.kills.toFixed(2);
+
       const globalRank = getRankPosition(state.players, canonicalName);
-      const dailyRank = getRankPosition(state.dailyPlayers, canonicalName);
       const weeklyRank = getRankPosition(state.weeklyPlayers, canonicalName);
-      const isOnline = Boolean(onlineKey);
+
+      const onlineData = onlineKey ? state.onlinePlayers?.[onlineKey] : null;
+      const isOnline = Boolean(onlineData?.online);
+      const connectedTimestamp = onlineData?.connectedAt
+        ? Math.floor(new Date(onlineData.connectedAt).getTime() / 1000)
+        : null;
+      const lastActivityTimestamp = onlineData?.lastSeenAt
+        ? Math.floor(new Date(onlineData.lastSeenAt).getTime() / 1000)
+        : Math.floor(Date.now() / 1000);
+
+      const bestStreakRecord = getBestStreaks(state).find(
+        (record) => record.player.toLowerCase() === canonicalName.toLowerCase(),
+      );
+      const bestStreak = Math.max(
+        Number(bestStreakRecord?.streak || 0),
+        currentStreak,
+      );
+
+      const playerLongShots = (state.longShotEvents || [])
+        .filter(
+          (event: any) =>
+            (event.killer || "").toLowerCase() === canonicalName.toLowerCase(),
+        )
+        .sort(
+          (a: any, b: any) =>
+            Number(b.distance || 0) - Number(a.distance || 0),
+        );
+
+      const longestShot = playerLongShots[0] || null;
+
+      const weaponCounts = new Map<string, number>();
+
+      for (const event of state.killFeedEvents || []) {
+        if ((event.killer || "").toLowerCase() !== canonicalName.toLowerCase()) {
+          continue;
+        }
+
+        const weapon = formatWeapon(event.weapon);
+        if (weapon === "Unknown") continue;
+
+        weaponCounts.set(weapon, Number(weaponCounts.get(weapon) || 0) + 1);
+      }
+
+      for (const event of state.longShotEvents || []) {
+        if ((event.killer || "").toLowerCase() !== canonicalName.toLowerCase()) {
+          continue;
+        }
+
+        const weapon = formatWeapon(event.weapon);
+        if (weapon === "Unknown") continue;
+
+        weaponCounts.set(weapon, Number(weaponCounts.get(weapon) || 0) + 1);
+      }
+
+      const favoriteWeapon =
+        [...weaponCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ||
+        "Unknown";
+
+      const longShotRank =
+        getBestLongShots(state).findIndex(
+          (record) =>
+            (record.killer || "").toLowerCase() === canonicalName.toLowerCase(),
+        ) + 1;
+
+      const streakRank =
+        getBestStreaks(state).findIndex(
+          (record) =>
+            (record.player || "").toLowerCase() === canonicalName.toLowerCase(),
+        ) + 1;
 
       return createBaseEmbed("#0099FF").setDescription(
         `\u200B\n` +
-          `👤 **Player Stats**\n` +
-          `${canonicalName}\n\u200B\n\u200B\n` +
-          `**Kills:** ${stats.kills}\n` +
-          `**Deaths:** ${stats.deaths}\n` +
-          `**K/D:** ${kd}\n` +
-          `**Current Streak:** ${currentStreak}\n\n` +
-          `**Daily:** ${dailyStats.kills} kills / ${dailyStats.deaths} deaths${dailyRank ? ` • #${dailyRank}` : ""}\n` +
-          `**Weekly:** ${weeklyStats.kills} kills / ${weeklyStats.deaths} deaths${weeklyRank ? ` • #${weeklyRank}` : ""}\n` +
-          `**Global Rank:** ${globalRank ? `#${globalRank}` : "Unranked"}\n` +
-          `**Status:** ${isOnline ? "🟢 Online" : "⚫ Offline"}` +
-          buildFooter(),
+          `🎖️ **PLAYER STATS**\n\n` +
+          `**${canonicalName}**\n` +
+          `${isOnline ? "🟢 Online" : "⚫ Offline"}${
+            isOnline && connectedTimestamp
+              ? ` • Connected <t:${connectedTimestamp}:R>`
+              : ""
+          }\n` +
+          `\u200B\n\u200B\n` +
+          `⚔️ **Combat Performance**\n\n` +
+          `Kills: \`${stats.kills}\`\n\n` +
+          `Deaths: \`${stats.deaths}\`\n\n` +
+          `K/D Ratio: \`${kd}\`\n\n` +
+          `Best Streak: \`${bestStreak}x\`\n` +
+          `\u200B\n\u200B\n` +
+          `🎯 **Precision**\n\n` +
+          `Longest Shot: \`${
+            longestShot ? `${Math.round(Number(longestShot.distance || 0))}m` : "N/A"
+          }\`${longestShot ? ` with \`${formatWeapon(longestShot.weapon)}\`` : ""}\n\n` +
+          `Favorite Weapon: \`${favoriteWeapon}\`\n` +
+          `\u200B\n\u200B\n` +
+          `📊 **Rankings**\n\n` +
+          `Global (Geral): \`${globalRank ? `#${globalRank}` : "Unranked"}\`\n\n` +
+          `Weekly (Semanal): \`${weeklyRank ? `#${weeklyRank}` : "Unranked"}\`\n\n` +
+          `Long Shots: \`${longShotRank > 0 ? `#${longShotRank}` : "Unranked"}\`\n\n` +
+          `Streaks: \`${streakRank > 0 ? `#${streakRank}` : "Unranked"}\`\n` +
+          `\u200B\n\u200B\n` +
+          `Last Activity\n` +
+          `<t:${lastActivityTimestamp}:f>`,
       );
     }
 
@@ -1322,7 +1408,8 @@ export async function startDiscordBot() {
       if (!match) {
         return createBaseEmbed("#FF3333").setDescription(
           buildHeader("🎮", "Match Ranking", "No active match") +
-            `There is no match data available.` +
+            `There is no match data available.\nNenhuma partida ativa no momento.` +
+            `\n\u200B\n\u200B\n` +
             buildFooter(),
         );
       }
