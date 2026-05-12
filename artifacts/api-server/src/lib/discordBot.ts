@@ -8,6 +8,8 @@ import {
   ColorResolvable,
   ChannelType,
 } from "discord.js";
+import fs from "fs";
+import path from "path";
 import { getStateAsync, saveStateAsync } from "./state";
 
 const client = new Client({
@@ -37,7 +39,6 @@ const BOT_NAME = "PZ's DayZ Bot";
 
 const BOT_ICON =
   "https://media.discordapp.net/attachments/1501806293583659048/1501832841703723088/pz-avatar.png?ex=69fd8254&is=69fc30d4&hm=2075bd7c316893afbf66950ab1373fc5d5a076662bc5ad1033b6763f6689b63c&=&format=webp&quality=lossless&width=1526&height=1526";
-
 
 let discordLoopRunning = false;
 
@@ -102,7 +103,6 @@ function getKillStreakMeta(streak: number) {
     pt: "está em uma sequência de",
   };
 }
-
 
 export async function registerKillStreakFromKill(options: {
   killer: string;
@@ -195,7 +195,8 @@ export async function startDiscordBot() {
         )) as TextBasedChannel)
       : null;
 
-    const longShotRankingChannel = process.env.DISCORD_LONGSHOT_RANKING_CHANNEL_ID
+    const longShotRankingChannel = process.env
+      .DISCORD_LONGSHOT_RANKING_CHANNEL_ID
       ? ((await client.channels.fetch(
           process.env.DISCORD_LONGSHOT_RANKING_CHANNEL_ID,
         )) as TextBasedChannel)
@@ -336,7 +337,6 @@ export async function startDiscordBot() {
       return embed;
     }
 
-
     function getBrazilDateKey(date = new Date()) {
       const formatter = new Intl.DateTimeFormat("pt-BR", {
         timeZone: "America/Sao_Paulo",
@@ -375,6 +375,13 @@ export async function startDiscordBot() {
 
     async function resetRankings() {
       const state = await getState();
+
+      const discordMessageIds = state.discordMessageIds || {};
+      const files = state.files || {};
+      const recentEventIds = state.recentEventIds || [];
+      const lastLine = state.lastLine;
+      const lastFileName = state.lastFileName;
+
       const today = getBrazilDateKey();
       const currentWeek = getBrazilWeekKey();
 
@@ -382,9 +389,10 @@ export async function startDiscordBot() {
       state.dailyPlayers = {};
       state.weeklyPlayers = {};
       state.killFeedEvents = [];
-      state.longShotEvents = [];
       state.currentKillStreaks = {};
       state.killStreakEvents = [];
+      state.longShotEvents = [];
+      state.onlinePlayers = {};
       state.activeMatch = null;
 
       state.globalStartedAt = today;
@@ -393,10 +401,13 @@ export async function startDiscordBot() {
       state.lastDailyReset = today;
       state.lastWeeklyReset = currentWeek;
 
-      state.files = state.files || {};
-      state.recentEventIds = state.recentEventIds || [];
-      state.onlinePlayers = state.onlinePlayers || {};
-      state.discordMessageIds = state.discordMessageIds || {};
+      state.files = files;
+      state.recentEventIds = recentEventIds;
+      state.lastLine = lastLine;
+      state.lastFileName = lastFileName;
+      state.discordMessageIds = discordMessageIds;
+
+      markCurrentAdmFilesAsProcessed(state);
 
       await saveState(state);
     }
@@ -406,7 +417,6 @@ export async function startDiscordBot() {
         .map(([name, d]: any) => ({ name, ...d }))
         .sort((a, b) => b.kills - a.kills);
     }
-
 
     function formatDuration(ms: number) {
       const totalMinutes = Math.max(0, Math.floor(ms / 60000));
@@ -489,7 +499,6 @@ export async function startDiscordBot() {
       return embed;
     }
 
-
     function getBestLongShots(state: any) {
       const unique = new Map<string, any>();
 
@@ -547,11 +556,7 @@ export async function startDiscordBot() {
 
       if (!records.length) {
         embed.setDescription(
-          buildHeader(
-            "🎯",
-            "Long Shot Ranking",
-            "Top distance eliminations.",
-          ) +
+          buildHeader("🎯", "Long Shot Ranking", "Top distance eliminations.") +
             `**No long shots yet**\nNenhum long shot registrado ainda.` +
             `\n\u200B\n\u200B\n` +
             buildFooter(),
@@ -645,7 +650,6 @@ export async function startDiscordBot() {
 
       return embed;
     }
-
 
     function cleanupOnlineGhosts(state: any) {
       state.onlinePlayers = state.onlinePlayers || {};
@@ -834,7 +838,6 @@ export async function startDiscordBot() {
       );
     }
 
-
     function createLongShotEmptyEmbed() {
       return createBaseEmbed("#FF3333").setDescription(
         `\u200B\n` +
@@ -918,7 +921,6 @@ export async function startDiscordBot() {
 
       delete state.discordMessageIds[key];
     }
-
 
     async function deleteBotMessagesFromChannel(channel: any) {
       try {
@@ -1137,7 +1139,6 @@ export async function startDiscordBot() {
       );
     }
 
-
     async function updateLongShotFeed(state: any) {
       if (!longShotChannel) return;
 
@@ -1219,7 +1220,6 @@ export async function startDiscordBot() {
 
       try {
         const state = await getState();
-
 
         if (!state.globalStartedAt) {
           state.globalStartedAt =
@@ -1316,7 +1316,6 @@ export async function startDiscordBot() {
       );
     }
 
-    
     function findPlayerName(state: any, query: string) {
       const normalized = query.toLowerCase();
 
@@ -1365,8 +1364,7 @@ export async function startDiscordBot() {
       const bestFromEvents = streakEvents
         .filter((event: any) => event.player === playerName)
         .reduce(
-          (max: number, event: any) =>
-            Math.max(max, Number(event.streak || 0)),
+          (max: number, event: any) => Math.max(max, Number(event.streak || 0)),
           0,
         );
 
@@ -1463,12 +1461,17 @@ export async function startDiscordBot() {
       return index >= 0 ? index + 1 : null;
     }
 
-
-function createPlayerStatsEmbed(state: any, playerQuery: string) {
+    function createPlayerStatsEmbed(state: any, playerQuery: string) {
       const playerName = findPlayerName(state, playerQuery) || playerQuery;
       const stats = state.players?.[playerName] || { kills: 0, deaths: 0 };
-      const dailyStats = state.dailyPlayers?.[playerName] || { kills: 0, deaths: 0 };
-      const weeklyStats = state.weeklyPlayers?.[playerName] || { kills: 0, deaths: 0 };
+      const dailyStats = state.dailyPlayers?.[playerName] || {
+        kills: 0,
+        deaths: 0,
+      };
+      const weeklyStats = state.weeklyPlayers?.[playerName] || {
+        kills: 0,
+        deaths: 0,
+      };
       const onlineInfo = state.onlinePlayers?.[playerName];
 
       const kills = Number(stats.kills || 0);
@@ -1657,6 +1660,41 @@ function createPlayerStatsEmbed(state: any, playerQuery: string) {
       return true;
     }
 
+    function markCurrentAdmFilesAsProcessed(state: any) {
+      state.files = state.files || {};
+
+      try {
+        const manifestPath = path.resolve(process.cwd(), "adm_manifest.json");
+
+        if (!fs.existsSync(manifestPath)) {
+          return;
+        }
+
+        const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf-8"));
+        const files = Array.isArray(manifest.files) ? manifest.files : [];
+
+        for (const file of files) {
+          if (!file || !fs.existsSync(file)) continue;
+
+          const lineCount = fs
+            .readFileSync(file, "utf-8")
+            .split(/\r?\n/).length;
+
+          state.files[file] = {
+            lastLine: lineCount,
+            lastProcessedAt: new Date().toISOString(),
+          };
+
+          state.lastFileName = file;
+          state.lastLine = lineCount;
+        }
+
+        console.log(`🧭 cursores ADM preservados/avançados: ${files.length}`);
+      } catch (err) {
+        console.error("❌ erro ao avançar cursores ADM no wipe", err);
+      }
+    }
+
     async function registerCommands() {
       try {
         const adminPermission =
@@ -1825,7 +1863,6 @@ function createPlayerStatsEmbed(state: any, playerQuery: string) {
 
         await interaction.deferReply({ ephemeral: true });
 
-
         if (interaction.commandName === "clear-channel") {
           const amount = interaction.options.getInteger("amount") || 100;
           const channel = interaction.channel as any;
@@ -1860,7 +1897,6 @@ function createPlayerStatsEmbed(state: any, playerQuery: string) {
 
           return;
         }
-
         if (interaction.commandName === "wipe-online") {
           const state = await getState();
 
@@ -1931,12 +1967,9 @@ function createPlayerStatsEmbed(state: any, playerQuery: string) {
           if (longShotChannel) {
             await deleteBotMessagesFromChannel(longShotChannel);
 
-            await sendOrEdit(
-              state,
-              longShotChannel,
-              longShotPageKey(0),
-              [createLongShotEmptyEmbed()],
-            );
+            await sendOrEdit(state, longShotChannel, longShotPageKey(0), [
+              createLongShotEmptyEmbed(),
+            ]);
           }
 
           await saveState(state);
@@ -1961,12 +1994,9 @@ function createPlayerStatsEmbed(state: any, playerQuery: string) {
           if (killfeedChannel) {
             await deleteBotMessagesFromChannel(killfeedChannel);
 
-            await sendOrEdit(
-              state,
-              killfeedChannel,
-              killfeedPageKey(0),
-              [createKillFeedEmptyEmbed()],
-            );
+            await sendOrEdit(state, killfeedChannel, killfeedPageKey(0), [
+              createKillFeedEmptyEmbed(),
+            ]);
           }
 
           await saveState(state);
@@ -2045,9 +2075,7 @@ function createPlayerStatsEmbed(state: any, playerQuery: string) {
           await updateMatchRanking(state);
           await saveState(state);
 
-          await interaction.editReply(
-            `✅ Match started in <#${channel.id}>.`,
-          );
+          await interaction.editReply(`✅ Match started in <#${channel.id}>.`);
           return;
         }
 
@@ -2071,9 +2099,7 @@ function createPlayerStatsEmbed(state: any, playerQuery: string) {
 
           await updateMatchRanking(state);
           await saveState(state);
-          await interaction.editReply(
-            "🏁 Match stopped and ranking frozen.",
-          );
+          await interaction.editReply("🏁 Match stopped and ranking frozen.");
           return;
         }
 
@@ -2142,12 +2168,9 @@ function createPlayerStatsEmbed(state: any, playerQuery: string) {
           if (killStreakChannel) {
             await deleteBotMessagesFromChannel(killStreakChannel);
 
-            await sendOrEdit(
-              state,
-              killStreakChannel,
-              killStreakPageKey(0),
-              [createKillStreakEmptyEmbed()],
-            );
+            await sendOrEdit(state, killStreakChannel, killStreakPageKey(0), [
+              createKillStreakEmptyEmbed(),
+            ]);
           }
 
           await saveState(state);
@@ -2158,7 +2181,6 @@ function createPlayerStatsEmbed(state: any, playerQuery: string) {
 
           return;
         }
-
         if (interaction.commandName === "wipe-all") {
           await resetRankings();
           await updateLeaderboard();

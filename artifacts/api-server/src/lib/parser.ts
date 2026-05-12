@@ -389,6 +389,21 @@ function markOffline(state: AppState, player: string) {
 
 function cleanupOnlinePlayers(state: AppState) {
   state.onlinePlayers = state.onlinePlayers || {};
+
+  const now = Date.now();
+  const maxAgeMs = 30 * 60 * 1000;
+
+  for (const [player, data] of Object.entries(state.onlinePlayers)) {
+    const info = data as any;
+    const lastSeen = new Date(
+      info.lastSeenAt || info.connectedAt || 0,
+    ).getTime();
+
+    if (!lastSeen || now - lastSeen > maxAgeMs) {
+      delete state.onlinePlayers[player];
+      console.log(`🧹 removendo online fantasma: ${player}`);
+    }
+  }
 }
 
 function applyResets(state: AppState) {
