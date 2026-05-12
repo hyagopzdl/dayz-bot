@@ -22,6 +22,7 @@ const MESSAGE_FILE_LONGSHOT_RANKING = "message_longshot_ranking.json";
 const MESSAGE_FILE_STREAK_RANKING = "message_streak_ranking.json";
 
 const KILLFEED_PAGE_SIZE = 9;
+const KILLFEED_MAX_EVENTS = 99;
 const KILLFEED_MESSAGE_PREFIX = "message_killfeed_page_";
 
 const KILLSTREAK_PAGE_SIZE = 10;

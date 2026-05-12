@@ -219,7 +219,7 @@ function addKillFeedEvent(
     at: new Date().toISOString(),
   });
 
-  state.killFeedEvents = state.killFeedEvents.slice(-100);
+  state.killFeedEvents = state.killFeedEvents.slice(-99);
 }
 
 function addKillStreakMilestoneEvent(
@@ -565,7 +565,7 @@ function processFile(filePath: string, state: AppState) {
   state.lastFileName = fileName;
 
   state.recentEventIds = state.recentEventIds.slice(-10000);
-  state.killFeedEvents = state.killFeedEvents.slice(-100);
+  state.killFeedEvents = state.killFeedEvents.slice(-99);
   state.killStreakEvents = state.killStreakEvents.slice(-150);
   state.longShotEvents = (state.longShotEvents || []).slice(-150);
 

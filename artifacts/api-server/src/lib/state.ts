@@ -272,7 +272,7 @@ export async function saveStateAsync(data: AppState) {
     onlinePlayers: data.onlinePlayers || {},
     files: data.files || {},
     recentEventIds: (data.recentEventIds || []).slice(-10000),
-    killFeedEvents: (data.killFeedEvents || []).slice(-100),
+    killFeedEvents: (data.killFeedEvents || []).slice(-99),
     longShotEvents: (data.longShotEvents || []).slice(-150),
 
     currentKillStreaks: data.currentKillStreaks || {},
