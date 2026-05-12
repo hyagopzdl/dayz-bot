@@ -693,7 +693,7 @@ export async function startDiscordBot() {
         embed.setDescription(
           buildHeader("🟢", "Players Online", "Live server activity") +
             `**No players online**\nThe server is currently quiet.` +
-            `\n\u200B\n` +
+            `\n\u200B\n\u200B\n` +
             buildFooter(),
         );
 
@@ -843,7 +843,6 @@ export async function startDiscordBot() {
         `\u200B\n` +
           `🎯 **Long Shot Feed**\n` +
           `Elite distance eliminations.\n` +
-          `Eliminações de longa distância.\n` +
           `\u200B\n\u200B\n` +
           `**No long shots yet**\n` +
           `Nenhum long shot registrado ainda.\n` +
@@ -865,7 +864,7 @@ export async function startDiscordBot() {
       return createBaseEmbed("#FF3333").setDescription(
         `\u200B\n` +
           `🎯 **Long Shot**\n\n` +
-          `**${killer}** killed 💀**${victim}**\n` +
+          `**${killer}** killed 💀 **${victim}**\n` +
           `at **${distance}m** with **${weapon}**\n` +
           `\u200B\n\u200B\n` +
           `<t:${timestamp}:f>`,
