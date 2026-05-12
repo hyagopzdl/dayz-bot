@@ -302,7 +302,7 @@ function updateOnlineSessionStats(
   victim: string,
   eventTime: AdmEventTime | null,
 ) {
-  const now = (eventTime?.date || new Date()).toISOString();
+  const now = new Date().toISOString();
   const killerOnline = state.onlinePlayers?.[killer];
 
   if (killerOnline) {
@@ -370,7 +370,7 @@ function markOnline(
   player: string,
   eventTime: AdmEventTime | null,
 ) {
-  const now = (eventTime?.date || new Date()).toISOString();
+  const now = new Date().toISOString();
   const current = state.onlinePlayers[player];
 
   state.onlinePlayers[player] = {
@@ -391,10 +391,16 @@ function cleanupOnlinePlayers(state: AppState) {
   state.onlinePlayers = state.onlinePlayers || {};
 
   const now = Date.now();
-  const maxAgeMs = 30 * 60 * 1000;
+  const maxAgeMs = 12 * 60 * 60 * 1000;
 
   for (const [player, data] of Object.entries(state.onlinePlayers)) {
     const info = data as any;
+
+    if (!info?.online) {
+      delete state.onlinePlayers[player];
+      continue;
+    }
+
     const lastSeen = new Date(
       info.lastSeenAt || info.connectedAt || 0,
     ).getTime();

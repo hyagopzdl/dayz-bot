@@ -655,7 +655,7 @@ export async function startDiscordBot() {
       state.onlinePlayers = state.onlinePlayers || {};
 
       const now = Date.now();
-      const maxOnlineAgeMs = 20 * 60 * 1000;
+      const maxOnlineAgeMs = 12 * 60 * 60 * 1000;
 
       for (const [player, data] of Object.entries(state.onlinePlayers || {})) {
         const info = data as any;
@@ -981,7 +981,7 @@ export async function startDiscordBot() {
 
     async function updateOnlineCount(state: any) {
       try {
-        const count = Object.keys(state.onlinePlayers || {}).length;
+        const count = getOnlinePlayerNames(state).length;
         const category = await client.channels.fetch(CATEGORY_ID);
 
         if (!category || !("setName" in category)) {
@@ -1097,10 +1097,10 @@ export async function startDiscordBot() {
       }
 
       const events = [...uniqueEventsMap.values()]
-        .sort((a, b) => Number(b.timestamp || 0) - Number(a.timestamp || 0))
-        .slice(0, KILLSTREAK_MAX_EVENTS);
+        .sort((a, b) => Number(a.timestamp || 0) - Number(b.timestamp || 0))
+        .slice(-KILLSTREAK_MAX_EVENTS);
 
-      state.killStreakEvents = [...events].reverse();
+      state.killStreakEvents = [...events];
 
       if (!events.length) {
         await sendOrEdit(state, killStreakChannel, killStreakPageKey(0), [
