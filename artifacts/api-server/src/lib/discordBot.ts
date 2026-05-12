@@ -37,7 +37,6 @@ const BOT_NAME = "PZ's DayZ Bot";
 const BOT_ICON =
   "https://media.discordapp.net/attachments/1501806293583659048/1501832841703723088/pz-avatar.png?ex=69fd8254&is=69fc30d4&hm=2075bd7c316893afbf66950ab1373fc5d5a076662bc5ad1033b6763f6689b63c&=&format=webp&quality=lossless&width=1526&height=1526";
 
-
 let discordLoopRunning = false;
 
 function ensureBotState(state: any) {
@@ -101,7 +100,6 @@ function getKillStreakMeta(streak: number) {
     pt: "está em uma sequência de",
   };
 }
-
 
 export async function registerKillStreakFromKill(options: {
   killer: string;
@@ -194,7 +192,8 @@ export async function startDiscordBot() {
         )) as TextBasedChannel)
       : null;
 
-    const longShotRankingChannel = process.env.DISCORD_LONGSHOT_RANKING_CHANNEL_ID
+    const longShotRankingChannel = process.env
+      .DISCORD_LONGSHOT_RANKING_CHANNEL_ID
       ? ((await client.channels.fetch(
           process.env.DISCORD_LONGSHOT_RANKING_CHANNEL_ID,
         )) as TextBasedChannel)
@@ -334,10 +333,45 @@ export async function startDiscordBot() {
 
       return embed;
     }
+    function getBrazilDateKey(date = new Date()) {
+      const formatter = new Intl.DateTimeFormat("pt-BR", {
+        timeZone: "America/Sao_Paulo",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      });
 
+      const parts = formatter.formatToParts(date);
+      const map: Record<string, string> = {};
+
+      parts.forEach((part) => {
+        map[part.type] = part.value;
+      });
+
+      return `${map.year}-${map.month}-${map.day}`;
+    }
+
+    function getBrazilWeekKey(date = new Date()) {
+      const dateKey = getBrazilDateKey(date);
+      const [year, month, day] = dateKey.split("-").map(Number);
+
+      const localDate = new Date(year, month - 1, day, 0, 0, 0);
+      const weekDay = localDate.getDay();
+      const diffToMonday = weekDay === 0 ? -6 : 1 - weekDay;
+
+      const monday = new Date(localDate);
+      monday.setDate(localDate.getDate() + diffToMonday);
+
+      const mondayYear = monday.getFullYear();
+      const mondayMonth = String(monday.getMonth() + 1).padStart(2, "0");
+      const mondayDay = String(monday.getDate()).padStart(2, "0");
+
+      return `${mondayYear}-${mondayMonth}-${mondayDay}`;
+    }
     async function resetRankings() {
       const state = await getState();
-      const today = new Date().toISOString().slice(0, 10);
+      const today = getBrazilDateKey();
+      const currentWeek = getBrazilWeekKey();
 
       state.players = {};
       state.dailyPlayers = {};
@@ -351,6 +385,8 @@ export async function startDiscordBot() {
       state.globalStartedAt = today;
       state.dailyStartedAt = today;
       state.weeklyStartedAt = today;
+      state.lastDailyReset = today;
+      state.lastWeeklyReset = currentWeek;
 
       state.files = state.files || {};
       state.recentEventIds = state.recentEventIds || [];
@@ -364,12 +400,6 @@ export async function startDiscordBot() {
       return Object.entries(obj || {})
         .map(([name, d]: any) => ({ name, ...d }))
         .sort((a, b) => b.kills - a.kills);
-    }
-
-    function getOnlinePlayerNames(state: any) {
-      return Object.keys(state.onlinePlayers || {}).sort((a, b) =>
-        a.localeCompare(b),
-      );
     }
 
     function formatDuration(ms: number) {
@@ -453,7 +483,6 @@ export async function startDiscordBot() {
       return embed;
     }
 
-
     function getBestLongShots(state: any) {
       const unique = new Map<string, any>();
 
@@ -507,15 +536,11 @@ export async function startDiscordBot() {
 
     function createLongShotRankingEmbed(state: any) {
       const records = getBestLongShots(state);
-      const embed = createBaseEmbed("#00BFFF");
+      const embed = createBaseEmbed("#A020F0");
 
       if (!records.length) {
         embed.setDescription(
-          buildHeader(
-            "🎯",
-            "Long Shot Ranking",
-            "Top distance eliminations.",
-          ) +
+          buildHeader("🎯", "Long Shot Ranking", "Top distance eliminations.") +
             `**No long shots yet**\nNenhum long shot registrado ainda.` +
             `\n\u200B\n\u200B\n` +
             buildFooter(),
@@ -610,15 +635,20 @@ export async function startDiscordBot() {
       return embed;
     }
 
-
     function cleanupOnlineGhosts(state: any) {
       state.onlinePlayers = state.onlinePlayers || {};
 
       const now = Date.now();
-      const maxOnlineAgeMs = 12 * 60 * 60 * 1000;
+      const maxOnlineAgeMs = 20 * 60 * 1000;
 
       for (const [player, data] of Object.entries(state.onlinePlayers || {})) {
         const info = data as any;
+
+        if (!info?.online) {
+          delete state.onlinePlayers[player];
+          continue;
+        }
+
         const lastSeen = new Date(
           info.lastSeenAt || info.connectedAt || 0,
         ).getTime();
@@ -628,6 +658,15 @@ export async function startDiscordBot() {
           console.log(`🧹 removendo online fantasma: ${player}`);
         }
       }
+    }
+
+    function getOnlinePlayerNames(state: any) {
+      return Object.keys(state.onlinePlayers || {})
+        .filter((name) => {
+          const player = state.onlinePlayers?.[name] as any;
+          return Boolean(player?.online);
+        })
+        .sort((a, b) => a.localeCompare(b));
     }
 
     function formatOnlineListEmbed(state: any) {
@@ -783,7 +822,6 @@ export async function startDiscordBot() {
       );
     }
 
-
     function createLongShotEmptyEmbed() {
       return createBaseEmbed("#FF3333").setDescription(
         `\u200B\n` +
@@ -867,7 +905,6 @@ export async function startDiscordBot() {
 
       delete state.discordMessageIds[key];
     }
-
 
     async function deleteBotMessagesFromChannel(channel: any) {
       try {
@@ -1008,6 +1045,8 @@ export async function startDiscordBot() {
         pages.length,
         KILLFEED_MESSAGE_PREFIX,
       );
+
+      state.killFeedEvents = [];
     }
 
     async function updateKillStreakFeed(state: any) {
@@ -1083,7 +1122,6 @@ export async function startDiscordBot() {
         KILLSTREAK_MESSAGE_PREFIX,
       );
     }
-
 
     async function updateLongShotFeed(state: any) {
       if (!longShotChannel) return;
@@ -1166,7 +1204,6 @@ export async function startDiscordBot() {
 
       try {
         const state = await getState();
-
 
         if (!state.globalStartedAt) {
           state.globalStartedAt =
@@ -1263,7 +1300,6 @@ export async function startDiscordBot() {
       );
     }
 
-    
     function findPlayerName(state: any, query: string) {
       const normalized = query.toLowerCase();
 
@@ -1312,8 +1348,7 @@ export async function startDiscordBot() {
       const bestFromEvents = streakEvents
         .filter((event: any) => event.player === playerName)
         .reduce(
-          (max: number, event: any) =>
-            Math.max(max, Number(event.streak || 0)),
+          (max: number, event: any) => Math.max(max, Number(event.streak || 0)),
           0,
         );
 
@@ -1410,12 +1445,17 @@ export async function startDiscordBot() {
       return index >= 0 ? index + 1 : null;
     }
 
-
-function createPlayerStatsEmbed(state: any, playerQuery: string) {
+    function createPlayerStatsEmbed(state: any, playerQuery: string) {
       const playerName = findPlayerName(state, playerQuery) || playerQuery;
       const stats = state.players?.[playerName] || { kills: 0, deaths: 0 };
-      const dailyStats = state.dailyPlayers?.[playerName] || { kills: 0, deaths: 0 };
-      const weeklyStats = state.weeklyPlayers?.[playerName] || { kills: 0, deaths: 0 };
+      const dailyStats = state.dailyPlayers?.[playerName] || {
+        kills: 0,
+        deaths: 0,
+      };
+      const weeklyStats = state.weeklyPlayers?.[playerName] || {
+        kills: 0,
+        deaths: 0,
+      };
       const onlineInfo = state.onlinePlayers?.[playerName];
 
       const kills = Number(stats.kills || 0);
@@ -1548,15 +1588,18 @@ function createPlayerStatsEmbed(state: any, playerQuery: string) {
     }
 
     function resetDaily(state: any) {
+      const today = getBrazilDateKey();
       state.dailyPlayers = {};
-      state.dailyStartedAt = new Date().toISOString().slice(0, 10);
-      state.lastDailyReset = state.dailyStartedAt;
+      state.dailyStartedAt = today;
+      state.lastDailyReset = today;
     }
 
     function resetWeekly(state: any) {
+      const today = getBrazilDateKey();
+      const currentWeek = getBrazilWeekKey();
       state.weeklyPlayers = {};
-      state.weeklyStartedAt = new Date().toISOString().slice(0, 10);
-      state.lastWeeklyReset = state.weeklyStartedAt;
+      state.weeklyStartedAt = today;
+      state.lastWeeklyReset = currentWeek;
     }
 
     function resetStreaks(state: any) {
@@ -1842,9 +1885,7 @@ function createPlayerStatsEmbed(state: any, playerQuery: string) {
           await updateMatchRanking(state);
           await saveState(state);
 
-          await interaction.editReply(
-            `✅ Match started in <#${channel.id}>.`,
-          );
+          await interaction.editReply(`✅ Match started in <#${channel.id}>.`);
           return;
         }
 
@@ -1868,9 +1909,7 @@ function createPlayerStatsEmbed(state: any, playerQuery: string) {
 
           await updateMatchRanking(state);
           await saveState(state);
-          await interaction.editReply(
-            "🏁 Match stopped and ranking frozen.",
-          );
+          await interaction.editReply("🏁 Match stopped and ranking frozen.");
           return;
         }
 
@@ -1939,12 +1978,9 @@ function createPlayerStatsEmbed(state: any, playerQuery: string) {
           if (killStreakChannel) {
             await deleteBotMessagesFromChannel(killStreakChannel);
 
-            await sendOrEdit(
-              state,
-              killStreakChannel,
-              killStreakPageKey(0),
-              [createKillStreakEmptyEmbed()],
-            );
+            await sendOrEdit(state, killStreakChannel, killStreakPageKey(0), [
+              createKillStreakEmptyEmbed(),
+            ]);
           }
 
           await saveState(state);

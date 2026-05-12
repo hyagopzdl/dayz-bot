@@ -216,7 +216,7 @@ function addKillFeedEvent(
     killer,
     victim,
     weapon,
-    at: (eventTime?.date || new Date()).toISOString(),
+    at: new Date().toISOString(),
   });
 
   state.killFeedEvents = state.killFeedEvents.slice(-100);
@@ -296,10 +296,17 @@ function updateKillStreaks(
   state.longShotEvents = (state.longShotEvents || []).slice(-150);
 }
 
-function updateOnlineSessionStats(state: AppState, killer: string, victim: string) {
+function updateOnlineSessionStats(
+  state: AppState,
+  killer: string,
+  victim: string,
+  eventTime: AdmEventTime | null,
+) {
+  const now = (eventTime?.date || new Date()).toISOString();
   const killerOnline = state.onlinePlayers?.[killer];
 
   if (killerOnline) {
+    killerOnline.lastSeenAt = now;
     killerOnline.sessionKills = Number(killerOnline.sessionKills || 0) + 1;
     killerOnline.sessionStreak = Number(killerOnline.sessionStreak || 0) + 1;
   }
@@ -307,6 +314,7 @@ function updateOnlineSessionStats(state: AppState, killer: string, victim: strin
   const victimOnline = state.onlinePlayers?.[victim];
 
   if (victimOnline) {
+    victimOnline.lastSeenAt = now;
     victimOnline.sessionDeaths = Number(victimOnline.sessionDeaths || 0) + 1;
     victimOnline.sessionStreak = 0;
   }
@@ -350,7 +358,7 @@ function addKill(
     state.activeMatch.players[victim].deaths += 1;
   }
 
-  updateOnlineSessionStats(state, killer, victim);
+  updateOnlineSessionStats(state, killer, victim, eventTime);
 
   updateKillStreaks(state, killer, victim, eventTime);
   addKillFeedEvent(state, killer, victim, weapon, eventTime);
