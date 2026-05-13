@@ -680,6 +680,9 @@ export async function startDiscordBot() {
       return Object.keys(state.onlinePlayers || {})
         .filter((name) => {
           const player = state.onlinePlayers?.[name] as any;
+
+          if (player === true) return true;
+
           return Boolean(player?.online);
         })
         .sort((a, b) => a.localeCompare(b));
@@ -703,7 +706,11 @@ export async function startDiscordBot() {
       const lines = players
         .map((name) => {
           const onlineKey = findPlayerKey(state.onlinePlayers, name) || name;
-          const onlinePlayer = state.onlinePlayers?.[onlineKey] || {};
+          const rawOnlinePlayer = state.onlinePlayers?.[onlineKey];
+          const onlinePlayer =
+            rawOnlinePlayer === true
+              ? { online: true, connectedAt: new Date().toISOString(), lastSeenAt: new Date().toISOString() }
+              : rawOnlinePlayer || {};
           const session = getOnlineSessionTime(onlinePlayer);
           const sessionKills = Number(onlinePlayer.sessionKills || 0);
           const sessionDeaths = Number(onlinePlayer.sessionDeaths || 0);
@@ -1021,7 +1028,7 @@ export async function startDiscordBot() {
     async function updateKillFeed(state: any) {
       if (!killfeedChannel) return;
 
-      const events = [...(state.killFeedEvents || [])].reverse();
+      const events = [...(state.killFeedEvents || [])];
 
       if (!events.length) {
         await sendOrEdit(state, killfeedChannel, killfeedPageKey(0), [
@@ -1171,10 +1178,10 @@ export async function startDiscordBot() {
       }
 
       const events = [...uniqueEventsMap.values()]
-        .sort((a, b) => Number(b.timestamp || 0) - Number(a.timestamp || 0))
-        .slice(0, LONGSHOT_MAX_EVENTS);
+        .sort((a, b) => Number(a.timestamp || 0) - Number(b.timestamp || 0))
+        .slice(-LONGSHOT_MAX_EVENTS);
 
-      state.longShotEvents = [...events].reverse();
+      state.longShotEvents = [...events];
 
       if (!events.length) {
         await sendOrEdit(state, longShotChannel, longShotPageKey(0), [

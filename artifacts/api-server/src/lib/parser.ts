@@ -302,19 +302,16 @@ function updateOnlineSessionStats(
   victim: string,
   eventTime: AdmEventTime | null,
 ) {
-  const now = new Date().toISOString();
   const killerOnline = state.onlinePlayers?.[killer];
 
-  if (killerOnline) {
-    killerOnline.lastSeenAt = now;
+  if (killerOnline?.online) {
     killerOnline.sessionKills = Number(killerOnline.sessionKills || 0) + 1;
     killerOnline.sessionStreak = Number(killerOnline.sessionStreak || 0) + 1;
   }
 
   const victimOnline = state.onlinePlayers?.[victim];
 
-  if (victimOnline) {
-    victimOnline.lastSeenAt = now;
+  if (victimOnline?.online) {
     victimOnline.sessionDeaths = Number(victimOnline.sessionDeaths || 0) + 1;
     victimOnline.sessionStreak = 0;
   }
@@ -388,28 +385,10 @@ function markOffline(state: AppState, player: string) {
 }
 
 function cleanupOnlinePlayers(state: AppState) {
+  // Presence must be controlled only by real ADM connect/disconnect events.
+  // Do not remove players by TTL here: ADM/Nitrado timestamps can be delayed or inconsistent.
+  // Ghost players should be handled manually with /wipe-online.
   state.onlinePlayers = state.onlinePlayers || {};
-
-  const now = Date.now();
-  const maxAgeMs = 12 * 60 * 60 * 1000;
-
-  for (const [player, data] of Object.entries(state.onlinePlayers)) {
-    const info = data as any;
-
-    if (!info?.online) {
-      delete state.onlinePlayers[player];
-      continue;
-    }
-
-    const lastSeen = new Date(
-      info.lastSeenAt || info.connectedAt || 0,
-    ).getTime();
-
-    if (!lastSeen || now - lastSeen > maxAgeMs) {
-      delete state.onlinePlayers[player];
-      console.log(`🧹 removendo online fantasma: ${player}`);
-    }
-  }
 }
 
 function applyResets(state: AppState) {

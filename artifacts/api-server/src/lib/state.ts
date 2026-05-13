@@ -200,6 +200,8 @@ function migrateLegacyState(data: any): AppState {
     } else if (typeof value === "object" && value) {
       const existing = value as any;
 
+      if (existing.online === false) continue;
+
       state.onlinePlayers[name] = {
         online: true,
         connectedAt: existing.connectedAt || existing.lastSeenAt || now,
