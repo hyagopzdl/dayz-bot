@@ -17,7 +17,15 @@ export type PlayerStats = {
   deaths: number;
 };
 
-export type OnlinePlayer = {
+export type OnlineSession = {
+  connectedAt?: string;
+  lastSeenAt?: string;
+  kills?: number;
+  deaths?: number;
+  streak?: number;
+};
+
+type OnlinePlayer = {
   online: true;
   connectedAt?: string;
   lastSeenAt: string;
@@ -77,6 +85,7 @@ export type AppState = {
   dailyPlayers: Record<string, PlayerStats>;
   weeklyPlayers: Record<string, PlayerStats>;
   onlinePlayers: Record<string, OnlinePlayer>;
+  onlineSessions: Record<string, OnlineSession>;
 
   files: Record<string, FileCursor>;
   recentEventIds: string[];
@@ -108,6 +117,7 @@ function defaultState(): AppState {
     dailyPlayers: {},
     weeklyPlayers: {},
     onlinePlayers: {},
+    onlineSessions: {},
     files: {},
     recentEventIds: [],
     killFeedEvents: [],
@@ -184,6 +194,8 @@ function migrateLegacyState(data: any): AppState {
   state.lastLine = data.lastLine;
   state.lastFileName = data.lastFileName;
 
+  state.onlineSessions = data.onlineSessions || {};
+
   const rawOnlinePlayers = data.onlinePlayers || {};
   const now = new Date().toISOString();
 
@@ -193,22 +205,35 @@ function migrateLegacyState(data: any): AppState {
         online: true,
         connectedAt: now,
         lastSeenAt: now,
-        sessionKills: 0,
-        sessionDeaths: 0,
-        sessionStreak: 0,
+      };
+
+      state.onlineSessions[name] = {
+        connectedAt: now,
+        lastSeenAt: now,
+        kills: 0,
+        deaths: 0,
+        streak: 0,
       };
     } else if (typeof value === "object" && value) {
       const existing = value as any;
 
       if (existing.online === false) continue;
 
+      const connectedAt = existing.connectedAt || existing.lastSeenAt || now;
+      const lastSeenAt = existing.lastSeenAt || now;
+
       state.onlinePlayers[name] = {
         online: true,
-        connectedAt: existing.connectedAt || existing.lastSeenAt || now,
-        lastSeenAt: existing.lastSeenAt || now,
-        sessionKills: Number(existing.sessionKills || 0),
-        sessionDeaths: Number(existing.sessionDeaths || 0),
-        sessionStreak: Number(existing.sessionStreak || 0),
+        connectedAt,
+        lastSeenAt,
+      };
+
+      state.onlineSessions[name] = {
+        connectedAt,
+        lastSeenAt,
+        kills: Number(existing.sessionKills || existing.kills || 0),
+        deaths: Number(existing.sessionDeaths || existing.deaths || 0),
+        streak: Number(existing.sessionStreak || existing.streak || 0),
       };
     }
   }
@@ -272,6 +297,7 @@ export async function saveStateAsync(data: AppState) {
     dailyPlayers: data.dailyPlayers || {},
     weeklyPlayers: data.weeklyPlayers || {},
     onlinePlayers: data.onlinePlayers || {},
+    onlineSessions: data.onlineSessions || {},
     files: data.files || {},
     recentEventIds: (data.recentEventIds || []).slice(-10000),
     killFeedEvents: (data.killFeedEvents || []).slice(-99),

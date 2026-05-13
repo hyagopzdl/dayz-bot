@@ -127,6 +127,11 @@ function eventId(fileName: string, lineNumber: number, line: string) {
     .digest("hex");
 }
 
+function ensureOnlineState(state: AppState) {
+  state.onlinePlayers = state.onlinePlayers || {};
+  (state as any).onlineSessions = (state as any).onlineSessions || {};
+}
+
 function ensurePlayer(obj: Record<string, PlayerStats>, name: string) {
   if (!obj[name]) {
     obj[name] = { kills: 0, deaths: 0 };
@@ -302,18 +307,38 @@ function updateOnlineSessionStats(
   victim: string,
   eventTime: AdmEventTime | null,
 ) {
-  const killerOnline = state.onlinePlayers?.[killer];
+  ensureOnlineState(state);
 
-  if (killerOnline?.online) {
-    killerOnline.sessionKills = Number(killerOnline.sessionKills || 0) + 1;
-    killerOnline.sessionStreak = Number(killerOnline.sessionStreak || 0) + 1;
+  const now = new Date().toISOString();
+
+  if (state.onlinePlayers?.[killer]?.online) {
+    const session = (state as any).onlineSessions[killer] || {
+      connectedAt: state.onlinePlayers[killer].connectedAt || now,
+      kills: 0,
+      deaths: 0,
+      streak: 0,
+    };
+
+    session.lastSeenAt = now;
+    session.kills = Number(session.kills || 0) + 1;
+    session.streak = Number(session.streak || 0) + 1;
+
+    (state as any).onlineSessions[killer] = session;
   }
 
-  const victimOnline = state.onlinePlayers?.[victim];
+  if (state.onlinePlayers?.[victim]?.online) {
+    const session = (state as any).onlineSessions[victim] || {
+      connectedAt: state.onlinePlayers[victim].connectedAt || now,
+      kills: 0,
+      deaths: 0,
+      streak: 0,
+    };
 
-  if (victimOnline?.online) {
-    victimOnline.sessionDeaths = Number(victimOnline.sessionDeaths || 0) + 1;
-    victimOnline.sessionStreak = 0;
+    session.lastSeenAt = now;
+    session.deaths = Number(session.deaths || 0) + 1;
+    session.streak = 0;
+
+    (state as any).onlineSessions[victim] = session;
   }
 }
 
@@ -367,28 +392,39 @@ function markOnline(
   player: string,
   eventTime: AdmEventTime | null,
 ) {
+  ensureOnlineState(state);
+
   const now = new Date().toISOString();
   const current = state.onlinePlayers[player];
+  const currentSession = (state as any).onlineSessions[player];
 
   state.onlinePlayers[player] = {
     online: true,
-    connectedAt: current?.connectedAt || now,
+    connectedAt: current?.connectedAt || currentSession?.connectedAt || now,
     lastSeenAt: now,
-    sessionKills: Number(current?.sessionKills || 0),
-    sessionDeaths: Number(current?.sessionDeaths || 0),
-    sessionStreak: Number(current?.sessionStreak || 0),
+  };
+
+  (state as any).onlineSessions[player] = {
+    connectedAt: currentSession?.connectedAt || current?.connectedAt || now,
+    lastSeenAt: now,
+    kills: Number(currentSession?.kills || currentSession?.sessionKills || 0),
+    deaths: Number(currentSession?.deaths || currentSession?.sessionDeaths || 0),
+    streak: Number(currentSession?.streak || currentSession?.sessionStreak || 0),
   };
 }
 
 function markOffline(state: AppState, player: string) {
+  ensureOnlineState(state);
+
   delete state.onlinePlayers[player];
+  delete (state as any).onlineSessions[player];
 }
 
 function cleanupOnlinePlayers(state: AppState) {
-  // Presence must be controlled only by real ADM connect/disconnect events.
-  // Do not remove players by TTL here: ADM/Nitrado timestamps can be delayed or inconsistent.
-  // Ghost players should be handled manually with /wipe-online.
-  state.onlinePlayers = state.onlinePlayers || {};
+  ensureOnlineState(state);
+
+  // Online presence is controlled only by real ADM connect/disconnect events.
+  // Session stats are stored separately and cleared on disconnect.
 }
 
 function applyResets(state: AppState) {
@@ -423,6 +459,7 @@ function readManifestFiles(): string[] {
 }
 
 function processFile(filePath: string, state: AppState) {
+  ensureOnlineState(state);
   if (!fs.existsSync(filePath)) return;
 
   const fileName = filePath;

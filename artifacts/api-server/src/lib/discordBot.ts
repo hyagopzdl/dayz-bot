@@ -47,6 +47,7 @@ function ensureBotState(state: any) {
   state.dailyPlayers = state.dailyPlayers || {};
   state.weeklyPlayers = state.weeklyPlayers || {};
   state.onlinePlayers = state.onlinePlayers || {};
+  state.onlineSessions = state.onlineSessions || {};
   state.files = state.files || {};
   state.recentEventIds = state.recentEventIds || [];
   state.killFeedEvents = state.killFeedEvents || [];
@@ -393,6 +394,7 @@ export async function startDiscordBot() {
       state.killStreakEvents = [];
       state.longShotEvents = [];
       state.onlinePlayers = {};
+      state.onlineSessions = {};
       state.activeMatch = null;
 
       state.globalStartedAt = today;
@@ -709,12 +711,23 @@ export async function startDiscordBot() {
           const rawOnlinePlayer = state.onlinePlayers?.[onlineKey];
           const onlinePlayer =
             rawOnlinePlayer === true
-              ? { online: true, connectedAt: new Date().toISOString(), lastSeenAt: new Date().toISOString() }
+              ? {
+                  online: true,
+                  connectedAt: new Date().toISOString(),
+                  lastSeenAt: new Date().toISOString(),
+                }
               : rawOnlinePlayer || {};
-          const session = getOnlineSessionTime(onlinePlayer);
-          const sessionKills = Number(onlinePlayer.sessionKills || 0);
-          const sessionDeaths = Number(onlinePlayer.sessionDeaths || 0);
-          const sessionStreak = Number(onlinePlayer.sessionStreak || 0);
+
+          const sessionKey =
+            findPlayerKey(state.onlineSessions || {}, name) || onlineKey;
+          const onlineSession = state.onlineSessions?.[sessionKey] || {};
+          const session = getOnlineSessionTime({
+            connectedAt: onlineSession.connectedAt || onlinePlayer.connectedAt,
+            lastSeenAt: onlineSession.lastSeenAt || onlinePlayer.lastSeenAt,
+          });
+          const sessionKills = Number(onlineSession.kills || 0);
+          const sessionDeaths = Number(onlineSession.deaths || 0);
+          const sessionStreak = Number(onlineSession.streak || 0);
 
           return (
             `**${name}**\n` +
@@ -1907,6 +1920,7 @@ export async function startDiscordBot() {
           const state = await getState();
 
           state.onlinePlayers = {};
+          state.onlineSessions = {};
 
           await saveState(state);
           await updateLeaderboard();
