@@ -428,6 +428,14 @@ export async function startDiscordBot() {
       return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
     }
 
+    function formatSessionKd(kills: number, deaths: number) {
+      if (deaths <= 0) {
+        return kills > 0 ? kills.toFixed(2) : "0.00";
+      }
+
+      return (kills / deaths).toFixed(2);
+    }
+
     function getOnlineSessionTime(player: any) {
       const startedAt = player?.connectedAt || player?.lastSeenAt;
       const start = startedAt ? new Date(startedAt).getTime() : Date.now();
@@ -697,7 +705,7 @@ export async function startDiscordBot() {
       if (!players.length) {
         embed.setDescription(
           buildHeader("🟢", "Players Online", "Live server activity") +
-            `**No players online**\nThe server is currently quiet.` +
+            `**No players online**\nNenhum jogador online no momento.` +
             `\n\u200B\n\u200B\n` +
             buildFooter(),
         );
@@ -721,20 +729,22 @@ export async function startDiscordBot() {
           const sessionKey =
             findPlayerKey(state.onlineSessions || {}, name) || onlineKey;
           const onlineSession = state.onlineSessions?.[sessionKey] || {};
+
           const session = getOnlineSessionTime({
             connectedAt: onlineSession.connectedAt || onlinePlayer.connectedAt,
             lastSeenAt: onlineSession.lastSeenAt || onlinePlayer.lastSeenAt,
           });
+
           const sessionKills = Number(onlineSession.kills || 0);
           const sessionDeaths = Number(onlineSession.deaths || 0);
-          const sessionStreak = Number(onlineSession.streak || 0);
+          const sessionKd = formatSessionKd(sessionKills, sessionDeaths);
 
           return (
             `**${name}**\n` +
-            `Kill(s): \`${sessionKills}\` • ` +
-            `Death(s): \`${sessionDeaths}\` • ` +
-            `Streak: \`${sessionStreak}\` • ` +
-            `Session: \`${session}\``
+            `Kill(s): **${sessionKills}** • ` +
+            `Death(s): **${sessionDeaths}** • ` +
+            `K/D: **${sessionKd}** • ` +
+            `Session: **${session}**`
           );
         })
         .join("\n\n");
