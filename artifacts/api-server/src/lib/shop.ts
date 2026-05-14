@@ -58,19 +58,23 @@ export async function debugShopSpawnerPaths() {
       const entries = await listNitradoDirectory(dir);
       const preview = entries
         .slice(0, 6)
-        .map((entry) => entry.path.split("/").filter(Boolean).pop() || entry.path)
+        .map((entry) => entry.path?.split("/").filter(Boolean).pop() || entry.name || entry.path || "unknown")
         .join(", ");
 
-      lines.push(
-        `✅ \`${dir || "/"}\` exists (${entries.length} entries)${preview ? `: ${preview}` : ""}`,
-      );
+      const line = `✅ \`${dir || "/"}\` exists (${entries.length} entries)${preview ? `: ${preview}` : ""}`;
+      console.log(`[shop-debug-path] ${line}`);
+      lines.push(line);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      lines.push(`❌ \`${dir || "/"}\` failed: ${message.slice(0, 160)}`);
+      const line = `❌ \`${dir || "/"}\` failed: ${message.slice(0, 160)}`;
+      console.log(`[shop-debug-path] ${line}`);
+      lines.push(line);
     }
   }
 
-  return lines.join("\n");
+  const result = lines.join("\n");
+  console.log(result);
+  return result;
 }
 
 function normalizeItemName(value: string) {

@@ -175,14 +175,36 @@ export async function listNitradoDirectory(dir: string): Promise<NitradoEntry[]>
   return json?.data?.entries || [];
 }
 
-async function postJson(url: string, body: Record<string, unknown>): Promise<any> {
+async function postForm(url: string, body: Record<string, string>): Promise<any> {
+  const form = new URLSearchParams(body);
+
   const res = await fetch(url, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${process.env.NITRADO_TOKEN}`,
-      "Content-Type": "application/json",
+      "Content-Type": "application/x-www-form-urlencoded",
     },
-    body: JSON.stringify(body),
+    body: form.toString(),
+  });
+
+  if (!res.ok) {
+    throw new Error(`Nitrado HTTP ${res.status}: ${await res.text()}`);
+  }
+
+  return (await res.json()) as any;
+}
+
+async function postWithQueryParams(
+  url: string,
+  params: Record<string, string>,
+): Promise<any> {
+  const fullUrl = `${url}?${new URLSearchParams(params).toString()}`;
+
+  const res = await fetch(fullUrl, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${process.env.NITRADO_TOKEN}`,
+    },
   });
 
   if (!res.ok) {
@@ -210,24 +232,42 @@ function splitRemoteFilePath(filePath: string) {
 async function getUploadToken(filePath: string): Promise<{ url: string; token: string }> {
   const serviceId = getNitradoServiceId();
   const { path, file } = splitRemoteFilePath(filePath);
+  const url = `https://api.nitrado.net/services/${serviceId}/gameservers/file_server/upload`;
+  const body = { path, file };
+  const errors: string[] = [];
 
   console.log(`📤 Nitrado upload token request: path=${path} file=${file}`);
 
-  const json = await postJson(
-    `https://api.nitrado.net/services/${serviceId}/gameservers/file_server/upload`,
-    { path, file },
-  );
+  // Nitrado's file_server/upload endpoint expects form/query style parameters,
+  // not a JSON request body. Try form first, then query params as a fallback.
+  for (const strategy of ["form", "query"] as const) {
+    try {
+      console.log(`📤 Nitrado upload token strategy=${strategy}`);
+      const json =
+        strategy === "form"
+          ? await postForm(url, body)
+          : await postWithQueryParams(url, body);
 
-  const token = json?.data?.token;
+      const token = json?.data?.token;
 
-  if (!token?.url || !token?.token) {
-    throw new Error(`Nitrado did not return an upload token for ${filePath}`);
+      if (!token?.url || !token?.token) {
+        throw new Error(`Nitrado did not return an upload token for ${filePath}`);
+      }
+
+      return {
+        url: token.url,
+        token: token.token,
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      errors.push(`${strategy}: ${message}`);
+      console.warn(`⚠️ Nitrado upload token failed (${strategy}): ${message}`);
+    }
   }
 
-  return {
-    url: token.url,
-    token: token.token,
-  };
+  throw new Error(
+    `Nitrado upload token failed for ${filePath}. Attempts: ${errors.join(" | ")}`,
+  );
 }
 
 export async function uploadShopSpawnerFile(

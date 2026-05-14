@@ -69,6 +69,38 @@ function ensureBotState(state: any) {
   return state;
 }
 
+async function deferEphemeral(interaction: any) {
+  if (interaction.deferred || interaction.replied) return true;
+
+  try {
+    await interaction.deferReply({ ephemeral: true });
+    return true;
+  } catch (err: any) {
+    console.error(
+      "❌ erro ao deferir interaction:",
+      err?.code || err?.status || err?.message || err,
+    );
+    return false;
+  }
+}
+
+async function respondEphemeral(interaction: any, content: any) {
+  try {
+    if (interaction.deferred || interaction.replied) {
+      await interaction.editReply(content);
+      return;
+    }
+
+    await interaction.reply({
+      ...(typeof content === "string" ? { content } : content),
+      ephemeral: true,
+    });
+  } catch (err: any) {
+    const code = err?.code || err?.status || err?.message || err;
+    console.error("❌ erro respondendo interaction com segurança:", code);
+  }
+}
+
 function getKillStreakMeta(streak: number) {
   if (streak >= 25) {
     return {
@@ -1984,7 +2016,8 @@ export async function startDiscordBot() {
           return;
         }
 
-        await interaction.deferReply({ ephemeral: true });
+        const acknowledged = await deferEphemeral(interaction);
+        if (!acknowledged) return;
 
         if (!(await assertAdmin(interaction))) return;
 
@@ -2408,26 +2441,10 @@ export async function startDiscordBot() {
         }
       } catch (err) {
         console.error("❌ erro processando comando Discord:", err);
-
-        try {
-          await interaction.editReply("❌ Command failed. Check Render logs for details.");
-        } catch (editErr) {
-          try {
-            await interaction.followUp({
-              content: "❌ Command failed. Check Render logs for details.",
-              ephemeral: true,
-            });
-          } catch (followErr) {
-            try {
-              await interaction.reply({
-                content: "❌ Command failed. Check Render logs for details.",
-                ephemeral: true,
-              });
-            } catch (replyErr) {
-              console.error("❌ erro respondendo interaction:", replyErr);
-            }
-          }
-        }
+        await respondEphemeral(
+          interaction,
+          "❌ Command failed. Check Render logs for details.",
+        );
       }
     });
 
