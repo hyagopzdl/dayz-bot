@@ -58,7 +58,7 @@ export async function debugShopSpawnerPaths() {
       const entries = await listNitradoDirectory(dir);
       const preview = entries
         .slice(0, 6)
-        .map((entry) => entry.path?.split("/").filter(Boolean).pop() || entry.name || entry.path || "unknown")
+        .map((entry) => entry.path?.split("/").filter(Boolean).pop() || entry.path || "unknown")
         .join(", ");
 
       const line = `✅ \`${dir || "/"}\` exists (${entries.length} entries)${preview ? `: ${preview}` : ""}`;
