@@ -339,14 +339,37 @@ function getNoFtpRootFromAdmBaseDir() {
   return BASE_DIR.slice(0, index + marker.length - 1);
 }
 
-function buildUploadPathCandidates(pathValue: string) {
+function withDayzMissionFolderVariants(pathValue: string) {
   const normalized = normalizeNitradoFileServerPath(pathValue);
-  const noFtpRoot = getNoFtpRootFromAdmBaseDir();
-  const candidates = [ensureTrailingSlash(normalized), normalized];
+  const variants = [normalized];
 
-  if (noFtpRoot) {
-    candidates.push(ensureTrailingSlash(`${noFtpRoot}/${normalized}`));
-    candidates.push(`${noFtpRoot}/${normalized}`);
+  // Nitrado console guides commonly refer to the editable mission folder as
+  // dayzps_mission/dayzxb_mission (singular). Some panels visually show
+  // dayzps_missions, but the upload endpoint can reject that directory even
+  // when file_server/list returns success with empty entries. Try both safely.
+  if (normalized.startsWith("dayzps_missions/")) {
+    variants.push(normalized.replace(/^dayzps_missions\//, "dayzps_mission/"));
+  }
+
+  if (normalized.startsWith("dayzps_mission/")) {
+    variants.push(normalized.replace(/^dayzps_mission\//, "dayzps_missions/"));
+  }
+
+  return uniqueStrings(variants);
+}
+
+function buildUploadPathCandidates(pathValue: string) {
+  const noFtpRoot = getNoFtpRootFromAdmBaseDir();
+  const candidates: string[] = [];
+
+  for (const variant of withDayzMissionFolderVariants(pathValue)) {
+    candidates.push(ensureTrailingSlash(variant));
+    candidates.push(variant);
+
+    if (noFtpRoot) {
+      candidates.push(ensureTrailingSlash(`${noFtpRoot}/${variant}`));
+      candidates.push(`${noFtpRoot}/${variant}`);
+    }
   }
 
   return uniqueStrings(candidates);
