@@ -1,3 +1,4 @@
+import fs from "fs";
 import type { AppState, ShopOrder } from "./state";
 import { downloadTextFile, uploadTextFile } from "./nitradoFtp";
 import {
@@ -220,9 +221,11 @@ export async function deployPendingShopOrders(state: AppState) {
   };
 }
 
-export async function clearShopSpawnerAndMarkSpawned(state: AppState) {
+async function clearShopXmlBlocksAndMarkOrders(
+  state: AppState,
+  options: { cancelPending: boolean; reason: string },
+) {
   const includedOrders = getIncludedShopOrders(state);
-
   const pendingOrders = getPendingShopOrders(state);
 
   const [eventsXml, eventSpawnsXml] = await Promise.all([
@@ -246,16 +249,191 @@ export async function clearShopSpawnerAndMarkSpawned(state: AppState) {
     order.spawnedAt = now;
   }
 
-  for (const order of pendingOrders) {
-    order.status = "failed";
-    order.failedAt = now;
-    order.failReason = "Cleared before deploy";
+  let cancelled = 0;
+
+  if (options.cancelPending) {
+    for (const order of pendingOrders) {
+      order.status = "failed";
+      order.failedAt = now;
+      order.failReason = options.reason;
+      cancelled++;
+    }
   }
 
   return {
     cleared: includedOrders.length,
-    cancelled: pendingOrders.length,
+    cancelled,
     path: `${SHOP_EVENTS_PATH} + ${SHOP_EVENT_SPAWNS_PATH}`,
+  };
+}
+
+export async function clearShopSpawnerAndMarkSpawned(state: AppState) {
+  return clearShopXmlBlocksAndMarkOrders(state, {
+    cancelPending: true,
+    reason: "Cleared before deploy",
+  });
+}
+
+const SHOP_BOOT_PATTERNS = [
+  /Mission\s+read/i,
+  /Mission\s+file\s+read/i,
+  /Game\s+started/i,
+  /Host\s+identity\s+created/i,
+  /World\s+initialized/i,
+  /Server\s+started/i,
+];
+
+const SHOP_SHUTDOWN_PATTERNS = [
+  /Shutdown/i,
+  /Game\s+stopped/i,
+  /Destroying\s+current\s+mission/i,
+  /Mission\s+finished/i,
+  /Server\s+shutdown/i,
+  /Server\s+stopping/i,
+];
+
+function boolFromEnv(name: string, defaultValue: boolean) {
+  const raw = process.env[name];
+  if (raw === undefined) return defaultValue;
+  return ["1", "true", "yes", "on"].includes(raw.toLowerCase());
+}
+
+function getClearMinutesAfterReset() {
+  const value = Number(process.env.SHOP_CLEAR_MINUTES_AFTER_RESET || 5);
+  return Number.isFinite(value) && value >= 0 ? value : 5;
+}
+
+function extractAdmStartedAt(filePath: string) {
+  const match = String(filePath).match(
+    /_(\d{4}-\d{2}-\d{2})_(\d{2}-\d{2}-\d{2})\.ADM$/i,
+  );
+
+  if (!match) return null;
+
+  const value = new Date(`${match[1]}T${match[2].replace(/-/g, ":")}.000Z`);
+  const time = value.getTime();
+
+  return Number.isFinite(time) ? value : null;
+}
+
+function containsAnyPattern(text: string, patterns: RegExp[]) {
+  return patterns.some((pattern) => pattern.test(text));
+}
+
+function findShopResetEvidence(admFiles: string[], deployedAt: Date) {
+  const deployedTime = deployedAt.getTime();
+  let bootDetectedAt: Date | null = null;
+  let bootFile: string | null = null;
+  let shutdownDetected = false;
+  let shutdownFile: string | null = null;
+
+  for (const file of admFiles) {
+    if (!fs.existsSync(file)) continue;
+
+    const text = fs.readFileSync(file, "utf-8");
+    const admStartedAt = extractAdmStartedAt(file);
+    const admStartedTime = admStartedAt?.getTime() ?? 0;
+
+    if (containsAnyPattern(text, SHOP_SHUTDOWN_PATTERNS)) {
+      shutdownDetected = true;
+      shutdownFile = file;
+    }
+
+    if (
+      admStartedTime > deployedTime &&
+      containsAnyPattern(text, SHOP_BOOT_PATTERNS) &&
+      (!bootDetectedAt || admStartedTime > bootDetectedAt.getTime())
+    ) {
+      bootDetectedAt = admStartedAt;
+      bootFile = file;
+    }
+  }
+
+  return {
+    bootDetectedAt,
+    bootFile,
+    shutdownDetected,
+    shutdownFile,
+  };
+}
+
+export async function tryAutoClearShopAfterAdmReset(
+  state: AppState,
+  admFiles: string[],
+) {
+  if (!boolFromEnv("SHOP_AUTO_CLEAR_ENABLED", true)) {
+    return { cleared: false, reason: "disabled" };
+  }
+
+  const includedOrders = getIncludedShopOrders(state);
+  if (!includedOrders.length) {
+    return { cleared: false, reason: "no_included_orders" };
+  }
+
+  const deployTimes = includedOrders
+    .map((order) => new Date(order.includedAt || order.createdAt).getTime())
+    .filter(Number.isFinite);
+
+  if (!deployTimes.length) {
+    return { cleared: false, reason: "missing_deploy_time" };
+  }
+
+  const deployedAt = new Date(Math.min(...deployTimes));
+  const evidence = findShopResetEvidence(admFiles, deployedAt);
+
+  if (!evidence.bootDetectedAt) {
+    console.log(
+      `🛒 shop auto-clear aguardando boot ADM posterior ao deploy ${deployedAt.toISOString()}`,
+    );
+    return { cleared: false, reason: "no_boot_after_deploy" };
+  }
+
+  const requireShutdownAndBoot = boolFromEnv(
+    "SHOP_RESET_REQUIRE_SHUTDOWN_AND_BOOT",
+    false,
+  );
+  const allowBootOnlyFallback = boolFromEnv(
+    "SHOP_RESET_ALLOW_BOOT_ONLY_FALLBACK",
+    true,
+  );
+
+  if (requireShutdownAndBoot && !evidence.shutdownDetected) {
+    console.log(
+      `🛒 shop auto-clear viu boot, mas ainda aguarda shutdown também. bootFile=${evidence.bootFile}`,
+    );
+    return { cleared: false, reason: "missing_shutdown_confirmation" };
+  }
+
+  if (!evidence.shutdownDetected && !allowBootOnlyFallback) {
+    console.log(
+      `🛒 shop auto-clear viu boot, mas fallback boot-only está desativado. bootFile=${evidence.bootFile}`,
+    );
+    return { cleared: false, reason: "boot_only_fallback_disabled" };
+  }
+
+  const minutesAfterReset = getClearMinutesAfterReset();
+  const readyAt = evidence.bootDetectedAt.getTime() + minutesAfterReset * 60_000;
+
+  if (Date.now() < readyAt) {
+    console.log(
+      `🛒 shop auto-clear aguardando ${minutesAfterReset} min após boot. boot=${evidence.bootDetectedAt.toISOString()}`,
+    );
+    return { cleared: false, reason: "waiting_after_boot" };
+  }
+
+  const result = await clearShopXmlBlocksAndMarkOrders(state, {
+    cancelPending: false,
+    reason: "Auto-clear after confirmed ADM reset",
+  });
+
+  console.log(
+    `✅ shop auto-clear concluído: cleared=${result.cleared}, bootFile=${evidence.bootFile}, shutdown=${evidence.shutdownDetected ? evidence.shutdownFile : "not_detected"}`,
+  );
+
+  return {
+    cleared: true,
+    result,
+    evidence,
   };
 }
 
@@ -303,37 +481,4 @@ export function formatShopQueue(state: AppState) {
   }
 
   return lines.join("\n");
-}
-
-
-export async function autoClearShopBlocksIfNeeded(state: AppState) {
-  const includedOrders = getIncludedShopOrders(state);
-
-  if (!includedOrders.length) {
-    return null;
-  }
-
-  const minutes = Number(
-    process.env.SHOP_AUTO_CLEAR_MINUTES_AFTER_DEPLOY || 10,
-  );
-
-  const oldestIncludedAt = includedOrders
-    .map((order) => new Date(order.includedAt || order.createdAt).getTime())
-    .sort((a, b) => a - b)[0];
-
-  if (!Number.isFinite(oldestIncludedAt)) {
-    return null;
-  }
-
-  const ageMs = Date.now() - oldestIncludedAt;
-
-  if (ageMs < minutes * 60 * 1000) {
-    return null;
-  }
-
-  console.log(
-    `🧹 auto-clearing SHOP_BOT XML blocks after ${minutes} minute(s)`,
-  );
-
-  return clearShopSpawnerAndMarkSpawned(state);
 }

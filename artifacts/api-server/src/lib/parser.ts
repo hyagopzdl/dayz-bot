@@ -2,6 +2,7 @@ import fs from "fs";
 import crypto from "crypto";
 import { getStateAsync, saveStateAsync, AppState, PlayerStats } from "./state";
 import { MANIFEST_FILE } from "./nitradoDownloader";
+import { tryAutoClearShopAfterAdmReset } from "./shop";
 
 const KILL_REGEX = /Player "([^"]+)".*?killed by Player "([^"]+)"/;
 const CONNECT_REGEX = /Player "([^"]+)".*?is connected/;
@@ -707,6 +708,12 @@ export async function getLeaderboard() {
     } catch (err) {
       console.error(`❌ erro processando ${file}:`, err);
     }
+  }
+
+  try {
+    await tryAutoClearShopAfterAdmReset(state, files);
+  } catch (err) {
+    console.error("❌ erro no auto-clear da shop após reset ADM:", err);
   }
 
   cleanupOnlinePlayers(state);
