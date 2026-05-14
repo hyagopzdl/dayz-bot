@@ -7,17 +7,25 @@ import {
 } from "./shopXml";
 
 export type ShopItem = {
+  id: string;
   name: string;
   className: string;
   price: number;
 };
 
 export const SHOP_ITEMS: ShopItem[] = [
-  { name: "M4A1", className: "M4A1", price: 1000 },
-  { name: "AKM", className: "AKM", price: 900 },
-  { name: "NVG", className: "NVGoggles", price: 500 },
-  { name: "Green Barrel", className: "Barrel_Green", price: 250 },
-  { name: "Metal Plate", className: "MetalPlate", price: 100 },
+  {
+    id: "barrel_green",
+    name: "Green Barrel",
+    className: "Barrel_Green",
+    price: 250,
+  },
+  {
+    id: "barrel_red",
+    name: "Red Barrel",
+    className: "Barrel_Red",
+    price: 250,
+  },
 ];
 
 const DEFAULT_DAYZ_MISSION_DIR =
@@ -31,13 +39,16 @@ function normalizeRelativePath(value: string) {
 }
 
 const DAYZ_MISSION_DIR = normalizeRelativePath(DEFAULT_DAYZ_MISSION_DIR);
+
 export const SHOP_EVENTS_PATH = `${DAYZ_MISSION_DIR}/db/events.xml`;
+
 export const SHOP_EVENT_SPAWNS_PATH = `${DAYZ_MISSION_DIR}/cfgeventspawns.xml`;
 
 function normalizeItemName(value: string) {
   return String(value || "")
     .trim()
-    .toLowerCase();
+    .toLowerCase()
+    .replace(/\s+/g, "_");
 }
 
 export function ensureShopState(state: AppState) {
@@ -51,6 +62,7 @@ export function findShopItem(input: string) {
   return (
     SHOP_ITEMS.find(
       (item) =>
+        normalizeItemName(item.id) === normalized ||
         normalizeItemName(item.name) === normalized ||
         normalizeItemName(item.className) === normalized,
     ) || null
@@ -66,25 +78,26 @@ export function parseShopCoordinates(input: string, fallbackY = 0) {
 
   const normalized = raw
     .replace(/,/g, ".")
-    .replace(/[;|]/g, " /")
+    .replace(/[;|]/g, " / ")
     .replace(/\s+\/\s+/g, " / ");
 
   const matches = normalized.match(/-?\d+(?:\.\d+)?/g) || [];
+
   const values = matches.map((value) => Number.parseFloat(value));
 
   if (values.length < 2) {
-    throw new Error(
-      "Invalid coordinates. Use a format like `4587.29 / 8373.59`.",
-    );
+    throw new Error("Invalid coordinates. Use: `4587.29 / 8373.59`");
   }
 
   const [x, second, third] = values;
+
   const hasExplicitY = values.length >= 3;
+
   const y = hasExplicitY ? second : fallbackY;
   const z = hasExplicitY ? third : second;
 
   if (![x, y, z].every(Number.isFinite)) {
-    throw new Error("Invalid coordinates. Coordinates must be valid numbers.");
+    throw new Error("Invalid coordinates.");
   }
 
   return { x, y, z };
@@ -99,10 +112,13 @@ export function createShopOrder(options: {
   z: number;
 }) {
   const state = ensureShopState(options.state);
+
   const item = findShopItem(options.itemInput);
 
   if (!item) {
-    throw new Error(`Item not found in shop catalog: ${options.itemInput}`);
+    throw new Error(
+      `Item not found. Available items: ${SHOP_ITEMS.map((i) => i.id).join(", ")}`,
+    );
   }
 
   if (![options.x, options.y, options.z].every(Number.isFinite)) {
@@ -110,19 +126,26 @@ export function createShopOrder(options: {
   }
 
   const now = new Date().toISOString();
+
   const order: ShopOrder = {
     id: `shop_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+
     discordUserId: options.discordUserId,
+
     itemClass: item.className,
     itemName: item.name,
-    x: options.x,
-    y: options.y,
-    z: options.z,
+
+    x: Number(options.x.toFixed(2)),
+    y: Number(options.y.toFixed(2)),
+    z: Number(options.z.toFixed(2)),
+
     status: "pending_spawn",
+
     createdAt: now,
   };
 
   state.shopOrders.push(order);
+
   return order;
 }
 
@@ -145,6 +168,7 @@ async function backupShopXmlFiles(eventsXml: string, eventSpawnsXml: string) {
     .replace(/\.\d{3}Z$/, "Z");
 
   await uploadTextFile(`${SHOP_EVENTS_PATH}.shop-backup-${stamp}`, eventsXml);
+
   await uploadTextFile(
     `${SHOP_EVENT_SPAWNS_PATH}.shop-backup-${stamp}`,
     eventSpawnsXml,
@@ -169,15 +193,18 @@ export async function deployPendingShopOrders(state: AppState) {
   await backupShopXmlFiles(eventsXml, eventSpawnsXml);
 
   const injectedEvents = injectShopEventsXml(eventsXml, pendingOrders);
+
   const injectedEventSpawns = injectShopEventSpawnsXml(
     eventSpawnsXml,
     pendingOrders,
   );
 
   await uploadTextFile(SHOP_EVENTS_PATH, injectedEvents.xml);
+
   await uploadTextFile(SHOP_EVENT_SPAWNS_PATH, injectedEventSpawns);
 
   const now = new Date().toISOString();
+
   const batchId = `restart_${Date.now()}`;
 
   for (const order of pendingOrders) {
@@ -195,6 +222,7 @@ export async function deployPendingShopOrders(state: AppState) {
 
 export async function clearShopSpawnerAndMarkSpawned(state: AppState) {
   const includedOrders = getIncludedShopOrders(state);
+
   const pendingOrders = getPendingShopOrders(state);
 
   const [eventsXml, eventSpawnsXml] = await Promise.all([
@@ -205,6 +233,7 @@ export async function clearShopSpawnerAndMarkSpawned(state: AppState) {
   await backupShopXmlFiles(eventsXml, eventSpawnsXml);
 
   await uploadTextFile(SHOP_EVENTS_PATH, removeShopBotBlock(eventsXml));
+
   await uploadTextFile(
     SHOP_EVENT_SPAWNS_PATH,
     removeShopBotBlock(eventSpawnsXml),
@@ -217,9 +246,6 @@ export async function clearShopSpawnerAndMarkSpawned(state: AppState) {
     order.spawnedAt = now;
   }
 
-  // For the current MVP, /shop-clear is also the safe reset button for testing.
-  // Pending orders were never injected, so mark them as failed instead of letting
-  // old test orders leak into the next batch.
   for (const order of pendingOrders) {
     order.status = "failed";
     order.failedAt = now;
@@ -235,13 +261,17 @@ export async function clearShopSpawnerAndMarkSpawned(state: AppState) {
 
 export function formatShopQueue(state: AppState) {
   const shopOrders = ensureShopState(state).shopOrders;
+
   const pending = shopOrders.filter(
     (order) => order.status === "pending_spawn",
   );
+
   const included = shopOrders.filter(
     (order) => order.status === "included_in_restart",
   );
+
   const spawned = shopOrders.filter((order) => order.status === "spawned");
+
   const failed = shopOrders.filter((order) => order.status === "failed");
 
   const latest = [...shopOrders]
@@ -255,6 +285,9 @@ export function formatShopQueue(state: AppState) {
     `Included in next restart: **${included.length}**`,
     `Spawned: **${spawned.length}**`,
     `Failed: **${failed.length}**`,
+    "",
+    "**Catalog**",
+    ...SHOP_ITEMS.map((item) => `• \`${item.id}\` → ${item.className}`),
     "",
     "**Latest orders**",
   ];
