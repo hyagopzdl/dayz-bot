@@ -437,6 +437,14 @@ export async function tryAutoClearShopAfterAdmReset(
   };
 }
 
+
+// Backward-compatible export for older discordBot.ts versions.
+// The safe auto-clear path now runs from the ADM parser via tryAutoClearShopAfterAdmReset(state, admFiles).
+// Returning null here prevents the old timer-only Discord loop from clearing XMLs without reset evidence.
+export async function autoClearShopBlocksIfNeeded(_state: AppState) {
+  return null;
+}
+
 export function formatShopQueue(state: AppState) {
   const shopOrders = ensureShopState(state).shopOrders;
 
