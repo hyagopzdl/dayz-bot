@@ -1,5 +1,5 @@
 import type { AppState, ShopOrder } from "./state";
-import { uploadShopSpawnerFile } from "./nitradoDownloader";
+import { listNitradoDirectory, uploadShopSpawnerFile } from "./nitradoDownloader";
 
 export type ShopItem = {
   name: string;
@@ -13,30 +13,65 @@ export const SHOP_ITEMS: ShopItem[] = [
   { name: "NVG", className: "NVGoggles", price: 500 },
 ];
 
-const DEFAULT_NITRADO_NOFTP_ROOT =
-  process.env.NITRADO_NOFTP_ROOT || "/games/ni13029176_1/noftp";
-
 const DEFAULT_DAYZ_MISSION_DIR =
-  process.env.DAYZ_MISSION_DIR ||
-  `${DEFAULT_NITRADO_NOFTP_ROOT}/dayzps_missions/dayzOffline.chernarusplus`;
+  process.env.DAYZ_MISSION_DIR || "dayzps_missions/dayzOffline.chernarusplus";
+
+function normalizeRelativePath(value: string) {
+  return String(value || "")
+    .replace(/\\/g, "/")
+    .replace(/^\/+/, "")
+    .replace(/\/+$/g, "");
+}
 
 function resolveShopSpawnerPath() {
   const configuredPath =
     process.env.SHOP_SPAWNER_PATH || "custom/shop_pending.json";
-  const cleanPath = configuredPath.trim();
+  const cleanPath = normalizeRelativePath(configuredPath.trim());
 
-  if (cleanPath.startsWith("/games/")) {
+  if (cleanPath.startsWith("dayzps_missions/")) {
     return cleanPath;
   }
 
-  if (cleanPath.startsWith("dayzps_missions/")) {
-    return `${DEFAULT_NITRADO_NOFTP_ROOT}/${cleanPath}`;
-  }
-
-  return `${DEFAULT_DAYZ_MISSION_DIR}/${cleanPath.replace(/^\/+/, "")}`;
+  return `${normalizeRelativePath(DEFAULT_DAYZ_MISSION_DIR)}/${cleanPath}`;
 }
 
 export const SHOP_SPAWNER_PATH = resolveShopSpawnerPath();
+
+export async function debugShopSpawnerPaths() {
+  const dirsToCheck = [
+    "",
+    "dayzps_missions",
+    "dayzps_missions/dayzOffline.chernarusplus",
+    "dayzps_missions/dayzOffline.chernarusplus/custom",
+    "dayzps/config",
+  ];
+
+  const lines = [
+    "🧪 **Nitrado Shop Path Debug**",
+    "",
+    `Configured upload file: \`${SHOP_SPAWNER_PATH}\``,
+    "",
+  ];
+
+  for (const dir of dirsToCheck) {
+    try {
+      const entries = await listNitradoDirectory(dir);
+      const preview = entries
+        .slice(0, 6)
+        .map((entry) => entry.path.split("/").filter(Boolean).pop() || entry.path)
+        .join(", ");
+
+      lines.push(
+        `✅ \`${dir || "/"}\` exists (${entries.length} entries)${preview ? `: ${preview}` : ""}`,
+      );
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      lines.push(`❌ \`${dir || "/"}\` failed: ${message.slice(0, 160)}`);
+    }
+  }
+
+  return lines.join("\n");
+}
 
 function normalizeItemName(value: string) {
   return String(value || "").trim().toLowerCase();

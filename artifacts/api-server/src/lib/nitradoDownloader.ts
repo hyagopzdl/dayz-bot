@@ -9,7 +9,7 @@ export const MANIFEST_FILE = path.resolve(process.cwd(), "adm_manifest.json");
 
 const MAX_CANDIDATES = 6;
 
-type NitradoEntry = {
+export type NitradoEntry = {
   path: string;
   size?: number;
   type?: string;
@@ -149,6 +149,32 @@ function getNitradoServiceId() {
   return process.env.NITRADO_SERVICE_ID || SERVICE_ID;
 }
 
+function normalizeNitradoFileServerPath(value: string) {
+  return String(value || "")
+    .replace(/\\/g, "/")
+    .replace(/^\/+/, "")
+    .replace(/\/+$/g, "");
+}
+
+export async function listNitradoDirectory(dir: string): Promise<NitradoEntry[]> {
+  if (!process.env.NITRADO_TOKEN) {
+    throw new Error("NITRADO_TOKEN não definido");
+  }
+
+  const serviceId = getNitradoServiceId();
+  const normalizedDir = normalizeNitradoFileServerPath(dir);
+
+  console.log(`📂 Nitrado list request: dir=${normalizedDir || "/"}`);
+
+  const json = await fetchJson(
+    `https://api.nitrado.net/services/${serviceId}/gameservers/file_server/list?dir=${encodeURIComponent(
+      normalizedDir,
+    )}`,
+  );
+
+  return json?.data?.entries || [];
+}
+
 async function postJson(url: string, body: Record<string, unknown>): Promise<any> {
   const res = await fetch(url, {
     method: "POST",
@@ -167,8 +193,7 @@ async function postJson(url: string, body: Record<string, unknown>): Promise<any
 }
 
 function splitRemoteFilePath(filePath: string) {
-  const normalized = filePath.replace(/\\/g, "/").replace(/\/+$/g, "");
-  const isAbsoluteGamePath = normalized.startsWith("/games/");
+  const normalized = normalizeNitradoFileServerPath(filePath);
   const parts = normalized.split("/").filter(Boolean);
   const file = parts.pop();
 
@@ -177,7 +202,7 @@ function splitRemoteFilePath(filePath: string) {
   }
 
   return {
-    path: `${isAbsoluteGamePath ? "/" : ""}${parts.join("/")}`,
+    path: parts.join("/"),
     file,
   };
 }

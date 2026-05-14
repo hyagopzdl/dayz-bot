@@ -16,6 +16,7 @@ import {
   deployPendingShopOrders,
   clearShopSpawnerAndMarkSpawned,
   formatShopQueue,
+  debugShopSpawnerPaths,
   SHOP_ITEMS,
 } from "./shop";
 
@@ -1933,6 +1934,12 @@ export async function startDiscordBot() {
             dmPermission: false,
           },
           {
+            name: "shop-debug-path",
+            description: "Diagnose Nitrado file server paths used by the shop uploader.",
+            defaultMemberPermissions: adminPermission,
+            dmPermission: false,
+          },
+          {
             name: "player-stats",
             description: "Show stats for a player.",
             dmPermission: false,
@@ -2029,6 +2036,12 @@ export async function startDiscordBot() {
         if (interaction.commandName === "shop-queue") {
           const state = await getState();
           await interaction.editReply(formatShopQueue(state));
+          return;
+        }
+
+        if (interaction.commandName === "shop-debug-path") {
+          const result = await debugShopSpawnerPaths();
+          await interaction.editReply(result);
           return;
         }
 
@@ -2397,16 +2410,23 @@ export async function startDiscordBot() {
         console.error("❌ erro processando comando Discord:", err);
 
         try {
-          if (interaction.deferred || interaction.replied) {
-            await interaction.editReply("❌ Command failed.");
-          } else {
-            await interaction.reply({
-              content: "❌ Command failed.",
+          await interaction.editReply("❌ Command failed. Check Render logs for details.");
+        } catch (editErr) {
+          try {
+            await interaction.followUp({
+              content: "❌ Command failed. Check Render logs for details.",
               ephemeral: true,
             });
+          } catch (followErr) {
+            try {
+              await interaction.reply({
+                content: "❌ Command failed. Check Render logs for details.",
+                ephemeral: true,
+              });
+            } catch (replyErr) {
+              console.error("❌ erro respondendo interaction:", replyErr);
+            }
           }
-        } catch (replyErr) {
-          console.error("❌ erro respondendo interaction:", replyErr);
         }
       }
     });
