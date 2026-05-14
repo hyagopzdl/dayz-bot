@@ -69,6 +69,29 @@ export type KillStreakEvent =
       timestamp: number;
     };
 
+export type ShopOrderStatus =
+  | "pending_spawn"
+  | "included_in_restart"
+  | "spawned"
+  | "failed";
+
+export type ShopOrder = {
+  id: string;
+  discordUserId: string;
+  itemClass: string;
+  itemName?: string;
+  x: number;
+  y: number;
+  z: number;
+  status: ShopOrderStatus;
+  restartTarget?: string;
+  createdAt: string;
+  includedAt?: string;
+  spawnedAt?: string;
+  failedAt?: string;
+  failReason?: string;
+};
+
 export type ActiveMatch = {
   id: string;
   name: string;
@@ -86,6 +109,8 @@ export type AppState = {
   weeklyPlayers: Record<string, PlayerStats>;
   onlinePlayers: Record<string, OnlinePlayer>;
   onlineSessions: Record<string, OnlineSession>;
+
+  shopOrders: ShopOrder[];
 
   files: Record<string, FileCursor>;
   recentEventIds: string[];
@@ -118,6 +143,7 @@ function defaultState(): AppState {
     weeklyPlayers: {},
     onlinePlayers: {},
     onlineSessions: {},
+    shopOrders: [],
     files: {},
     recentEventIds: [],
     killFeedEvents: [],
@@ -195,6 +221,7 @@ function migrateLegacyState(data: any): AppState {
   state.lastFileName = data.lastFileName;
 
   state.onlineSessions = data.onlineSessions || {};
+  state.shopOrders = Array.isArray(data.shopOrders) ? data.shopOrders : [];
 
   const rawOnlinePlayers = data.onlinePlayers || {};
   const now = new Date().toISOString();
@@ -298,6 +325,7 @@ export async function saveStateAsync(data: AppState) {
     weeklyPlayers: data.weeklyPlayers || {},
     onlinePlayers: data.onlinePlayers || {},
     onlineSessions: data.onlineSessions || {},
+    shopOrders: Array.isArray(data.shopOrders) ? data.shopOrders : [],
     files: data.files || {},
     recentEventIds: (data.recentEventIds || []).slice(-10000),
     killFeedEvents: (data.killFeedEvents || []).slice(-99),

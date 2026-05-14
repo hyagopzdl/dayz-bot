@@ -144,3 +144,50 @@ export async function downloadADM() {
 
   console.log(`📦 ${downloadedLocalFiles.length} arquivos ADM disponíveis`);
 }
+
+function getNitradoServiceId() {
+  return process.env.NITRADO_SERVICE_ID || SERVICE_ID;
+}
+
+async function getUploadUrl(filePath: string): Promise<string | null> {
+  const serviceId = getNitradoServiceId();
+  const json = await fetchJson(
+    `https://api.nitrado.net/services/${serviceId}/gameservers/file_server/upload?file=${encodeURIComponent(
+      filePath,
+    )}`,
+  );
+
+  return json?.data?.token?.url || json?.data?.url || null;
+}
+
+export async function uploadShopSpawnerFile(
+  filePath: string,
+  payload: unknown,
+) {
+  if (!process.env.NITRADO_TOKEN) {
+    throw new Error("NITRADO_TOKEN não definido");
+  }
+
+  const uploadUrl = await getUploadUrl(filePath);
+
+  if (!uploadUrl) {
+    throw new Error(`Nitrado did not return an upload URL for ${filePath}`);
+  }
+
+  const body = JSON.stringify(payload, null, 2);
+  const finalUrl = `${uploadUrl}${uploadUrl.includes("?") ? "&" : "?"}t=${Date.now()}`;
+
+  const res = await fetch(finalUrl, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body,
+  });
+
+  if (!res.ok) {
+    throw new Error(`Nitrado upload HTTP ${res.status}: ${await res.text()}`);
+  }
+
+  console.log(`✅ Shop spawner uploaded: ${filePath} (${body.length} chars)`);
+}

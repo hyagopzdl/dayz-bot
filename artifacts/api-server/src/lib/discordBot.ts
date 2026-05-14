@@ -11,6 +11,13 @@ import {
 import fs from "fs";
 import path from "path";
 import { getStateAsync, saveStateAsync } from "./state";
+import {
+  createShopOrder,
+  deployPendingShopOrders,
+  clearShopSpawnerAndMarkSpawned,
+  formatShopQueue,
+  SHOP_ITEMS,
+} from "./shop";
 
 const client = new Client({
   intents: [GatewayIntentBits.Guilds],
@@ -48,6 +55,7 @@ function ensureBotState(state: any) {
   state.weeklyPlayers = state.weeklyPlayers || {};
   state.onlinePlayers = state.onlinePlayers || {};
   state.onlineSessions = state.onlineSessions || {};
+  state.shopOrders = state.shopOrders || [];
   state.files = state.files || {};
   state.recentEventIds = state.recentEventIds || [];
   state.killFeedEvents = state.killFeedEvents || [];
@@ -1863,6 +1871,62 @@ export async function startDiscordBot() {
             dmPermission: false,
           },
           {
+            name: "shop-buy",
+            description: "Create a DayZ shop spawn order for the next restart.",
+            defaultMemberPermissions: adminPermission,
+            dmPermission: false,
+            options: [
+              {
+                name: "item",
+                description: "Shop item name or DayZ class name.",
+                type: 3,
+                required: true,
+              },
+              {
+                name: "x",
+                description: "Spawn X coordinate.",
+                type: 10,
+                required: true,
+              },
+              {
+                name: "y",
+                description: "Spawn Y coordinate. Use 0 if unsure.",
+                type: 10,
+                required: true,
+              },
+              {
+                name: "z",
+                description: "Spawn Z coordinate.",
+                type: 10,
+                required: true,
+              },
+            ],
+          },
+          {
+            name: "shop-queue",
+            description: "Show pending DayZ shop spawn orders.",
+            defaultMemberPermissions: adminPermission,
+            dmPermission: false,
+          },
+          {
+            name: "shop-deploy",
+            description: "Upload pending shop orders to the Nitrado object spawner file.",
+            defaultMemberPermissions: adminPermission,
+            dmPermission: false,
+          },
+          {
+            name: "shop-clear",
+            description: "Clear the shop object spawner file after restart and mark orders as spawned.",
+            defaultMemberPermissions: adminPermission,
+            dmPermission: false,
+          },
+          {
+            name: "shop-catalog",
+            description: "Show the current simple shop catalog.",
+            defaultMemberPermissions: adminPermission,
+            dmPermission: false,
+          },
+          {
             name: "player-stats",
             description: "Show stats for a player.",
             dmPermission: false,
@@ -1910,6 +1974,81 @@ export async function startDiscordBot() {
         if (!(await assertAdmin(interaction))) return;
 
         await interaction.deferReply({ ephemeral: true });
+
+        if (interaction.commandName === "shop-catalog") {
+          await interaction.editReply(
+            [
+              "🛒 **Shop Catalog**",
+              "",
+              ...SHOP_ITEMS.map(
+                (item) =>
+                  `• **${item.name}** — class \`${item.className}\` — price \`${item.price}\``,
+              ),
+            ].join("\n"),
+          );
+          return;
+        }
+
+        if (interaction.commandName === "shop-buy") {
+          const state = await getState();
+          const item = interaction.options.getString("item", true);
+          const x = interaction.options.getNumber("x", true);
+          const y = interaction.options.getNumber("y", true);
+          const z = interaction.options.getNumber("z", true);
+
+          const order = createShopOrder({
+            state,
+            discordUserId: interaction.user.id,
+            itemInput: item,
+            x,
+            y,
+            z,
+          });
+
+          await saveState(state);
+
+          await interaction.editReply(
+            [
+              "✅ Shop order created for the next restart.",
+              "",
+              `Order: \`${order.id}\``,
+              `Item: \`${order.itemClass}\``,
+              `Position: \`${order.x}, ${order.y}, ${order.z}\``,
+              `Status: \`${order.status}\``,
+            ].join("\n"),
+          );
+          return;
+        }
+
+        if (interaction.commandName === "shop-queue") {
+          const state = await getState();
+          await interaction.editReply(formatShopQueue(state));
+          return;
+        }
+
+        if (interaction.commandName === "shop-deploy") {
+          const state = await getState();
+          const result = await deployPendingShopOrders(state);
+          await saveState(state);
+
+          await interaction.editReply(
+            result.deployed > 0
+              ? `✅ Deployed **${result.deployed}** shop order(s) to \`${result.path}\`. Restart the server after this upload.`
+              : "⚠️ No pending shop orders to deploy.",
+          );
+          return;
+        }
+
+        if (interaction.commandName === "shop-clear") {
+          const state = await getState();
+          const result = await clearShopSpawnerAndMarkSpawned(state);
+          await saveState(state);
+
+          await interaction.editReply(
+            `✅ Cleared \`${result.path}\` and marked **${result.cleared}** order(s) as spawned.`,
+          );
+          return;
+        }
 
         if (interaction.commandName === "clear-channel") {
           const amount = interaction.options.getInteger("amount") || 100;
