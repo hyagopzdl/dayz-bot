@@ -1705,10 +1705,16 @@ export async function startDiscordBot() {
           PermissionsBitField.Flags.Administrator,
         )
       ) {
-        await interaction.reply({
-          content: "❌ Only administrators can use this command.",
-          ephemeral: true,
-        });
+        const message = "❌ Only administrators can use this command.";
+
+        if (interaction.deferred || interaction.replied) {
+          await interaction.editReply(message);
+        } else {
+          await interaction.reply({
+            content: message,
+            ephemeral: true,
+          });
+        }
 
         return false;
       }
@@ -1971,9 +1977,9 @@ export async function startDiscordBot() {
           return;
         }
 
-        if (!(await assertAdmin(interaction))) return;
-
         await interaction.deferReply({ ephemeral: true });
+
+        if (!(await assertAdmin(interaction))) return;
 
         if (interaction.commandName === "shop-catalog") {
           await interaction.editReply(

@@ -13,9 +13,30 @@ export const SHOP_ITEMS: ShopItem[] = [
   { name: "NVG", className: "NVGoggles", price: 500 },
 ];
 
-export const SHOP_SPAWNER_PATH =
-  process.env.SHOP_SPAWNER_PATH ||
-  "dayzps_missions/dayzOffline.chernarusplus/custom/shop_pending.json";
+const DEFAULT_NITRADO_NOFTP_ROOT =
+  process.env.NITRADO_NOFTP_ROOT || "/games/ni13029176_1/noftp";
+
+const DEFAULT_DAYZ_MISSION_DIR =
+  process.env.DAYZ_MISSION_DIR ||
+  `${DEFAULT_NITRADO_NOFTP_ROOT}/dayzps_missions/dayzOffline.chernarusplus`;
+
+function resolveShopSpawnerPath() {
+  const configuredPath =
+    process.env.SHOP_SPAWNER_PATH || "custom/shop_pending.json";
+  const cleanPath = configuredPath.trim();
+
+  if (cleanPath.startsWith("/games/")) {
+    return cleanPath;
+  }
+
+  if (cleanPath.startsWith("dayzps_missions/")) {
+    return `${DEFAULT_NITRADO_NOFTP_ROOT}/${cleanPath}`;
+  }
+
+  return `${DEFAULT_DAYZ_MISSION_DIR}/${cleanPath.replace(/^\/+/, "")}`;
+}
+
+export const SHOP_SPAWNER_PATH = resolveShopSpawnerPath();
 
 function normalizeItemName(value: string) {
   return String(value || "").trim().toLowerCase();

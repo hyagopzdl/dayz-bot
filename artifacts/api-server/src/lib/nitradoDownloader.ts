@@ -167,7 +167,8 @@ async function postJson(url: string, body: Record<string, unknown>): Promise<any
 }
 
 function splitRemoteFilePath(filePath: string) {
-  const normalized = filePath.replace(/^\/+/, "");
+  const normalized = filePath.replace(/\\/g, "/").replace(/\/+$/g, "");
+  const isAbsoluteGamePath = normalized.startsWith("/games/");
   const parts = normalized.split("/").filter(Boolean);
   const file = parts.pop();
 
@@ -176,7 +177,7 @@ function splitRemoteFilePath(filePath: string) {
   }
 
   return {
-    path: parts.join("/"),
+    path: `${isAbsoluteGamePath ? "/" : ""}${parts.join("/")}`,
     file,
   };
 }
@@ -184,6 +185,8 @@ function splitRemoteFilePath(filePath: string) {
 async function getUploadToken(filePath: string): Promise<{ url: string; token: string }> {
   const serviceId = getNitradoServiceId();
   const { path, file } = splitRemoteFilePath(filePath);
+
+  console.log(`📤 Nitrado upload token request: path=${path} file=${file}`);
 
   const json = await postJson(
     `https://api.nitrado.net/services/${serviceId}/gameservers/file_server/upload`,
