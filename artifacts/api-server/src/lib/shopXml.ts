@@ -34,7 +34,7 @@ function buildEventXml(order: ShopOrder, eventName: string) {
   return [
     `    <event name="${eventName}">`,
     "        <nominal>1</nominal>",
-    "        <min>1</min>",
+    "        <min>0</min>",
     "        <max>1</max>",
     "        <lifetime>3888000</lifetime>",
     "        <restock>0</restock>",

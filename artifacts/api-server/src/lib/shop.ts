@@ -304,3 +304,36 @@ export function formatShopQueue(state: AppState) {
 
   return lines.join("\n");
 }
+
+
+export async function autoClearShopBlocksIfNeeded(state: AppState) {
+  const includedOrders = getIncludedShopOrders(state);
+
+  if (!includedOrders.length) {
+    return null;
+  }
+
+  const minutes = Number(
+    process.env.SHOP_AUTO_CLEAR_MINUTES_AFTER_DEPLOY || 10,
+  );
+
+  const oldestIncludedAt = includedOrders
+    .map((order) => new Date(order.includedAt || order.createdAt).getTime())
+    .sort((a, b) => a - b)[0];
+
+  if (!Number.isFinite(oldestIncludedAt)) {
+    return null;
+  }
+
+  const ageMs = Date.now() - oldestIncludedAt;
+
+  if (ageMs < minutes * 60 * 1000) {
+    return null;
+  }
+
+  console.log(
+    `🧹 auto-clearing SHOP_BOT XML blocks after ${minutes} minute(s)`,
+  );
+
+  return clearShopSpawnerAndMarkSpawned(state);
+}

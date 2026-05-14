@@ -16,6 +16,7 @@ import {
   deployPendingShopOrders,
   clearShopSpawnerAndMarkSpawned,
   formatShopQueue,
+  autoClearShopBlocksIfNeeded,
   parseShopCoordinates,
   SHOP_ITEMS,
 } from "./shop";
@@ -200,6 +201,23 @@ export async function startDiscordBot() {
 
   client.once("ready", async () => {
     console.log("🤖 Discord conectado");
+
+    setInterval(async () => {
+      try {
+        const state = await getState();
+        const result = await autoClearShopBlocksIfNeeded(state);
+
+        if (result) {
+          await saveState(state);
+
+          console.log(
+            `✅ SHOP_BOT auto-clear completed: cleared=${result.cleared} cancelled=${result.cancelled}`,
+          );
+        }
+      } catch (err) {
+        console.error("❌ erro no auto-clear da shop", err);
+      }
+    }, 60 * 1000);
 
     const globalChannel = (await client.channels.fetch(
       process.env.DISCORD_CHANNEL_ID!,
