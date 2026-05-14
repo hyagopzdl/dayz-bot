@@ -18,9 +18,7 @@ export const SHOP_SPAWNER_PATH =
   "dayzps_missions/dayzOffline.chernarusplus/custom/shop_pending.json";
 
 function normalizeItemName(value: string) {
-  return String(value || "")
-    .trim()
-    .toLowerCase();
+  return String(value || "").trim().toLowerCase();
 }
 
 export function ensureShopState(state: AppState) {
@@ -143,9 +141,7 @@ export async function clearShopSpawnerAndMarkSpawned(state: AppState) {
 
 export function formatShopQueue(state: AppState) {
   const shopOrders = ensureShopState(state).shopOrders;
-  const pending = shopOrders.filter(
-    (order) => order.status === "pending_spawn",
-  );
+  const pending = shopOrders.filter((order) => order.status === "pending_spawn");
   const included = shopOrders.filter(
     (order) => order.status === "included_in_restart",
   );

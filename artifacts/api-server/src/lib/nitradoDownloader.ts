@@ -149,15 +149,57 @@ function getNitradoServiceId() {
   return process.env.NITRADO_SERVICE_ID || SERVICE_ID;
 }
 
-async function getUploadUrl(filePath: string): Promise<string | null> {
+async function postJson(url: string, body: Record<string, unknown>): Promise<any> {
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${process.env.NITRADO_TOKEN}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    throw new Error(`Nitrado HTTP ${res.status}: ${await res.text()}`);
+  }
+
+  return (await res.json()) as any;
+}
+
+function splitRemoteFilePath(filePath: string) {
+  const normalized = filePath.replace(/^\/+/, "");
+  const parts = normalized.split("/").filter(Boolean);
+  const file = parts.pop();
+
+  if (!file) {
+    throw new Error(`Invalid Nitrado file path: ${filePath}`);
+  }
+
+  return {
+    path: parts.join("/"),
+    file,
+  };
+}
+
+async function getUploadToken(filePath: string): Promise<{ url: string; token: string }> {
   const serviceId = getNitradoServiceId();
-  const json = await fetchJson(
-    `https://api.nitrado.net/services/${serviceId}/gameservers/file_server/upload?file=${encodeURIComponent(
-      filePath,
-    )}`,
+  const { path, file } = splitRemoteFilePath(filePath);
+
+  const json = await postJson(
+    `https://api.nitrado.net/services/${serviceId}/gameservers/file_server/upload`,
+    { path, file },
   );
 
-  return json?.data?.token?.url || json?.data?.url || null;
+  const token = json?.data?.token;
+
+  if (!token?.url || !token?.token) {
+    throw new Error(`Nitrado did not return an upload token for ${filePath}`);
+  }
+
+  return {
+    url: token.url,
+    token: token.token,
+  };
 }
 
 export async function uploadShopSpawnerFile(
@@ -168,19 +210,14 @@ export async function uploadShopSpawnerFile(
     throw new Error("NITRADO_TOKEN não definido");
   }
 
-  const uploadUrl = await getUploadUrl(filePath);
-
-  if (!uploadUrl) {
-    throw new Error(`Nitrado did not return an upload URL for ${filePath}`);
-  }
-
+  const { url, token } = await getUploadToken(filePath);
   const body = JSON.stringify(payload, null, 2);
-  const finalUrl = `${uploadUrl}${uploadUrl.includes("?") ? "&" : "?"}t=${Date.now()}`;
 
-  const res = await fetch(finalUrl, {
-    method: "PUT",
+  const res = await fetch(url, {
+    method: "POST",
     headers: {
-      "Content-Type": "application/json",
+      "Content-Type": "application/binary",
+      token,
     },
     body,
   });
