@@ -128,15 +128,26 @@ function eventId(fileName: string, lineNumber: number, line: string) {
 }
 
 function normalizePlayerKey(name: string) {
-  return name.trim().toLowerCase();
+  return normalizeOnlineName(name);
 }
 
 function findOnlinePlayerKey(state: AppState, player: string) {
-  const normalized = normalizePlayerKey(player);
+  return findRecordKeyByPlayerName(state.onlinePlayers || {}, player);
+}
+
+function normalizeOnlineName(name: string) {
+  return String(name || "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLowerCase();
+}
+
+function findRecordKeyByPlayerName(record: Record<string, any>, player: string) {
+  const normalized = normalizeOnlineName(player);
 
   return (
-    Object.keys(state.onlinePlayers || {}).find(
-      (name) => normalizePlayerKey(name) === normalized,
+    Object.keys(record || {}).find(
+      (name) => normalizeOnlineName(name) === normalized,
     ) || null
   );
 }
@@ -325,39 +336,54 @@ function updateOnlineSessionStats(
 
   const now = new Date().toISOString();
 
-  const killerKey = findOnlinePlayerKey(state, killer);
+  const updateSession = (
+    playerName: string,
+    updater: (session: any) => void,
+  ) => {
+    const onlineKey = findOnlinePlayerKey(state, playerName);
 
-  if (killerKey && state.onlinePlayers?.[killerKey]?.online) {
-    const session = (state as any).onlineSessions[killerKey] || {
-      connectedAt: state.onlinePlayers[killerKey].connectedAt || now,
-      kills: 0,
-      deaths: 0,
-      streak: 0,
+    if (!onlineKey) return;
+
+    const onlinePlayer = state.onlinePlayers?.[onlineKey] as any;
+
+    if (!onlinePlayer || onlinePlayer.online !== true) return;
+
+    const sessionKey =
+      findRecordKeyByPlayerName((state as any).onlineSessions || {}, onlineKey) ||
+      onlineKey;
+
+    const existingSession = (state as any).onlineSessions[sessionKey] || {};
+
+    const session = {
+      connectedAt:
+        existingSession.connectedAt ||
+        onlinePlayer.connectedAt ||
+        onlinePlayer.lastSeenAt ||
+        now,
+      lastSeenAt: now,
+      kills: Number(existingSession.kills || 0),
+      deaths: Number(existingSession.deaths || 0),
+      streak: Number(existingSession.streak || 0),
     };
 
-    session.lastSeenAt = now;
+    updater(session);
+
+    if (sessionKey !== onlineKey) {
+      delete (state as any).onlineSessions[sessionKey];
+    }
+
+    (state as any).onlineSessions[onlineKey] = session;
+  };
+
+  updateSession(killer, (session) => {
     session.kills = Number(session.kills || 0) + 1;
     session.streak = Number(session.streak || 0) + 1;
+  });
 
-    (state as any).onlineSessions[killerKey] = session;
-  }
-
-  const victimKey = findOnlinePlayerKey(state, victim);
-
-  if (victimKey && state.onlinePlayers?.[victimKey]?.online) {
-    const session = (state as any).onlineSessions[victimKey] || {
-      connectedAt: state.onlinePlayers[victimKey].connectedAt || now,
-      kills: 0,
-      deaths: 0,
-      streak: 0,
-    };
-
-    session.lastSeenAt = now;
+  updateSession(victim, (session) => {
     session.deaths = Number(session.deaths || 0) + 1;
     session.streak = 0;
-
-    (state as any).onlineSessions[victimKey] = session;
-  }
+  });
 }
 
 function addKill(
@@ -413,15 +439,20 @@ function markOnline(
   ensureOnlineState(state);
 
   const now = new Date().toISOString();
-  const existingKey = findOnlinePlayerKey(state, player);
-  const key = existingKey || player;
+  const existingOnlineKey = findOnlinePlayerKey(state, player);
+  const key = existingOnlineKey || player;
 
-  const current = state.onlinePlayers[key];
-  const currentSession = (state as any).onlineSessions[key];
+  const current = state.onlinePlayers[key] as any;
+  const existingSessionKey =
+    findRecordKeyByPlayerName((state as any).onlineSessions || {}, key) || key;
+  const currentSession = (state as any).onlineSessions[existingSessionKey];
 
-  if (existingKey && existingKey !== player) {
+  if (existingOnlineKey && existingOnlineKey !== player) {
     delete state.onlinePlayers[player];
-    delete (state as any).onlineSessions[player];
+  }
+
+  if (existingSessionKey !== key) {
+    delete (state as any).onlineSessions[existingSessionKey];
   }
 
   state.onlinePlayers[key] = {
@@ -433,9 +464,9 @@ function markOnline(
   (state as any).onlineSessions[key] = {
     connectedAt: currentSession?.connectedAt || current?.connectedAt || now,
     lastSeenAt: now,
-    kills: Number(currentSession?.kills || currentSession?.sessionKills || 0),
-    deaths: Number(currentSession?.deaths || currentSession?.sessionDeaths || 0),
-    streak: Number(currentSession?.streak || currentSession?.sessionStreak || 0),
+    kills: Number(currentSession?.kills || 0),
+    deaths: Number(currentSession?.deaths || 0),
+    streak: Number(currentSession?.streak || 0),
   };
 }
 
@@ -443,9 +474,11 @@ function markOffline(state: AppState, player: string) {
   ensureOnlineState(state);
 
   const key = findOnlinePlayerKey(state, player) || player;
+  const sessionKey =
+    findRecordKeyByPlayerName((state as any).onlineSessions || {}, key) || key;
 
   delete state.onlinePlayers[key];
-  delete (state as any).onlineSessions[key];
+  delete (state as any).onlineSessions[sessionKey];
 }
 
 function cleanupOnlinePlayers(state: AppState) {

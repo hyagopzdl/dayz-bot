@@ -428,6 +428,23 @@ export async function startDiscordBot() {
       return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
     }
 
+    function normalizeDisplayPlayerName(name: string) {
+      return String(name || "")
+        .trim()
+        .replace(/\s+/g, " ")
+        .toLowerCase();
+    }
+
+    function findNormalizedKey(record: Record<string, any>, player: string) {
+      const normalized = normalizeDisplayPlayerName(player);
+
+      return (
+        Object.keys(record || {}).find(
+          (name) => normalizeDisplayPlayerName(name) === normalized,
+        ) || null
+      );
+    }
+
     function formatSessionKd(kills: number, deaths: number) {
       if (deaths <= 0) {
         return kills > 0 ? kills.toFixed(2) : "0.00";
@@ -727,7 +744,9 @@ export async function startDiscordBot() {
               : rawOnlinePlayer || {};
 
           const sessionKey =
-            findPlayerKey(state.onlineSessions || {}, name) || onlineKey;
+            findNormalizedKey(state.onlineSessions || {}, name) ||
+            findPlayerKey(state.onlineSessions || {}, name) ||
+            onlineKey;
           const onlineSession = state.onlineSessions?.[sessionKey] || {};
 
           const session = getOnlineSessionTime({
