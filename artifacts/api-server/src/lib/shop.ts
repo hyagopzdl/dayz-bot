@@ -1,10 +1,10 @@
 import type { AppState, ShopOrder } from "./state";
+import { downloadTextFile, uploadTextFile } from "./nitradoFtp";
 import {
-  debugNitradoListRaw,
-  listNitradoDirectory,
-  probeNitradoUploadTokenForDirectory,
-} from "./nitradoDownloader";
-import { uploadShopSpawnerFile } from "./nitradoFtp";
+  injectShopEventSpawnsXml,
+  injectShopEventsXml,
+  removeShopBotBlock,
+} from "./shopXml";
 
 export type ShopItem = {
   name: string;
@@ -16,6 +16,8 @@ export const SHOP_ITEMS: ShopItem[] = [
   { name: "M4A1", className: "M4A1", price: 1000 },
   { name: "AKM", className: "AKM", price: 900 },
   { name: "NVG", className: "NVGoggles", price: 500 },
+  { name: "Green Barrel", className: "Barrel_Green", price: 250 },
+  { name: "Metal Plate", className: "MetalPlate", price: 100 },
 ];
 
 const DEFAULT_DAYZ_MISSION_DIR =
@@ -28,85 +30,9 @@ function normalizeRelativePath(value: string) {
     .replace(/\/+$/g, "");
 }
 
-function resolveShopSpawnerPath() {
-  const configuredPath =
-    process.env.SHOP_SPAWNER_PATH || "custom/shop_pending.json";
-  const cleanPath = normalizeRelativePath(configuredPath.trim());
-
-  if (cleanPath.startsWith("dayzps_missions/")) {
-    return cleanPath;
-  }
-
-  return `${normalizeRelativePath(DEFAULT_DAYZ_MISSION_DIR)}/${cleanPath}`;
-}
-
-export const SHOP_SPAWNER_PATH = resolveShopSpawnerPath();
-
-export async function debugShopSpawnerPaths() {
-  const listDirsToCheck = [
-    "",
-    "dayzps_missions",
-    "dayzps_missions/dayzOffline.chernarusplus",
-    "dayzps_missions/dayzOffline.chernarusplus/custom",
-    "dayzps/config",
-  ];
-
-  const uploadDirsToProbe = [
-    "dayzps_missions/dayzOffline.chernarusplus/custom",
-    "dayzps_missions/dayzOffline.chernarusplus/custom/",
-    "/games/ni13029176_1/noftp/dayzps_missions/dayzOffline.chernarusplus/custom",
-    "/games/ni13029176_1/noftp/dayzps_missions/dayzOffline.chernarusplus/custom/",
-    "dayzps/config",
-    "/games/ni13029176_1/noftp/dayzps/config",
-    "/games/ni13029176_1/noftp/dayzps/config/",
-  ];
-
-  const lines = [
-    "🧪 **Nitrado Shop Path Debug v2**",
-    "",
-    `Configured upload file: \`${SHOP_SPAWNER_PATH}\``,
-    "",
-    "**List checks**",
-  ];
-
-  for (const dir of listDirsToCheck) {
-    try {
-      const raw = await debugNitradoListRaw(dir);
-      const line = `${raw.ok ? "✅" : "❌"} \`${raw.dir}\` HTTP ${raw.status} entries=${raw.entriesCount ?? "?"}`;
-      console.log(`[shop-debug-path] ${line}`);
-      console.log(`[shop-debug-path raw] ${raw.dir}: ${raw.text}`);
-      lines.push(line);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      const line = `❌ \`${dir || "/"}\` failed: ${message.slice(0, 160)}`;
-      console.log(`[shop-debug-path] ${line}`);
-      lines.push(line);
-    }
-  }
-
-  lines.push("", "**Upload token probes**");
-
-  for (const dir of uploadDirsToProbe) {
-    try {
-      const probe = await probeNitradoUploadTokenForDirectory(dir);
-      const line = `${probe.ok ? "✅" : "❌"} token \`${probe.dir}\` HTTP ${probe.status}`;
-      console.log(`[shop-debug-upload-token] ${line}`);
-      console.log(`[shop-debug-upload-token raw] ${probe.dir}: ${probe.text}`);
-      lines.push(line);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      const line = `❌ token \`${dir || "/"}\` failed: ${message.slice(0, 160)}`;
-      console.log(`[shop-debug-upload-token] ${line}`);
-      lines.push(line);
-    }
-  }
-
-  lines.push("", "Check Render logs for raw Nitrado JSON responses.");
-
-  const result = lines.join("\n");
-  console.log(result);
-  return result;
-}
+const DAYZ_MISSION_DIR = normalizeRelativePath(DEFAULT_DAYZ_MISSION_DIR);
+export const SHOP_EVENTS_PATH = `${DAYZ_MISSION_DIR}/db/events.xml`;
+export const SHOP_EVENT_SPAWNS_PATH = `${DAYZ_MISSION_DIR}/cfgeventspawns.xml`;
 
 function normalizeItemName(value: string) {
   return String(value || "")
@@ -212,31 +138,44 @@ export function getIncludedShopOrders(state: AppState) {
   );
 }
 
-export function buildShopSpawnerJson(orders: ShopOrder[]) {
-  return {
-    Objects: orders.map((order) => ({
-      name: order.itemClass,
-      pos: [order.x, order.y, order.z],
-      ypr: [0, 0, 0],
-      scale: 1,
-      enableCEPersistency: false,
-    })),
-  };
-}
+async function backupShopXmlFiles(eventsXml: string, eventSpawnsXml: string) {
+  const stamp = new Date()
+    .toISOString()
+    .replace(/[-:]/g, "")
+    .replace(/\.\d{3}Z$/, "Z");
 
-export function buildEmptyShopSpawnerJson() {
-  return { Objects: [] };
+  await uploadTextFile(`${SHOP_EVENTS_PATH}.shop-backup-${stamp}`, eventsXml);
+  await uploadTextFile(
+    `${SHOP_EVENT_SPAWNS_PATH}.shop-backup-${stamp}`,
+    eventSpawnsXml,
+  );
 }
 
 export async function deployPendingShopOrders(state: AppState) {
   const pendingOrders = getPendingShopOrders(state);
 
   if (!pendingOrders.length) {
-    return { deployed: 0, path: SHOP_SPAWNER_PATH };
+    return {
+      deployed: 0,
+      path: `${SHOP_EVENTS_PATH} + ${SHOP_EVENT_SPAWNS_PATH}`,
+    };
   }
 
-  const payload = buildShopSpawnerJson(pendingOrders);
-  await uploadShopSpawnerFile(SHOP_SPAWNER_PATH, payload);
+  const [eventsXml, eventSpawnsXml] = await Promise.all([
+    downloadTextFile(SHOP_EVENTS_PATH),
+    downloadTextFile(SHOP_EVENT_SPAWNS_PATH),
+  ]);
+
+  await backupShopXmlFiles(eventsXml, eventSpawnsXml);
+
+  const injectedEvents = injectShopEventsXml(eventsXml, pendingOrders);
+  const injectedEventSpawns = injectShopEventSpawnsXml(
+    eventSpawnsXml,
+    pendingOrders,
+  );
+
+  await uploadTextFile(SHOP_EVENTS_PATH, injectedEvents.xml);
+  await uploadTextFile(SHOP_EVENT_SPAWNS_PATH, injectedEventSpawns);
 
   const now = new Date().toISOString();
   const batchId = `restart_${Date.now()}`;
@@ -247,13 +186,29 @@ export async function deployPendingShopOrders(state: AppState) {
     order.includedAt = now;
   }
 
-  return { deployed: pendingOrders.length, path: SHOP_SPAWNER_PATH, batchId };
+  return {
+    deployed: pendingOrders.length,
+    path: `${SHOP_EVENTS_PATH} + ${SHOP_EVENT_SPAWNS_PATH}`,
+    batchId,
+  };
 }
 
 export async function clearShopSpawnerAndMarkSpawned(state: AppState) {
   const includedOrders = getIncludedShopOrders(state);
+  const pendingOrders = getPendingShopOrders(state);
 
-  await uploadShopSpawnerFile(SHOP_SPAWNER_PATH, buildEmptyShopSpawnerJson());
+  const [eventsXml, eventSpawnsXml] = await Promise.all([
+    downloadTextFile(SHOP_EVENTS_PATH),
+    downloadTextFile(SHOP_EVENT_SPAWNS_PATH),
+  ]);
+
+  await backupShopXmlFiles(eventsXml, eventSpawnsXml);
+
+  await uploadTextFile(SHOP_EVENTS_PATH, removeShopBotBlock(eventsXml));
+  await uploadTextFile(
+    SHOP_EVENT_SPAWNS_PATH,
+    removeShopBotBlock(eventSpawnsXml),
+  );
 
   const now = new Date().toISOString();
 
@@ -262,7 +217,20 @@ export async function clearShopSpawnerAndMarkSpawned(state: AppState) {
     order.spawnedAt = now;
   }
 
-  return { cleared: includedOrders.length, path: SHOP_SPAWNER_PATH };
+  // For the current MVP, /shop-clear is also the safe reset button for testing.
+  // Pending orders were never injected, so mark them as failed instead of letting
+  // old test orders leak into the next batch.
+  for (const order of pendingOrders) {
+    order.status = "failed";
+    order.failedAt = now;
+    order.failReason = "Cleared before deploy";
+  }
+
+  return {
+    cleared: includedOrders.length,
+    cancelled: pendingOrders.length,
+    path: `${SHOP_EVENTS_PATH} + ${SHOP_EVENT_SPAWNS_PATH}`,
+  };
 }
 
 export function formatShopQueue(state: AppState) {

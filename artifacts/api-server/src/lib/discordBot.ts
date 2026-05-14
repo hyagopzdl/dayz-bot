@@ -16,7 +16,6 @@ import {
   deployPendingShopOrders,
   clearShopSpawnerAndMarkSpawned,
   formatShopQueue,
-  debugShopSpawnerPaths,
   parseShopCoordinates,
   SHOP_ITEMS,
 } from "./shop";
@@ -1944,25 +1943,21 @@ export async function startDiscordBot() {
           },
           {
             name: "shop-deploy",
-            description: "Upload pending shop orders to the Nitrado object spawner file.",
+            description:
+              "Inject pending shop orders into events.xml and cfgeventspawns.xml.",
             defaultMemberPermissions: adminPermission,
             dmPermission: false,
           },
           {
             name: "shop-clear",
-            description: "Clear the shop object spawner file after restart and mark orders as spawned.",
+            description:
+              "Remove SHOP_BOT XML blocks after restart and mark included orders as spawned.",
             defaultMemberPermissions: adminPermission,
             dmPermission: false,
           },
           {
             name: "shop-catalog",
             description: "Show the current simple shop catalog.",
-            defaultMemberPermissions: adminPermission,
-            dmPermission: false,
-          },
-          {
-            name: "shop-debug-path",
-            description: "Diagnose Nitrado file server paths used by the shop uploader.",
             defaultMemberPermissions: adminPermission,
             dmPermission: false,
           },
@@ -2067,12 +2062,6 @@ export async function startDiscordBot() {
           return;
         }
 
-        if (interaction.commandName === "shop-debug-path") {
-          const result = await debugShopSpawnerPaths();
-          await interaction.editReply(result);
-          return;
-        }
-
         if (interaction.commandName === "shop-deploy") {
           const state = await getState();
           const result = await deployPendingShopOrders(state);
@@ -2080,7 +2069,7 @@ export async function startDiscordBot() {
 
           await interaction.editReply(
             result.deployed > 0
-              ? `✅ Deployed **${result.deployed}** shop order(s) to \`${result.path}\`. Restart the server after this upload.`
+              ? `✅ Injected **${result.deployed}** shop order(s) into XML files. Restart the server after this upload.`
               : "⚠️ No pending shop orders to deploy.",
           );
           return;
@@ -2092,7 +2081,7 @@ export async function startDiscordBot() {
           await saveState(state);
 
           await interaction.editReply(
-            `✅ Cleared \`${result.path}\` and marked **${result.cleared}** order(s) as spawned.`,
+            `✅ Removed SHOP_BOT XML blocks. Marked **${result.cleared}** included order(s) as spawned and cancelled **${result.cancelled}** pending order(s).`,
           );
           return;
         }

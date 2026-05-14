@@ -124,6 +124,38 @@ class SimpleFtpClient {
     this.expect(doneResponse, [226, 250]);
   }
 
+  async download(remotePath: string) {
+    this.expect(await this.command("TYPE I"), [200]);
+
+    const pasvResponse = await this.command("PASV");
+    this.expect(pasvResponse, [227]);
+
+    const { host, port } = parsePasvEndpoint(pasvResponse.message);
+    const dataSocket = net.createConnection({ host, port });
+    const chunks: Buffer[] = [];
+
+    dataSocket.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
+
+    await new Promise<void>((resolve, reject) => {
+      dataSocket.once("connect", resolve);
+      dataSocket.once("error", reject);
+    });
+
+    const retrResponse = await this.command(`RETR ${remotePath}`);
+    this.expect(retrResponse, [125, 150]);
+
+    await new Promise<void>((resolve, reject) => {
+      dataSocket.once("end", resolve);
+      dataSocket.once("close", resolve);
+      dataSocket.once("error", reject);
+    });
+
+    const doneResponse = await this.readResponse();
+    this.expect(doneResponse, [226, 250]);
+
+    return Buffer.concat(chunks).toString("utf8");
+  }
+
   async close() {
     try {
       if (this.socket && !this.socket.destroyed) {
@@ -185,7 +217,9 @@ class SimpleFtpClient {
       endIndex = 0;
     } else {
       const endPattern = new RegExp(`^${code} `);
-      endIndex = completeLines.findIndex((line, index) => index > 0 && endPattern.test(line));
+      endIndex = completeLines.findIndex(
+        (line, index) => index > 0 && endPattern.test(line),
+      );
 
       if (endIndex === -1) {
         return null;
@@ -209,20 +243,10 @@ class SimpleFtpClient {
   }
 }
 
-async function uploadTextViaFtp(options: UploadOptions) {
-  const client = new SimpleFtpClient();
-
-  try {
-    await client.connect(options.host, options.port);
-    await client.login(options.user, options.password);
-    await client.upload(options.remotePath, options.content);
-  } finally {
-    await client.close();
-  }
-}
-
-export async function uploadShopSpawnerFile(filePath: string, payload: unknown) {
-  const secure = String(process.env.NITRADO_FTP_SECURE || "false").toLowerCase();
+function getFtpConnectionOptions() {
+  const secure = String(
+    process.env.NITRADO_FTP_SECURE || "false",
+  ).toLowerCase();
 
   if (secure === "true" || secure === "1") {
     throw new Error(
@@ -236,13 +260,43 @@ export async function uploadShopSpawnerFile(filePath: string, payload: unknown) 
   const port = Number(process.env.NITRADO_FTP_PORT || "21");
 
   if (!Number.isFinite(port) || port <= 0) {
-    throw new Error(`NITRADO_FTP_PORT inválido: ${process.env.NITRADO_FTP_PORT}`);
+    throw new Error(
+      `NITRADO_FTP_PORT inválido: ${process.env.NITRADO_FTP_PORT}`,
+    );
   }
 
-  const remotePath = normalizeFtpPath(filePath);
-  const content = JSON.stringify(payload, null, 2);
+  return { host, port, user, password };
+}
 
-  console.log(`📤 FTP shop upload: ${host}:${port} -> ${remotePath}`);
+async function uploadTextViaFtp(options: UploadOptions) {
+  const client = new SimpleFtpClient();
+
+  try {
+    await client.connect(options.host, options.port);
+    await client.login(options.user, options.password);
+    await client.upload(options.remotePath, options.content);
+  } finally {
+    await client.close();
+  }
+}
+
+async function downloadTextViaFtp(options: Omit<UploadOptions, "content">) {
+  const client = new SimpleFtpClient();
+
+  try {
+    await client.connect(options.host, options.port);
+    await client.login(options.user, options.password);
+    return await client.download(options.remotePath);
+  } finally {
+    await client.close();
+  }
+}
+
+export async function uploadTextFile(filePath: string, content: string) {
+  const { host, port, user, password } = getFtpConnectionOptions();
+  const remotePath = normalizeFtpPath(filePath);
+
+  console.log(`📤 FTP upload: ${host}:${port} -> ${remotePath}`);
 
   await uploadTextViaFtp({
     host,
@@ -253,5 +307,30 @@ export async function uploadShopSpawnerFile(filePath: string, payload: unknown) 
     content,
   });
 
-  console.log(`✅ FTP shop spawner uploaded: ${remotePath} (${content.length} chars)`);
+  console.log(`✅ FTP uploaded: ${remotePath} (${content.length} chars)`);
+}
+
+export async function downloadTextFile(filePath: string) {
+  const { host, port, user, password } = getFtpConnectionOptions();
+  const remotePath = normalizeFtpPath(filePath);
+
+  console.log(`📥 FTP download: ${host}:${port} <- ${remotePath}`);
+
+  const content = await downloadTextViaFtp({
+    host,
+    port,
+    user,
+    password,
+    remotePath,
+  });
+
+  console.log(`✅ FTP downloaded: ${remotePath} (${content.length} chars)`);
+  return content;
+}
+
+export async function uploadShopSpawnerFile(
+  filePath: string,
+  payload: unknown,
+) {
+  await uploadTextFile(filePath, JSON.stringify(payload, null, 2));
 }
