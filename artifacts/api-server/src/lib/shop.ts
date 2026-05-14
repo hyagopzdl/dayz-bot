@@ -3,8 +3,8 @@ import {
   debugNitradoListRaw,
   listNitradoDirectory,
   probeNitradoUploadTokenForDirectory,
-  uploadShopSpawnerFile,
 } from "./nitradoDownloader";
+import { uploadShopSpawnerFile } from "./nitradoFtp";
 
 export type ShopItem = {
   name: string;
@@ -19,7 +19,7 @@ export const SHOP_ITEMS: ShopItem[] = [
 ];
 
 const DEFAULT_DAYZ_MISSION_DIR =
-  process.env.DAYZ_MISSION_DIR || "dayzps_mission/dayzOffline.chernarusplus";
+  process.env.DAYZ_MISSION_DIR || "dayzps_missions/dayzOffline.chernarusplus";
 
 function normalizeRelativePath(value: string) {
   return String(value || "")
@@ -33,7 +33,7 @@ function resolveShopSpawnerPath() {
     process.env.SHOP_SPAWNER_PATH || "custom/shop_pending.json";
   const cleanPath = normalizeRelativePath(configuredPath.trim());
 
-  if (cleanPath.startsWith("dayzps_mission/") || cleanPath.startsWith("dayzps_missions/")) {
+  if (cleanPath.startsWith("dayzps_missions/")) {
     return cleanPath;
   }
 
@@ -45,9 +45,6 @@ export const SHOP_SPAWNER_PATH = resolveShopSpawnerPath();
 export async function debugShopSpawnerPaths() {
   const listDirsToCheck = [
     "",
-    "dayzps_mission",
-    "dayzps_mission/dayzOffline.chernarusplus",
-    "dayzps_mission/dayzOffline.chernarusplus/custom",
     "dayzps_missions",
     "dayzps_missions/dayzOffline.chernarusplus",
     "dayzps_missions/dayzOffline.chernarusplus/custom",
@@ -55,10 +52,6 @@ export async function debugShopSpawnerPaths() {
   ];
 
   const uploadDirsToProbe = [
-    "dayzps_mission/dayzOffline.chernarusplus/custom",
-    "dayzps_mission/dayzOffline.chernarusplus/custom/",
-    "/games/ni13029176_1/noftp/dayzps_mission/dayzOffline.chernarusplus/custom",
-    "/games/ni13029176_1/noftp/dayzps_mission/dayzOffline.chernarusplus/custom/",
     "dayzps_missions/dayzOffline.chernarusplus/custom",
     "dayzps_missions/dayzOffline.chernarusplus/custom/",
     "/games/ni13029176_1/noftp/dayzps_missions/dayzOffline.chernarusplus/custom",
