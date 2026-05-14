@@ -229,39 +229,90 @@ function splitRemoteFilePath(filePath: string) {
   };
 }
 
+function ensureTrailingSlash(value: string) {
+  return value.endsWith("/") ? value : `${value}/`;
+}
+
+function uniqueStrings(values: string[]) {
+  return Array.from(new Set(values.filter(Boolean)));
+}
+
+function getNoFtpRootFromAdmBaseDir() {
+  const marker = "/noftp/";
+  const index = BASE_DIR.indexOf(marker);
+
+  if (index === -1) {
+    return "";
+  }
+
+  return BASE_DIR.slice(0, index + marker.length - 1);
+}
+
+function buildUploadPathCandidates(pathValue: string) {
+  const normalized = normalizeNitradoFileServerPath(pathValue);
+  const noFtpRoot = getNoFtpRootFromAdmBaseDir();
+  const candidates = [
+    ensureTrailingSlash(normalized),
+    normalized,
+  ];
+
+  if (noFtpRoot) {
+    candidates.push(ensureTrailingSlash(`${noFtpRoot}/${normalized}`));
+    candidates.push(`${noFtpRoot}/${normalized}`);
+  }
+
+  return uniqueStrings(candidates);
+}
+
 async function getUploadToken(filePath: string): Promise<{ url: string; token: string }> {
   const serviceId = getNitradoServiceId();
   const { path, file } = splitRemoteFilePath(filePath);
   const url = `https://api.nitrado.net/services/${serviceId}/gameservers/file_server/upload`;
-  const body = { path, file };
   const errors: string[] = [];
+  const pathCandidates = buildUploadPathCandidates(path);
 
-  console.log(`📤 Nitrado upload token request: path=${path} file=${file}`);
+  console.log(`📤 Nitrado upload token request: file=${file}`);
+  console.log(`📤 Nitrado upload path candidates: ${pathCandidates.join(" | ")}`);
 
-  // Nitrado's file_server/upload endpoint expects form/query style parameters,
-  // not a JSON request body. Try form first, then query params as a fallback.
-  for (const strategy of ["form", "query"] as const) {
-    try {
-      console.log(`📤 Nitrado upload token strategy=${strategy}`);
-      const json =
-        strategy === "form"
-          ? await postForm(url, body)
-          : await postWithQueryParams(url, body);
+  // Public SDK/issues show this endpoint receives path/file parameters and then
+  // returns a temporary file-server URL + token. Nitrado is strict about the
+  // directory path format, so we try the same directory with and without the
+  // trailing slash and with the absolute /games/.../noftp prefix.
+  for (const pathCandidate of pathCandidates) {
+    for (const strategy of ["query", "form"] as const) {
+      const body = { path: pathCandidate, file };
 
-      const token = json?.data?.token;
+      try {
+        console.log(
+          `📤 Nitrado upload token strategy=${strategy} path=${pathCandidate} file=${file}`,
+        );
 
-      if (!token?.url || !token?.token) {
-        throw new Error(`Nitrado did not return an upload token for ${filePath}`);
+        const json =
+          strategy === "form"
+            ? await postForm(url, body)
+            : await postWithQueryParams(url, body);
+
+        const token = json?.data?.token;
+
+        if (!token?.url || !token?.token) {
+          throw new Error(`Nitrado did not return an upload token for ${filePath}`);
+        }
+
+        console.log(
+          `✅ Nitrado upload token received: strategy=${strategy} path=${pathCandidate}`,
+        );
+
+        return {
+          url: token.url,
+          token: token.token,
+        };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        errors.push(`${strategy} ${pathCandidate}: ${message}`);
+        console.warn(
+          `⚠️ Nitrado upload token failed (${strategy}, ${pathCandidate}): ${message}`,
+        );
       }
-
-      return {
-        url: token.url,
-        token: token.token,
-      };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      errors.push(`${strategy}: ${message}`);
-      console.warn(`⚠️ Nitrado upload token failed (${strategy}): ${message}`);
     }
   }
 
