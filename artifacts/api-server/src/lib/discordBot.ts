@@ -741,10 +741,10 @@ export async function startDiscordBot() {
 
           return (
             `**${name}**\n` +
-            `Kill(s): **${sessionKills}** • ` +
-            `Death(s): **${sessionDeaths}** • ` +
-            `K/D: **${sessionKd}** • ` +
-            `Session: **${session}**`
+            `Kill(s): \`${sessionKills}\` • ` +
+            `Death(s): \`${sessionDeaths}\` • ` +
+            `K/D: \`${sessionKd}\` • ` +
+            `Session: \`${session}\``
           );
         })
         .join("\n\n");
@@ -1933,9 +1933,11 @@ export async function startDiscordBot() {
           state.onlineSessions = {};
 
           await saveState(state);
-          await updateLeaderboard();
 
           await interaction.editReply("✅ Online players cleared.");
+
+          await updateLeaderboard();
+
           return;
         }
 
