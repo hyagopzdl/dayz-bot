@@ -1,5 +1,10 @@
 import type { AppState, ShopOrder } from "./state";
-import { listNitradoDirectory, uploadShopSpawnerFile } from "./nitradoDownloader";
+import {
+  debugNitradoListRaw,
+  listNitradoDirectory,
+  probeNitradoUploadTokenForDirectory,
+  uploadShopSpawnerFile,
+} from "./nitradoDownloader";
 
 export type ShopItem = {
   name: string;
@@ -38,7 +43,7 @@ function resolveShopSpawnerPath() {
 export const SHOP_SPAWNER_PATH = resolveShopSpawnerPath();
 
 export async function debugShopSpawnerPaths() {
-  const dirsToCheck = [
+  const listDirsToCheck = [
     "",
     "dayzps_missions",
     "dayzps_missions/dayzOffline.chernarusplus",
@@ -46,23 +51,30 @@ export async function debugShopSpawnerPaths() {
     "dayzps/config",
   ];
 
+  const uploadDirsToProbe = [
+    "dayzps_missions/dayzOffline.chernarusplus/custom",
+    "dayzps_missions/dayzOffline.chernarusplus/custom/",
+    "/games/ni13029176_1/noftp/dayzps_missions/dayzOffline.chernarusplus/custom",
+    "/games/ni13029176_1/noftp/dayzps_missions/dayzOffline.chernarusplus/custom/",
+    "dayzps/config",
+    "/games/ni13029176_1/noftp/dayzps/config",
+    "/games/ni13029176_1/noftp/dayzps/config/",
+  ];
+
   const lines = [
-    "🧪 **Nitrado Shop Path Debug**",
+    "🧪 **Nitrado Shop Path Debug v2**",
     "",
     `Configured upload file: \`${SHOP_SPAWNER_PATH}\``,
     "",
+    "**List checks**",
   ];
 
-  for (const dir of dirsToCheck) {
+  for (const dir of listDirsToCheck) {
     try {
-      const entries = await listNitradoDirectory(dir);
-      const preview = entries
-        .slice(0, 6)
-        .map((entry) => entry.path?.split("/").filter(Boolean).pop() || entry.path || "unknown")
-        .join(", ");
-
-      const line = `✅ \`${dir || "/"}\` exists (${entries.length} entries)${preview ? `: ${preview}` : ""}`;
+      const raw = await debugNitradoListRaw(dir);
+      const line = `${raw.ok ? "✅" : "❌"} \`${raw.dir}\` HTTP ${raw.status} entries=${raw.entriesCount ?? "?"}`;
       console.log(`[shop-debug-path] ${line}`);
+      console.log(`[shop-debug-path raw] ${raw.dir}: ${raw.text}`);
       lines.push(line);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -72,13 +84,34 @@ export async function debugShopSpawnerPaths() {
     }
   }
 
+  lines.push("", "**Upload token probes**");
+
+  for (const dir of uploadDirsToProbe) {
+    try {
+      const probe = await probeNitradoUploadTokenForDirectory(dir);
+      const line = `${probe.ok ? "✅" : "❌"} token \`${probe.dir}\` HTTP ${probe.status}`;
+      console.log(`[shop-debug-upload-token] ${line}`);
+      console.log(`[shop-debug-upload-token raw] ${probe.dir}: ${probe.text}`);
+      lines.push(line);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      const line = `❌ token \`${dir || "/"}\` failed: ${message.slice(0, 160)}`;
+      console.log(`[shop-debug-upload-token] ${line}`);
+      lines.push(line);
+    }
+  }
+
+  lines.push("", "Check Render logs for raw Nitrado JSON responses.");
+
   const result = lines.join("\n");
   console.log(result);
   return result;
 }
 
 function normalizeItemName(value: string) {
-  return String(value || "").trim().toLowerCase();
+  return String(value || "")
+    .trim()
+    .toLowerCase();
 }
 
 export function ensureShopState(state: AppState) {
@@ -201,7 +234,9 @@ export async function clearShopSpawnerAndMarkSpawned(state: AppState) {
 
 export function formatShopQueue(state: AppState) {
   const shopOrders = ensureShopState(state).shopOrders;
-  const pending = shopOrders.filter((order) => order.status === "pending_spawn");
+  const pending = shopOrders.filter(
+    (order) => order.status === "pending_spawn",
+  );
   const included = shopOrders.filter(
     (order) => order.status === "included_in_restart",
   );

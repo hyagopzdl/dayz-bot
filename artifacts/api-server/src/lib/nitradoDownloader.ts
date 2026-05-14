@@ -156,7 +156,9 @@ function normalizeNitradoFileServerPath(value: string) {
     .replace(/\/+$/g, "");
 }
 
-export async function listNitradoDirectory(dir: string): Promise<NitradoEntry[]> {
+export async function listNitradoDirectory(
+  dir: string,
+): Promise<NitradoEntry[]> {
   if (!process.env.NITRADO_TOKEN) {
     throw new Error("NITRADO_TOKEN não definido");
   }
@@ -175,7 +177,96 @@ export async function listNitradoDirectory(dir: string): Promise<NitradoEntry[]>
   return json?.data?.entries || [];
 }
 
-async function postForm(url: string, body: Record<string, string>): Promise<any> {
+export async function debugNitradoListRaw(dir: string): Promise<{
+  dir: string;
+  ok: boolean;
+  status: number;
+  statusText: string;
+  text: string;
+  entriesCount: number | null;
+}> {
+  if (!process.env.NITRADO_TOKEN) {
+    throw new Error("NITRADO_TOKEN não definido");
+  }
+
+  const serviceId = getNitradoServiceId();
+  const normalizedDir = normalizeNitradoFileServerPath(dir);
+  const url = `https://api.nitrado.net/services/${serviceId}/gameservers/file_server/list?dir=${encodeURIComponent(
+    normalizedDir,
+  )}`;
+
+  const res = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${process.env.NITRADO_TOKEN}`,
+    },
+  });
+
+  const text = await res.text();
+  let entriesCount: number | null = null;
+
+  try {
+    const json = JSON.parse(text);
+    const entries = json?.data?.entries;
+    entriesCount = Array.isArray(entries) ? entries.length : null;
+  } catch {
+    entriesCount = null;
+  }
+
+  return {
+    dir: normalizedDir || "/",
+    ok: res.ok,
+    status: res.status,
+    statusText: res.statusText,
+    text: text.slice(0, 900),
+    entriesCount,
+  };
+}
+
+export async function probeNitradoUploadTokenForDirectory(
+  dir: string,
+  file = "shop_pending.json",
+): Promise<{
+  dir: string;
+  file: string;
+  ok: boolean;
+  status: number;
+  statusText: string;
+  text: string;
+}> {
+  if (!process.env.NITRADO_TOKEN) {
+    throw new Error("NITRADO_TOKEN não definido");
+  }
+
+  const serviceId = getNitradoServiceId();
+  const normalizedDir = String(dir || "")
+    .replace(/\\/g, "/")
+    .replace(/\/+$/g, "");
+  const baseUrl = `https://api.nitrado.net/services/${serviceId}/gameservers/file_server/upload`;
+  const url = `${baseUrl}?${new URLSearchParams({ path: normalizedDir, file }).toString()}`;
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${process.env.NITRADO_TOKEN}`,
+    },
+  });
+
+  const text = await res.text();
+
+  return {
+    dir: normalizedDir || "/",
+    file,
+    ok: res.ok,
+    status: res.status,
+    statusText: res.statusText,
+    text: text.slice(0, 700),
+  };
+}
+
+async function postForm(
+  url: string,
+  body: Record<string, string>,
+): Promise<any> {
   const form = new URLSearchParams(body);
 
   const res = await fetch(url, {
@@ -251,10 +342,7 @@ function getNoFtpRootFromAdmBaseDir() {
 function buildUploadPathCandidates(pathValue: string) {
   const normalized = normalizeNitradoFileServerPath(pathValue);
   const noFtpRoot = getNoFtpRootFromAdmBaseDir();
-  const candidates = [
-    ensureTrailingSlash(normalized),
-    normalized,
-  ];
+  const candidates = [ensureTrailingSlash(normalized), normalized];
 
   if (noFtpRoot) {
     candidates.push(ensureTrailingSlash(`${noFtpRoot}/${normalized}`));
@@ -264,7 +352,9 @@ function buildUploadPathCandidates(pathValue: string) {
   return uniqueStrings(candidates);
 }
 
-async function getUploadToken(filePath: string): Promise<{ url: string; token: string }> {
+async function getUploadToken(
+  filePath: string,
+): Promise<{ url: string; token: string }> {
   const serviceId = getNitradoServiceId();
   const { path, file } = splitRemoteFilePath(filePath);
   const url = `https://api.nitrado.net/services/${serviceId}/gameservers/file_server/upload`;
@@ -272,7 +362,9 @@ async function getUploadToken(filePath: string): Promise<{ url: string; token: s
   const pathCandidates = buildUploadPathCandidates(path);
 
   console.log(`📤 Nitrado upload token request: file=${file}`);
-  console.log(`📤 Nitrado upload path candidates: ${pathCandidates.join(" | ")}`);
+  console.log(
+    `📤 Nitrado upload path candidates: ${pathCandidates.join(" | ")}`,
+  );
 
   // Public SDK/issues show this endpoint receives path/file parameters and then
   // returns a temporary file-server URL + token. Nitrado is strict about the
@@ -295,7 +387,9 @@ async function getUploadToken(filePath: string): Promise<{ url: string; token: s
         const token = json?.data?.token;
 
         if (!token?.url || !token?.token) {
-          throw new Error(`Nitrado did not return an upload token for ${filePath}`);
+          throw new Error(
+            `Nitrado did not return an upload token for ${filePath}`,
+          );
         }
 
         console.log(
