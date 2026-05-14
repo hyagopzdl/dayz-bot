@@ -17,6 +17,7 @@ import {
   clearShopSpawnerAndMarkSpawned,
   formatShopQueue,
   debugShopSpawnerPaths,
+  parseShopCoordinates,
   SHOP_ITEMS,
 } from "./shop";
 
@@ -1922,22 +1923,16 @@ export async function startDiscordBot() {
                 required: true,
               },
               {
-                name: "x",
-                description: "Spawn X coordinate.",
-                type: 10,
+                name: "coords",
+                description: "iZurvive coordinates, example: 4587.29 / 8373.59",
+                type: 3,
                 required: true,
               },
               {
                 name: "y",
-                description: "Spawn Y coordinate. Use 0 if unsure.",
+                description: "Optional height/Y coordinate. Defaults to 0.",
                 type: 10,
-                required: true,
-              },
-              {
-                name: "z",
-                description: "Spawn Z coordinate.",
-                type: 10,
-                required: true,
+                required: false,
               },
             ],
           },
@@ -2038,9 +2033,9 @@ export async function startDiscordBot() {
         if (interaction.commandName === "shop-buy") {
           const state = await getState();
           const item = interaction.options.getString("item", true);
-          const x = interaction.options.getNumber("x", true);
-          const y = interaction.options.getNumber("y", true);
-          const z = interaction.options.getNumber("z", true);
+          const coordsInput = interaction.options.getString("coords", true);
+          const yOverride = interaction.options.getNumber("y") ?? 0;
+          const { x, y, z } = parseShopCoordinates(coordsInput, yOverride);
 
           const order = createShopOrder({
             state,

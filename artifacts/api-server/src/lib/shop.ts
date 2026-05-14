@@ -131,6 +131,39 @@ export function findShopItem(input: string) {
   );
 }
 
+export function parseShopCoordinates(input: string, fallbackY = 0) {
+  const raw = String(input || "").trim();
+
+  if (!raw) {
+    throw new Error("Coordinate input is empty.");
+  }
+
+  const normalized = raw
+    .replace(/,/g, ".")
+    .replace(/[;|]/g, " /")
+    .replace(/\s+\/\s+/g, " / ");
+
+  const matches = normalized.match(/-?\d+(?:\.\d+)?/g) || [];
+  const values = matches.map((value) => Number.parseFloat(value));
+
+  if (values.length < 2) {
+    throw new Error(
+      "Invalid coordinates. Use a format like `4587.29 / 8373.59`.",
+    );
+  }
+
+  const [x, second, third] = values;
+  const hasExplicitY = values.length >= 3;
+  const y = hasExplicitY ? second : fallbackY;
+  const z = hasExplicitY ? third : second;
+
+  if (![x, y, z].every(Number.isFinite)) {
+    throw new Error("Invalid coordinates. Coordinates must be valid numbers.");
+  }
+
+  return { x, y, z };
+}
+
 export function createShopOrder(options: {
   state: AppState;
   discordUserId: string;
