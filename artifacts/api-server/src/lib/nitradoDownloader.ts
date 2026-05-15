@@ -51,6 +51,61 @@ async function fetchJson(url: string): Promise<any> {
   return (await res.json()) as any;
 }
 
+
+export type NitradoGameserverStatus = {
+  status: string | null;
+  raw: any;
+};
+
+function firstString(...values: any[]) {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return null;
+}
+
+export async function getNitradoGameserverStatus(): Promise<NitradoGameserverStatus> {
+  if (!process.env.NITRADO_TOKEN) {
+    throw new Error("NITRADO_TOKEN não definido");
+  }
+
+  const serviceId = getNitradoServiceId();
+
+  const candidates = [
+    `https://api.nitrado.net/services/${serviceId}/gameservers`,
+    `https://api.nitrado.net/services/${serviceId}`,
+  ];
+
+  const errors: string[] = [];
+
+  for (const url of candidates) {
+    try {
+      const json = await fetchJson(url);
+      const data = json?.data || json;
+      const gameserver = data?.gameserver || data?.gameservers?.[0] || data;
+      const service = data?.service || data?.services?.[0] || data;
+
+      const status = firstString(
+        gameserver?.status,
+        gameserver?.status_text,
+        gameserver?.query?.server_status,
+        gameserver?.query?.status,
+        service?.status,
+        service?.status_text,
+        data?.status,
+      );
+
+      console.log(`🧭 Nitrado status: ${status || "unknown"}`);
+
+      return { status, raw: json };
+    } catch (err: any) {
+      errors.push(`${url}: ${err?.message || String(err)}`);
+    }
+  }
+
+  throw new Error(`Unable to read Nitrado server status. ${errors.join(" | ")}`);
+}
+
 async function getDownloadUrl(filePath: string): Promise<string | null> {
   const json = await fetchJson(
     `https://api.nitrado.net/services/${SERVICE_ID}/gameservers/file_server/download?file=${encodeURIComponent(

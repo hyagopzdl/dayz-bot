@@ -15,8 +15,8 @@ import {
   createShopOrder,
   deployPendingShopOrders,
   clearShopSpawnerAndMarkSpawned,
+  pollShopResetStatusAndAutoClear,
   formatShopQueue,
-  autoClearShopBlocksIfNeeded,
   parseShopCoordinates,
   SHOP_ITEMS,
 } from "./shop";
@@ -50,6 +50,7 @@ const BOT_ICON =
   "https://media.discordapp.net/attachments/1501806293583659048/1501832841703723088/pz-avatar.png?ex=69fd8254&is=69fc30d4&hm=2075bd7c316893afbf66950ab1373fc5d5a076662bc5ad1033b6763f6689b63c&=&format=webp&quality=lossless&width=1526&height=1526";
 
 let discordLoopRunning = false;
+let shopStatusLoopRunning = false;
 
 function ensureBotState(state: any) {
   state.players = state.players || {};
@@ -201,23 +202,6 @@ export async function startDiscordBot() {
 
   client.once("ready", async () => {
     console.log("🤖 Discord conectado");
-
-    setInterval(async () => {
-      try {
-        const state = await getState();
-        const result = await autoClearShopBlocksIfNeeded(state);
-
-        if (result) {
-          await saveState(state);
-
-          console.log(
-            `✅ SHOP_BOT auto-clear completed: cleared=${result.cleared} cancelled=${result.cancelled}`,
-          );
-        }
-      } catch (err) {
-        console.error("❌ erro no auto-clear da shop", err);
-      }
-    }, 60 * 1000);
 
     const globalChannel = (await client.channels.fetch(
       process.env.DISCORD_CHANNEL_ID!,
@@ -2452,6 +2436,31 @@ export async function startDiscordBot() {
 
     await registerCommands();
     await updateLeaderboard();
+
+    setInterval(
+      async () => {
+        if (shopStatusLoopRunning) return;
+
+        shopStatusLoopRunning = true;
+
+        try {
+          const state = await getState();
+          const result = await pollShopResetStatusAndAutoClear(state);
+
+          if (result) {
+            await saveState(state);
+            console.log(
+              `✅ SHOP_BOT auto-clear completed: cleared=${result.cleared} cancelled=${result.cancelled}`,
+            );
+          }
+        } catch (err) {
+          console.error("❌ erro no monitor de status da shop:", err);
+        } finally {
+          shopStatusLoopRunning = false;
+        }
+      },
+      30 * 1000,
+    );
 
     setInterval(
       async () => {

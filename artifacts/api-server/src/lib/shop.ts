@@ -1,5 +1,5 @@
-import fs from "fs";
 import type { AppState, ShopOrder } from "./state";
+import { getNitradoGameserverStatus } from "./nitradoDownloader";
 import { downloadTextFile, uploadTextFile } from "./nitradoFtp";
 import {
   injectShopEventSpawnsXml,
@@ -42,7 +42,6 @@ function normalizeRelativePath(value: string) {
 const DAYZ_MISSION_DIR = normalizeRelativePath(DEFAULT_DAYZ_MISSION_DIR);
 
 export const SHOP_EVENTS_PATH = `${DAYZ_MISSION_DIR}/db/events.xml`;
-
 export const SHOP_EVENT_SPAWNS_PATH = `${DAYZ_MISSION_DIR}/cfgeventspawns.xml`;
 
 function normalizeItemName(value: string) {
@@ -52,8 +51,48 @@ function normalizeItemName(value: string) {
     .replace(/\s+/g, "_");
 }
 
+function boolEnv(name: string, defaultValue: boolean) {
+  const value = process.env[name];
+  if (value === undefined || value === null || value === "") return defaultValue;
+  return ["1", "true", "yes", "on"].includes(String(value).toLowerCase());
+}
+
+function numberEnv(name: string, defaultValue: number) {
+  const value = Number(process.env[name]);
+  return Number.isFinite(value) ? value : defaultValue;
+}
+
+function normalizeServerStatus(status: string | null | undefined) {
+  return String(status || "unknown").trim().toLowerCase();
+}
+
+function isOfflineLikeStatus(status: string | null | undefined) {
+  const normalized = normalizeServerStatus(status);
+  return (
+    normalized.includes("stop") ||
+    normalized.includes("restart") ||
+    normalized.includes("offline") ||
+    normalized.includes("shutdown") ||
+    normalized.includes("suspend")
+  );
+}
+
+function isOnlineLikeStatus(status: string | null | undefined) {
+  const normalized = normalizeServerStatus(status);
+  return (
+    normalized === "started" ||
+    normalized === "online" ||
+    normalized === "running" ||
+    normalized === "active" ||
+    normalized.includes("started") ||
+    normalized.includes("online") ||
+    normalized.includes("running")
+  );
+}
+
 export function ensureShopState(state: AppState) {
   state.shopOrders = state.shopOrders || [];
+  state.shopResetMonitor = state.shopResetMonitor || null;
   return state;
 }
 
@@ -83,7 +122,6 @@ export function parseShopCoordinates(input: string, fallbackY = 0) {
     .replace(/\s+\/\s+/g, " / ");
 
   const matches = normalized.match(/-?\d+(?:\.\d+)?/g) || [];
-
   const values = matches.map((value) => Number.parseFloat(value));
 
   if (values.length < 2) {
@@ -91,9 +129,7 @@ export function parseShopCoordinates(input: string, fallbackY = 0) {
   }
 
   const [x, second, third] = values;
-
   const hasExplicitY = values.length >= 3;
-
   const y = hasExplicitY ? second : fallbackY;
   const z = hasExplicitY ? third : second;
 
@@ -113,7 +149,6 @@ export function createShopOrder(options: {
   z: number;
 }) {
   const state = ensureShopState(options.state);
-
   const item = findShopItem(options.itemInput);
 
   if (!item) {
@@ -130,23 +165,17 @@ export function createShopOrder(options: {
 
   const order: ShopOrder = {
     id: `shop_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-
     discordUserId: options.discordUserId,
-
     itemClass: item.className,
     itemName: item.name,
-
     x: Number(options.x.toFixed(2)),
     y: Number(options.y.toFixed(2)),
     z: Number(options.z.toFixed(2)),
-
     status: "pending_spawn",
-
     createdAt: now,
   };
 
   state.shopOrders.push(order);
-
   return order;
 }
 
@@ -162,6 +191,16 @@ export function getIncludedShopOrders(state: AppState) {
   );
 }
 
+function getIncludedBatchOrders(state: AppState) {
+  const included = getIncludedShopOrders(state);
+  if (!included.length) return [];
+
+  const batchId = state.shopResetMonitor?.batchId || included[0]?.restartTarget;
+  if (!batchId) return included;
+
+  return included.filter((order) => order.restartTarget === batchId);
+}
+
 async function backupShopXmlFiles(eventsXml: string, eventSpawnsXml: string) {
   const stamp = new Date()
     .toISOString()
@@ -169,7 +208,6 @@ async function backupShopXmlFiles(eventsXml: string, eventSpawnsXml: string) {
     .replace(/\.\d{3}Z$/, "Z");
 
   await uploadTextFile(`${SHOP_EVENTS_PATH}.shop-backup-${stamp}`, eventsXml);
-
   await uploadTextFile(
     `${SHOP_EVENT_SPAWNS_PATH}.shop-backup-${stamp}`,
     eventSpawnsXml,
@@ -194,18 +232,15 @@ export async function deployPendingShopOrders(state: AppState) {
   await backupShopXmlFiles(eventsXml, eventSpawnsXml);
 
   const injectedEvents = injectShopEventsXml(eventsXml, pendingOrders);
-
   const injectedEventSpawns = injectShopEventSpawnsXml(
     eventSpawnsXml,
     pendingOrders,
   );
 
   await uploadTextFile(SHOP_EVENTS_PATH, injectedEvents.xml);
-
   await uploadTextFile(SHOP_EVENT_SPAWNS_PATH, injectedEventSpawns);
 
   const now = new Date().toISOString();
-
   const batchId = `restart_${Date.now()}`;
 
   for (const order of pendingOrders) {
@@ -214,6 +249,16 @@ export async function deployPendingShopOrders(state: AppState) {
     order.includedAt = now;
   }
 
+  state.shopResetMonitor = {
+    batchId,
+    deployedAt: now,
+    sawOfflineAt: undefined,
+    sawOnlineAt: undefined,
+    lastStatus: null,
+    lastCheckedAt: now,
+    clearedAt: undefined,
+  };
+
   return {
     deployed: pendingOrders.length,
     path: `${SHOP_EVENTS_PATH} + ${SHOP_EVENT_SPAWNS_PATH}`,
@@ -221,13 +266,7 @@ export async function deployPendingShopOrders(state: AppState) {
   };
 }
 
-async function clearShopXmlBlocksAndMarkOrders(
-  state: AppState,
-  options: { cancelPending: boolean; reason: string },
-) {
-  const includedOrders = getIncludedShopOrders(state);
-  const pendingOrders = getPendingShopOrders(state);
-
+async function removeShopXmlBlocks() {
   const [eventsXml, eventSpawnsXml] = await Promise.all([
     downloadTextFile(SHOP_EVENTS_PATH),
     downloadTextFile(SHOP_EVENT_SPAWNS_PATH),
@@ -236,11 +275,23 @@ async function clearShopXmlBlocksAndMarkOrders(
   await backupShopXmlFiles(eventsXml, eventSpawnsXml);
 
   await uploadTextFile(SHOP_EVENTS_PATH, removeShopBotBlock(eventsXml));
-
   await uploadTextFile(
     SHOP_EVENT_SPAWNS_PATH,
     removeShopBotBlock(eventSpawnsXml),
   );
+}
+
+export async function clearShopSpawnerAndMarkSpawned(
+  state: AppState,
+  options?: { cancelPending?: boolean; includedOnly?: boolean },
+) {
+  const cancelPending = options?.cancelPending ?? true;
+  const includedOrders = options?.includedOnly
+    ? getIncludedBatchOrders(state)
+    : getIncludedShopOrders(state);
+  const pendingOrders = cancelPending ? getPendingShopOrders(state) : [];
+
+  await removeShopXmlBlocks();
 
   const now = new Date().toISOString();
 
@@ -249,203 +300,112 @@ async function clearShopXmlBlocksAndMarkOrders(
     order.spawnedAt = now;
   }
 
-  let cancelled = 0;
+  for (const order of pendingOrders) {
+    order.status = "failed";
+    order.failedAt = now;
+    order.failReason = "Cleared before deploy";
+  }
 
-  if (options.cancelPending) {
-    for (const order of pendingOrders) {
-      order.status = "failed";
-      order.failedAt = now;
-      order.failReason = options.reason;
-      cancelled++;
-    }
+  if (!getIncludedShopOrders(state).length) {
+    state.shopResetMonitor = null;
+  } else if (state.shopResetMonitor) {
+    state.shopResetMonitor.clearedAt = now;
   }
 
   return {
     cleared: includedOrders.length,
-    cancelled,
+    cancelled: pendingOrders.length,
     path: `${SHOP_EVENTS_PATH} + ${SHOP_EVENT_SPAWNS_PATH}`,
   };
 }
 
-export async function clearShopSpawnerAndMarkSpawned(state: AppState) {
-  return clearShopXmlBlocksAndMarkOrders(state, {
-    cancelPending: true,
-    reason: "Cleared before deploy",
-  });
-}
+export async function pollShopResetStatusAndAutoClear(state: AppState) {
+  ensureShopState(state);
 
-const SHOP_BOOT_PATTERNS = [
-  /Mission\s+read/i,
-  /Mission\s+file\s+read/i,
-  /Game\s+started/i,
-  /Host\s+identity\s+created/i,
-  /World\s+initialized/i,
-  /Server\s+started/i,
-];
-
-const SHOP_SHUTDOWN_PATTERNS = [
-  /Shutdown/i,
-  /Game\s+stopped/i,
-  /Destroying\s+current\s+mission/i,
-  /Mission\s+finished/i,
-  /Server\s+shutdown/i,
-  /Server\s+stopping/i,
-];
-
-function boolFromEnv(name: string, defaultValue: boolean) {
-  const raw = process.env[name];
-  if (raw === undefined) return defaultValue;
-  return ["1", "true", "yes", "on"].includes(raw.toLowerCase());
-}
-
-function getClearMinutesAfterReset() {
-  const value = Number(process.env.SHOP_CLEAR_MINUTES_AFTER_RESET || 5);
-  return Number.isFinite(value) && value >= 0 ? value : 5;
-}
-
-function extractAdmStartedAt(filePath: string) {
-  const match = String(filePath).match(
-    /_(\d{4}-\d{2}-\d{2})_(\d{2}-\d{2}-\d{2})\.ADM$/i,
-  );
-
-  if (!match) return null;
-
-  const value = new Date(`${match[1]}T${match[2].replace(/-/g, ":")}.000Z`);
-  const time = value.getTime();
-
-  return Number.isFinite(time) ? value : null;
-}
-
-function containsAnyPattern(text: string, patterns: RegExp[]) {
-  return patterns.some((pattern) => pattern.test(text));
-}
-
-function findShopResetEvidence(admFiles: string[], deployedAt: Date) {
-  const deployedTime = deployedAt.getTime();
-  let bootDetectedAt: Date | null = null;
-  let bootFile: string | null = null;
-  let shutdownDetected = false;
-  let shutdownFile: string | null = null;
-
-  for (const file of admFiles) {
-    if (!fs.existsSync(file)) continue;
-
-    const text = fs.readFileSync(file, "utf-8");
-    const admStartedAt = extractAdmStartedAt(file);
-    const admStartedTime = admStartedAt?.getTime() ?? 0;
-
-    if (containsAnyPattern(text, SHOP_SHUTDOWN_PATTERNS)) {
-      shutdownDetected = true;
-      shutdownFile = file;
-    }
-
-    if (
-      admStartedTime > deployedTime &&
-      containsAnyPattern(text, SHOP_BOOT_PATTERNS) &&
-      (!bootDetectedAt || admStartedTime > bootDetectedAt.getTime())
-    ) {
-      bootDetectedAt = admStartedAt;
-      bootFile = file;
-    }
-  }
-
-  return {
-    bootDetectedAt,
-    bootFile,
-    shutdownDetected,
-    shutdownFile,
-  };
-}
-
-export async function tryAutoClearShopAfterAdmReset(
-  state: AppState,
-  admFiles: string[],
-) {
-  if (!boolFromEnv("SHOP_AUTO_CLEAR_ENABLED", true)) {
-    return { cleared: false, reason: "disabled" };
+  if (!boolEnv("SHOP_AUTO_CLEAR_ENABLED", true)) {
+    return null;
   }
 
   const includedOrders = getIncludedShopOrders(state);
-  if (!includedOrders.length) {
-    return { cleared: false, reason: "no_included_orders" };
+  if (!includedOrders.length) return null;
+
+  const monitor =
+    state.shopResetMonitor ||
+    ({
+      batchId: includedOrders[0]?.restartTarget,
+      deployedAt: includedOrders[0]?.includedAt,
+      lastStatus: null,
+      lastCheckedAt: new Date().toISOString(),
+    } as NonNullable<AppState["shopResetMonitor"]>);
+
+  state.shopResetMonitor = monitor;
+
+  let status: string | null = null;
+
+  try {
+    const response = await getNitradoGameserverStatus();
+    status = response.status;
+  } catch (err) {
+    console.error("❌ shop auto-clear status poll failed:", err);
+    return null;
   }
 
-  const deployTimes = includedOrders
-    .map((order) => new Date(order.includedAt || order.createdAt).getTime())
-    .filter(Number.isFinite);
+  const now = new Date();
+  const nowIso = now.toISOString();
+  const normalized = normalizeServerStatus(status);
 
-  if (!deployTimes.length) {
-    return { cleared: false, reason: "missing_deploy_time" };
+  monitor.lastStatus = normalized;
+  monitor.lastCheckedAt = nowIso;
+
+  if (!monitor.sawOfflineAt && isOfflineLikeStatus(normalized)) {
+    monitor.sawOfflineAt = nowIso;
+    console.log(`🛒 shop reset monitor: server went offline/restarting (${normalized})`);
+    return null;
   }
 
-  const deployedAt = new Date(Math.min(...deployTimes));
-  const evidence = findShopResetEvidence(admFiles, deployedAt);
+  if (monitor.sawOfflineAt && !monitor.sawOnlineAt && isOnlineLikeStatus(normalized)) {
+    monitor.sawOnlineAt = nowIso;
+    console.log(`🛒 shop reset monitor: server came back online (${normalized})`);
+    return null;
+  }
 
-  if (!evidence.bootDetectedAt) {
+  if (!monitor.sawOfflineAt) {
+    console.log(`🛒 shop auto-clear aguardando servidor desligar/reiniciar. status=${normalized}`);
+    return null;
+  }
+
+  if (!monitor.sawOnlineAt) {
+    console.log(`🛒 shop auto-clear aguardando servidor voltar online. status=${normalized}`);
+    return null;
+  }
+
+  const clearDelayMinutes = numberEnv("SHOP_CLEAR_MINUTES_AFTER_RESET", 5);
+  const onlineAtMs = new Date(monitor.sawOnlineAt).getTime();
+  const elapsedMs = Date.now() - onlineAtMs;
+  const requiredMs = clearDelayMinutes * 60 * 1000;
+
+  if (elapsedMs < requiredMs) {
+    const remainingSeconds = Math.ceil((requiredMs - elapsedMs) / 1000);
     console.log(
-      `🛒 shop auto-clear aguardando boot ADM posterior ao deploy ${deployedAt.toISOString()}`,
+      `🛒 shop auto-clear aguardando janela segura pós-online (${remainingSeconds}s restantes).`,
     );
-    return { cleared: false, reason: "no_boot_after_deploy" };
+    return null;
   }
 
-  const requireShutdownAndBoot = boolFromEnv(
-    "SHOP_RESET_REQUIRE_SHUTDOWN_AND_BOOT",
-    false,
-  );
-  const allowBootOnlyFallback = boolFromEnv(
-    "SHOP_RESET_ALLOW_BOOT_ONLY_FALLBACK",
-    true,
-  );
-
-  if (requireShutdownAndBoot && !evidence.shutdownDetected) {
-    console.log(
-      `🛒 shop auto-clear viu boot, mas ainda aguarda shutdown também. bootFile=${evidence.bootFile}`,
-    );
-    return { cleared: false, reason: "missing_shutdown_confirmation" };
-  }
-
-  if (!evidence.shutdownDetected && !allowBootOnlyFallback) {
-    console.log(
-      `🛒 shop auto-clear viu boot, mas fallback boot-only está desativado. bootFile=${evidence.bootFile}`,
-    );
-    return { cleared: false, reason: "boot_only_fallback_disabled" };
-  }
-
-  const minutesAfterReset = getClearMinutesAfterReset();
-  const readyAt = evidence.bootDetectedAt.getTime() + minutesAfterReset * 60_000;
-
-  if (Date.now() < readyAt) {
-    console.log(
-      `🛒 shop auto-clear aguardando ${minutesAfterReset} min após boot. boot=${evidence.bootDetectedAt.toISOString()}`,
-    );
-    return { cleared: false, reason: "waiting_after_boot" };
-  }
-
-  const result = await clearShopXmlBlocksAndMarkOrders(state, {
+  const result = await clearShopSpawnerAndMarkSpawned(state, {
     cancelPending: false,
-    reason: "Auto-clear after confirmed ADM reset",
+    includedOnly: true,
   });
 
   console.log(
-    `✅ shop auto-clear concluído: cleared=${result.cleared}, bootFile=${evidence.bootFile}, shutdown=${evidence.shutdownDetected ? evidence.shutdownFile : "not_detected"}`,
+    `✅ SHOP_BOT auto-clear completed after Nitrado status reset: cleared=${result.cleared} cancelled=${result.cancelled}`,
   );
 
-  return {
-    cleared: true,
-    result,
-    evidence,
-  };
+  return result;
 }
 
-
-// Backward-compatible export for older discordBot.ts versions.
-// The safe auto-clear path now runs from the ADM parser via tryAutoClearShopAfterAdmReset(state, admFiles).
-// Returning null here prevents the old timer-only Discord loop from clearing XMLs without reset evidence.
-export async function autoClearShopBlocksIfNeeded(
-  _state: AppState,
-): Promise<{ cleared: number; cancelled: number } | null> {
-  return null;
-}
+// Backwards-compatible name used by earlier patches/discordBot imports.
+export const autoClearShopBlocksIfNeeded = pollShopResetStatusAndAutoClear;
 
 export function formatShopQueue(state: AppState) {
   const shopOrders = ensureShopState(state).shopOrders;
@@ -453,18 +413,27 @@ export function formatShopQueue(state: AppState) {
   const pending = shopOrders.filter(
     (order) => order.status === "pending_spawn",
   );
-
   const included = shopOrders.filter(
     (order) => order.status === "included_in_restart",
   );
-
   const spawned = shopOrders.filter((order) => order.status === "spawned");
-
   const failed = shopOrders.filter((order) => order.status === "failed");
 
   const latest = [...shopOrders]
     .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))
     .slice(0, 10);
+
+  const monitor = ensureShopState(state).shopResetMonitor;
+  const monitorLines = monitor
+    ? [
+        "",
+        "**Reset monitor**",
+        `Batch: \`${monitor.batchId || "unknown"}\``,
+        `Last status: \`${monitor.lastStatus || "unknown"}\``,
+        `Saw offline: \`${monitor.sawOfflineAt || "no"}\``,
+        `Saw online: \`${monitor.sawOnlineAt || "no"}\``,
+      ]
+    : [];
 
   const lines = [
     "🛒 **Shop Queue**",
@@ -473,6 +442,7 @@ export function formatShopQueue(state: AppState) {
     `Included in next restart: **${included.length}**`,
     `Spawned: **${spawned.length}**`,
     `Failed: **${failed.length}**`,
+    ...monitorLines,
     "",
     "**Catalog**",
     ...SHOP_ITEMS.map((item) => `• \`${item.id}\` → ${item.className}`),

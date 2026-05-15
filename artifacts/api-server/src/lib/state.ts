@@ -75,6 +75,17 @@ export type ShopOrderStatus =
   | "spawned"
   | "failed";
 
+
+export type ShopResetMonitor = {
+  batchId?: string;
+  deployedAt?: string;
+  sawOfflineAt?: string;
+  sawOnlineAt?: string;
+  lastStatus?: string | null;
+  lastCheckedAt?: string;
+  clearedAt?: string;
+};
+
 export type ShopOrder = {
   id: string;
   discordUserId: string;
@@ -111,6 +122,7 @@ export type AppState = {
   onlineSessions: Record<string, OnlineSession>;
 
   shopOrders: ShopOrder[];
+  shopResetMonitor?: ShopResetMonitor | null;
 
   files: Record<string, FileCursor>;
   recentEventIds: string[];
@@ -144,6 +156,7 @@ function defaultState(): AppState {
     onlinePlayers: {},
     onlineSessions: {},
     shopOrders: [],
+    shopResetMonitor: null,
     files: {},
     recentEventIds: [],
     killFeedEvents: [],
@@ -222,6 +235,7 @@ function migrateLegacyState(data: any): AppState {
 
   state.onlineSessions = data.onlineSessions || {};
   state.shopOrders = Array.isArray(data.shopOrders) ? data.shopOrders : [];
+  state.shopResetMonitor = data.shopResetMonitor || null;
 
   const rawOnlinePlayers = data.onlinePlayers || {};
   const now = new Date().toISOString();
@@ -326,6 +340,7 @@ export async function saveStateAsync(data: AppState) {
     onlinePlayers: data.onlinePlayers || {},
     onlineSessions: data.onlineSessions || {},
     shopOrders: Array.isArray(data.shopOrders) ? data.shopOrders : [],
+    shopResetMonitor: data.shopResetMonitor || null,
     files: data.files || {},
     recentEventIds: (data.recentEventIds || []).slice(-10000),
     killFeedEvents: (data.killFeedEvents || []).slice(-99),
