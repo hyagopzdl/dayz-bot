@@ -417,6 +417,149 @@ export async function tryAutoClearShopAfterAdmReset(
   return pollShopResetStatusAndAutoClear(state);
 }
 
+function parseRestartTimes() {
+  const raw = process.env.SHOP_RESTART_TIMES || "00:00,04:00,08:00,12:00,16:00,20:00";
+
+  return raw
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .map((value) => {
+      const [hourRaw, minuteRaw = "0"] = value.split(":");
+      const hour = Number(hourRaw);
+      const minute = Number(minuteRaw);
+
+      if (
+        !Number.isInteger(hour) ||
+        !Number.isInteger(minute) ||
+        hour < 0 ||
+        hour > 23 ||
+        minute < 0 ||
+        minute > 59
+      ) {
+        throw new Error(`Invalid SHOP_RESTART_TIMES entry: ${value}`);
+      }
+
+      return { label: `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`, minutes: hour * 60 + minute };
+    })
+    .sort((a, b) => a.minutes - b.minutes);
+}
+
+function getLocalDateParts(date: Date, timeZone: string) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(date);
+
+  const values: Record<string, string> = {};
+  for (const part of parts) {
+    if (part.type !== "literal") values[part.type] = part.value;
+  }
+
+  const year = values.year;
+  const month = values.month;
+  const day = values.day;
+  let hour = Number(values.hour || 0);
+  const minute = Number(values.minute || 0);
+
+  // Some runtimes format midnight as 24:00. Treat it as 00:00 for window math.
+  if (hour === 24) hour = 0;
+
+  return {
+    dateKey: `${year}-${month}-${day}`,
+    hour,
+    minute,
+    minuteOfDay: hour * 60 + minute,
+  };
+}
+
+type AutoDeployWindow = {
+  windowId: string;
+  restartLabel: string;
+  minutesUntilRestart: number;
+};
+
+function getActiveAutoDeployWindow(now = new Date()): AutoDeployWindow | null {
+  if (!boolEnv("SHOP_AUTO_DEPLOY_ENABLED", false)) return null;
+
+  const times = parseRestartTimes();
+  if (!times.length) return null;
+
+  const timeZone = process.env.SHOP_RESTART_TIMEZONE || "America/Sao_Paulo";
+  const deployBefore = numberEnv("SHOP_DEPLOY_MINUTES_BEFORE_RESET", 15);
+  const deployGraceAfter = numberEnv("SHOP_DEPLOY_GRACE_MINUTES_AFTER_SCHEDULE", 5);
+  const local = getLocalDateParts(now, timeZone);
+
+  for (const restart of times) {
+    let diff = restart.minutes - local.minuteOfDay;
+
+    // If the restart is just after midnight and now is late in the previous day,
+    // treat it as the next occurrence.
+    if (diff < -deployGraceAfter) diff += 24 * 60;
+
+    if (diff <= deployBefore && diff >= -deployGraceAfter) {
+      const windowDateKey = diff < 0 ? `${local.dateKey}` : local.dateKey;
+      return {
+        windowId: `${windowDateKey}_${restart.label}`,
+        restartLabel: restart.label,
+        minutesUntilRestart: diff,
+      };
+    }
+  }
+
+  return null;
+}
+
+export async function autoDeployPendingShopOrdersIfNeeded(state: AppState) {
+  ensureShopState(state);
+
+  const pendingOrders = getPendingShopOrders(state);
+  if (!pendingOrders.length) return null;
+
+  // Never inject a new batch while a previous one is waiting for restart/clear.
+  if (getIncludedShopOrders(state).length) {
+    return null;
+  }
+
+  const window = getActiveAutoDeployWindow();
+  if (!window) return null;
+
+  const autoDeployState = state.shopAutoDeploy || {};
+  state.shopAutoDeploy = autoDeployState;
+  autoDeployState.lastCheckedAt = new Date().toISOString();
+
+  if (autoDeployState.lastWindowId === window.windowId) {
+    console.log(
+      `🛒 shop auto-deploy já executado para janela ${window.windowId}.`,
+    );
+    return null;
+  }
+
+  console.log(
+    `🛒 shop auto-deploy iniciado para restart ${window.restartLabel} (${window.minutesUntilRestart} min). pending=${pendingOrders.length}`,
+  );
+
+  const result = await deployPendingShopOrders(state);
+
+  autoDeployState.lastWindowId = window.windowId;
+  autoDeployState.lastDeployAt = new Date().toISOString();
+
+  console.log(
+    `✅ SHOP_BOT auto-deploy completed: deployed=${result.deployed} batch=${result.batchId || "none"}`,
+  );
+
+  return {
+    ...result,
+    windowId: window.windowId,
+    restartLabel: window.restartLabel,
+  };
+}
+
 export function formatShopQueue(state: AppState) {
   const shopOrders = ensureShopState(state).shopOrders;
 
@@ -433,7 +576,9 @@ export function formatShopQueue(state: AppState) {
     .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))
     .slice(0, 10);
 
-  const monitor = ensureShopState(state).shopResetMonitor;
+  const ensuredState = ensureShopState(state);
+  const monitor = ensuredState.shopResetMonitor;
+  const autoDeploy = ensuredState.shopAutoDeploy;
   const monitorLines = monitor
     ? [
         "",
@@ -445,6 +590,15 @@ export function formatShopQueue(state: AppState) {
       ]
     : [];
 
+  const autoDeployLines = autoDeploy
+    ? [
+        "",
+        "**Auto deploy**",
+        `Last window: \`${autoDeploy.lastWindowId || "none"}\``,
+        `Last deploy: \`${autoDeploy.lastDeployAt || "no"}\``,
+      ]
+    : [];
+
   const lines = [
     "🛒 **Shop Queue**",
     "",
@@ -453,6 +607,7 @@ export function formatShopQueue(state: AppState) {
     `Spawned: **${spawned.length}**`,
     `Failed: **${failed.length}**`,
     ...monitorLines,
+    ...autoDeployLines,
     "",
     "**Catalog**",
     ...SHOP_ITEMS.map((item) => `• \`${item.id}\` → ${item.className}`),

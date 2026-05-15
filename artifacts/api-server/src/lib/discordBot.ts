@@ -15,6 +15,7 @@ import {
   createShopOrder,
   deployPendingShopOrders,
   clearShopSpawnerAndMarkSpawned,
+  autoDeployPendingShopOrdersIfNeeded,
   pollShopResetStatusAndAutoClear,
   formatShopQueue,
   parseShopCoordinates,
@@ -59,6 +60,7 @@ function ensureBotState(state: any) {
   state.onlinePlayers = state.onlinePlayers || {};
   state.onlineSessions = state.onlineSessions || {};
   state.shopOrders = state.shopOrders || [];
+  state.shopAutoDeploy = state.shopAutoDeploy || null;
   state.files = state.files || {};
   state.recentEventIds = state.recentEventIds || [];
   state.killFeedEvents = state.killFeedEvents || [];
@@ -2445,12 +2447,20 @@ export async function startDiscordBot() {
 
         try {
           const state = await getState();
-          const result = await pollShopResetStatusAndAutoClear(state);
 
-          if (result) {
+          const deployResult = await autoDeployPendingShopOrdersIfNeeded(state);
+          if (deployResult) {
             await saveState(state);
             console.log(
-              `✅ SHOP_BOT auto-clear completed: cleared=${result.cleared} cancelled=${result.cancelled}`,
+              `✅ SHOP_BOT auto-deploy completed: deployed=${deployResult.deployed} batch=${deployResult.batchId || "none"}`,
+            );
+          }
+
+          const clearResult = await pollShopResetStatusAndAutoClear(state);
+          if (clearResult) {
+            await saveState(state);
+            console.log(
+              `✅ SHOP_BOT auto-clear completed: cleared=${clearResult.cleared} cancelled=${clearResult.cancelled}`,
             );
           }
         } catch (err) {
