@@ -407,6 +407,16 @@ export async function pollShopResetStatusAndAutoClear(state: AppState) {
 // Backwards-compatible name used by earlier patches/discordBot imports.
 export const autoClearShopBlocksIfNeeded = pollShopResetStatusAndAutoClear;
 
+// Backwards-compatible name still imported by parser.ts from the previous ADM-based patch.
+// The current implementation no longer trusts ADM content as the primary reset signal;
+// it polls Nitrado server status instead. The second argument is intentionally ignored.
+export async function tryAutoClearShopAfterAdmReset(
+  state: AppState,
+  _admFiles?: unknown,
+) {
+  return pollShopResetStatusAndAutoClear(state);
+}
+
 export function formatShopQueue(state: AppState) {
   const shopOrders = ensureShopState(state).shopOrders;
 
