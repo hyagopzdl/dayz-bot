@@ -19,6 +19,7 @@ import {
   upsertDayzItemImage,
 } from "../lib/dayzItemDatabase";
 import { getStateAsync, saveStateAsync, type AppState } from "../lib/state";
+import { getSystemsSnapshot } from "../lib/systems";
 
 const router = Router();
 
@@ -133,6 +134,8 @@ function buildDashboardPayload(state: DashboardState) {
   const failed = shopOrders.filter((order: any) => order.status === "failed");
 
   return {
+    systems: getSystemsSnapshot(),
+
     shop: {
       state: runtime.state,
       canAcceptPurchase: runtime.canAcceptPurchase,
@@ -676,7 +679,7 @@ router.get("/catalog", (req, res) => {
 
 router.get("/health", (req, res) => {
   if (!requireAdmin(req, res)) return;
-  res.json({ ok: true, uptime: process.uptime(), timestamp: Date.now() });
+  res.json({ ok: true, uptime: process.uptime(), timestamp: Date.now(), systems: getSystemsSnapshot() });
 });
 
 async function handleDashboard(req: any, res: any) {

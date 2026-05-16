@@ -6,6 +6,7 @@ import {
   injectShopEventsXml,
   removeShopBotBlock,
 } from "./shopXml";
+import { systems } from "./systems";
 
 import {
   findShopItem,
@@ -404,6 +405,16 @@ async function backupShopXmlFiles(_eventsXml: string, _eventSpawnsXml: string) {
 export async function deployPendingShopOrders(state: AppState) {
   ensureShopState(state);
 
+  if (!systems.shop) {
+    console.log("⏸️ shop deploy ignorado: SYSTEM_SHOP=false");
+    return null;
+  }
+
+  if (!systems.nitrado) {
+    console.log("⏸️ shop deploy ignorado: SYSTEM_NITRADO=false");
+    return null;
+  }
+
   if (getIncludedShopOrders(state).length) {
     return {
       deployed: 0,
@@ -494,6 +505,26 @@ export async function clearShopSpawnerAndMarkSpawned(
   state: AppState,
   options?: { cancelPending?: boolean; includedOnly?: boolean },
 ) {
+
+  ensureShopState(state);
+
+  if (!systems.shop) {
+    console.log("⏸️ shop clear ignorado: SYSTEM_SHOP=false");
+    return {
+      cleared: 0,
+      cancelled: 0,
+      path: `${SHOP_EVENTS_PATH} + ${SHOP_EVENT_SPAWNS_PATH}`,
+    };
+  }
+
+  if (!systems.nitrado) {
+    console.log("⏸️ shop clear ignorado: SYSTEM_NITRADO=false");
+    return {
+      cleared: 0,
+      cancelled: 0,
+      path: `${SHOP_EVENTS_PATH} + ${SHOP_EVENT_SPAWNS_PATH}`,
+    };
+  }
   const cancelPending = options?.cancelPending ?? true;
   const includedOrders = options?.includedOnly
     ? getIncludedBatchOrders(state)
@@ -530,6 +561,14 @@ export async function clearShopSpawnerAndMarkSpawned(
 
 export async function pollShopResetStatusAndAutoClear(state: AppState) {
   ensureShopState(state);
+
+  if (!systems.shop) {
+    return null;
+  }
+
+  if (!systems.nitrado) {
+    return null;
+  }
 
   if (!boolEnv("SHOP_AUTO_CLEAR_ENABLED", true)) {
     return null;
@@ -759,6 +798,14 @@ function getActiveAutoDeployWindow(
 export async function autoDeployPendingShopOrdersIfNeeded(state: AppState) {
   ensureShopState(state);
 
+  if (!systems.shop) {
+    return null;
+  }
+
+  if (!systems.nitrado) {
+    return null;
+  }
+
   const pendingOrders = getPendingShopOrders(state);
   if (!pendingOrders.length) return null;
 
@@ -786,6 +833,10 @@ export async function autoDeployPendingShopOrdersIfNeeded(state: AppState) {
   );
 
   const result = await deployPendingShopOrders(state);
+
+  if (!result) {
+    return null;
+  }
 
   autoDeployState.lastWindowId = window.windowId;
   autoDeployState.lastDeployAt = new Date().toISOString();

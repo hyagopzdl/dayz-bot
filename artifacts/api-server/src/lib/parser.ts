@@ -6,6 +6,7 @@ import {
   getShopResetMonitorPersistenceKey,
   tryAutoClearShopAfterAdmReset,
 } from "./shop";
+import { isLiveRuntimeEnabled } from "./systems";
 
 const KILL_REGEX = /Player "([^"]+)".*?killed by Player "([^"]+)"/;
 const CONNECT_REGEX = /Player "([^"]+)".*?is connected/;
@@ -700,6 +701,16 @@ function processFile(filePath: string, state: AppState): boolean {
 }
 
 export async function getLeaderboard() {
+  if (!isLiveRuntimeEnabled()) {
+    console.log("⏸️ parser LIVE/NITRADO ignorado: sistema desabilitado");
+    const state = ensureStateDefaults(await getStateAsync());
+    return {
+      global: state.players,
+      daily: state.dailyPlayers,
+      weekly: state.weeklyPlayers,
+    };
+  }
+
   console.log("🔥 PARSER FOI CHAMADO");
 
   const state = ensureStateDefaults(await getStateAsync());

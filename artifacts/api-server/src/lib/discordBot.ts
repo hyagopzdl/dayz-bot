@@ -36,6 +36,7 @@ import {
   saveShopLocation,
   getShopResetMonitorPersistenceKey,
 } from "./shop";
+import { systems, isShopRuntimeEnabled, isLiveRuntimeEnabled } from "./systems";
 
 const client = new Client({
   intents: [GatewayIntentBits.Guilds],
@@ -429,6 +430,8 @@ export async function registerKillStreakFromKill(options: {
   weapon?: string;
   timestamp?: number;
 }) {
+  if (!systems.live) return;
+
   const killer = options.killer?.trim();
   const victim = options.victim?.trim();
 
@@ -470,64 +473,62 @@ export async function registerKillStreakFromKill(options: {
 }
 
 export async function startDiscordBot() {
+  if (!systems.discord) {
+    console.log("⏸️ Discord bot não iniciado: SYSTEM_DISCORD=false");
+    return;
+  }
+
   if (!process.env.DISCORD_TOKEN) {
     console.error("❌ DISCORD_TOKEN não definido");
     return;
   }
 
   client.once("ready", async () => {
-    console.log("🤖 Discord conectado");
+    console.log("🤖 Discord conectado", {
+      discord: systems.discord,
+      live: systems.live,
+      shop: systems.shop,
+      nitrado: systems.nitrado,
+      mode: systems.mode,
+    });
 
-    const globalChannel = (await client.channels.fetch(
-      process.env.DISCORD_CHANNEL_ID!,
-    )) as TextBasedChannel;
-
-    const dailyChannel = (await client.channels.fetch(
-      process.env.DISCORD_CHANNEL_DAILY_ID!,
-    )) as TextBasedChannel;
-
-    const weeklyChannel = (await client.channels.fetch(
-      process.env.DISCORD_CHANNEL_WEEKLY_ID!,
-    )) as TextBasedChannel;
-
-    const onlineListChannel = process.env.DISCORD_ONLINE_LIST_CHANNEL_ID
-      ? ((await client.channels.fetch(
-          process.env.DISCORD_ONLINE_LIST_CHANNEL_ID,
-        )) as TextBasedChannel)
+    const globalChannel = systems.live && process.env.DISCORD_CHANNEL_ID
+      ? ((await client.channels.fetch(process.env.DISCORD_CHANNEL_ID)) as TextBasedChannel)
       : null;
 
-    const killfeedChannel = process.env.DISCORD_KILLFEED_CHANNEL_ID
-      ? ((await client.channels.fetch(
-          process.env.DISCORD_KILLFEED_CHANNEL_ID,
-        )) as TextBasedChannel)
+    const dailyChannel = systems.live && process.env.DISCORD_CHANNEL_DAILY_ID
+      ? ((await client.channels.fetch(process.env.DISCORD_CHANNEL_DAILY_ID)) as TextBasedChannel)
       : null;
 
-    const killStreakChannel = process.env.DISCORD_KILLSTREAK_CHANNEL_ID
-      ? ((await client.channels.fetch(
-          process.env.DISCORD_KILLSTREAK_CHANNEL_ID,
-        )) as TextBasedChannel)
+    const weeklyChannel = systems.live && process.env.DISCORD_CHANNEL_WEEKLY_ID
+      ? ((await client.channels.fetch(process.env.DISCORD_CHANNEL_WEEKLY_ID)) as TextBasedChannel)
       : null;
 
-    const longShotChannel = process.env.DISCORD_LONGSHOT_CHANNEL_ID
-      ? ((await client.channels.fetch(
-          process.env.DISCORD_LONGSHOT_CHANNEL_ID,
-        )) as TextBasedChannel)
+    const onlineListChannel = systems.live && process.env.DISCORD_ONLINE_LIST_CHANNEL_ID
+      ? ((await client.channels.fetch(process.env.DISCORD_ONLINE_LIST_CHANNEL_ID)) as TextBasedChannel)
       : null;
 
-    const longShotRankingChannel = process.env
-      .DISCORD_LONGSHOT_RANKING_CHANNEL_ID
-      ? ((await client.channels.fetch(
-          process.env.DISCORD_LONGSHOT_RANKING_CHANNEL_ID,
-        )) as TextBasedChannel)
+    const killfeedChannel = systems.live && process.env.DISCORD_KILLFEED_CHANNEL_ID
+      ? ((await client.channels.fetch(process.env.DISCORD_KILLFEED_CHANNEL_ID)) as TextBasedChannel)
       : null;
 
-    const streakRankingChannel = process.env.DISCORD_STREAK_RANKING_CHANNEL_ID
-      ? ((await client.channels.fetch(
-          process.env.DISCORD_STREAK_RANKING_CHANNEL_ID,
-        )) as TextBasedChannel)
+    const killStreakChannel = systems.live && process.env.DISCORD_KILLSTREAK_CHANNEL_ID
+      ? ((await client.channels.fetch(process.env.DISCORD_KILLSTREAK_CHANNEL_ID)) as TextBasedChannel)
       : null;
 
-    const CATEGORY_ID = process.env.DISCORD_ONLINE_CHANNEL_ID!;
+    const longShotChannel = systems.live && process.env.DISCORD_LONGSHOT_CHANNEL_ID
+      ? ((await client.channels.fetch(process.env.DISCORD_LONGSHOT_CHANNEL_ID)) as TextBasedChannel)
+      : null;
+
+    const longShotRankingChannel = systems.live && process.env.DISCORD_LONGSHOT_RANKING_CHANNEL_ID
+      ? ((await client.channels.fetch(process.env.DISCORD_LONGSHOT_RANKING_CHANNEL_ID)) as TextBasedChannel)
+      : null;
+
+    const streakRankingChannel = systems.live && process.env.DISCORD_STREAK_RANKING_CHANNEL_ID
+      ? ((await client.channels.fetch(process.env.DISCORD_STREAK_RANKING_CHANNEL_ID)) as TextBasedChannel)
+      : null;
+
+    const CATEGORY_ID = systems.live ? process.env.DISCORD_ONLINE_CHANNEL_ID : undefined;
 
     function padEnd(str: string, size: number) {
       return str.length >= size ? str : str + " ".repeat(size - str.length);
@@ -1348,6 +1349,10 @@ export async function startDiscordBot() {
 
     async function updateOnlineCount(state: any) {
       try {
+        if (!CATEGORY_ID) {
+          return;
+        }
+
         const count = getOnlinePlayerNames(state).length;
         const category = await client.channels.fetch(CATEGORY_ID);
 
@@ -1580,6 +1585,11 @@ export async function startDiscordBot() {
     }
 
     async function updateLeaderboard() {
+      if (!systems.live) {
+        console.log("⏸️ updateLeaderboard ignorado: SYSTEM_LIVE=false");
+        return;
+      }
+
       if (discordLoopRunning) return;
 
       discordLoopRunning = true;
@@ -2544,6 +2554,11 @@ export async function startDiscordBot() {
           const result = await deployPendingShopOrders(state);
           await saveState(state);
 
+          if (!result) {
+            await interaction.editReply("⚠️ Shop deploy is disabled by runtime system flags.");
+            return;
+          }
+
           await interaction.editReply(
             result.deployed > 0
               ? `✅ Injected **${result.deployed}** shop order(s) into XML files. Restart the server after this upload.`
@@ -2910,9 +2925,15 @@ export async function startDiscordBot() {
     });
 
     await registerCommands();
-    await updateLeaderboard();
 
-    setInterval(
+    if (systems.live) {
+      await updateLeaderboard();
+    } else {
+      console.log("⏸️ LIVE desabilitado: rankings/feeds/online não serão sincronizados no Discord.");
+    }
+
+    if (isShopRuntimeEnabled()) {
+      setInterval(
       async () => {
         if (shopStatusLoopRunning) return;
 
@@ -2924,8 +2945,10 @@ export async function startDiscordBot() {
           const deployResult = await autoDeployPendingShopOrdersIfNeeded(state);
           if (deployResult) {
             await saveState(state);
+            const deployed = "deployed" in deployResult ? deployResult.deployed : 0;
+            const batchId = "batchId" in deployResult ? deployResult.batchId : undefined;
             console.log(
-              `✅ SHOP_BOT auto-deploy completed: deployed=${deployResult.deployed} batch=${deployResult.batchId || "none"}`,
+              `✅ SHOP_BOT auto-deploy completed: deployed=${deployed} batch=${batchId || "none"}`,
             );
           }
 
@@ -2950,14 +2973,19 @@ export async function startDiscordBot() {
         }
       },
       30 * 1000,
-    );
+      );
+    } else {
+      console.log("⏸️ monitor da shop no Discord desabilitado: SYSTEM_SHOP=false");
+    }
 
-    setInterval(
-      async () => {
-        await updateLeaderboard();
-      },
-      5 * 60 * 1000,
-    );
+    if (systems.live) {
+      setInterval(
+        async () => {
+          await updateLeaderboard();
+        },
+        5 * 60 * 1000,
+      );
+    }
   });
 
   try {
