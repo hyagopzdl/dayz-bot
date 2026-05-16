@@ -14,7 +14,7 @@ const DEFAULT_DAYZ_ITEMS: DayzItemDefinition[] = [
 function dayzItemsPath() {
   return path.resolve(
     process.cwd(),
-    process.env.DAYZ_ITEMS_FILE || "data/dayz-items.json",
+    process.env.DAYZ_ITEMS_FILE || "dayz-items.json",
   );
 }
 

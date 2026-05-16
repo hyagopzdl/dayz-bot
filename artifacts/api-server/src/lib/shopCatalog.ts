@@ -66,7 +66,7 @@ const DEFAULT_CATALOG: ShopCatalog = {
 function catalogPath() {
   return path.resolve(
     process.cwd(),
-    process.env.SHOP_CATALOG_FILE || "data/shop-catalog.json",
+    process.env.SHOP_CATALOG_FILE || "shop-catalog.json",
   );
 }
 
