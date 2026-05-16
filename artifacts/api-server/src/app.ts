@@ -2,6 +2,7 @@ import express, { type Express } from "express";
 import cors from "cors";
 import pinoHttp from "pino-http";
 import router from "./routes";
+import adminRoutes from "./routes/admin";
 import { logger } from "./lib/logger";
 
 const app: Express = express();
@@ -30,12 +31,16 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// 🔥 ROTA PRINCIPAL (ANTES DO ROUTER)
-app.get("/", (req, res) => {
+// 🔥 ROTA PRINCIPAL
+app.get("/", (_req, res) => {
   console.log("🔥 ROTA / OK");
   res.send("ok");
 });
 
+// 🔐 ADMIN PANEL
+app.use("/admin", adminRoutes);
+
+// API
 app.use("/api", router);
 
 export default app;
