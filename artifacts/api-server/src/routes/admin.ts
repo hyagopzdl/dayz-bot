@@ -24,8 +24,9 @@ const router = Router();
 type DashboardState = AppState & Record<string, any>;
 
 function readCookie(headers: any, name: string) {
-  const cookieHeader = typeof headers?.cookie === "string" ? headers.cookie : "";
-  const cookies = cookieHeader.split(";").map((part) => part.trim());
+  const cookieHeader =
+    typeof headers?.cookie === "string" ? headers.cookie : "";
+  const cookies = cookieHeader.split(";").map((part: string) => part.trim());
 
   for (const cookie of cookies) {
     const separatorIndex = cookie.indexOf("=");
@@ -41,7 +42,8 @@ function readCookie(headers: any, name: string) {
 }
 
 function getAdminTokenFromRequest(req: { query: any; headers: any }) {
-  const queryToken = typeof req.query?.token === "string" ? req.query.token : "";
+  const queryToken =
+    typeof req.query?.token === "string" ? req.query.token : "";
   const headerToken =
     typeof req.headers?.["x-admin-token"] === "string"
       ? req.headers["x-admin-token"]
@@ -50,10 +52,12 @@ function getAdminTokenFromRequest(req: { query: any; headers: any }) {
 
   // Fallback para requests do painel quando algum fetch/form perde a querystring.
   // Só funciona se a tela principal tiver sido aberta com ?token=...
-  const referer = typeof req.headers?.referer === "string" ? req.headers.referer : "";
+  const referer =
+    typeof req.headers?.referer === "string" ? req.headers.referer : "";
   let refererToken = "";
   try {
-    if (referer) refererToken = new URL(referer).searchParams.get("token") || "";
+    if (referer)
+      refererToken = new URL(referer).searchParams.get("token") || "";
   } catch {
     refererToken = "";
   }
@@ -118,8 +122,12 @@ function buildDashboardPayload(state: DashboardState) {
   const categories = getShopCategories(true);
   const catalogItems = getShopItems(true);
 
-  const pending = shopOrders.filter((order: any) => order.status === "pending_spawn");
-  const included = shopOrders.filter((order: any) => order.status === "included_in_restart");
+  const pending = shopOrders.filter(
+    (order: any) => order.status === "pending_spawn",
+  );
+  const included = shopOrders.filter(
+    (order: any) => order.status === "included_in_restart",
+  );
   const spawned = shopOrders.filter((order: any) => order.status === "spawned");
   const failed = shopOrders.filter((order: any) => order.status === "failed");
 
@@ -148,8 +156,10 @@ function buildDashboardPayload(state: DashboardState) {
     catalog: {
       categories: categories.length,
       items: catalogItems.length,
-      enabledItems: catalogItems.filter((item: any) => item.enabled !== false).length,
-      disabledItems: catalogItems.filter((item: any) => item.enabled === false).length,
+      enabledItems: catalogItems.filter((item: any) => item.enabled !== false)
+        .length,
+      disabledItems: catalogItems.filter((item: any) => item.enabled === false)
+        .length,
       dayzItems: getDayzItems().length,
     },
 
@@ -175,8 +185,15 @@ function buildDashboardPayload(state: DashboardState) {
   };
 }
 
-function renderBaseHtml(options: { title: string; token: string; body: string; script?: string }) {
-  const tokenQuery = options.token ? `?token=${encodeURIComponent(options.token)}` : "";
+function renderBaseHtml(options: {
+  title: string;
+  token: string;
+  body: string;
+  script?: string;
+}) {
+  const tokenQuery = options.token
+    ? `?token=${encodeURIComponent(options.token)}`
+    : "";
 
   return `<!doctype html>
 <html lang="pt-BR">
@@ -424,14 +441,16 @@ function renderCatalogHtml(token: string) {
 router.get("/", (req, res) => {
   if (!requireAdmin(req, res)) return;
   const token = getAdminTokenFromRequest(req);
-  if (token) res.cookie("shop_admin_token", token, { path: "/admin", sameSite: "lax" });
+  if (token)
+    res.cookie("shop_admin_token", token, { path: "/admin", sameSite: "lax" });
   res.type("html").send(renderDashboardHtml(token));
 });
 
 router.get("/catalog", (req, res) => {
   if (!requireAdmin(req, res)) return;
   const token = getAdminTokenFromRequest(req);
-  if (token) res.cookie("shop_admin_token", token, { path: "/admin", sameSite: "lax" });
+  if (token)
+    res.cookie("shop_admin_token", token, { path: "/admin", sameSite: "lax" });
   res.type("html").send(renderCatalogHtml(token));
 });
 
@@ -459,7 +478,10 @@ router.get("/api/dayz-items", (req, res) => {
 
   const query = typeof req.query.q === "string" ? req.query.q : "";
   const limit = Math.min(Number(req.query.limit || 50), 100);
-  res.json({ items: searchDayzItems(query, limit), total: getDayzItems().length });
+  res.json({
+    items: searchDayzItems(query, limit),
+    total: getDayzItems().length,
+  });
 });
 
 router.get("/api/catalog", (req, res) => {
@@ -483,11 +505,17 @@ router.post("/api/catalog", (req, res) => {
       id: normalizeShopCatalogId(req.body?.id || req.body?.name || className),
       className: dayzItem.className,
       popularName: dayzItem.popularName,
-      name: String(req.body?.name || dayzItem.popularName || dayzItem.className).trim(),
+      name: String(
+        req.body?.name || dayzItem.popularName || dayzItem.className,
+      ).trim(),
       category: normalizeShopCatalogId(req.body?.category || "misc"),
       price: Number(req.body?.price || 0),
-      imageUrl: req.body?.imageUrl ? String(req.body.imageUrl).trim() : undefined,
-      description: req.body?.description ? String(req.body.description).trim() : undefined,
+      imageUrl: req.body?.imageUrl
+        ? String(req.body.imageUrl).trim()
+        : undefined,
+      description: req.body?.description
+        ? String(req.body.description).trim()
+        : undefined,
       enabled: req.body?.enabled !== false,
     };
 
