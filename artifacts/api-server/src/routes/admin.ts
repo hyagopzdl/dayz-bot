@@ -348,7 +348,7 @@ function renderDashboardHtml(token: string) {
       setText("nitradoHint", payload.meta.lastResetCheckedAt ? "Última checagem: " + payload.meta.lastResetCheckedAt : "Sem checagem"); setText("online", payload.online);
       setText("catalog", payload.catalog.items + " itens"); setText("catalogHint", payload.catalog.categories + " categorias / " + payload.catalog.enabledItems + " ativos / " + payload.catalog.dayzItems + " classNames");
     }
-    loadDashboard(); setInterval(loadDashboard, 30000);
+    loadDashboard(); setInterval(loadDashboard, 120000);
     </script>`,
   });
 }

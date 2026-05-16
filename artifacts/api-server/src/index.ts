@@ -3,6 +3,35 @@ import { logger } from "./lib/logger";
 import { downloadADM } from "./lib/nitradoDownloader";
 import { getLeaderboard } from "./lib/parser";
 import { startDiscordBot } from "./lib/discordBot";
+import { flushStateAsync } from "./lib/state";
+
+function installStateFlushHooks() {
+  let flushing = false;
+
+  async function flushAndExit(signal: string) {
+    if (flushing) return;
+    flushing = true;
+
+    try {
+      console.log(`💾 flush final do state antes de ${signal}`);
+      await flushStateAsync();
+    } catch (err) {
+      console.error("❌ erro no flush final do state:", err);
+    } finally {
+      process.exit(0);
+    }
+  }
+
+  process.once("SIGTERM", () => {
+    flushAndExit("SIGTERM");
+  });
+
+  process.once("SIGINT", () => {
+    flushAndExit("SIGINT");
+  });
+}
+
+installStateFlushHooks();
 
 let started = false;
 let cycleRunning = false;

@@ -1,11 +1,25 @@
 import fs from "fs";
 import path from "path";
+import crypto from "crypto";
 import postgres from "postgres";
 import type { ShopCatalog } from "./shopCatalog";
 import type { DayzItemDefinition } from "./dayzItemDatabase";
 
 const FILE = path.resolve(process.cwd(), "state.json");
 const STATE_ID = "main";
+
+const STATE_SAVE_DEBOUNCE_MS = Number(process.env.STATE_SAVE_DEBOUNCE_MS || 15000);
+const STATE_FORCE_SAVE_AFTER_MS = Number(process.env.STATE_FORCE_SAVE_AFTER_MS || 60000);
+const STATE_DEBUG = process.env.STATE_DEBUG === "true";
+
+let cachedState: AppState | null = null;
+let lastPersistedHash = "";
+let lastPersistedJson = "";
+let pendingPersistJson = "";
+let pendingPersistHash = "";
+let pendingPersistStartedAt = 0;
+let saveTimer: NodeJS.Timeout | null = null;
+let flushPromise: Promise<void> | null = null;
 
 const sql = process.env.DATABASE_URL
   ? postgres(process.env.DATABASE_URL, {
@@ -322,6 +336,97 @@ function migrateLegacyState(data: any): AppState {
   return state;
 }
 
+
+function serializeState(data: AppState): string {
+  return JSON.stringify(data);
+}
+
+function hashState(serialized: string): string {
+  return crypto.createHash("sha1").update(serialized).digest("hex");
+}
+
+function logStateDebug(message: string, meta?: Record<string, unknown>) {
+  if (!STATE_DEBUG) return;
+  if (meta) {
+    console.log(message, meta);
+  } else {
+    console.log(message);
+  }
+}
+
+async function persistStateToNeon(serialized: string, hash: string) {
+  if (!sql) return;
+
+  if (hash === lastPersistedHash) {
+    logStateDebug("⏭️ STATE NEON ignorado: sem alterações");
+    return;
+  }
+
+  const parsed = JSON.parse(serialized) as AppState;
+
+  await sql`
+    INSERT INTO bot_state (id, data, updated_at)
+    VALUES (${STATE_ID}, ${sql.json(parsed)}, NOW())
+    ON CONFLICT (id)
+    DO UPDATE SET
+      data = EXCLUDED.data,
+      updated_at = NOW()
+  `;
+
+  lastPersistedHash = hash;
+  lastPersistedJson = serialized;
+  logStateDebug("💾 STATE SALVO NO NEON", { bytes: Buffer.byteLength(serialized, "utf8") });
+}
+
+async function flushPendingState() {
+  if (!pendingPersistJson || !pendingPersistHash) return;
+  if (flushPromise) return flushPromise;
+
+  const serialized = pendingPersistJson;
+  const hash = pendingPersistHash;
+  pendingPersistJson = "";
+  pendingPersistHash = "";
+  pendingPersistStartedAt = 0;
+
+  if (saveTimer) {
+    clearTimeout(saveTimer);
+    saveTimer = null;
+  }
+
+  flushPromise = persistStateToNeon(serialized, hash)
+    .catch((err) => {
+      console.error("❌ erro salvando state no Neon:", err);
+      pendingPersistJson = serialized;
+      pendingPersistHash = hash;
+      pendingPersistStartedAt = pendingPersistStartedAt || Date.now();
+      scheduleNeonPersist();
+    })
+    .finally(() => {
+      flushPromise = null;
+    });
+
+  return flushPromise;
+}
+
+function scheduleNeonPersist() {
+  if (!sql || !pendingPersistJson) return;
+  if (saveTimer) return;
+
+  const elapsed = pendingPersistStartedAt ? Date.now() - pendingPersistStartedAt : 0;
+  const delay = elapsed >= STATE_FORCE_SAVE_AFTER_MS ? 0 : STATE_SAVE_DEBOUNCE_MS;
+
+  saveTimer = setTimeout(() => {
+    saveTimer = null;
+    flushPendingState().catch((err) => {
+      console.error("❌ erro no flush agendado do state:", err);
+    });
+  }, delay);
+}
+
+export async function flushStateAsync() {
+  await flushPendingState();
+}
+
 function readLocalState(): AppState {
   if (!fs.existsSync(FILE)) {
     return defaultState();
@@ -341,8 +446,15 @@ function writeLocalState(data: AppState) {
 }
 
 export async function getStateAsync(): Promise<AppState> {
+  if (cachedState) {
+    return cachedState;
+  }
+
   if (!sql) {
-    return readLocalState();
+    cachedState = readLocalState();
+    lastPersistedJson = serializeState(cachedState);
+    lastPersistedHash = hashState(lastPersistedJson);
+    return cachedState;
   }
 
   try {
@@ -355,6 +467,8 @@ export async function getStateAsync(): Promise<AppState> {
 
     if (!rows.length) {
       const state = defaultState();
+      const serialized = serializeState(state);
+      const hash = hashState(serialized);
 
       await sql`
         INSERT INTO bot_state (id, data, updated_at)
@@ -362,13 +476,22 @@ export async function getStateAsync(): Promise<AppState> {
         ON CONFLICT (id) DO NOTHING
       `;
 
-      return state;
+      cachedState = state;
+      lastPersistedJson = serialized;
+      lastPersistedHash = hash;
+      return cachedState;
     }
 
-    return migrateLegacyState(rows[0].data || {});
+    cachedState = migrateLegacyState(rows[0].data || {});
+    lastPersistedJson = serializeState(cachedState);
+    lastPersistedHash = hashState(lastPersistedJson);
+    return cachedState;
   } catch (err) {
     console.error("❌ erro lendo state no Neon, usando state.json local:", err);
-    return readLocalState();
+    cachedState = readLocalState();
+    lastPersistedJson = serializeState(cachedState);
+    lastPersistedHash = hashState(lastPersistedJson);
+    return cachedState;
   }
 }
 
@@ -386,12 +509,12 @@ export async function saveStateAsync(data: AppState) {
     shopResetMonitor: data.shopResetMonitor || null,
     shopAutoDeploy: data.shopAutoDeploy || null,
     files: data.files || {},
-    recentEventIds: (data.recentEventIds || []).slice(-10000),
-    killFeedEvents: (data.killFeedEvents || []).slice(-99),
-    longShotEvents: (data.longShotEvents || []).slice(-150),
+    recentEventIds: (data.recentEventIds || []).slice(-3000),
+    killFeedEvents: (data.killFeedEvents || []).slice(-60),
+    longShotEvents: (data.longShotEvents || []).slice(-100),
 
     currentKillStreaks: data.currentKillStreaks || {},
-    killStreakEvents: (data.killStreakEvents || []).slice(-150),
+    killStreakEvents: (data.killStreakEvents || []).slice(-100),
 
     discordMessageIds: data.discordMessageIds || {},
     activeMatch: data.activeMatch || null,
@@ -407,34 +530,44 @@ export async function saveStateAsync(data: AppState) {
     lastFileName: data.lastFileName,
   };
 
-  writeLocalState(safeData);
+  cachedState = safeData;
 
-  if (!sql) {
-    console.log("💾 STATE SALVO EM:", FILE);
+  const serialized = serializeState(safeData);
+  const hash = hashState(serialized);
+
+  if (hash === lastPersistedHash || serialized === lastPersistedJson) {
+    logStateDebug("⏭️ STATE ignorado: sem alterações");
     return;
   }
 
-  try {
-    await sql`
-      INSERT INTO bot_state (id, data, updated_at)
-      VALUES (${STATE_ID}, ${sql.json(safeData)}, NOW())
-      ON CONFLICT (id)
-      DO UPDATE SET
-        data = EXCLUDED.data,
-        updated_at = NOW()
-    `;
+  writeLocalState(safeData);
 
-    console.log("💾 STATE SALVO NO NEON");
-  } catch (err) {
-    console.error("❌ erro salvando state no Neon:", err);
+  if (!sql) {
+    lastPersistedJson = serialized;
+    lastPersistedHash = hash;
+    logStateDebug("💾 STATE SALVO EM", { file: FILE });
+    return;
   }
+
+  pendingPersistJson = serialized;
+  pendingPersistHash = hash;
+  pendingPersistStartedAt = pendingPersistStartedAt || Date.now();
+  scheduleNeonPersist();
 }
 
 export function getState(): AppState {
-  return readLocalState();
+  if (cachedState) return cachedState;
+  cachedState = readLocalState();
+  lastPersistedJson = serializeState(cachedState);
+  lastPersistedHash = hashState(lastPersistedJson);
+  return cachedState;
 }
 
 export function saveState(data: AppState) {
+  cachedState = data;
+  const serialized = serializeState(data);
+  lastPersistedJson = serialized;
+  lastPersistedHash = hashState(serialized);
   writeLocalState(data);
-  console.log("💾 STATE SALVO LOCALMENTE:", FILE);
+  logStateDebug("💾 STATE SALVO LOCALMENTE", { file: FILE });
 }
