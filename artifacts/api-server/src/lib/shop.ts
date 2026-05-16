@@ -136,6 +136,25 @@ function isPastIsoDate(value: string | null | undefined, now: Date) {
   return Number.isFinite(time) && now.getTime() >= time;
 }
 
+export function getShopResetMonitorPersistenceKey(state: Pick<AppState, "shopResetMonitor">) {
+  const monitor = state.shopResetMonitor || null;
+  if (!monitor) return "null";
+
+  // Do not include noisy heartbeat fields like lastCheckedAt/lastStatus.
+  // Persist only fields that affect recovery or the order state machine.
+  return JSON.stringify({
+    batchId: monitor.batchId,
+    deployedAt: monitor.deployedAt,
+    sawOfflineAt: monitor.sawOfflineAt,
+    sawOnlineAt: monitor.sawOnlineAt,
+    clearedAt: monitor.clearedAt,
+    expectedRestartAt: monitor.expectedRestartAt,
+    restartFallbackAt: monitor.restartFallbackAt,
+    autoConfirmedAt: monitor.autoConfirmedAt,
+    confirmationReason: monitor.confirmationReason,
+  });
+}
+
 export type ShopRuntimeStatus = {
   state: "READY" | "FROZEN" | "WAITING_RESET" | "WAITING_CLEAR";
   canAcceptPurchase: boolean;

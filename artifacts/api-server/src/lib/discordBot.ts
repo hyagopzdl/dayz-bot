@@ -34,6 +34,7 @@ import {
   findSavedShopLocation,
   markShopLocationUsed,
   saveShopLocation,
+  getShopResetMonitorPersistenceKey,
 } from "./shop";
 
 const client = new Client({
@@ -2928,10 +2929,10 @@ export async function startDiscordBot() {
             );
           }
 
-          const resetMonitorBefore = JSON.stringify(state.shopResetMonitor || null);
+          const resetMonitorBefore = getShopResetMonitorPersistenceKey(state);
           const clearResult = await pollShopResetStatusAndAutoClear(state);
           const resetMonitorChanged =
-            JSON.stringify(state.shopResetMonitor || null) !== resetMonitorBefore;
+            getShopResetMonitorPersistenceKey(state) !== resetMonitorBefore;
 
           if (clearResult || resetMonitorChanged) {
             await saveState(state);

@@ -2,7 +2,10 @@ import fs from "fs";
 import crypto from "crypto";
 import { getStateAsync, saveStateAsync, AppState, PlayerStats } from "./state";
 import { MANIFEST_FILE } from "./nitradoDownloader";
-import { tryAutoClearShopAfterAdmReset } from "./shop";
+import {
+  getShopResetMonitorPersistenceKey,
+  tryAutoClearShopAfterAdmReset,
+} from "./shop";
 
 const KILL_REGEX = /Player "([^"]+)".*?killed by Player "([^"]+)"/;
 const CONNECT_REGEX = /Player "([^"]+)".*?is connected/;
@@ -489,21 +492,26 @@ function cleanupOnlinePlayers(state: AppState) {
   // Session stats are stored separately and cleared on disconnect.
 }
 
-function applyResets(state: AppState) {
+function applyResets(state: AppState): boolean {
   const { date: today } = getBrazilDateParts();
   const currentWeek = getBrazilWeekKey();
+  let changed = false;
 
   if (state.lastDailyReset !== today) {
     console.log("🌅 reset diário");
     state.dailyPlayers = {};
     state.lastDailyReset = today;
+    changed = true;
   }
 
   if (state.lastWeeklyReset !== currentWeek) {
     console.log("📆 reset semanal");
     state.weeklyPlayers = {};
     state.lastWeeklyReset = currentWeek;
+    changed = true;
   }
+
+  return changed;
 }
 
 function readManifestFiles(): string[] {
@@ -520,9 +528,9 @@ function readManifestFiles(): string[] {
   }
 }
 
-function processFile(filePath: string, state: AppState) {
+function processFile(filePath: string, state: AppState): boolean {
   ensureOnlineState(state);
-  if (!fs.existsSync(filePath)) return;
+  if (!fs.existsSync(filePath)) return false;
 
   const fileName = filePath;
   const log = fs.readFileSync(filePath, "utf-8");
@@ -542,11 +550,14 @@ function processFile(filePath: string, state: AppState) {
     lastProcessedAt: new Date().toISOString(),
   };
 
-  let start = cursor.lastLine || 0;
+  const previousLastLine = cursor.lastLine || 0;
+  let start = previousLastLine;
+  let cursorChanged = false;
 
   if (start > lines.length) {
     console.log(`♻️ arquivo rotacionado/encurtado: ${fileName}`);
     start = 0;
+    cursorChanged = true;
   }
 
   let currentDayOffset = 0;
@@ -656,12 +667,18 @@ function processFile(filePath: string, state: AppState) {
     }
   }
 
-  cursor.lastLine = lines.length;
-  cursor.lastProcessedAt = new Date().toISOString();
+  const foundNewEvents = newKills > 0 || newConnections > 0 || newDisconnections > 0;
+  const advancedCursor = lines.length !== previousLastLine;
+  const shouldPersistCursor = cursorChanged || advancedCursor || foundNewEvents;
 
-  state.files[fileName] = cursor;
-  state.lastLine = lines.length;
-  state.lastFileName = fileName;
+  if (shouldPersistCursor) {
+    cursor.lastLine = lines.length;
+    cursor.lastProcessedAt = new Date().toISOString();
+
+    state.files[fileName] = cursor;
+    state.lastLine = lines.length;
+    state.lastFileName = fileName;
+  }
 
   state.recentEventIds = state.recentEventIds.slice(-10000);
   state.killFeedEvents = state.killFeedEvents.slice(-99);
@@ -678,6 +695,8 @@ function processFile(filePath: string, state: AppState) {
   );
   console.log(`🟢 conexões: ${newConnections}`);
   console.log(`🔴 desconexões: ${newDisconnections}`);
+
+  return shouldPersistCursor;
 }
 
 export async function getLeaderboard() {
@@ -685,7 +704,7 @@ export async function getLeaderboard() {
 
   const state = ensureStateDefaults(await getStateAsync());
 
-  applyResets(state);
+  let changed = applyResets(state);
 
   const files = readManifestFiles();
 
@@ -693,7 +712,11 @@ export async function getLeaderboard() {
     console.log("⚠️ nenhum arquivo ADM local encontrado");
 
     cleanupOnlinePlayers(state);
-    await saveStateAsync(state);
+    if (changed) {
+      await saveStateAsync(state);
+    } else {
+      console.log("⏭️ parser sem arquivos e sem mudanças; state não salvo");
+    }
 
     return {
       global: state.players,
@@ -704,14 +727,17 @@ export async function getLeaderboard() {
 
   for (const file of files) {
     try {
-      processFile(file, state);
+      changed = processFile(file, state) || changed;
     } catch (err) {
       console.error(`❌ erro processando ${file}:`, err);
     }
   }
 
   try {
-    await tryAutoClearShopAfterAdmReset(state, files);
+    const monitorBefore = getShopResetMonitorPersistenceKey(state);
+    const clearResult = await tryAutoClearShopAfterAdmReset(state, files);
+    const monitorChanged = getShopResetMonitorPersistenceKey(state) !== monitorBefore;
+    changed = Boolean(clearResult) || monitorChanged || changed;
   } catch (err) {
     console.error("❌ erro no auto-clear da shop após reset ADM:", err);
   }
@@ -720,7 +746,11 @@ export async function getLeaderboard() {
 
   console.log(`🟢 online agora: ${Object.keys(state.onlinePlayers).length}`);
 
-  await saveStateAsync(state);
+  if (changed) {
+    await saveStateAsync(state);
+  } else {
+    console.log("⏭️ parser sem mudanças; state não salvo");
+  }
 
   return {
     global: state.players,
