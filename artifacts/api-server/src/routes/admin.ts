@@ -23,14 +23,42 @@ const router = Router();
 
 type DashboardState = AppState & Record<string, any>;
 
+function readCookie(headers: any, name: string) {
+  const cookieHeader = typeof headers?.cookie === "string" ? headers.cookie : "";
+  const cookies = cookieHeader.split(";").map((part) => part.trim());
+
+  for (const cookie of cookies) {
+    const separatorIndex = cookie.indexOf("=");
+    if (separatorIndex < 0) continue;
+
+    const key = cookie.slice(0, separatorIndex);
+    const value = cookie.slice(separatorIndex + 1);
+
+    if (key === name) return decodeURIComponent(value);
+  }
+
+  return "";
+}
+
 function getAdminTokenFromRequest(req: { query: any; headers: any }) {
   const queryToken = typeof req.query?.token === "string" ? req.query.token : "";
   const headerToken =
     typeof req.headers?.["x-admin-token"] === "string"
       ? req.headers["x-admin-token"]
       : "";
+  const cookieToken = readCookie(req.headers, "shop_admin_token");
 
-  return queryToken || headerToken;
+  // Fallback para requests do painel quando algum fetch/form perde a querystring.
+  // Só funciona se a tela principal tiver sido aberta com ?token=...
+  const referer = typeof req.headers?.referer === "string" ? req.headers.referer : "";
+  let refererToken = "";
+  try {
+    if (referer) refererToken = new URL(referer).searchParams.get("token") || "";
+  } catch {
+    refererToken = "";
+  }
+
+  return queryToken || headerToken || cookieToken || refererToken;
 }
 
 function requireAdmin(req: any, res: any) {
@@ -244,9 +272,17 @@ function renderBaseHtml(options: { title: string; token: string; body: string; s
   </main>
   <script>
     const adminToken = ${JSON.stringify(options.token || "")};
+    if (adminToken) {
+      document.cookie = "shop_admin_token=" + encodeURIComponent(adminToken) + "; path=/admin; SameSite=Lax";
+    }
     function apiUrl(path) {
       const separator = path.includes("?") ? "&" : "?";
       return adminToken ? path + separator + "token=" + encodeURIComponent(adminToken) : path;
+    }
+    function apiFetch(path, options) {
+      const headers = Object.assign({}, (options && options.headers) || {});
+      if (adminToken) headers["x-admin-token"] = adminToken;
+      return fetch(apiUrl(path), Object.assign({}, options || {}, { headers, credentials: "same-origin" }));
     }
   </script>
   ${options.script || ""}
@@ -283,7 +319,7 @@ function renderDashboardHtml(token: string) {
       label.textContent = payload.shop.state + (payload.shop.canAcceptPurchase ? " / Checkout aberto" : " / Checkout fechado");
     }
     async function loadDashboard() {
-      const response = await fetch(apiUrl("/admin/api/dashboard"));
+      const response = await apiFetch("/admin/api/dashboard");
       if (!response.ok) { alert(await response.text()); return; }
       const payload = await response.json();
       setStatus(payload); setText("shopReason", payload.shop.reason || "-"); setText("nextRestart", payload.shop.nextRestart || "unknown");
@@ -350,7 +386,7 @@ function renderCatalogHtml(token: string) {
       const q = search.value.trim();
       setSelected(null);
       if (!q) { results.style.display = "none"; return; }
-      const response = await fetch(apiUrl("/admin/api/dayz-items?q=" + encodeURIComponent(q)));
+      const response = await apiFetch("/admin/api/dayz-items?q=" + encodeURIComponent(q));
       if (!response.ok) { alert(await response.text()); return; }
       const payload = await response.json();
       results.innerHTML = payload.items.map(item => '<div class="option"><b>'+escapeHtml(item.popularName || item.className)+'</b><small>'+escapeHtml(item.className)+'</small></div>').join("");
@@ -359,7 +395,7 @@ function renderCatalogHtml(token: string) {
     }
     let searchTimer = null; search.addEventListener("input", () => { clearTimeout(searchTimer); searchTimer = setTimeout(searchDayz, 180); });
     async function loadCatalog() {
-      const response = await fetch(apiUrl("/admin/api/catalog"));
+      const response = await apiFetch("/admin/api/catalog");
       if (!response.ok) { alert(await response.text()); return; }
       const payload = await response.json(); const rows = document.getElementById("catalogRows");
       rows.innerHTML = payload.items.map(item => '<tr><td>'+(item.imageUrl ? '<img class="item-img" src="'+escapeHtml(item.imageUrl)+'" />' : '<div class="item-img"></div>')+'</td><td><b>'+escapeHtml(item.name)+'</b><div class="hint">ID: '+escapeHtml(item.id)+'</div></td><td><b>'+escapeHtml(item.popularName || item.className)+'</b><div class="hint"><code>'+escapeHtml(item.className)+'</code></div></td><td>'+escapeHtml(item.category || "misc")+'</td><td>'+Number(item.price || 0).toLocaleString('pt-BR')+'</td><td><span class="pill '+(item.enabled === false ? 'bad' : 'ok')+'">'+(item.enabled === false ? 'Inativo' : 'Ativo')+'</span></td><td><div class="actions"><button class="secondary" onclick=\'editItem("'+escapeHtml(item.id)+'")\'>Editar</button><button class="secondary" onclick=\'toggleItem("'+escapeHtml(item.id)+'")\'>Alternar</button><button class="danger" onclick=\'deleteItem("'+escapeHtml(item.id)+'")\'>Excluir</button></div></td></tr>').join(""); window.catalogItems = payload.items;
@@ -370,13 +406,13 @@ function renderCatalogHtml(token: string) {
       field("dayzSearch").value = (item.popularName || item.className) + " — " + item.className;
       field("name").value = item.name || ""; field("category").value = item.category || "misc"; field("price").value = item.price || 0; field("imageUrl").value = item.imageUrl || ""; field("description").value = item.description || ""; field("enabled").value = item.enabled === false ? "false" : "true"; window.scrollTo({ top: 0, behavior: 'smooth' });
     }
-    async function toggleItem(id) { const response = await fetch(apiUrl("/admin/api/catalog/" + encodeURIComponent(id) + "/toggle"), { method: "POST" }); if (!response.ok) { alert(await response.text()); return; } await loadCatalog(); }
-    async function deleteItem(id) { if (!confirm("Excluir item do catálogo?")) return; const response = await fetch(apiUrl("/admin/api/catalog/" + encodeURIComponent(id)), { method: "DELETE" }); if (!response.ok) { alert(await response.text()); return; } await loadCatalog(); }
+    async function toggleItem(id) { const response = await apiFetch("/admin/api/catalog/" + encodeURIComponent(id) + "/toggle", { method: "POST" }); if (!response.ok) { alert(await response.text()); return; } await loadCatalog(); }
+    async function deleteItem(id) { if (!confirm("Excluir item do catálogo?")) return; const response = await apiFetch("/admin/api/catalog/" + encodeURIComponent(id), { method: "DELETE" }); if (!response.ok) { alert(await response.text()); return; } await loadCatalog(); }
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
       if (!field("className").value) { alert("Selecione um item válido da lista de autocomplete."); return; }
       const body = { id: field("editingId").value || undefined, className: field("className").value, name: field("name").value, category: field("category").value, price: Number(field("price").value || 0), imageUrl: field("imageUrl").value, description: field("description").value, enabled: field("enabled").value !== "false" };
-      const response = await fetch(apiUrl("/admin/api/catalog"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      const response = await apiFetch("/admin/api/catalog", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       if (!response.ok) { alert(await response.text()); return; }
       resetForm(); await loadCatalog();
     });
@@ -387,12 +423,16 @@ function renderCatalogHtml(token: string) {
 
 router.get("/", (req, res) => {
   if (!requireAdmin(req, res)) return;
-  res.type("html").send(renderDashboardHtml(getAdminTokenFromRequest(req)));
+  const token = getAdminTokenFromRequest(req);
+  if (token) res.cookie("shop_admin_token", token, { path: "/admin", sameSite: "lax" });
+  res.type("html").send(renderDashboardHtml(token));
 });
 
 router.get("/catalog", (req, res) => {
   if (!requireAdmin(req, res)) return;
-  res.type("html").send(renderCatalogHtml(getAdminTokenFromRequest(req)));
+  const token = getAdminTokenFromRequest(req);
+  if (token) res.cookie("shop_admin_token", token, { path: "/admin", sameSite: "lax" });
+  res.type("html").send(renderCatalogHtml(token));
 });
 
 router.get("/health", (req, res) => {

@@ -70,6 +70,19 @@ function catalogPath() {
   );
 }
 
+function catalogPathCandidates() {
+  const configured = catalogPath();
+  return Array.from(
+    new Set([
+      configured,
+      path.resolve(process.cwd(), "shop-catalog.json"),
+      path.resolve(process.cwd(), "data/shop-catalog.json"),
+      path.resolve(process.cwd(), "artifacts/api-server/shop-catalog.json"),
+      path.resolve(process.cwd(), "artifacts/api-server/data/shop-catalog.json"),
+    ]),
+  );
+}
+
 export function normalizeShopCatalogId(value: string) {
   return String(value || "")
     .trim()
@@ -86,11 +99,14 @@ function labelFromId(value: string) {
     .join(" ") || "Misc";
 }
 
-function safeCatalog(input: Partial<ShopCatalog> | null | undefined): ShopCatalog {
-  const categories = Array.isArray(input?.categories)
-    ? input!.categories
+function safeCatalog(input: Partial<ShopCatalog> | ShopItem[] | null | undefined): ShopCatalog {
+  const legacyItems = Array.isArray(input) ? input : null;
+  const source = legacyItems ? null : (input as Partial<ShopCatalog> | null | undefined);
+
+  const categories = Array.isArray(source?.categories)
+    ? source!.categories
     : DEFAULT_CATALOG.categories;
-  const items = Array.isArray(input?.items) ? input!.items : DEFAULT_CATALOG.items;
+  const items = legacyItems || (Array.isArray(source?.items) ? source!.items : DEFAULT_CATALOG.items);
 
   const safeItems = items
     .filter((item) => item?.id && item?.className && item?.name)
@@ -131,26 +147,31 @@ function safeCatalog(input: Partial<ShopCatalog> | null | undefined): ShopCatalo
   }
 
   return {
-    version: Number(input?.version || DEFAULT_CATALOG.version),
+    version: Number((!Array.isArray(input) && input?.version) || DEFAULT_CATALOG.version),
     categories: safeCategories,
     items: safeItems,
   };
 }
 
 export function getShopCatalog(): ShopCatalog {
-  const file = catalogPath();
+  let lastError: unknown = null;
 
-  if (!fs.existsSync(file)) {
-    return safeCatalog(DEFAULT_CATALOG);
+  for (const file of catalogPathCandidates()) {
+    if (!fs.existsSync(file)) continue;
+
+    try {
+      const parsed = JSON.parse(fs.readFileSync(file, "utf8"));
+      return safeCatalog(parsed);
+    } catch (err) {
+      lastError = err;
+    }
   }
 
-  try {
-    const parsed = JSON.parse(fs.readFileSync(file, "utf8"));
-    return safeCatalog(parsed);
-  } catch (err) {
-    console.error("❌ failed to read shop catalog, falling back to defaults:", err);
-    return safeCatalog(DEFAULT_CATALOG);
+  if (lastError) {
+    console.error("❌ failed to read shop catalog, falling back to defaults:", lastError);
   }
+
+  return safeCatalog(DEFAULT_CATALOG);
 }
 
 export function saveShopCatalog(catalog: ShopCatalog) {

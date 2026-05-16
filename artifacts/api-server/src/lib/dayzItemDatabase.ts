@@ -14,7 +14,20 @@ const DEFAULT_DAYZ_ITEMS: DayzItemDefinition[] = [
 function dayzItemsPath() {
   return path.resolve(
     process.cwd(),
-    process.env.DAYZ_ITEMS_FILE || "dayz-items.json",
+    process.env.DAYZ_ITEMS_FILE || "data/dayz-items.json",
+  );
+}
+
+function dayzItemsPathCandidates() {
+  const configured = dayzItemsPath();
+  return Array.from(
+    new Set([
+      configured,
+      path.resolve(process.cwd(), "data/dayz-items.json"),
+      path.resolve(process.cwd(), "dayz-items.json"),
+      path.resolve(process.cwd(), "artifacts/api-server/data/dayz-items.json"),
+      path.resolve(process.cwd(), "artifacts/api-server/dayz-items.json"),
+    ]),
   );
 }
 
@@ -47,16 +60,20 @@ function safeDayzItems(input: unknown): DayzItemDefinition[] {
 }
 
 export function getDayzItems(): DayzItemDefinition[] {
-  const file = dayzItemsPath();
+  let lastError: unknown = null;
 
-  if (!fs.existsSync(file)) return DEFAULT_DAYZ_ITEMS;
+  for (const file of dayzItemsPathCandidates()) {
+    if (!fs.existsSync(file)) continue;
 
-  try {
-    return safeDayzItems(JSON.parse(fs.readFileSync(file, "utf8")));
-  } catch (err) {
-    console.error("❌ failed to read DayZ item database:", err);
-    return DEFAULT_DAYZ_ITEMS;
+    try {
+      return safeDayzItems(JSON.parse(fs.readFileSync(file, "utf8")));
+    } catch (err) {
+      lastError = err;
+    }
   }
+
+  if (lastError) console.error("❌ failed to read DayZ item database:", lastError);
+  return DEFAULT_DAYZ_ITEMS;
 }
 
 export function findDayzItem(className: string) {
