@@ -1,0 +1,7126 @@
+[
+  {
+    "className": "ACOGOptic",
+    "popularName": "ATOG Scope"
+  },
+  {
+    "className": "AK101",
+    "popularName": "KA-101"
+  },
+  {
+    "className": "AK101_Black",
+    "popularName": "KA-101"
+  },
+  {
+    "className": "AK101_Green",
+    "popularName": "KA-101"
+  },
+  {
+    "className": "AK74",
+    "popularName": "KA-74"
+  },
+  {
+    "className": "AK74_Black",
+    "popularName": "KA-74"
+  },
+  {
+    "className": "AK74_Green",
+    "popularName": "KA-74"
+  },
+  {
+    "className": "AK74_Hndgrd",
+    "popularName": "KA Wooden Handguard"
+  },
+  {
+    "className": "AK74_Hndgrd_Black",
+    "popularName": "KA Wooden Handguard"
+  },
+  {
+    "className": "AK74_Hndgrd_Camo",
+    "popularName": "KA Wooden Handguard"
+  },
+  {
+    "className": "AK74_WoodBttstck",
+    "popularName": "KA Wooden Buttstock"
+  },
+  {
+    "className": "AK74_WoodBttstck_Black",
+    "popularName": "KA Wooden Buttstock"
+  },
+  {
+    "className": "AK74_WoodBttstck_Camo",
+    "popularName": "KA Wooden Buttstock"
+  },
+  {
+    "className": "AKM",
+    "popularName": "KA-M"
+  },
+  {
+    "className": "AKM_TESTBED",
+    "popularName": "testing AKM"
+  },
+  {
+    "className": "AKS74U",
+    "popularName": "KAS-74U"
+  },
+  {
+    "className": "AKS74U_Black",
+    "popularName": "KAS-74U"
+  },
+  {
+    "className": "AKS74U_Bttstck",
+    "popularName": "KAS-74U Folding Buttstock"
+  },
+  {
+    "className": "AKS74U_Bttstck_Black",
+    "popularName": "KAS-74U Folding Buttstock"
+  },
+  {
+    "className": "AKS74U_Bttstck_Green",
+    "popularName": "KAS-74U Folding Buttstock"
+  },
+  {
+    "className": "AKS74U_Green",
+    "popularName": "KAS-74U"
+  },
+  {
+    "className": "AK_Bayonet",
+    "popularName": "KA Bayonet"
+  },
+  {
+    "className": "AK_FoldingBttstck",
+    "popularName": "KA Folding Buttstock"
+  },
+  {
+    "className": "AK_FoldingBttstck_Black",
+    "popularName": "KA Folding Buttstock"
+  },
+  {
+    "className": "AK_FoldingBttstck_Green",
+    "popularName": "KA Folding Buttstock"
+  },
+  {
+    "className": "AK_PlasticBttstck",
+    "popularName": "KA Polymer Buttstock"
+  },
+  {
+    "className": "AK_PlasticBttstck_Black",
+    "popularName": "KA Polymer Buttstock"
+  },
+  {
+    "className": "AK_PlasticBttstck_Green",
+    "popularName": "KA Polymer Buttstock"
+  },
+  {
+    "className": "AK_PlasticHndgrd",
+    "popularName": "KA Polymer Handguard"
+  },
+  {
+    "className": "AK_RailHndgrd",
+    "popularName": "KA Rail Handguard"
+  },
+  {
+    "className": "AK_RailHndgrd_Black",
+    "popularName": "KA Rail Handguard"
+  },
+  {
+    "className": "AK_RailHndgrd_Green",
+    "popularName": "KA Rail Handguard"
+  },
+  {
+    "className": "AK_Suppressor",
+    "popularName": "Normalized Suppressor"
+  },
+  {
+    "className": "AK_WoodBttstck",
+    "popularName": "KA Wooden Buttstock"
+  },
+  {
+    "className": "AK_WoodBttstck_Black",
+    "popularName": "KA Wooden Buttstock"
+  },
+  {
+    "className": "AK_WoodBttstck_Camo",
+    "popularName": "KA Wooden Buttstock"
+  },
+  {
+    "className": "AK_WoodHndgrd",
+    "popularName": "KA Wooden Handguard"
+  },
+  {
+    "className": "AK_WoodHndgrd_Black",
+    "popularName": "KA Wooden Handguard"
+  },
+  {
+    "className": "AK_WoodHndgrd_Camo",
+    "popularName": "KA Wooden Handguard"
+  },
+  {
+    "className": "AgaricusMushroom",
+    "popularName": "Field Mushroom"
+  },
+  {
+    "className": "AliceBag_Black",
+    "popularName": "Field Backpack"
+  },
+  {
+    "className": "AliceBag_Camo",
+    "popularName": "Field Backpack"
+  },
+  {
+    "className": "AliceBag_Green",
+    "popularName": "Field Backpack"
+  },
+  {
+    "className": "AmanitaMushroom",
+    "popularName": "Fly Amanita"
+  },
+  {
+    "className": "AmmoBox",
+    "popularName": "Ammo Box"
+  },
+  {
+    "className": "AmmoBox_00buck_10rnd",
+    "popularName": "Boxed 12ga 00 Buckshots"
+  },
+  {
+    "className": "AmmoBox_12gaSlug_10Rnd",
+    "popularName": "Boxed 12ga Rifled Slugs"
+  },
+  {
+    "className": "AmmoBox_22_50Rnd",
+    "popularName": "Boxed .22 LR Rounds"
+  },
+  {
+    "className": "AmmoBox_308WinTracer_20Rnd",
+    "popularName": "Boxed .308 WIN Tracer Rounds"
+  },
+  {
+    "className": "AmmoBox_308Win_20Rnd",
+    "popularName": "Boxed .308 WIN Rounds"
+  },
+  {
+    "className": "AmmoBox_380_35rnd",
+    "popularName": "Boxed .380 ACP Rounds"
+  },
+  {
+    "className": "AmmoBox_45ACP_25rnd",
+    "popularName": "Boxed .45 ACP Rounds"
+  },
+  {
+    "className": "AmmoBox_545x39Tracer_20Rnd",
+    "popularName": "Boxed 5.45x39mm Tracer Rounds"
+  },
+  {
+    "className": "AmmoBox_545x39_20Rnd",
+    "popularName": "Boxed 5.45x39mm Rounds"
+  },
+  {
+    "className": "AmmoBox_556x45Tracer_20Rnd",
+    "popularName": "Boxed 5.56x45mm Tracer Rounds"
+  },
+  {
+    "className": "AmmoBox_556x45_20Rnd",
+    "popularName": "Boxed 5.56x45mm Rounds"
+  },
+  {
+    "className": "AmmoBox_762x39Tracer_20Rnd",
+    "popularName": "Boxed 7.62x39mm Tracer Rounds"
+  },
+  {
+    "className": "AmmoBox_762x39_20Rnd",
+    "popularName": "Boxed 7.62x39mm Rounds"
+  },
+  {
+    "className": "AmmoBox_762x54Tracer_20Rnd",
+    "popularName": "Boxed 7.62x54mmR Tracer Rounds"
+  },
+  {
+    "className": "AmmoBox_762x54_20Rnd",
+    "popularName": "Boxed 7.62x54mmR Rounds"
+  },
+  {
+    "className": "AmmoBox_9x19_25rnd",
+    "popularName": "Boxed 9x19mm Rounds"
+  },
+  {
+    "className": "AmmoBox_9x39AP_20Rnd",
+    "popularName": "Boxed 9x39mm Armor-Piercing Rounds"
+  },
+  {
+    "className": "AmmoBox_9x39_20Rnd",
+    "popularName": "Boxed 9x39mm Rounds"
+  },
+  {
+    "className": "Ammo_12gaPellets",
+    "popularName": "12ga 00 Buckshots"
+  },
+  {
+    "className": "Ammo_12gaSlug",
+    "popularName": "12ga Rifled Slugs"
+  },
+  {
+    "className": "Ammo_22",
+    "popularName": ".22 LR Rounds"
+  },
+  {
+    "className": "Ammo_308Win",
+    "popularName": ".308 WIN Rounds"
+  },
+  {
+    "className": "Ammo_308WinTracer",
+    "popularName": ".308 WIN Tracer Rounds"
+  },
+  {
+    "className": "Ammo_380",
+    "popularName": ".380 ACP Rounds"
+  },
+  {
+    "className": "Ammo_45ACP",
+    "popularName": ".45 ACP Rounds"
+  },
+  {
+    "className": "Ammo_545x39",
+    "popularName": "5.45x39mm Rounds"
+  },
+  {
+    "className": "Ammo_545x39Tracer",
+    "popularName": "5.45x39mm Tracer Rounds"
+  },
+  {
+    "className": "Ammo_556x45",
+    "popularName": "5.56x45mm Rounds"
+  },
+  {
+    "className": "Ammo_556x45Tracer",
+    "popularName": "5.56x45mm Tracer Rounds"
+  },
+  {
+    "className": "Ammo_762x39",
+    "popularName": "7.62x39mm Rounds"
+  },
+  {
+    "className": "Ammo_762x39Tracer",
+    "popularName": "7.62x39mm Tracer Rounds"
+  },
+  {
+    "className": "Ammo_762x54",
+    "popularName": "7.62x54mmR Rounds"
+  },
+  {
+    "className": "Ammo_762x54Tracer",
+    "popularName": "7.62x54mmR Tracer Rounds"
+  },
+  {
+    "className": "Ammo_9x19",
+    "popularName": "9x19mm Rounds"
+  },
+  {
+    "className": "Ammo_9x39",
+    "popularName": "9x39mm Rounds"
+  },
+  {
+    "className": "Ammo_9x39AP",
+    "popularName": "9x39mm Armor-Piercing Rounds"
+  },
+  {
+    "className": "Animal_BosTaurusF_Brown",
+    "popularName": "Cow"
+  },
+  {
+    "className": "Animal_BosTaurusF_Spotted",
+    "popularName": "Cow"
+  },
+  {
+    "className": "Animal_BosTaurusF_White",
+    "popularName": "Cow"
+  },
+  {
+    "className": "Animal_BosTaurus_Brown",
+    "popularName": "Bull"
+  },
+  {
+    "className": "Animal_BosTaurus_Spotted",
+    "popularName": "Bull"
+  },
+  {
+    "className": "Animal_BosTaurus_White",
+    "popularName": "Bull"
+  },
+  {
+    "className": "Animal_CanisLupus_Grey",
+    "popularName": "Wolf"
+  },
+  {
+    "className": "Animal_CanisLupus_White",
+    "popularName": "Wolf"
+  },
+  {
+    "className": "Animal_CapraHircusF",
+    "popularName": "Doe"
+  },
+  {
+    "className": "Animal_CapraHircus_Black",
+    "popularName": "Buck"
+  },
+  {
+    "className": "Animal_CapraHircus_Brown",
+    "popularName": "Buck"
+  },
+  {
+    "className": "Animal_CapraHircus_White",
+    "popularName": "Buck"
+  },
+  {
+    "className": "Animal_CapreolusCapreolus",
+    "popularName": "Roebuck"
+  },
+  {
+    "className": "Animal_CapreolusCapreolusF",
+    "popularName": "Doe"
+  },
+  {
+    "className": "Animal_CervusElaphus",
+    "popularName": "Stag"
+  },
+  {
+    "className": "Animal_CervusElaphusF",
+    "popularName": "Hind"
+  },
+  {
+    "className": "Animal_GallusGallusDomesticus",
+    "popularName": "Rooster"
+  },
+  {
+    "className": "Animal_GallusGallusDomesticusF_Brown",
+    "popularName": "Hen"
+  },
+  {
+    "className": "Animal_GallusGallusDomesticusF_Spotted",
+    "popularName": "Hen"
+  },
+  {
+    "className": "Animal_GallusGallusDomesticusF_White",
+    "popularName": "Hen"
+  },
+  {
+    "className": "Animal_OvisAries",
+    "popularName": "Ram"
+  },
+  {
+    "className": "Animal_OvisAriesF",
+    "popularName": "Ewe"
+  },
+  {
+    "className": "Animal_SusDomesticus",
+    "popularName": "Pig"
+  },
+  {
+    "className": "Animal_SusScrofa",
+    "popularName": "Wild Boar"
+  },
+  {
+    "className": "Animal_UrsusArctos",
+    "popularName": "Brown Bear"
+  },
+  {
+    "className": "AntiPestsSpray",
+    "popularName": "Insecticide Spray"
+  },
+  {
+    "className": "Apple",
+    "popularName": "Apple"
+  },
+  {
+    "className": "Armband_Black",
+    "popularName": "Armband"
+  },
+  {
+    "className": "Armband_Blue",
+    "popularName": "Armband"
+  },
+  {
+    "className": "Armband_Green",
+    "popularName": "Armband"
+  },
+  {
+    "className": "Armband_Orange",
+    "popularName": "Armband"
+  },
+  {
+    "className": "Armband_Pink",
+    "popularName": "Armband"
+  },
+  {
+    "className": "Armband_Red",
+    "popularName": "Armband"
+  },
+  {
+    "className": "Armband_White",
+    "popularName": "Armband"
+  },
+  {
+    "className": "Armband_Yellow",
+    "popularName": "Armband"
+  },
+  {
+    "className": "AssaultBag_Black",
+    "popularName": "Assault Backpack"
+  },
+  {
+    "className": "AssaultBag_Green",
+    "popularName": "Assault Backpack"
+  },
+  {
+    "className": "AssaultBag_Ttsko",
+    "popularName": "Assault Backpack"
+  },
+  {
+    "className": "AthleticShoes_Black",
+    "popularName": "Athletic Shoes"
+  },
+  {
+    "className": "AthleticShoes_Blue",
+    "popularName": "Athletic Shoes"
+  },
+  {
+    "className": "AthleticShoes_Brown",
+    "popularName": "Athletic Shoes"
+  },
+  {
+    "className": "AthleticShoes_Green",
+    "popularName": "Athletic Shoes"
+  },
+  {
+    "className": "AthleticShoes_Grey",
+    "popularName": "Athletic Shoes"
+  },
+  {
+    "className": "AuriculariaMushroom",
+    "popularName": "Wood Ear"
+  },
+  {
+    "className": "AviatorGlasses",
+    "popularName": "Aviator Sunglasses"
+  },
+  {
+    "className": "B95",
+    "popularName": "Blaze"
+  },
+  {
+    "className": "B95_Black",
+    "popularName": "Blaze"
+  },
+  {
+    "className": "B95_Green",
+    "popularName": "Blaze"
+  },
+  {
+    "className": "BDUJacket",
+    "popularName": "BDU Jacket"
+  },
+  {
+    "className": "BDUPants",
+    "popularName": "BDU Pants"
+  },
+  {
+    "className": "BUISOptic",
+    "popularName": "Backup Iron Sights"
+  },
+  {
+    "className": "Bait",
+    "popularName": "Fishing Bait"
+  },
+  {
+    "className": "BakedBeansCan",
+    "popularName": "Canned Baked Beans"
+  },
+  {
+    "className": "BakedBeansCan_Opened",
+    "popularName": "Canned Baked Beans"
+  },
+  {
+    "className": "Balaclava3Holes_Beige",
+    "popularName": "Balaclava"
+  },
+  {
+    "className": "Balaclava3Holes_Black",
+    "popularName": "Balaclava"
+  },
+  {
+    "className": "Balaclava3Holes_Blue",
+    "popularName": "Balaclava"
+  },
+  {
+    "className": "Balaclava3Holes_Green",
+    "popularName": "Balaclava"
+  },
+  {
+    "className": "BalaclavaMask_Beige",
+    "popularName": "Ski Mask"
+  },
+  {
+    "className": "BalaclavaMask_Black",
+    "popularName": "Ski Mask"
+  },
+  {
+    "className": "BalaclavaMask_Blackskull",
+    "popularName": "Ski Mask"
+  },
+  {
+    "className": "BalaclavaMask_Blue",
+    "popularName": "Ski Mask"
+  },
+  {
+    "className": "BalaclavaMask_Green",
+    "popularName": "Ski Mask"
+  },
+  {
+    "className": "BalaclavaMask_Pink",
+    "popularName": "Ski Mask"
+  },
+  {
+    "className": "BalaclavaMask_White",
+    "popularName": "Ski Mask"
+  },
+  {
+    "className": "Ballerinas_Blue",
+    "popularName": "Flat Shoes"
+  },
+  {
+    "className": "Ballerinas_Red",
+    "popularName": "Flat Shoes"
+  },
+  {
+    "className": "Ballerinas_White",
+    "popularName": "Flat Shoes"
+  },
+  {
+    "className": "Ballerinas_Yellow",
+    "popularName": "Flat Shoes"
+  },
+  {
+    "className": "BallisticHelmet_Black",
+    "popularName": "Ballistic Helmet"
+  },
+  {
+    "className": "BallisticHelmet_Green",
+    "popularName": "Ballistic Helmet"
+  },
+  {
+    "className": "BallisticHelmet_UN",
+    "popularName": "Ballistic Helmet"
+  },
+  {
+    "className": "BandageDressing",
+    "popularName": "Bandage"
+  },
+  {
+    "className": "BandanaHead_BlackPattern",
+    "popularName": "Bandana"
+  },
+  {
+    "className": "BandanaHead_CamoPattern",
+    "popularName": "Bandana"
+  },
+  {
+    "className": "BandanaHead_Greenpattern",
+    "popularName": "Bandana"
+  },
+  {
+    "className": "BandanaHead_PolkaPattern",
+    "popularName": "Bandana"
+  },
+  {
+    "className": "BandanaHead_RedPattern",
+    "popularName": "Bandana"
+  },
+  {
+    "className": "BandanaMask_BlackPattern",
+    "popularName": "Bandana"
+  },
+  {
+    "className": "BandanaMask_CamoPattern",
+    "popularName": "Bandana"
+  },
+  {
+    "className": "BandanaMask_GreenPattern",
+    "popularName": "Bandana"
+  },
+  {
+    "className": "BandanaMask_PolkaPattern",
+    "popularName": "Bandana"
+  },
+  {
+    "className": "BandanaMask_RedPattern",
+    "popularName": "Bandana"
+  },
+  {
+    "className": "Bandana_BlackPattern",
+    "popularName": "Bandana"
+  },
+  {
+    "className": "Bandana_Blue",
+    "popularName": "Bandana"
+  },
+  {
+    "className": "Bandana_CamoPattern",
+    "popularName": "Bandana"
+  },
+  {
+    "className": "Bandana_Greenpattern",
+    "popularName": "Bandana"
+  },
+  {
+    "className": "Bandana_Pink",
+    "popularName": "Bandana"
+  },
+  {
+    "className": "Bandana_PolkaPattern",
+    "popularName": "Bandana"
+  },
+  {
+    "className": "Bandana_RedPattern",
+    "popularName": "Bandana"
+  },
+  {
+    "className": "Bandana_Yellow",
+    "popularName": "Bandana"
+  },
+  {
+    "className": "BarbedWire",
+    "popularName": "Barbed Wire"
+  },
+  {
+    "className": "BarbedWireLocked",
+    "popularName": "Restrained by Barbed Wire"
+  },
+  {
+    "className": "Bark_Birch",
+    "popularName": "Light Bark"
+  },
+  {
+    "className": "Bark_Oak",
+    "popularName": "Dark Bark"
+  },
+  {
+    "className": "BarrelHoles_Blue",
+    "popularName": "Fire Barrel"
+  },
+  {
+    "className": "BarrelHoles_Green",
+    "popularName": "Fire Barrel"
+  },
+  {
+    "className": "BarrelHoles_Red",
+    "popularName": "Fire Barrel"
+  },
+  {
+    "className": "BarrelHoles_Yellow",
+    "popularName": "Fire Barrel"
+  },
+  {
+    "className": "Barrel_Blue",
+    "popularName": "Barrel"
+  },
+  {
+    "className": "Barrel_Green",
+    "popularName": "Barrel"
+  },
+  {
+    "className": "Barrel_Red",
+    "popularName": "Barrel"
+  },
+  {
+    "className": "Barrel_Yellow",
+    "popularName": "Barrel"
+  },
+  {
+    "className": "Banana",
+    "popularName": "Food-Banana"
+  },
+  {
+    "className": "BaseRadio",
+    "popularName": "Field Transceiver"
+  },
+  {
+    "className": "BaseballBat",
+    "popularName": "Baseball Bat"
+  },
+  {
+    "className": "BaseballCap_Beige",
+    "popularName": "Baseball Cap"
+  },
+  {
+    "className": "BaseballCap_Black",
+    "popularName": "Baseball Cap"
+  },
+  {
+    "className": "BaseballCap_Blue",
+    "popularName": "Baseball Cap"
+  },
+  {
+    "className": "BaseballCap_CMMG_Black",
+    "popularName": "Baseball Cap"
+  },
+  {
+    "className": "BaseballCap_CMMG_Pink",
+    "popularName": "Baseball Cap"
+  },
+  {
+    "className": "BaseballCap_Camo",
+    "popularName": "Baseball Cap"
+  },
+  {
+    "className": "BaseballCap_Olive",
+    "popularName": "Baseball Cap"
+  },
+  {
+    "className": "BaseballCap_Pink",
+    "popularName": "Baseball Cap"
+  },
+  {
+    "className": "BaseballCap_Red",
+    "popularName": "Baseball Cap"
+  },
+  {
+    "className": "Battery9V",
+    "popularName": "9V Battery"
+  },
+  {
+    "className": "BatteryCharger",
+    "popularName": "Battery Charger"
+  },
+  {
+    "className": "BeanieHat_Beige",
+    "popularName": "Beanie"
+  },
+  {
+    "className": "BeanieHat_Black",
+    "popularName": "Beanie"
+  },
+  {
+    "className": "BeanieHat_Blue",
+    "popularName": "Beanie"
+  },
+  {
+    "className": "BeanieHat_Brown",
+    "popularName": "Beanie"
+  },
+  {
+    "className": "BeanieHat_Green",
+    "popularName": "Beanie"
+  },
+  {
+    "className": "BeanieHat_Grey",
+    "popularName": "Beanie"
+  },
+  {
+    "className": "BeanieHat_Pink",
+    "popularName": "Beanie"
+  },
+  {
+    "className": "BeanieHat_Red",
+    "popularName": "Beanie"
+  },
+  {
+    "className": "BearPelt",
+    "popularName": "Bear Pelt"
+  },
+  {
+    "className": "BearSteakMeat",
+    "popularName": "Bear Steak"
+  },
+  {
+    "className": "BearTrap",
+    "popularName": "Bear Trap"
+  },
+  {
+    "className": "Bear_Beige",
+    "popularName": "Teddy Bear"
+  },
+  {
+    "className": "Bear_Dark",
+    "popularName": "Teddy Bear"
+  },
+  {
+    "className": "Bear_Pink",
+    "popularName": "Teddy Bear"
+  },
+  {
+    "className": "Bear_White",
+    "popularName": "Teddy Bear"
+  },
+  {
+    "className": "Binoculars",
+    "popularName": "Binoculars"
+  },
+  {
+    "className": "BloodBagEmpty",
+    "popularName": "Blood Collection Kit"
+  },
+  {
+    "className": "BloodBagFull",
+    "popularName": "Blood Bag"
+  },
+  {
+    "className": "BloodBagIV",
+    "popularName": "IV Blood Bag"
+  },
+  {
+    "className": "BloodSyringe",
+    "popularName": "Syringe"
+  },
+  {
+    "className": "BloodTestKit",
+    "popularName": "Blood Test Kit"
+  },
+  {
+    "className": "Blouse_Blue",
+    "popularName": "Blouse"
+  },
+  {
+    "className": "Blouse_Green",
+    "popularName": "Blouse"
+  },
+  {
+    "className": "Blouse_Violet",
+    "popularName": "Blouse"
+  },
+  {
+    "className": "Blouse_White",
+    "popularName": "Blouse"
+  },
+  {
+    "className": "BoarSteakMeat",
+    "popularName": "Boar Steak"
+  },
+  {
+    "className": "BoletusMushroom",
+    "popularName": "Penny Bun"
+  },
+  {
+    "className": "BomberJacket_Black",
+    "popularName": "Bomber Jacket"
+  },
+  {
+    "className": "BomberJacket_Blue",
+    "popularName": "Bomber Jacket"
+  },
+  {
+    "className": "BomberJacket_Brown",
+    "popularName": "Bomber Jacket"
+  },
+  {
+    "className": "BomberJacket_Grey",
+    "popularName": "Bomber Jacket"
+  },
+  {
+    "className": "BomberJacket_Maroon",
+    "popularName": "Bomber Jacket"
+  },
+  {
+    "className": "BomberJacket_Olive",
+    "popularName": "Bomber Jacket"
+  },
+  {
+    "className": "BomberJacket_SkyBlue",
+    "popularName": "Bomber Jacket"
+  },
+  {
+    "className": "Bone",
+    "popularName": "Bones"
+  },
+  {
+    "className": "BoneBait",
+    "popularName": "Bone Fishing Bait"
+  },
+  {
+    "className": "BoneHook",
+    "popularName": "Bone Fishing Hook"
+  },
+  {
+    "className": "Book20000LieuesSousLesMers",
+    "popularName": "20000 Lieues sous les mers"
+  },
+  {
+    "className": "BookADollsHouse",
+    "popularName": "A Doll's House"
+  },
+  {
+    "className": "BookAPrincessOfMars",
+    "popularName": "A Princess of Mars"
+  },
+  {
+    "className": "BookATexasMatchmaker",
+    "popularName": "A Texas Matchmaker"
+  },
+  {
+    "className": "BookATravelerInTime",
+    "popularName": "A Traveler In Time"
+  },
+  {
+    "className": "BookAVoyageToArcturus",
+    "popularName": "A Voyage to Arcturus"
+  },
+  {
+    "className": "BookAfterLondon",
+    "popularName": "After London"
+  },
+  {
+    "className": "BookAliceInWonderland",
+    "popularName": "Alice's Adventures in Wonderland"
+  },
+  {
+    "className": "BookAndersen",
+    "popularName": "Fairy Tales"
+  },
+  {
+    "className": "BookAndersensFairyTales",
+    "popularName": "Andersen's Fairy Tales"
+  },
+  {
+    "className": "BookAnnaKarenina",
+    "popularName": "Anna Karenina"
+  },
+  {
+    "className": "BookAroundTheWorldIn80Days",
+    "popularName": "Around the World in 80 Days"
+  },
+  {
+    "className": "BookBettyZane",
+    "popularName": "Betty Zane"
+  },
+  {
+    "className": "BookBilaNemoc",
+    "popularName": "Bila nemoc"
+  },
+  {
+    "className": "BookBlackBeauty",
+    "popularName": "Black Beauty"
+  },
+  {
+    "className": "BookBlackJack",
+    "popularName": "Black Jack"
+  },
+  {
+    "className": "BookBuddenbrooks",
+    "popularName": "Buddenbrooks"
+  },
+  {
+    "className": "BookCandide",
+    "popularName": "Candide"
+  },
+  {
+    "className": "BookCassidysRustlerRoundUp",
+    "popularName": "Hopalong Cassidy's Rustler Round-Up"
+  },
+  {
+    "className": "BookCinqSemainesEnBallon",
+    "popularName": "Cinq Semaines En Ballon"
+  },
+  {
+    "className": "BookCrimeAndPunishment",
+    "popularName": "Crime and Punishment"
+  },
+  {
+    "className": "BookDasNibelungenlied",
+    "popularName": "Das Nibelungenlied"
+  },
+  {
+    "className": "BookDeLaTerreLaLune",
+    "popularName": "De la terre a la lune"
+  },
+  {
+    "className": "BookDeLorigineDesEspces",
+    "popularName": "De l'origine des especes"
+  },
+  {
+    "className": "BookDeadSouls",
+    "popularName": "Dead Souls"
+  },
+  {
+    "className": "BookDesertGold",
+    "popularName": "Desert Gold"
+  },
+  {
+    "className": "BookDonQuichotte",
+    "popularName": "L’Ingénieux Hidalgo Don Quichotte de la Manche"
+  },
+  {
+    "className": "BookDonQuixote",
+    "popularName": "Don Quixote"
+  },
+  {
+    "className": "BookDracula",
+    "popularName": "Dracula"
+  },
+  {
+    "className": "BookErewhon",
+    "popularName": "Erewhon"
+  },
+  {
+    "className": "BookFatherGoriot",
+    "popularName": "Father Goriot"
+  },
+  {
+    "className": "BookFaust",
+    "popularName": "Faust"
+  },
+  {
+    "className": "BookFaustErsterTeil",
+    "popularName": "Faust: Der Tragödie erster Teil"
+  },
+  {
+    "className": "BookFlyingURanch",
+    "popularName": "Flying U Ranch"
+  },
+  {
+    "className": "BookFrankenstein",
+    "popularName": "Frankenstein"
+  },
+  {
+    "className": "BookGilgameshEpic",
+    "popularName": "An Old Babylonian Version of the Gilgamesh Epic"
+  },
+  {
+    "className": "BookGreatExpectations",
+    "popularName": "Great Expectations"
+  },
+  {
+    "className": "BookGulliversTravels",
+    "popularName": "Gulliver's Travels"
+  },
+  {
+    "className": "BookGunmansReckoning",
+    "popularName": "Gunman's Reckoning"
+  },
+  {
+    "className": "BookHeartOfDarkness",
+    "popularName": "Heart of Darkness"
+  },
+  {
+    "className": "BookHerland",
+    "popularName": "Herland"
+  },
+  {
+    "className": "BookHinduLiterature",
+    "popularName": "Hindu Literature"
+  },
+  {
+    "className": "BookHunger",
+    "popularName": "Hunger"
+  },
+  {
+    "className": "BookIvanhoe",
+    "popularName": "Ivanhoe"
+  },
+  {
+    "className": "BookJapaneseLiterature",
+    "popularName": "Japanese Literature"
+  },
+  {
+    "className": "BookKidnapped",
+    "popularName": "Kidnapped"
+  },
+  {
+    "className": "BookKingLear",
+    "popularName": "King Lear"
+  },
+  {
+    "className": "BookKingSolomonsMines",
+    "popularName": "King Solomon's Mines"
+  },
+  {
+    "className": "BookLaChartreuseDeParme",
+    "popularName": "La Chartreuse de Parme"
+  },
+  {
+    "className": "BookLaComdieHumaine",
+    "popularName": "La Comédie humaine volume I"
+  },
+  {
+    "className": "BookLaDbcle",
+    "popularName": "La Débâcle"
+  },
+  {
+    "className": "BookLeRougeEtLeNoir",
+    "popularName": "Le Rouge et le noir"
+  },
+  {
+    "className": "BookLenfer1Of2",
+    "popularName": "L'enfer (1 of 2)"
+  },
+  {
+    "className": "BookLesCorneilles",
+    "popularName": "Les Corneilles"
+  },
+  {
+    "className": "BookLesTroisMousquetaires",
+    "popularName": "Les trois mousquetaires"
+  },
+  {
+    "className": "BookLleMystrieuse",
+    "popularName": "L'Île mystérieuse"
+  },
+  {
+    "className": "BookLonesomeLand",
+    "popularName": "Lonesome Land"
+  },
+  {
+    "className": "BookLordJim",
+    "popularName": "Lord Jim"
+  },
+  {
+    "className": "BookMadameBovary",
+    "popularName": "Madame Bovary"
+  },
+  {
+    "className": "BookMiddlemarch",
+    "popularName": "Middlemarch"
+  },
+  {
+    "className": "BookMobyDick",
+    "popularName": "Moby Dick"
+  },
+  {
+    "className": "BookMrchenFrKinder",
+    "popularName": "Märchen für Kinder"
+  },
+  {
+    "className": "BookNaturalSelection",
+    "popularName": "On the Origin of Species by Means of Natural Selection"
+  },
+  {
+    "className": "BookNjalsSaga",
+    "popularName": "Njal's Saga"
+  },
+  {
+    "className": "BookNostromo",
+    "popularName": "Nostromo: A Tale of the Seaboard"
+  },
+  {
+    "className": "BookPhilosophiaeNaturalis",
+    "popularName": "Philosophiae Naturalis Principia Mathematica"
+  },
+  {
+    "className": "BookPrideAndPrejudice",
+    "popularName": "Pride and Prejudice"
+  },
+  {
+    "className": "BookRasselas",
+    "popularName": "Rasselas"
+  },
+  {
+    "className": "BookRobinsonCrusoe",
+    "popularName": "Robinson Crusoe"
+  },
+  {
+    "className": "BookRobinsonCrusoeAdventures",
+    "popularName": "The Further Adventures of Robinson Crusoe"
+  },
+  {
+    "className": "BookRomeoUndJulia",
+    "popularName": "Romeo und Julia"
+  },
+  {
+    "className": "BookRonickyDoone",
+    "popularName": "Ronicky Doone"
+  },
+  {
+    "className": "BookRussian",
+    "popularName": "Russian learning book"
+  },
+  {
+    "className": "BookRussianCheatSheet",
+    "popularName": "Russian cheat sheet"
+  },
+  {
+    "className": "BookScaramouche",
+    "popularName": "Scaramouche"
+  },
+  {
+    "className": "BookSelectedStories",
+    "popularName": "Selected Stories"
+  },
+  {
+    "className": "BookShe",
+    "popularName": "She"
+  },
+  {
+    "className": "BookSkyrider",
+    "popularName": "Skyrider"
+  },
+  {
+    "className": "BookSonsAndLovers",
+    "popularName": "Sons and Lovers"
+  },
+  {
+    "className": "BookSpinifexAndSand",
+    "popularName": "Spinifex and Sand"
+  },
+  {
+    "className": "BookSunsetPass",
+    "popularName": "Sunset Pass"
+  },
+  {
+    "className": "BookTheAeneid",
+    "popularName": "The Aeneid"
+  },
+  {
+    "className": "BookTheArtOfWar",
+    "popularName": "The Art Of War"
+  },
+  {
+    "className": "BookTheBarrier",
+    "popularName": "The Barrier"
+  },
+  {
+    "className": "BookTheBrothersKaramazov",
+    "popularName": "The Brothers Karamazov"
+  },
+  {
+    "className": "BookTheCallOfCthulhu",
+    "popularName": "The Call of Cthulhu"
+  },
+  {
+    "className": "BookTheCallOfTheWild",
+    "popularName": "The Call of the Wild"
+  },
+  {
+    "className": "BookTheCanterburyTales",
+    "popularName": "The Canterbury Tales and Other Poems"
+  },
+  {
+    "className": "BookTheCaveOfGold",
+    "popularName": "The Cave of Gold"
+  },
+  {
+    "className": "BookTheComingRace",
+    "popularName": "The Coming Race"
+  },
+  {
+    "className": "BookTheCosmicComputer",
+    "popularName": "The Cosmic Computer"
+  },
+  {
+    "className": "BookTheCountryOfTheBlind",
+    "popularName": "The Country of the Blind"
+  },
+  {
+    "className": "BookTheDayOfTheBeast",
+    "popularName": "The Day of the Beast"
+  },
+  {
+    "className": "BookTheDecameron",
+    "popularName": "The Decameron of Giovanni Boccaccio"
+  },
+  {
+    "className": "BookTheDesertOfWheat",
+    "popularName": "The Desert of Wheat"
+  },
+  {
+    "className": "BookTheGiacomoLeopardi",
+    "popularName": "The Poems of Giacomo Leopardi"
+  },
+  {
+    "className": "BookTheHeritageOfTheSioux",
+    "popularName": "The Heritage of the Sioux"
+  },
+  {
+    "className": "BookTheHiddenChildren",
+    "popularName": "The Hidden Children"
+  },
+  {
+    "className": "BookTheHoundOfTheBaskervilles",
+    "popularName": "The Hound of the Baskervilles"
+  },
+  {
+    "className": "BookTheHouseOfTheSevenGables",
+    "popularName": "The House of the Seven Gables"
+  },
+  {
+    "className": "BookTheIslandOfDoctorMoreau",
+    "popularName": "The Island of Doctor Moreau"
+  },
+  {
+    "className": "BookTheJungleBook",
+    "popularName": "The Jungle Book"
+  },
+  {
+    "className": "BookTheJustifiedSinner",
+    "popularName": "The Private Memoirs and Confessions of a Justified Sinner"
+  },
+  {
+    "className": "BookTheLastMan",
+    "popularName": "The Last Man"
+  },
+  {
+    "className": "BookTheLastOfThePlainsmen",
+    "popularName": "The Last of the Plainsmen"
+  },
+  {
+    "className": "BookTheLastTrail",
+    "popularName": "The Last Trail"
+  },
+  {
+    "className": "BookTheMahabharataOfKrishna",
+    "popularName": "The Mahabharata of Krishna-Dwaipayana Vyasa Bk. 4"
+  },
+  {
+    "className": "BookTheManWhoWasThursday",
+    "popularName": "The Man Who Was Thursday"
+  },
+  {
+    "className": "BookTheMetamorphosesOfOvid",
+    "popularName": "The Metamorphoses of Ovid"
+  },
+  {
+    "className": "BookTheMetamorphosis",
+    "popularName": "The Metamorphosis"
+  },
+  {
+    "className": "BookTheMonkARomance",
+    "popularName": "The Monk - A romance"
+  },
+  {
+    "className": "BookTheOutlet",
+    "popularName": "The Outlet"
+  },
+  {
+    "className": "BookThePictureOfDorianGray",
+    "popularName": "The Picture Of Dorian Gray"
+  },
+  {
+    "className": "BookThePitAndThePendulum",
+    "popularName": "The Pit and the Pendulum"
+  },
+  {
+    "className": "BookThePossessed",
+    "popularName": "The Possessed"
+  },
+  {
+    "className": "BookThePrisonerOfZenda",
+    "popularName": "The Prisoner of Zenda"
+  },
+  {
+    "className": "BookTheQuirt",
+    "popularName": "The Quirt"
+  },
+  {
+    "className": "BookTheRaven",
+    "popularName": "The Raven"
+  },
+  {
+    "className": "BookTheRedBadgeOfCourage",
+    "popularName": "The Red Badge of Courage"
+  },
+  {
+    "className": "BookTheRightsOfWoman",
+    "popularName": "A Vindication of the Rights of Women"
+  },
+  {
+    "className": "BookTheScarletPimpernel",
+    "popularName": "The Scarlet Pimpernel"
+  },
+  {
+    "className": "BookTheShunnedHouse",
+    "popularName": "The Shunned House"
+  },
+  {
+    "className": "BookTheThreeMusketeers",
+    "popularName": "The Three Musketeers"
+  },
+  {
+    "className": "BookTheThunderBird",
+    "popularName": "The Thunder Bird"
+  },
+  {
+    "className": "BookTheTimeMachine",
+    "popularName": "The Time Machine"
+  },
+  {
+    "className": "BookTheTrial",
+    "popularName": "The Trial"
+  },
+  {
+    "className": "BookTheTurnOfTheScrew",
+    "popularName": "The Turn of the Screw"
+  },
+  {
+    "className": "BookTheVariableMan",
+    "popularName": "The Variable Man"
+  },
+  {
+    "className": "BookTheWarOfTheWorlds",
+    "popularName": "The War of the Worlds"
+  },
+  {
+    "className": "BookThreeMenInABoat",
+    "popularName": "Three Men in a Boat"
+  },
+  {
+    "className": "BookToTheInteriorOfTheEarth",
+    "popularName": "A Journey to the Interior of the Earth"
+  },
+  {
+    "className": "BookTonyAndTheBeetles",
+    "popularName": "Tony and the Beetles"
+  },
+  {
+    "className": "BookTrailin",
+    "popularName": "Trailin'!"
+  },
+  {
+    "className": "BookTranslationsOfShakuntala",
+    "popularName": "Translations of Shakuntala and Other Works"
+  },
+  {
+    "className": "BookTreasureIsland",
+    "popularName": "Treasure Island"
+  },
+  {
+    "className": "BookUlysses",
+    "popularName": "Ulysses"
+  },
+  {
+    "className": "BookUncleSilas",
+    "popularName": "Uncle Silas"
+  },
+  {
+    "className": "BookVerwandlung",
+    "popularName": "Die Verwandlung"
+  },
+  {
+    "className": "BookVoyageAuCentreDeLaTerre",
+    "popularName": "Voyage au Centre de la Terre"
+  },
+  {
+    "className": "BookWarAndPeace",
+    "popularName": "War and Peace"
+  },
+  {
+    "className": "BookWealthOfNations",
+    "popularName": "An Inquiry into the Nature and Causes of the Wealth of Nations"
+  },
+  {
+    "className": "BookWielandOrTheTransformation",
+    "popularName": "Wieland or The Transformation"
+  },
+  {
+    "className": "BookWutheringHeights",
+    "popularName": "Wuthering Heights"
+  },
+  {
+    "className": "BookYouth",
+    "popularName": "Youth"
+  },
+  {
+    "className": "BoonieHat_Black",
+    "popularName": "Boonie Hat"
+  },
+  {
+    "className": "BoonieHat_Blue",
+    "popularName": "Boonie Hat"
+  },
+  {
+    "className": "BoonieHat_DPM",
+    "popularName": "Boonie Hat"
+  },
+  {
+    "className": "BoonieHat_Dubok",
+    "popularName": "Boonie Hat"
+  },
+  {
+    "className": "BoonieHat_Flecktran",
+    "popularName": "Boonie Hat"
+  },
+  {
+    "className": "BoonieHat_NavyBlue",
+    "popularName": "Boonie Hat"
+  },
+  {
+    "className": "BoonieHat_Olive",
+    "popularName": "Boonie Hat"
+  },
+  {
+    "className": "BoonieHat_Orange",
+    "popularName": "Boonie Hat"
+  },
+  {
+    "className": "BoonieHat_Red",
+    "popularName": "Boonie Hat"
+  },
+  {
+    "className": "BoonieHat_Tan",
+    "popularName": "Boonie Hat"
+  },
+  {
+    "className": "BoxCerealCrunchin",
+    "popularName": "Cereals"
+  },
+  {
+    "className": "BrakeFluid",
+    "popularName": "Brake Fluid"
+  },
+  {
+    "className": "BrassKnuckles_Dull",
+    "popularName": "Brass Knuckles"
+  },
+  {
+    "className": "BrassKnuckles_Shiny",
+    "popularName": "Brass Knuckles"
+  },
+  {
+    "className": "Breeches_Beetcheck",
+    "popularName": "Capri Pants"
+  },
+  {
+    "className": "Breeches_Beige",
+    "popularName": "Capri Pants"
+  },
+  {
+    "className": "Breeches_Black",
+    "popularName": "Capri Pants"
+  },
+  {
+    "className": "Breeches_Blackcheck",
+    "popularName": "Capri Pants"
+  },
+  {
+    "className": "Breeches_Blue",
+    "popularName": "Capri Pants"
+  },
+  {
+    "className": "Breeches_Browncheck",
+    "popularName": "Capri Pants"
+  },
+  {
+    "className": "Breeches_Green",
+    "popularName": "Capri Pants"
+  },
+  {
+    "className": "Breeches_Pink",
+    "popularName": "Capri Pants"
+  },
+  {
+    "className": "Breeches_Red",
+    "popularName": "Capri Pants"
+  },
+  {
+    "className": "Breeches_White",
+    "popularName": "Capri Pants"
+  },
+  {
+    "className": "Building",
+    "popularName": "Building"
+  },
+  {
+    "className": "BurlapSack",
+    "popularName": "Burlap Sack"
+  },
+  {
+    "className": "BurlapSackCover",
+    "popularName": "Burlap Sack"
+  },
+  {
+    "className": "BurlapStrip",
+    "popularName": "Burlap Strips"
+  },
+  {
+    "className": "Broom",
+    "popularName": "Broom"
+  },
+  {
+    "className": "CZ527",
+    "popularName": "CR-527"
+  },
+  {
+    "className": "CZ527_Black",
+    "popularName": "CR-527"
+  },
+  {
+    "className": "CZ527_Camo",
+    "popularName": "CR-527"
+  },
+  {
+    "className": "CZ527_Green",
+    "popularName": "CR-527"
+  },
+  {
+    "className": "CZ61",
+    "popularName": "CR-61 Skorpion"
+  },
+  {
+    "className": "CZ75",
+    "popularName": "CR-75"
+  },
+  {
+    "className": "CableReel",
+    "popularName": "Cable Reel"
+  },
+  {
+    "className": "CamoNet",
+    "popularName": "Camo Net"
+  },
+  {
+    "className": "CanOpener",
+    "popularName": "Can Opener"
+  },
+  {
+    "className": "CaninaBerry",
+    "popularName": "Rose Hips"
+  },
+  {
+    "className": "CanisterGasoline",
+    "popularName": "Jerrycan"
+  },
+  {
+    "className": "Canteen",
+    "popularName": "Canteen"
+  },
+  {
+    "className": "CanvasPantsMidi_Beige",
+    "popularName": "Crop Hiking Pants"
+  },
+  {
+    "className": "CanvasPantsMidi_Blue",
+    "popularName": "Crop Hiking Pants"
+  },
+  {
+    "className": "CanvasPantsMidi_Grey",
+    "popularName": "Crop Hiking Pants"
+  },
+  {
+    "className": "CanvasPantsMidi_Red",
+    "popularName": "Crop Hiking Pants"
+  },
+  {
+    "className": "CanvasPantsMidi_Violet",
+    "popularName": "Crop Hiking Pants"
+  },
+  {
+    "className": "CanvasPants_Beige",
+    "popularName": "Hiking Pants"
+  },
+  {
+    "className": "CanvasPants_Blue",
+    "popularName": "Hiking Pants"
+  },
+  {
+    "className": "CanvasPants_Grey",
+    "popularName": "Hiking Pants"
+  },
+  {
+    "className": "CanvasPants_Red",
+    "popularName": "Hiking Pants"
+  },
+  {
+    "className": "CanvasPants_Violet",
+    "popularName": "Hiking Pants"
+  },
+  {
+    "className": "CarBattery",
+    "popularName": "Car Battery"
+  },
+  {
+    "className": "CarRadiator",
+    "popularName": "Car Radiator"
+  },
+  {
+    "className": "CarTent",
+    "popularName": "Car Tent"
+  },
+  {
+    "className": "CarTentPlacing",
+    "popularName": "Car Tent"
+  },
+  {
+    "className": "CargoPants_Beige",
+    "popularName": "Cargo Pants"
+  },
+  {
+    "className": "CargoPants_Black",
+    "popularName": "Cargo Pants"
+  },
+  {
+    "className": "CargoPants_Blue",
+    "popularName": "Cargo Pants"
+  },
+  {
+    "className": "CargoPants_Green",
+    "popularName": "Cargo Pants"
+  },
+  {
+    "className": "CargoPants_Grey",
+    "popularName": "Cargo Pants"
+  },
+  {
+    "className": "Carp",
+    "popularName": "Carp"
+  },
+  {
+    "className": "CarpFilletMeat",
+    "popularName": "Carp Fillet"
+  },
+  {
+    "className": "CattleProd",
+    "popularName": "Cattle Prod"
+  },
+  {
+    "className": "CharcoalTablets",
+    "popularName": "Charcoal Tablets"
+  },
+  {
+    "className": "Chemlight_Blue",
+    "popularName": "Glow Stick"
+  },
+  {
+    "className": "Chemlight_Green",
+    "popularName": "Glow Stick"
+  },
+  {
+    "className": "Chemlight_Red",
+    "popularName": "Glow Stick"
+  },
+  {
+    "className": "Chemlight_White",
+    "popularName": "Glow Stick"
+  },
+  {
+    "className": "Chemlight_Yellow",
+    "popularName": "Glow Stick"
+  },
+  {
+    "className": "ChernarusMap",
+    "popularName": "Tourist Map"
+  },
+  {
+    "className": "ChernarusMap_Open",
+    "popularName": "Tourist Map"
+  },
+  {
+    "className": "ChernarusSportShirt",
+    "popularName": "Sports Shirt"
+  },
+  {
+    "className": "ChestHolster",
+    "popularName": "Chest Holster"
+  },
+  {
+    "className": "ChickenBreastMeat",
+    "popularName": "Chicken Steak"
+  },
+  {
+    "className": "ChildBag_Blue",
+    "popularName": "School Backpack"
+  },
+  {
+    "className": "ChildBag_Green",
+    "popularName": "School Backpack"
+  },
+  {
+    "className": "ChildBag_Red",
+    "popularName": "School Backpack"
+  },
+  {
+    "className": "CivSedanDoors_BackLeft",
+    "popularName": "Olga 24 Rear Left Door"
+  },
+  {
+    "className": "CivSedanDoors_BackLeft_Black",
+    "popularName": "Olga 24 Rear Left Door"
+  },
+  {
+    "className": "CivSedanDoors_BackLeft_BlackRust",
+    "popularName": "Olga 24 Rear Left Door"
+  },
+  {
+    "className": "CivSedanDoors_BackLeft_WhiteRust",
+    "popularName": "Olga 24 Rear Left Door"
+  },
+  {
+    "className": "CivSedanDoors_BackLeft_Wine",
+    "popularName": "Olga 24 Rear Left Door"
+  },
+  {
+    "className": "CivSedanDoors_BackLeft_WineRust",
+    "popularName": "Olga 24 Rear Left Door"
+  },
+  {
+    "className": "CivSedanDoors_BackRight",
+    "popularName": "Olga 24 Rear Right Door"
+  },
+  {
+    "className": "CivSedanDoors_BackRight_Black",
+    "popularName": "Olga 24 Rear Right Door"
+  },
+  {
+    "className": "CivSedanDoors_BackRight_BlackRust",
+    "popularName": "Olga 24 Rear Right Door"
+  },
+  {
+    "className": "CivSedanDoors_BackRight_WhiteRust",
+    "popularName": "Olga 24 Rear Right Door"
+  },
+  {
+    "className": "CivSedanDoors_BackRight_Wine",
+    "popularName": "Olga 24 Rear Right Door"
+  },
+  {
+    "className": "CivSedanDoors_BackRight_WineRust",
+    "popularName": "Olga 24 Rear Right Door"
+  },
+  {
+    "className": "CivSedanDoors_CoDriver",
+    "popularName": "Olga 24 Front Right Door"
+  },
+  {
+    "className": "CivSedanDoors_CoDriver_Black",
+    "popularName": "Olga 24 Front Right Door"
+  },
+  {
+    "className": "CivSedanDoors_CoDriver_BlackRust",
+    "popularName": "Olga 24 Front Right Door"
+  },
+  {
+    "className": "CivSedanDoors_CoDriver_WhiteRust",
+    "popularName": "Olga 24 Front Right Door"
+  },
+  {
+    "className": "CivSedanDoors_CoDriver_Wine",
+    "popularName": "Olga 24 Front Right Door"
+  },
+  {
+    "className": "CivSedanDoors_CoDriver_WineRust",
+    "popularName": "Olga 24 Front Right Door"
+  },
+  {
+    "className": "CivSedanDoors_Driver",
+    "popularName": "Olga 24 Front Left Door"
+  },
+  {
+    "className": "CivSedanDoors_Driver_Black",
+    "popularName": "Olga 24 Front Left Door"
+  },
+  {
+    "className": "CivSedanDoors_Driver_BlackRust",
+    "popularName": "Olga 24 Front Left Door"
+  },
+  {
+    "className": "CivSedanDoors_Driver_WhiteRust",
+    "popularName": "Olga 24 Front Left Door"
+  },
+  {
+    "className": "CivSedanDoors_Driver_Wine",
+    "popularName": "Olga 24 Front Left Door"
+  },
+  {
+    "className": "CivSedanDoors_Driver_WineRust",
+    "popularName": "Olga 24 Front Left Door"
+  },
+  {
+    "className": "CivSedanHood",
+    "popularName": "Olga 24 Hood"
+  },
+  {
+    "className": "CivSedanHood_Black",
+    "popularName": "Olga 24 Hood"
+  },
+  {
+    "className": "CivSedanHood_BlackRust",
+    "popularName": "Olga 24 Hood"
+  },
+  {
+    "className": "CivSedanHood_WhiteRust",
+    "popularName": "Olga 24 Hood"
+  },
+  {
+    "className": "CivSedanHood_Wine",
+    "popularName": "Olga 24 Hood"
+  },
+  {
+    "className": "CivSedanHood_WineRust",
+    "popularName": "Olga 24 Hood"
+  },
+  {
+    "className": "CivSedanTrunk",
+    "popularName": "Olga 24 Trunk Lid"
+  },
+  {
+    "className": "CivSedanTrunk_Black",
+    "popularName": "Olga 24 Trunk Lid"
+  },
+  {
+    "className": "CivSedanTrunk_BlackRust",
+    "popularName": "Olga 24 Trunk Lid"
+  },
+  {
+    "className": "CivSedanTrunk_WhiteRust",
+    "popularName": "Olga 24 Trunk Lid"
+  },
+  {
+    "className": "CivSedanTrunk_Wine",
+    "popularName": "Olga 24 Trunk Lid"
+  },
+  {
+    "className": "CivSedanTrunk_WineRust",
+    "popularName": "Olga 24 Trunk Lid"
+  },
+  {
+    "className": "CivSedanWheel",
+    "popularName": "Olga 24 Wheel"
+  },
+  {
+    "className": "CivSedanWheel_Ruined",
+    "popularName": "Olga 24 Wheel"
+  },
+  {
+    "className": "CivilianBelt",
+    "popularName": "Belt"
+  },
+  {
+    "className": "CivilianSedan",
+    "popularName": "Olga 24"
+  },
+  {
+    "className": "CivilianSedan_Black",
+    "popularName": "Olga 24"
+  },
+  {
+    "className": "CivilianSedan_Wine",
+    "popularName": "Olga 24"
+  },
+  {
+    "className": "ClearSyringe",
+    "popularName": "Syringe"
+  },
+  {
+    "className": "Colt1911",
+    "popularName": "Kolt 1911"
+  },
+  {
+    "className": "CombatBoots_Beige",
+    "popularName": "Hunter Boots"
+  },
+  {
+    "className": "CombatBoots_Black",
+    "popularName": "Hunter Boots"
+  },
+  {
+    "className": "CombatBoots_Brown",
+    "popularName": "Hunter Boots"
+  },
+  {
+    "className": "CombatBoots_Green",
+    "popularName": "Hunter Boots"
+  },
+  {
+    "className": "CombatBoots_Grey",
+    "popularName": "Hunter Boots"
+  },
+  {
+    "className": "CombatKnife",
+    "popularName": "Combat Knife"
+  },
+  {
+    "className": "CombinationLock",
+    "popularName": "3-Dial Combination Lock"
+  },
+  {
+    "className": "CombinationLock4",
+    "popularName": "4-Dial Combination Lock"
+  },
+  {
+    "className": "Compass",
+    "popularName": "Compass"
+  },
+  {
+    "className": "ConstructionHelmet_Blue",
+    "popularName": "Hard Hat"
+  },
+  {
+    "className": "ConstructionHelmet_Lime",
+    "popularName": "Hard Hat"
+  },
+  {
+    "className": "ConstructionHelmet_Orange",
+    "popularName": "Hard Hat"
+  },
+  {
+    "className": "ConstructionHelmet_Red",
+    "popularName": "Hard Hat"
+  },
+  {
+    "className": "ConstructionHelmet_White",
+    "popularName": "Hard Hat"
+  },
+  {
+    "className": "ConstructionHelmet_Yellow",
+    "popularName": "Hard Hat"
+  },
+  {
+    "className": "CourierBag",
+    "popularName": "Burlap Courier Bag"
+  },
+  {
+    "className": "CowPelt",
+    "popularName": "Cow Pelt"
+  },
+  {
+    "className": "CowSteakMeat",
+    "popularName": "Beef Steak"
+  },
+  {
+    "className": "CowboyHat_Brown",
+    "popularName": "Cowboy Hat"
+  },
+  {
+    "className": "CowboyHat_black",
+    "popularName": "Cowboy Hat"
+  },
+  {
+    "className": "CowboyHat_darkBrown",
+    "popularName": "Cowboy Hat"
+  },
+  {
+    "className": "CowboyHat_green",
+    "popularName": "Cowboy Hat"
+  },
+  {
+    "className": "CoyoteBag_Brown",
+    "popularName": "Tactical Backpack"
+  },
+  {
+    "className": "CoyoteBag_Green",
+    "popularName": "Tactical Backpack"
+  },
+  {
+    "className": "CraterLong",
+    "popularName": "Building"
+  },
+  {
+    "className": "Crowbar",
+    "popularName": "Crowbar"
+  },
+  {
+    "className": "Cleaver",
+    "popularName": "Cleaver"
+  },
+  {
+    "className": "DarkMotoHelmet_Black",
+    "popularName": "Motorbike Helmet"
+  },
+  {
+    "className": "DarkMotoHelmet_Blue",
+    "popularName": "Motorbike Helmet"
+  },
+  {
+    "className": "DarkMotoHelmet_Green",
+    "popularName": "Motorbike Helmet"
+  },
+  {
+    "className": "DarkMotoHelmet_Grey",
+    "popularName": "Motorbike Helmet"
+  },
+  {
+    "className": "DarkMotoHelmet_Lime",
+    "popularName": "Motorbike Helmet"
+  },
+  {
+    "className": "DarkMotoHelmet_Red",
+    "popularName": "Motorbike Helmet"
+  },
+  {
+    "className": "DarkMotoHelmet_White",
+    "popularName": "Motorbike Helmet"
+  },
+  {
+    "className": "DeerPelt",
+    "popularName": "Deer Pelt"
+  },
+  {
+    "className": "DeerSteakMeat",
+    "popularName": "Venison Steak"
+  },
+  {
+    "className": "Defibrillator",
+    "popularName": "Defibrillator"
+  },
+  {
+    "className": "DenimJacket",
+    "popularName": "Denim Jacket"
+  },
+  {
+    "className": "DesignerGlasses",
+    "popularName": "Casual Sunglasses"
+  },
+  {
+    "className": "DirtBikeHelmet_Black",
+    "popularName": "Enduro Helmet"
+  },
+  {
+    "className": "DirtBikeHelmet_Blue",
+    "popularName": "Enduro Helmet"
+  },
+  {
+    "className": "DirtBikeHelmet_Chernarus",
+    "popularName": "Enduro Helmet"
+  },
+  {
+    "className": "DirtBikeHelmet_Green",
+    "popularName": "Enduro Helmet"
+  },
+  {
+    "className": "DirtBikeHelmet_Khaki",
+    "popularName": "Enduro Helmet"
+  },
+  {
+    "className": "DirtBikeHelmet_Mouthguard",
+    "popularName": "Enduro Helmet Mouthguard"
+  },
+  {
+    "className": "DirtBikeHelmet_Police",
+    "popularName": "Enduro Helmet"
+  },
+  {
+    "className": "DirtBikeHelmet_Red",
+    "popularName": "Enduro Helmet"
+  },
+  {
+    "className": "DirtBikeHelmet_Visor",
+    "popularName": "Enduro Helmet Visor"
+  },
+  {
+    "className": "DisinfectantAlcohol",
+    "popularName": "Alcoholic Tincture"
+  },
+  {
+    "className": "DisinfectantSpray",
+    "popularName": "Disinfectant Spray"
+  },
+  {
+    "className": "DoorTestCamera",
+    "popularName": "DoorTestCamera"
+  },
+  {
+    "className": "DressShoes_Beige",
+    "popularName": "Dress Shoes"
+  },
+  {
+    "className": "DressShoes_Black",
+    "popularName": "Dress Shoes"
+  },
+  {
+    "className": "DressShoes_Brown",
+    "popularName": "Dress Shoes"
+  },
+  {
+    "className": "DressShoes_Sunburst",
+    "popularName": "Dress Shoes"
+  },
+  {
+    "className": "DressShoes_White",
+    "popularName": "Dress Shoes"
+  },
+  {
+    "className": "DryBag_Black",
+    "popularName": "Drybag Backpack"
+  },
+  {
+    "className": "DryBag_Blue",
+    "popularName": "Drybag Backpack"
+  },
+  {
+    "className": "DryBag_Green",
+    "popularName": "Drybag Backpack"
+  },
+  {
+    "className": "DryBag_Orange",
+    "popularName": "Drybag Backpack"
+  },
+  {
+    "className": "DryBag_Red",
+    "popularName": "Drybag Backpack"
+  },
+  {
+    "className": "DryBag_Yellow",
+    "popularName": "Drybag Backpack"
+  },
+  {
+    "className": "DuctTape",
+    "popularName": "Duct Tape"
+  },
+  {
+    "className": "DuctTapeLocked",
+    "popularName": "Restrained by Duct Tape"
+  },
+  {
+    "className": "ElectronicRepairKit",
+    "popularName": "Electrical Repair Kit"
+  },
+  {
+    "className": "EngineOil",
+    "popularName": "Motor Oil"
+  },
+  {
+    "className": "Engraved1911",
+    "popularName": "Engraved Kolt 1911"
+  },
+  {
+    "className": "Epinephrine",
+    "popularName": "Epinephrine Auto-Injector"
+  },
+  {
+    "className": "EpoxyPutty",
+    "popularName": "Epoxy Putty"
+  },
+  {
+    "className": "FAL",
+    "popularName": "LAR"
+  },
+  {
+    "className": "FNP45_MRDSOptic",
+    "popularName": "Mini Sights"
+  },
+  {
+    "className": "FNX45",
+    "popularName": "FX-45"
+  },
+  {
+    "className": "FNX45_arrow",
+    "popularName": "FX-45"
+  },
+  {
+    "className": "FXCrWindLeaf1",
+    "popularName": "Internal: FxCrWindLeaf1"
+  },
+  {
+    "className": "FXCrWindLeaf2",
+    "popularName": "Internal: FxCrWindLeaf2"
+  },
+  {
+    "className": "FXCrWindLeaf3",
+    "popularName": "Internal: FxCrWindLeaf3"
+  },
+  {
+    "className": "FXUSWindLeaf1",
+    "popularName": "Internal: FxUSWindLeaf1"
+  },
+  {
+    "className": "FXUSWindLeaf2",
+    "popularName": "Internal: FxUSWindLeaf2"
+  },
+  {
+    "className": "FXUSWindLeaf3",
+    "popularName": "Internal: FxUSWindLeaf3"
+  },
+  {
+    "className": "Fal_FoldingBttstck",
+    "popularName": "LAR Folding Buttstock"
+  },
+  {
+    "className": "Fal_OeBttstck",
+    "popularName": "LAR Polymer Buttstock"
+  },
+  {
+    "className": "FemaleEvaHands",
+    "popularName": "Bare hands"
+  },
+  {
+    "className": "FemaleEvaHandsDecayed",
+    "popularName": "Bare hands"
+  },
+  {
+    "className": "FemaleEvaHead",
+    "popularName": "face"
+  },
+  {
+    "className": "FemaleFridaHands",
+    "popularName": "Bare hands"
+  },
+  {
+    "className": "FemaleFridaHandsDecayed",
+    "popularName": "Bare hands"
+  },
+  {
+    "className": "FemaleFridaHead",
+    "popularName": "face"
+  },
+  {
+    "className": "FemaleGabiHands",
+    "popularName": "Bare hands"
+  },
+  {
+    "className": "FemaleGabiHandsDecayed",
+    "popularName": "Bare hands"
+  },
+  {
+    "className": "FemaleGabiHead",
+    "popularName": "face"
+  },
+  {
+    "className": "FemaleHands_Base",
+    "popularName": "Bare hands"
+  },
+  {
+    "className": "FemaleHelgaHands",
+    "popularName": "Bare hands"
+  },
+  {
+    "className": "FemaleHelgaHandsDecayed",
+    "popularName": "Bare hands"
+  },
+  {
+    "className": "FemaleHelgaHead",
+    "popularName": "face"
+  },
+  {
+    "className": "FemaleIrenaHands",
+    "popularName": "Bare hands"
+  },
+  {
+    "className": "FemaleIrenaHandsDecayed",
+    "popularName": "Bare hands"
+  },
+  {
+    "className": "FemaleIrenaHead",
+    "popularName": "face"
+  },
+  {
+    "className": "FemaleJudyHands",
+    "popularName": "Bare hands"
+  },
+  {
+    "className": "FemaleJudyHandsDecayed",
+    "popularName": "Bare hands"
+  },
+  {
+    "className": "FemaleJudyHead",
+    "popularName": "face"
+  },
+  {
+    "className": "FemaleKeikoHands",
+    "popularName": "Bare hands"
+  },
+  {
+    "className": "FemaleKeikoHandsDecayed",
+    "popularName": "Bare hands"
+  },
+  {
+    "className": "FemaleKeikoHead",
+    "popularName": "face"
+  },
+  {
+    "className": "FemaleLindaHands",
+    "popularName": "Bare hands"
+  },
+  {
+    "className": "FemaleLindaHandsDecayed",
+    "popularName": "Bare hands"
+  },
+  {
+    "className": "FemaleLindaHead",
+    "popularName": "face"
+  },
+  {
+    "className": "FemaleMariaHands",
+    "popularName": "Bare hands"
+  },
+  {
+    "className": "FemaleMariaHandsDecayed",
+    "popularName": "Bare hands"
+  },
+  {
+    "className": "FemaleMariaHead",
+    "popularName": "face"
+  },
+  {
+    "className": "FemaleNaomiHands",
+    "popularName": "Bare hands"
+  },
+  {
+    "className": "FemaleNaomiHandsDecayed",
+    "popularName": "Bare hands"
+  },
+  {
+    "className": "FemaleNaomiHead",
+    "popularName": "face"
+  },
+  {
+    "className": "Fence",
+    "popularName": "Fence"
+  },
+  {
+    "className": "FenceKit",
+    "popularName": "Fence Kit"
+  },
+  {
+    "className": "FenceKitPlacing",
+    "popularName": "Fence Kit"
+  },
+  {
+    "className": "FirefighterAxe",
+    "popularName": "Firefighter Axe"
+  },
+  {
+    "className": "FirefighterAxe_Black",
+    "popularName": "Firefighter Axe"
+  },
+  {
+    "className": "FirefighterAxe_Green",
+    "popularName": "Firefighter Axe"
+  },
+  {
+    "className": "FirefighterJacket_Beige",
+    "popularName": "Firefighter Jacket"
+  },
+  {
+    "className": "FirefighterJacket_Black",
+    "popularName": "Firefighter Jacket"
+  },
+  {
+    "className": "FirefightersHelmet_Red",
+    "popularName": "Firefighter Helmet"
+  },
+  {
+    "className": "FirefightersHelmet_White",
+    "popularName": "Firefighter Helmet"
+  },
+  {
+    "className": "FirefightersHelmet_Yellow",
+    "popularName": "Firefighter Helmet"
+  },
+  {
+    "className": "FirefightersPants_Beige",
+    "popularName": "Firefighter Pants"
+  },
+  {
+    "className": "FirefightersPants_Black",
+    "popularName": "Firefighter Pants"
+  },
+  {
+    "className": "Fireplace",
+    "popularName": "Fireplace"
+  },
+  {
+    "className": "FireplaceIndoor",
+    "popularName": "Fireplace"
+  },
+  {
+    "className": "Firewood",
+    "popularName": "Firewood"
+  },
+  {
+    "className": "FirstAidKit",
+    "popularName": "First Aid Pouch"
+  },
+  {
+    "className": "FishingRod",
+    "popularName": "Fishing Rod"
+  },
+  {
+    "className": "FlashGrenade",
+    "popularName": "8-M4 Flashbang"
+  },
+  {
+    "className": "Flashlight",
+    "popularName": "Flashlight"
+  },
+  {
+    "className": "FlatCap_Black",
+    "popularName": "Flat Cap"
+  },
+  {
+    "className": "FlatCap_BlackCheck",
+    "popularName": "Flat Cap"
+  },
+  {
+    "className": "FlatCap_Blue",
+    "popularName": "Flat Cap"
+  },
+  {
+    "className": "FlatCap_Brown",
+    "popularName": "Flat Cap"
+  },
+  {
+    "className": "FlatCap_BrownCheck",
+    "popularName": "Flat Cap"
+  },
+  {
+    "className": "FlatCap_Grey",
+    "popularName": "Flat Cap"
+  },
+  {
+    "className": "FlatCap_GreyCheck",
+    "popularName": "Flat Cap"
+  },
+  {
+    "className": "FlatCap_Red",
+    "popularName": "Flat Cap"
+  },
+  {
+    "className": "FurCourierBag",
+    "popularName": "Fur Courier Bag"
+  },
+  {
+    "className": "FurImprovisedBag",
+    "popularName": "Fur Backpack"
+  },
+  {
+    "className": "FxExploArmor1",
+    "popularName": "Internal: FxExploArmor1"
+  },
+  {
+    "className": "FxExploArmor2",
+    "popularName": "Internal: FxExploArmor2"
+  },
+  {
+    "className": "FxExploArmor3",
+    "popularName": "Internal: FxExploArmor3"
+  },
+  {
+    "className": "FxExploArmor4",
+    "popularName": "Internal: FxExploArmor4"
+  },
+  {
+    "className": "FxWindGrass1",
+    "popularName": "Internal: FxWindGrass1"
+  },
+  {
+    "className": "FxWindGrass2",
+    "popularName": "Internal: FxWindGrass2"
+  },
+  {
+    "className": "FxWindLeaf1",
+    "popularName": "Internal: FxWindLeaf1"
+  },
+  {
+    "className": "FxWindLeaf2",
+    "popularName": "Internal: FxWindLeaf2"
+  },
+  {
+    "className": "FxWindLeaf3",
+    "popularName": "Internal: FxWindLeaf3"
+  },
+  {
+    "className": "FxWindPollen1",
+    "popularName": "Internal: FxWindPollen1"
+  },
+  {
+    "className": "FxWindRock1",
+    "popularName": "Internal: FxWindRock1"
+  },
+  {
+    "className": "FlangeMace",
+    "popularName": "Flanged Mace"
+  },
+  {
+    "className": "FireExtinguisher",
+    "popularName": "Fire Extinguisher"
+  },
+  {
+    "className": "FarmingHoe",
+    "popularName": "Farming Hoe"
+  },
+  {
+    "className": "FryingPan",
+    "popularName": "Frying Pan"
+  },
+  {
+    "className": "FrangeKnife",
+    "popularName": "FrangeKnife"
+  },
+  {
+    "className": "GP5GasMask",
+    "popularName": "Gas Mask"
+  },
+  {
+    "className": "GP5GasMask_Filter",
+    "popularName": "mask filter - PLACEHOLDER"
+  },
+  {
+    "className": "GardenLime",
+    "popularName": "Garden Lime"
+  },
+  {
+    "className": "GasMask",
+    "popularName": "Combat Gas Mask"
+  },
+  {
+    "className": "GhillieAtt_Mossy",
+    "popularName": "Ghillie Rifle Wrap"
+  },
+  {
+    "className": "GhillieAtt_Tan",
+    "popularName": "Ghillie Rifle Wrap"
+  },
+  {
+    "className": "GhillieAtt_Woodland",
+    "popularName": "Ghillie Rifle Wrap"
+  },
+  {
+    "className": "GhillieBushrag_Mossy",
+    "popularName": "Ghillie Shrug"
+  },
+  {
+    "className": "GhillieBushrag_Tan",
+    "popularName": "Ghillie Shrug"
+  },
+  {
+    "className": "GhillieBushrag_Woodland",
+    "popularName": "Ghillie Shrug"
+  },
+  {
+    "className": "GhillieHood_Mossy",
+    "popularName": "Ghillie Hood"
+  },
+  {
+    "className": "GhillieHood_Tan",
+    "popularName": "Ghillie Hood"
+  },
+  {
+    "className": "GhillieHood_Woodland",
+    "popularName": "Ghillie Hood"
+  },
+  {
+    "className": "GhillieSuit_Mossy",
+    "popularName": "Ghillie Suit"
+  },
+  {
+    "className": "GhillieSuit_Tan",
+    "popularName": "Ghillie Suit"
+  },
+  {
+    "className": "GhillieSuit_Woodland",
+    "popularName": "Ghillie Suit"
+  },
+  {
+    "className": "GhillieTop_Mossy",
+    "popularName": "Ghillie Cloak"
+  },
+  {
+    "className": "GhillieTop_Tan",
+    "popularName": "Ghillie Cloak"
+  },
+  {
+    "className": "GhillieTop_Woodland",
+    "popularName": "Ghillie Cloak"
+  },
+  {
+    "className": "GiftBox_Large_1",
+    "popularName": "Large Gift Box"
+  },
+  {
+    "className": "GiftBox_Large_2",
+    "popularName": "Large Gift Box"
+  },
+  {
+    "className": "GiftBox_Large_3",
+    "popularName": "Large Gift Box"
+  },
+  {
+    "className": "GiftBox_Large_4",
+    "popularName": "Large Gift Box"
+  },
+  {
+    "className": "GiftBox_Medium_1",
+    "popularName": "Medium Gift Box"
+  },
+  {
+    "className": "GiftBox_Medium_2",
+    "popularName": "Medium Gift Box"
+  },
+  {
+    "className": "GiftBox_Medium_3",
+    "popularName": "Medium Gift Box"
+  },
+  {
+    "className": "GiftBox_Medium_4",
+    "popularName": "Medium Gift Box"
+  },
+  {
+    "className": "GiftBox_Small_1",
+    "popularName": "Small Gift Box"
+  },
+  {
+    "className": "GiftBox_Small_2",
+    "popularName": "Small Gift Box"
+  },
+  {
+    "className": "GiftBox_Small_3",
+    "popularName": "Small Gift Box"
+  },
+  {
+    "className": "GiftBox_Small_4",
+    "popularName": "Small Gift Box"
+  },
+  {
+    "className": "Glock19",
+    "popularName": "Mlock-91"
+  },
+  {
+    "className": "GoatPelt",
+    "popularName": "Goat Pelt"
+  },
+  {
+    "className": "GoatSteakMeat",
+    "popularName": "Chevon Steak"
+  },
+  {
+    "className": "GorkaEJacket_Autumn",
+    "popularName": "Patrol Jacket"
+  },
+  {
+    "className": "GorkaEJacket_Flat",
+    "popularName": "Patrol Jacket"
+  },
+  {
+    "className": "GorkaEJacket_PautRev",
+    "popularName": "Patrol Jacket"
+  },
+  {
+    "className": "GorkaEJacket_Summer",
+    "popularName": "Patrol Jacket"
+  },
+  {
+    "className": "GorkaHelmet",
+    "popularName": "Assault Helmet"
+  },
+  {
+    "className": "GorkaHelmetVisor",
+    "popularName": "Assault Helmet Visor"
+  },
+  {
+    "className": "GorkaHelmet_Black",
+    "popularName": "Assault Helmet"
+  },
+  {
+    "className": "GorkaHelmet_Green",
+    "popularName": "Assault Helmet"
+  },
+  {
+    "className": "GorkaPants_Autumn",
+    "popularName": "Patrol Pants"
+  },
+  {
+    "className": "GorkaPants_Flat",
+    "popularName": "Patrol Pants"
+  },
+  {
+    "className": "GorkaPants_PautRev",
+    "popularName": "Patrol Pants"
+  },
+  {
+    "className": "GorkaPants_Summer",
+    "popularName": "Patrol Pants"
+  },
+  {
+    "className": "GreatHelm",
+    "popularName": "Great Helm"
+  },
+  {
+    "className": "GreenBellPepper",
+    "popularName": "Pepper"
+  },
+  {
+    "className": "Guts",
+    "popularName": "Guts"
+  },
+  {
+    "className": "Hacksaw",
+    "popularName": "Hacksaw"
+  },
+  {
+    "className": "Hammer",
+    "popularName": "Hammer"
+  },
+  {
+    "className": "HandDrillKit",
+    "popularName": "Hand Drill Kit"
+  },
+  {
+    "className": "HandSaw",
+    "popularName": "Hand Saw"
+  },
+  {
+    "className": "HandcuffKeys",
+    "popularName": "Handcuff Keys"
+  },
+  {
+    "className": "Handcuffs",
+    "popularName": "Handcuffs"
+  },
+  {
+    "className": "HandcuffsLocked",
+    "popularName": "Restrained by Handcuffs"
+  },
+  {
+    "className": "HatchbackDoors_CoDriver",
+    "popularName": "Ada 4x4 Right Door"
+  },
+  {
+    "className": "HatchbackDoors_CoDriver_Blue",
+    "popularName": "Ada 4x4 Right Door"
+  },
+  {
+    "className": "HatchbackDoors_CoDriver_BlueRust",
+    "popularName": "Ada 4x4 Right Door"
+  },
+  {
+    "className": "HatchbackDoors_CoDriver_GreenRust",
+    "popularName": "Ada 4x4 Right Door"
+  },
+  {
+    "className": "HatchbackDoors_CoDriver_White",
+    "popularName": "Ada 4x4 Right Door"
+  },
+  {
+    "className": "HatchbackDoors_CoDriver_WhiteRust",
+    "popularName": "Ada 4x4 Right Door"
+  },
+  {
+    "className": "HatchbackDoors_Driver",
+    "popularName": "Ada 4x4 Left Door"
+  },
+  {
+    "className": "HatchbackDoors_Driver_Blue",
+    "popularName": "Ada 4x4 Left Door"
+  },
+  {
+    "className": "HatchbackDoors_Driver_BlueRust",
+    "popularName": "Ada 4x4 Left Door"
+  },
+  {
+    "className": "HatchbackDoors_Driver_GreenRust",
+    "popularName": "Ada 4x4 Left Door"
+  },
+  {
+    "className": "HatchbackDoors_Driver_White",
+    "popularName": "Ada 4x4 Left Door"
+  },
+  {
+    "className": "HatchbackDoors_Driver_WhiteRust",
+    "popularName": "Ada 4x4 Left Door"
+  },
+  {
+    "className": "HatchbackHood",
+    "popularName": "Ada 4x4 Hood"
+  },
+  {
+    "className": "HatchbackHood_Blue",
+    "popularName": "Ada 4x4 Hood"
+  },
+  {
+    "className": "HatchbackHood_BlueRust",
+    "popularName": "Ada 4x4 Hood"
+  },
+  {
+    "className": "HatchbackHood_GreenRust",
+    "popularName": "Ada 4x4 Hood"
+  },
+  {
+    "className": "HatchbackHood_White",
+    "popularName": "Ada 4x4 Hood"
+  },
+  {
+    "className": "HatchbackHood_WhiteRust",
+    "popularName": "Ada 4x4 Hood"
+  },
+  {
+    "className": "HatchbackTrunk",
+    "popularName": "Ada 4x4 Trunk Door"
+  },
+  {
+    "className": "HatchbackTrunk_Blue",
+    "popularName": "Ada 4x4 Trunk Door"
+  },
+  {
+    "className": "HatchbackTrunk_BlueRust",
+    "popularName": "Ada 4x4 Trunk Door"
+  },
+  {
+    "className": "HatchbackTrunk_GreenRust",
+    "popularName": "Ada 4x4 Trunk Door"
+  },
+  {
+    "className": "HatchbackTrunk_White",
+    "popularName": "Ada 4x4 Trunk Door"
+  },
+  {
+    "className": "HatchbackTrunk_WhiteRust",
+    "popularName": "Ada 4x4 Trunk Door"
+  },
+  {
+    "className": "HatchbackWheel",
+    "popularName": "Ada 4x4 Wheel"
+  },
+  {
+    "className": "HatchbackWheel_Ruined",
+    "popularName": "Ada 4x4 Wheel"
+  },
+  {
+    "className": "Hatchback_02",
+    "popularName": "Gunter 2"
+  },
+  {
+    "className": "Hatchback_02_Black",
+    "popularName": "Gunter 2"
+  },
+  {
+    "className": "Hatchback_02_Blue",
+    "popularName": "Gunter 2"
+  },
+  {
+    "className": "Hatchback_02_Door_1_1",
+    "popularName": "Gunter 2 Front Left Door"
+  },
+  {
+    "className": "Hatchback_02_Door_1_1_Black",
+    "popularName": "Gunter 2 Front Left Door"
+  },
+  {
+    "className": "Hatchback_02_Door_1_1_BlackRust",
+    "popularName": "Gunter 2 Front Left Door"
+  },
+  {
+    "className": "Hatchback_02_Door_1_1_Blue",
+    "popularName": "Gunter 2 Front Left Door"
+  },
+  {
+    "className": "Hatchback_02_Door_1_1_BlueRust",
+    "popularName": "Gunter 2 Front Left Door"
+  },
+  {
+    "className": "Hatchback_02_Door_1_1_RedRust",
+    "popularName": "Gunter 2 Front Left Door"
+  },
+  {
+    "className": "Hatchback_02_Door_1_2",
+    "popularName": "Gunter 2 Rear Left Door"
+  },
+  {
+    "className": "Hatchback_02_Door_1_2_Black",
+    "popularName": "Gunter 2 Rear Left Door"
+  },
+  {
+    "className": "Hatchback_02_Door_1_2_BlackRust",
+    "popularName": "Gunter 2 Rear Left Door"
+  },
+  {
+    "className": "Hatchback_02_Door_1_2_Blue",
+    "popularName": "Gunter 2 Rear Left Door"
+  },
+  {
+    "className": "Hatchback_02_Door_1_2_BlueRust",
+    "popularName": "Gunter 2 Rear Left Door"
+  },
+  {
+    "className": "Hatchback_02_Door_1_2_RedRust",
+    "popularName": "Gunter 2 Rear Left Door"
+  },
+  {
+    "className": "Hatchback_02_Door_2_1",
+    "popularName": "Gunter 2 Front Right Door"
+  },
+  {
+    "className": "Hatchback_02_Door_2_1_Black",
+    "popularName": "Gunter 2 Front Right Door"
+  },
+  {
+    "className": "Hatchback_02_Door_2_1_BlackRust",
+    "popularName": "Gunter 2 Front Right Door"
+  },
+  {
+    "className": "Hatchback_02_Door_2_1_Blue",
+    "popularName": "Gunter 2 Front Right Door"
+  },
+  {
+    "className": "Hatchback_02_Door_2_1_BlueRust",
+    "popularName": "Gunter 2 Front Right Door"
+  },
+  {
+    "className": "Hatchback_02_Door_2_1_RedRust",
+    "popularName": "Gunter 2 Front Right Door"
+  },
+  {
+    "className": "Hatchback_02_Door_2_2",
+    "popularName": "Gunter 2 Rear Right Door"
+  },
+  {
+    "className": "Hatchback_02_Door_2_2_Black",
+    "popularName": "Gunter 2 Rear Right Door"
+  },
+  {
+    "className": "Hatchback_02_Door_2_2_BlackRust",
+    "popularName": "Gunter 2 Rear Right Door"
+  },
+  {
+    "className": "Hatchback_02_Door_2_2_Blue",
+    "popularName": "Gunter 2 Rear Right Door"
+  },
+  {
+    "className": "Hatchback_02_Door_2_2_BlueRust",
+    "popularName": "Gunter 2 Rear Right Door"
+  },
+  {
+    "className": "Hatchback_02_Door_2_2_RedRust",
+    "popularName": "Gunter 2 Rear Right Door"
+  },
+  {
+    "className": "Hatchback_02_Hood",
+    "popularName": "Gunter 2 Hood"
+  },
+  {
+    "className": "Hatchback_02_Hood_Black",
+    "popularName": "Gunter 2 Hood"
+  },
+  {
+    "className": "Hatchback_02_Hood_BlackRust",
+    "popularName": "Gunter 2 Hood"
+  },
+  {
+    "className": "Hatchback_02_Hood_Blue",
+    "popularName": "Gunter 2 Hood"
+  },
+  {
+    "className": "Hatchback_02_Hood_BlueRust",
+    "popularName": "Gunter 2 Hood"
+  },
+  {
+    "className": "Hatchback_02_Hood_RedRust",
+    "popularName": "Gunter 2 Hood"
+  },
+  {
+    "className": "Hatchback_02_Trunk",
+    "popularName": "Gunter 2 Trunk Door"
+  },
+  {
+    "className": "Hatchback_02_Trunk_Black",
+    "popularName": "Gunter 2 Trunk Door"
+  },
+  {
+    "className": "Hatchback_02_Trunk_BlackRust",
+    "popularName": "Gunter 2 Trunk Door"
+  },
+  {
+    "className": "Hatchback_02_Trunk_Blue",
+    "popularName": "Gunter 2 Trunk Door"
+  },
+  {
+    "className": "Hatchback_02_Trunk_BlueRust",
+    "popularName": "Gunter 2 Trunk Door"
+  },
+  {
+    "className": "Hatchback_02_Trunk_RedRust",
+    "popularName": "Gunter 2 Trunk Door"
+  },
+  {
+    "className": "Hatchback_02_Wheel",
+    "popularName": "Gunter 2 Wheel"
+  },
+  {
+    "className": "Hatchback_02_Wheel_Ruined",
+    "popularName": "Gunter 2 Wheel"
+  },
+  {
+    "className": "Hatchet",
+    "popularName": "Hatchet"
+  },
+  {
+    "className": "Head",
+    "popularName": "head"
+  },
+  {
+    "className": "Head_Default",
+    "popularName": "face"
+  },
+  {
+    "className": "HeadlightH7",
+    "popularName": "Headlight Bulb"
+  },
+  {
+    "className": "HeadlightH7_Box",
+    "popularName": "Boxed Headlight Bulb"
+  },
+  {
+    "className": "Headtorch_Black",
+    "popularName": "Head Torch"
+  },
+  {
+    "className": "Headtorch_Grey",
+    "popularName": "Head Torch"
+  },
+  {
+    "className": "Heatpack",
+    "popularName": "Heat Pack"
+  },
+  {
+    "className": "HescoBox",
+    "popularName": "Wire Mesh Barrier"
+  },
+  {
+    "className": "HighCapacityVest_Black",
+    "popularName": "Tactical Vest"
+  },
+  {
+    "className": "HighCapacityVest_Olive",
+    "popularName": "Tactical Vest"
+  },
+  {
+    "className": "HikingBootsLow_Beige",
+    "popularName": "Trail Shoes"
+  },
+  {
+    "className": "HikingBootsLow_Black",
+    "popularName": "Trail Shoes"
+  },
+  {
+    "className": "HikingBootsLow_Blue",
+    "popularName": "Trail Shoes"
+  },
+  {
+    "className": "HikingBootsLow_Grey",
+    "popularName": "Trail Shoes"
+  },
+  {
+    "className": "HikingBoots_Black",
+    "popularName": "Hiking Boots"
+  },
+  {
+    "className": "HikingBoots_Brown",
+    "popularName": "Hiking Boots"
+  },
+  {
+    "className": "HikingJacket_Black",
+    "popularName": "Hiking Jacket"
+  },
+  {
+    "className": "HikingJacket_Blue",
+    "popularName": "Hiking Jacket"
+  },
+  {
+    "className": "HikingJacket_Green",
+    "popularName": "Hiking Jacket"
+  },
+  {
+    "className": "HikingJacket_Red",
+    "popularName": "Hiking Jacket"
+  },
+  {
+    "className": "HockeyHelmet_Black",
+    "popularName": "Hockey Helmet"
+  },
+  {
+    "className": "HockeyHelmet_Blue",
+    "popularName": "Hockey Helmet"
+  },
+  {
+    "className": "HockeyHelmet_Red",
+    "popularName": "Hockey Helmet"
+  },
+  {
+    "className": "HockeyHelmet_White",
+    "popularName": "Hockey Helmet"
+  },
+  {
+    "className": "HockeyMask",
+    "popularName": "Hockey Mask"
+  },
+  {
+    "className": "Hoodie_Black",
+    "popularName": "Hoodie"
+  },
+  {
+    "className": "Hoodie_Blue",
+    "popularName": "Hoodie"
+  },
+  {
+    "className": "Hoodie_Brown",
+    "popularName": "Hoodie"
+  },
+  {
+    "className": "Hoodie_Green",
+    "popularName": "Hoodie"
+  },
+  {
+    "className": "Hoodie_Grey",
+    "popularName": "Hoodie"
+  },
+  {
+    "className": "Hoodie_Red",
+    "popularName": "Hoodie"
+  },
+  {
+    "className": "Hook",
+    "popularName": "Fishing Hook"
+  },
+  {
+    "className": "House",
+    "popularName": "House"
+  },
+  {
+    "className": "HouseHighCost",
+    "popularName": "STRUCTUR HIGH COST"
+  },
+  {
+    "className": "HumanSteakMeat",
+    "popularName": "Human Steak"
+  },
+  {
+    "className": "HunterPants_Autumn",
+    "popularName": "Hunter pants"
+  },
+  {
+    "className": "HunterPants_Brown",
+    "popularName": "Hunter pants"
+  },
+  {
+    "className": "HunterPants_Spring",
+    "popularName": "Hunter pants"
+  },
+  {
+    "className": "HunterPants_Summer",
+    "popularName": "Hunter pants"
+  },
+  {
+    "className": "HunterPants_Winter",
+    "popularName": "Hunter pants"
+  },
+  {
+    "className": "HuntingBag",
+    "popularName": "Hunter Backpack"
+  },
+  {
+    "className": "HuntingJacket_Autumn",
+    "popularName": "Hunter Jacket"
+  },
+  {
+    "className": "HuntingJacket_Brown",
+    "popularName": "Hunter Jacket"
+  },
+  {
+    "className": "HuntingJacket_Spring",
+    "popularName": "Hunter Jacket"
+  },
+  {
+    "className": "HuntingJacket_Summer",
+    "popularName": "Hunter Jacket"
+  },
+  {
+    "className": "HuntingJacket_Winter",
+    "popularName": "Hunter Jacket"
+  },
+  {
+    "className": "HuntingKnife",
+    "popularName": "Hunting Knife"
+  },
+  {
+    "className": "HuntingOptic",
+    "popularName": "Hunting Scope"
+  },
+  {
+    "className": "HuntingVest",
+    "popularName": "Hunter Vest"
+  },
+  {
+    "className": "ImprovisedBag",
+    "popularName": "Burlap Backpack"
+  },
+  {
+    "className": "ImprovisedFishingRod",
+    "popularName": "Simple Fishing Rod"
+  },
+  {
+    "className": "ImprovisedSuppressor",
+    "popularName": "Plastic Bottle Suppressor"
+  },
+  {
+    "className": "InjectionVial",
+    "popularName": "Sodium Bicarbonate Vial"
+  },
+  {
+    "className": "Izh18",
+    "popularName": "BK-18"
+  },
+  {
+    "className": "Izh43Shotgun",
+    "popularName": "BK-43"
+  },
+  {
+    "className": "Iceaxe",
+    "popularName": "Ice axe"
+  },
+  {
+    "className": "Jeans_Black",
+    "popularName": "Jeans"
+  },
+  {
+    "className": "Jeans_Blue",
+    "popularName": "Jeans"
+  },
+  {
+    "className": "Jeans_BlueDark",
+    "popularName": "Jeans"
+  },
+  {
+    "className": "Jeans_Brown",
+    "popularName": "Jeans"
+  },
+  {
+    "className": "Jeans_Green",
+    "popularName": "Jeans"
+  },
+  {
+    "className": "Jeans_Grey",
+    "popularName": "Jeans"
+  },
+  {
+    "className": "JoggingShoes_Black",
+    "popularName": "Running Shoes"
+  },
+  {
+    "className": "JoggingShoes_Blue",
+    "popularName": "Running Shoes"
+  },
+  {
+    "className": "JoggingShoes_Red",
+    "popularName": "Running Shoes"
+  },
+  {
+    "className": "JoggingShoes_Violet",
+    "popularName": "Running Shoes"
+  },
+  {
+    "className": "JoggingShoes_White",
+    "popularName": "Running Shoes"
+  },
+  {
+    "className": "JumpsuitJacket_Blue",
+    "popularName": "Jumpsuit Jacket"
+  },
+  {
+    "className": "JumpsuitJacket_Gray",
+    "popularName": "Jumpsuit Jacket"
+  },
+  {
+    "className": "JumpsuitJacket_Green",
+    "popularName": "Jumpsuit Jacket"
+  },
+  {
+    "className": "JumpsuitJacket_Red",
+    "popularName": "Jumpsuit Jacket"
+  },
+  {
+    "className": "JumpsuitPants_Blue",
+    "popularName": "Jumpsuit Pants"
+  },
+  {
+    "className": "JumpsuitPants_Green",
+    "popularName": "Jumpsuit Pants"
+  },
+  {
+    "className": "JumpsuitPants_Grey",
+    "popularName": "Jumpsuit Pants"
+  },
+  {
+    "className": "JumpsuitPants_Red",
+    "popularName": "Jumpsuit Pants"
+  },
+  {
+    "className": "JungleBoots_Beige",
+    "popularName": "Jungle Boots"
+  },
+  {
+    "className": "JungleBoots_Black",
+    "popularName": "Jungle Boots"
+  },
+  {
+    "className": "JungleBoots_Brown",
+    "popularName": "Jungle Boots"
+  },
+  {
+    "className": "JungleBoots_Green",
+    "popularName": "Jungle Boots"
+  },
+  {
+    "className": "JungleBoots_Olive",
+    "popularName": "Jungle Boots"
+  },
+  {
+    "className": "KashtanOptic",
+    "popularName": "P1-87-L Scope"
+  },
+  {
+    "className": "KazuarOptic",
+    "popularName": "1PN51 Scope"
+  },
+  {
+    "className": "KitchenKnife",
+    "popularName": "Kitchen Knife"
+  },
+  {
+    "className": "KukriKnife",
+    "popularName": "Kukri Knife"
+  },
+  {
+    "className": "KobraOptic",
+    "popularName": "Kobra Sights"
+  },
+  {
+    "className": "LabCoat",
+    "popularName": "Lab Coat"
+  },
+  {
+    "className": "LactariusMushroom",
+    "popularName": "Red Pine Mushroom"
+  },
+  {
+    "className": "LandMineTrap",
+    "popularName": "Land Mine"
+  },
+  {
+    "className": "Land_FuelStation_Feed",
+    "popularName": "House"
+  },
+  {
+    "className": "Land_FuelStation_Feed_Enoch",
+    "popularName": "House"
+  },
+  {
+    "className": "Land_Radio_PanelBig",
+    "popularName": "Radio Control Panel"
+  },
+  {
+    "className": "Land_Radio_PanelPAS",
+    "popularName": "PAS Control Panel"
+  },
+  {
+    "className": "Land_VASICore",
+    "popularName": "VASI"
+  },
+  {
+    "className": "Lard",
+    "popularName": "Fat"
+  },
+  {
+    "className": "LargeGasCanister",
+    "popularName": "Large Gas Canister"
+  },
+  {
+    "className": "LargeTent",
+    "popularName": "Large Tent"
+  },
+  {
+    "className": "LargeTentBackPack",
+    "popularName": "$str_cfgvehicles_largetent_backpack0"
+  },
+  {
+    "className": "LargeTentPlacing",
+    "popularName": "Large Tent"
+  },
+  {
+    "className": "LeatherBelt_Beige",
+    "popularName": "Leather Belt"
+  },
+  {
+    "className": "LeatherBelt_Black",
+    "popularName": "Leather Belt"
+  },
+  {
+    "className": "LeatherBelt_Brown",
+    "popularName": "Leather Belt"
+  },
+  {
+    "className": "LeatherBelt_Natural",
+    "popularName": "Leather Belt"
+  },
+  {
+    "className": "LeatherGloves_Beige",
+    "popularName": "Leather Gloves"
+  },
+  {
+    "className": "LeatherGloves_Black",
+    "popularName": "Leather Gloves"
+  },
+  {
+    "className": "LeatherGloves_Brown",
+    "popularName": "Leather Gloves"
+  },
+  {
+    "className": "LeatherGloves_Natural",
+    "popularName": "Leather Gloves"
+  },
+  {
+    "className": "LeatherHat_Beige",
+    "popularName": "Leather Hat"
+  },
+  {
+    "className": "LeatherHat_Black",
+    "popularName": "Leather Hat"
+  },
+  {
+    "className": "LeatherHat_Brown",
+    "popularName": "Leather Hat"
+  },
+  {
+    "className": "LeatherHat_Natural",
+    "popularName": "Leather Hat"
+  },
+  {
+    "className": "LeatherJacket_Beige",
+    "popularName": "Leather Jacket"
+  },
+  {
+    "className": "LeatherJacket_Black",
+    "popularName": "Leather Jacket"
+  },
+  {
+    "className": "LeatherJacket_Brown",
+    "popularName": "Leather Jacket"
+  },
+  {
+    "className": "LeatherJacket_Natural",
+    "popularName": "Leather Jacket"
+  },
+  {
+    "className": "LeatherKnifeSheath",
+    "popularName": "Leather Sheath"
+  },
+  {
+    "className": "LeatherPants_Beige",
+    "popularName": "Leather Pants"
+  },
+  {
+    "className": "LeatherPants_Black",
+    "popularName": "Leather Pants"
+  },
+  {
+    "className": "LeatherPants_Brown",
+    "popularName": "Leather Pants"
+  },
+  {
+    "className": "LeatherPants_Natural",
+    "popularName": "Leather Pants"
+  },
+  {
+    "className": "LeatherSack_Beige",
+    "popularName": "Leather Backpack"
+  },
+  {
+    "className": "LeatherSack_Black",
+    "popularName": "Leather Backpack"
+  },
+  {
+    "className": "LeatherSack_Brown",
+    "popularName": "Leather Backpack"
+  },
+  {
+    "className": "LeatherSack_Natural",
+    "popularName": "Leather Backpack"
+  },
+  {
+    "className": "LeatherSewingKit",
+    "popularName": "Leather Sewing Kit"
+  },
+  {
+    "className": "LeatherShirt_Natural",
+    "popularName": "Leather Shirt"
+  },
+  {
+    "className": "LeatherShoes_Beige",
+    "popularName": "Leather Shoes"
+  },
+  {
+    "className": "LeatherShoes_Black",
+    "popularName": "Leather Shoes"
+  },
+  {
+    "className": "LeatherShoes_Brown",
+    "popularName": "Leather Shoes"
+  },
+  {
+    "className": "LeatherShoes_Natural",
+    "popularName": "Leather Shoes"
+  },
+  {
+    "className": "LeatherStorageVest_Beige",
+    "popularName": "Leather Vest"
+  },
+  {
+    "className": "LeatherStorageVest_Black",
+    "popularName": "Leather Vest"
+  },
+  {
+    "className": "LeatherStorageVest_Brown",
+    "popularName": "Leather Vest"
+  },
+  {
+    "className": "LeatherStorageVest_Natural",
+    "popularName": "Leather Vest"
+  },
+  {
+    "className": "Lockpick",
+    "popularName": "Lock Pick"
+  },
+  {
+    "className": "LongHorn",
+    "popularName": "V2 Longhorn"
+  },
+  {
+    "className": "LongTorch",
+    "popularName": "Long Torch"
+  },
+  {
+    "className": "LongWoodenStick",
+    "popularName": "Long Stick"
+  },
+  {
+    "className": "LugWrench",
+    "popularName": "Tire Iron"
+  },
+  {
+    "className": "M18SmokeGrenade_Green",
+    "popularName": "1-M8 Smoke Grenade"
+  },
+  {
+    "className": "M18SmokeGrenade_Purple",
+    "popularName": "1-M8 Smoke Grenade"
+  },
+  {
+    "className": "M18SmokeGrenade_Red",
+    "popularName": "1-M8 Smoke Grenade"
+  },
+  {
+    "className": "M18SmokeGrenade_White",
+    "popularName": "1-M8 Smoke Grenade"
+  },
+  {
+    "className": "M18SmokeGrenade_Yellow",
+    "popularName": "1-M8 Smoke Grenade"
+  },
+  {
+    "className": "M4A1",
+    "popularName": "M4-A1"
+  },
+  {
+    "className": "M4A1_Black",
+    "popularName": "M4-A1"
+  },
+  {
+    "className": "M4A1_Green",
+    "popularName": "M4-A1"
+  },
+  {
+    "className": "M4_CQBBttstck",
+    "popularName": "M4-A1 CQB Buttstock"
+  },
+  {
+    "className": "M4_CQBBttstck_Black",
+    "popularName": "M4-A1 CQB Buttstock"
+  },
+  {
+    "className": "M4_CQBBttstck_Green",
+    "popularName": "M4-A1 CQB Buttstock"
+  },
+  {
+    "className": "M4_CarryHandleOptic",
+    "popularName": "M4-A1 Carry Handle Sights"
+  },
+  {
+    "className": "M4_MPBttstck",
+    "popularName": "M4-A1 MP Buttstock"
+  },
+  {
+    "className": "M4_MPBttstck_Black",
+    "popularName": "M4-A1 MP Buttstock"
+  },
+  {
+    "className": "M4_MPBttstck_Green",
+    "popularName": "M4-A1 MP Buttstock"
+  },
+  {
+    "className": "M4_MPHndgrd",
+    "popularName": "M4-A1 MP Handguard"
+  },
+  {
+    "className": "M4_MPHndgrd_Black",
+    "popularName": "M4-A1 MP Handguard"
+  },
+  {
+    "className": "M4_MPHndgrd_Green",
+    "popularName": "M4-A1 MP Handguard"
+  },
+  {
+    "className": "M4_OEBttstck",
+    "popularName": "M4-A1 Telescopic Buttstock"
+  },
+  {
+    "className": "M4_OEBttstck_Black",
+    "popularName": "M4-A1 Telescopic Buttstock"
+  },
+  {
+    "className": "M4_OEBttstck_Green",
+    "popularName": "M4-A1 Telescopic Buttstock"
+  },
+  {
+    "className": "M4_PlasticHndgrd",
+    "popularName": "M4-A1 Polymer Handguard"
+  },
+  {
+    "className": "M4_PlasticHndgrd_Black",
+    "popularName": "M4-A1 Polymer Handguard"
+  },
+  {
+    "className": "M4_PlasticHndgrd_Green",
+    "popularName": "M4-A1 Polymer Handguard"
+  },
+  {
+    "className": "M4_RISHndgrd",
+    "popularName": "M4-A1 Rail Handguard"
+  },
+  {
+    "className": "M4_RISHndgrd_Black",
+    "popularName": "M4-A1 Rail Handguard"
+  },
+  {
+    "className": "M4_RISHndgrd_Green",
+    "popularName": "M4-A1 Rail Handguard"
+  },
+  {
+    "className": "M4_Suppressor",
+    "popularName": "Standardized Suppressor"
+  },
+  {
+    "className": "M4_T3NRDSOptic",
+    "popularName": "RVN Sights"
+  },
+  {
+    "className": "M65Jacket_Black",
+    "popularName": "Field Jacket"
+  },
+  {
+    "className": "M65Jacket_Khaki",
+    "popularName": "Field Jacket"
+  },
+  {
+    "className": "M65Jacket_Olive",
+    "popularName": "Field Jacket"
+  },
+  {
+    "className": "M65Jacket_Tan",
+    "popularName": "Field Jacket"
+  },
+  {
+    "className": "M67Grenade",
+    "popularName": "6-M7 Frag Grenade"
+  },
+  {
+    "className": "M68Optic",
+    "popularName": "Combat Sights"
+  },
+  {
+    "className": "M9A1_Bayonet",
+    "popularName": "M4-A1 Bayonet"
+  },
+  {
+    "className": "MKII",
+    "popularName": "MK II"
+  },
+  {
+    "className": "MP5K",
+    "popularName": "SG5-K"
+  },
+  {
+    "className": "MP5_Compensator",
+    "popularName": "SG5-K Compensator"
+  },
+  {
+    "className": "MP5_PlasticHndgrd",
+    "popularName": "SG5-K Polymer Handguard"
+  },
+  {
+    "className": "MP5_RailHndgrd",
+    "popularName": "SG5-K Rail Handguard"
+  },
+  {
+    "className": "MP5k_StockBttstck",
+    "popularName": "SG5-K Folding buttstock"
+  },
+  {
+    "className": "Machete",
+    "popularName": "Machete"
+  },
+  {
+    "className": "Mackerel",
+    "popularName": "Mackerel"
+  },
+  {
+    "className": "MackerelFilletMeat",
+    "popularName": "Mackerel Fillet"
+  },
+  {
+    "className": "MacrolepiotaMushroom",
+    "popularName": "Parasol Mushroom"
+  },
+  {
+    "className": "Mag_1911_7Rnd",
+    "popularName": "7rd Kolt 1911 Mag"
+  },
+  {
+    "className": "Mag_AK101_30Rnd",
+    "popularName": "30rd KA-101 Mag"
+  },
+  {
+    "className": "Mag_AK101_30Rnd_Black",
+    "popularName": "30rd KA-101 Mag"
+  },
+  {
+    "className": "Mag_AK101_30Rnd_Green",
+    "popularName": "30rd KA-101 Mag"
+  },
+  {
+    "className": "Mag_AK74_30Rnd",
+    "popularName": "30rd KA-74 Mag"
+  },
+  {
+    "className": "Mag_AK74_30Rnd_Black",
+    "popularName": "30rd KA-74 Mag"
+  },
+  {
+    "className": "Mag_AK74_30Rnd_Green",
+    "popularName": "30rd KA-74 Mag"
+  },
+  {
+    "className": "Mag_AKM_30Rnd",
+    "popularName": "30rd KA-M Mag"
+  },
+  {
+    "className": "Mag_AKM_Drum75Rnd",
+    "popularName": "75rd KA-M Drum Mag"
+  },
+  {
+    "className": "Mag_AKM_Drum75Rnd_Black",
+    "popularName": "75rd KA-M Drum Mag"
+  },
+  {
+    "className": "Mag_AKM_Drum75Rnd_Green",
+    "popularName": "75rd KA-M Drum Mag"
+  },
+  {
+    "className": "Mag_AKM_Drum_TEST",
+    "popularName": "Tracer testing mag"
+  },
+  {
+    "className": "Mag_AKM_Palm30Rnd",
+    "popularName": "30rd KA-M Polymer Mag"
+  },
+  {
+    "className": "Mag_AKM_Palm30Rnd_Black",
+    "popularName": "30rd KA-M Polymer Mag"
+  },
+  {
+    "className": "Mag_AKM_Palm30Rnd_Green",
+    "popularName": "30rd KA-M Polymer Mag"
+  },
+  {
+    "className": "Mag_CLIP762x39_10Rnd",
+    "popularName": "10rd SK 59/66 Clip"
+  },
+  {
+    "className": "Mag_CLIP762x54_5Rnd",
+    "popularName": "5rd Mosin 91/30 Clip"
+  },
+  {
+    "className": "Mag_CMAG_10Rnd",
+    "popularName": "10rd Mag-C Magazine"
+  },
+  {
+    "className": "Mag_CMAG_10Rnd_Black",
+    "popularName": "10rd Mag-C Magazine"
+  },
+  {
+    "className": "Mag_CMAG_10Rnd_Green",
+    "popularName": "10rd Mag-C Magazine"
+  },
+  {
+    "className": "Mag_CMAG_20Rnd",
+    "popularName": "20rd Mag-C Magazine"
+  },
+  {
+    "className": "Mag_CMAG_20Rnd_Black",
+    "popularName": "20rd Mag-C Magazine"
+  },
+  {
+    "className": "Mag_CMAG_20Rnd_Green",
+    "popularName": "20rd Mag-C Magazine"
+  },
+  {
+    "className": "Mag_CMAG_30Rnd",
+    "popularName": "30rd Mag-C Magazine"
+  },
+  {
+    "className": "Mag_CMAG_30Rnd_Black",
+    "popularName": "30rd Mag-C Magazine"
+  },
+  {
+    "className": "Mag_CMAG_30Rnd_Green",
+    "popularName": "30rd Mag-C Magazine"
+  },
+  {
+    "className": "Mag_CMAG_40Rnd",
+    "popularName": "40rd Mag-C Magazine"
+  },
+  {
+    "className": "Mag_CMAG_40Rnd_Black",
+    "popularName": "40rd Mag-C Magazine"
+  },
+  {
+    "className": "Mag_CMAG_40Rnd_Green",
+    "popularName": "40rd Mag-C Magazine"
+  },
+  {
+    "className": "Mag_CZ527_5rnd",
+    "popularName": "5rd CR-527 Mag"
+  },
+  {
+    "className": "Mag_CZ61_20Rnd",
+    "popularName": "20rd CR-61 Mag"
+  },
+  {
+    "className": "Mag_CZ75_15Rnd",
+    "popularName": "15rd CR-75 Mag"
+  },
+  {
+    "className": "Mag_FAL_20Rnd",
+    "popularName": "20rd LAR Mag"
+  },
+  {
+    "className": "Mag_FNX45_15Rnd",
+    "popularName": "15rd FX-45 Mag"
+  },
+  {
+    "className": "Mag_Glock_15Rnd",
+    "popularName": "15rd Mlock-91 Mag"
+  },
+  {
+    "className": "Mag_IJ70_8Rnd",
+    "popularName": "12rd IJ-70 Mag"
+  },
+  {
+    "className": "Mag_MKII_10Rnd",
+    "popularName": "10rd MK II Mag"
+  },
+  {
+    "className": "Mag_MP5_15Rnd",
+    "popularName": "15rd SG5-K Mag"
+  },
+  {
+    "className": "Mag_MP5_30Rnd",
+    "popularName": "30rd SG5-K Mag"
+  },
+  {
+    "className": "Mag_STANAGCoupled_30Rnd",
+    "popularName": "30rd Coupled Standardized Mag"
+  },
+  {
+    "className": "Mag_STANAG_30Rnd",
+    "popularName": "30rd Standardized Mag"
+  },
+  {
+    "className": "Mag_SVD_10Rnd",
+    "popularName": "10rd VSD Mag"
+  },
+  {
+    "className": "Mag_Saiga_5Rnd",
+    "popularName": "5rd Vaiga Mag"
+  },
+  {
+    "className": "Mag_Saiga_8Rnd",
+    "popularName": "8rd Vaiga Mag"
+  },
+  {
+    "className": "Mag_Saiga_Drum20Rnd",
+    "popularName": "20rd Drum Vaiga Mag"
+  },
+  {
+    "className": "Mag_UMP_25Rnd",
+    "popularName": "25rd USG-45 Mag"
+  },
+  {
+    "className": "Mag_VSS_10Rnd",
+    "popularName": "10rd VSS Mag"
+  },
+  {
+    "className": "Mag_VAL_20Rnd",
+    "popularName": "20rd SVAL Mag"
+  },
+  {
+    "className": "Mag_Ruger1022_15Rnd",
+    "popularName": "15rd Sporter 22 Mag"
+  },
+  {
+    "className": "Mag_Ruger1022_30Rnd",
+    "popularName": "30rd Sporter 22. Mag"
+  },
+  {
+    "className": "Mag_Scout_5Rnd",
+    "popularName": "5rd Pioneer Rifle Mag"
+  },
+  {
+    "className": "MakarovIJ70",
+    "popularName": "IJ-70"
+  },
+  {
+    "className": "MaleAdamDecayedDarkHands",
+    "popularName": "Bare hands"
+  },
+  {
+    "className": "MaleAdamDecayedHands",
+    "popularName": "Bare hands"
+  },
+  {
+    "className": "MaleAdamDecayedLighterDarkHands",
+    "popularName": "Bare hands"
+  },
+  {
+    "className": "MaleAdamHands",
+    "popularName": "Bare hands"
+  },
+  {
+    "className": "MaleAdamHead",
+    "popularName": "face"
+  },
+  {
+    "className": "MaleAdamHead_BeardEnd",
+    "popularName": "face"
+  },
+  {
+    "className": "MaleAdamHead_BeardStart",
+    "popularName": "face"
+  },
+  {
+    "className": "MaleBorisHands",
+    "popularName": "Bare hands"
+  },
+  {
+    "className": "MaleBorisHandsDecayed",
+    "popularName": "Bare hands"
+  },
+  {
+    "className": "MaleBorisHead",
+    "popularName": "face"
+  },
+  {
+    "className": "MaleCyrilHands",
+    "popularName": "Bare hands"
+  },
+  {
+    "className": "MaleCyrilHandsDecayed",
+    "popularName": "Bare hands"
+  },
+  {
+    "className": "MaleCyrilHead",
+    "popularName": "face"
+  },
+  {
+    "className": "MaleDenisHands",
+    "popularName": "Bare hands"
+  },
+  {
+    "className": "MaleDenisHandsDecayed",
+    "popularName": "Bare hands"
+  },
+  {
+    "className": "MaleDenisHead",
+    "popularName": "face"
+  },
+  {
+    "className": "MaleEliasHands",
+    "popularName": "Bare hands"
+  },
+  {
+    "className": "MaleEliasHandsDecayed",
+    "popularName": "Bare hands"
+  },
+  {
+    "className": "MaleEliasHead",
+    "popularName": "face"
+  },
+  {
+    "className": "MaleFrancisHands",
+    "popularName": "Bare hands"
+  },
+  {
+    "className": "MaleFrancisHandsDecayed",
+    "popularName": "Bare hands"
+  },
+  {
+    "className": "MaleFrancisHead",
+    "popularName": "face"
+  },
+  {
+    "className": "MaleGuoHands",
+    "popularName": "Bare hands"
+  },
+  {
+    "className": "MaleGuoHandsDecayed",
+    "popularName": "Bare hands"
+  },
+  {
+    "className": "MaleGuoHead",
+    "popularName": "face"
+  },
+  {
+    "className": "MaleHands_Base",
+    "popularName": "Bare hands"
+  },
+  {
+    "className": "MaleHassanHands",
+    "popularName": "Bare hands"
+  },
+  {
+    "className": "MaleHassanHandsDecayed",
+    "popularName": "Bare hands"
+  },
+  {
+    "className": "MaleHassanHead",
+    "popularName": "face"
+  },
+  {
+    "className": "MaleIndarHands",
+    "popularName": "Bare hands"
+  },
+  {
+    "className": "MaleIndarHandsDecayed",
+    "popularName": "Bare hands"
+  },
+  {
+    "className": "MaleIndarHead",
+    "popularName": "face"
+  },
+  {
+    "className": "MaleJoseHands",
+    "popularName": "Bare hands"
+  },
+  {
+    "className": "MaleJoseHandsDecayed",
+    "popularName": "Bare hands"
+  },
+  {
+    "className": "MaleJoseHead",
+    "popularName": "face"
+  },
+  {
+    "className": "MaleKaitoHands",
+    "popularName": "Bare hands"
+  },
+  {
+    "className": "MaleKaitoHandsDecayed",
+    "popularName": "Bare hands"
+  },
+  {
+    "className": "MaleKaitoHead",
+    "popularName": "face"
+  },
+  {
+    "className": "MaleLewisHands",
+    "popularName": "Bare hands"
+  },
+  {
+    "className": "MaleLewisHandsDecayed",
+    "popularName": "Bare hands"
+  },
+  {
+    "className": "MaleLewisHead",
+    "popularName": "face"
+  },
+  {
+    "className": "MaleManuaHands",
+    "popularName": "Bare hands"
+  },
+  {
+    "className": "MaleManuaHandsDecayed",
+    "popularName": "Bare hands"
+  },
+  {
+    "className": "MaleManuaHead",
+    "popularName": "face"
+  },
+  {
+    "className": "MaleNikiHands",
+    "popularName": "Bare hands"
+  },
+  {
+    "className": "MaleNikiHandsDecayed",
+    "popularName": "Bare hands"
+  },
+  {
+    "className": "MaleNikiHead",
+    "popularName": "face"
+  },
+  {
+    "className": "MaleOliverHands",
+    "popularName": "Bare hands"
+  },
+  {
+    "className": "MaleOliverHandsDecayed",
+    "popularName": "Bare hands"
+  },
+  {
+    "className": "MaleOliverHead",
+    "popularName": "face"
+  },
+  {
+    "className": "MalePeterHands",
+    "popularName": "Bare hands"
+  },
+  {
+    "className": "MalePeterHandsDecayed",
+    "popularName": "Bare hands"
+  },
+  {
+    "className": "MalePeterHead",
+    "popularName": "face"
+  },
+  {
+    "className": "MaleQuinnHands",
+    "popularName": "Bare hands"
+  },
+  {
+    "className": "MaleQuinnHandsDecayed",
+    "popularName": "Bare hands"
+  },
+  {
+    "className": "MaleQuinnHead",
+    "popularName": "face"
+  },
+  {
+    "className": "MaleRolfHands",
+    "popularName": "Bare hands"
+  },
+  {
+    "className": "MaleRolfHandsDecayed",
+    "popularName": "Bare hands"
+  },
+  {
+    "className": "MaleRolfHead",
+    "popularName": "face"
+  },
+  {
+    "className": "MaleSethHands",
+    "popularName": "Bare hands"
+  },
+  {
+    "className": "MaleSethHandsDecayed",
+    "popularName": "Bare hands"
+  },
+  {
+    "className": "MaleSethHead",
+    "popularName": "face"
+  },
+  {
+    "className": "MaleTaikiHands",
+    "popularName": "Bare hands"
+  },
+  {
+    "className": "MaleTaikiHandsDecayed",
+    "popularName": "Bare hands"
+  },
+  {
+    "className": "MaleTaikiHead",
+    "popularName": "face"
+  },
+  {
+    "className": "ManSuit_Beige",
+    "popularName": "Mens Suit Jacket"
+  },
+  {
+    "className": "ManSuit_Black",
+    "popularName": "Mens Suit Jacket"
+  },
+  {
+    "className": "ManSuit_Blue",
+    "popularName": "Mens Suit Jacket"
+  },
+  {
+    "className": "ManSuit_Brown",
+    "popularName": "Mens Suit Jacket"
+  },
+  {
+    "className": "ManSuit_DarkGrey",
+    "popularName": "Mens Suit Jacket"
+  },
+  {
+    "className": "ManSuit_Khaki",
+    "popularName": "Mens Suit Jacket"
+  },
+  {
+    "className": "ManSuit_LightGrey",
+    "popularName": "Mens Suit Jacket"
+  },
+  {
+    "className": "ManSuit_White",
+    "popularName": "Mens Suit Jacket"
+  },
+  {
+    "className": "Marmalade",
+    "popularName": "Strawberry Jam"
+  },
+  {
+    "className": "Matchbox",
+    "popularName": "Matches"
+  },
+  {
+    "className": "MedicalScrubsHat_Blue",
+    "popularName": "Scrub Hat"
+  },
+  {
+    "className": "MedicalScrubsHat_Green",
+    "popularName": "Scrub Hat"
+  },
+  {
+    "className": "MedicalScrubsHat_White",
+    "popularName": "Scrub Hat"
+  },
+  {
+    "className": "MedicalScrubsPants_Blue",
+    "popularName": "Scrub Pants"
+  },
+  {
+    "className": "MedicalScrubsPants_Green",
+    "popularName": "Scrub Pants"
+  },
+  {
+    "className": "MedicalScrubsPants_White",
+    "popularName": "Scrub Pants"
+  },
+  {
+    "className": "MedicalScrubsShirt_Blue",
+    "popularName": "Scrub T-Shirt"
+  },
+  {
+    "className": "MedicalScrubsShirt_Green",
+    "popularName": "Scrub T-Shirt"
+  },
+  {
+    "className": "MedicalScrubsShirt_White",
+    "popularName": "Scrub T-Shirt"
+  },
+  {
+    "className": "MediumGasCanister",
+    "popularName": "Medium Gas Canister"
+  },
+  {
+    "className": "MediumTent",
+    "popularName": "Medium Tent"
+  },
+  {
+    "className": "MediumTentPlacing",
+    "popularName": "Medium Tent"
+  },
+  {
+    "className": "Megaphone",
+    "popularName": "Megaphone"
+  },
+  {
+    "className": "MetalPlate",
+    "popularName": "Sheet Metal"
+  },
+  {
+    "className": "MetalWire",
+    "popularName": "Metal Wire"
+  },
+  {
+    "className": "MetalWireLocked",
+    "popularName": "Restrained by Metal Wire"
+  },
+  {
+    "className": "Mich2001Helmet",
+    "popularName": "Tactical Helmet"
+  },
+  {
+    "className": "MilitaryBelt",
+    "popularName": "Tactical Belt"
+  },
+  {
+    "className": "MilitaryBeret_CDF",
+    "popularName": "Beret"
+  },
+  {
+    "className": "MilitaryBeret_ChDKZ",
+    "popularName": "Beret"
+  },
+  {
+    "className": "MilitaryBeret_NZ",
+    "popularName": "Beret"
+  },
+  {
+    "className": "MilitaryBeret_Red",
+    "popularName": "Beret"
+  },
+  {
+    "className": "MilitaryBeret_UN",
+    "popularName": "Beret"
+  },
+  {
+    "className": "MilitaryBoots_Beige",
+    "popularName": "Assault Boots"
+  },
+  {
+    "className": "MilitaryBoots_Black",
+    "popularName": "Assault Boots"
+  },
+  {
+    "className": "MilitaryBoots_Bluerock",
+    "popularName": "Assault Boots"
+  },
+  {
+    "className": "MilitaryBoots_Brown",
+    "popularName": "Assault Boots"
+  },
+  {
+    "className": "MilitaryBoots_Redpunk",
+    "popularName": "Assault Boots"
+  },
+  {
+    "className": "MiniDress_BlueChecker",
+    "popularName": "Collar Dress"
+  },
+  {
+    "className": "MiniDress_BlueWithDots",
+    "popularName": "Collar Dress"
+  },
+  {
+    "className": "MiniDress_BrownChecker",
+    "popularName": "Collar Dress"
+  },
+  {
+    "className": "MiniDress_GreenChecker",
+    "popularName": "Collar Dress"
+  },
+  {
+    "className": "MiniDress_Pink",
+    "popularName": "Collar Dress"
+  },
+  {
+    "className": "MiniDress_PinkChecker",
+    "popularName": "Collar Dress"
+  },
+  {
+    "className": "MiniDress_RedChecker",
+    "popularName": "Collar Dress"
+  },
+  {
+    "className": "MiniDress_WhiteChecker",
+    "popularName": "Collar Dress"
+  },
+  {
+    "className": "Morphine",
+    "popularName": "Morphine Auto-Injector"
+  },
+  {
+    "className": "Mosin9130",
+    "popularName": "Mosin 91/30"
+  },
+  {
+    "className": "Mosin9130_Black",
+    "popularName": "Mosin 91/30"
+  },
+  {
+    "className": "Mosin9130_Camo",
+    "popularName": "Mosin 91/30"
+  },
+  {
+    "className": "Mosin9130_Green",
+    "popularName": "Mosin 91/30"
+  },
+  {
+    "className": "Mosin_Bayonet",
+    "popularName": "Mosin 91/30 Bayonet"
+  },
+  {
+    "className": "Mosin_Compensator",
+    "popularName": "Mosin 91/30 Compensator"
+  },
+  {
+    "className": "MotoHelmet_Black",
+    "popularName": "Motorbike Helmet"
+  },
+  {
+    "className": "MotoHelmet_Blue",
+    "popularName": "Motorbike Helmet"
+  },
+  {
+    "className": "MotoHelmet_Green",
+    "popularName": "Motorbike Helmet"
+  },
+  {
+    "className": "MotoHelmet_Grey",
+    "popularName": "Motorbike Helmet"
+  },
+  {
+    "className": "MotoHelmet_Lime",
+    "popularName": "Motorbike Helmet"
+  },
+  {
+    "className": "MotoHelmet_Red",
+    "popularName": "Motorbike Helmet"
+  },
+  {
+    "className": "MotoHelmet_White",
+    "popularName": "Motorbike Helmet"
+  },
+  {
+    "className": "MountainBag_Blue",
+    "popularName": "Mountain Backpack"
+  },
+  {
+    "className": "MountainBag_Green",
+    "popularName": "Mountain Backpack"
+  },
+  {
+    "className": "MountainBag_Orange",
+    "popularName": "Mountain Backpack"
+  },
+  {
+    "className": "MountainBag_Red",
+    "popularName": "Mountain Backpack"
+  },
+  {
+    "className": "MouthRag",
+    "popularName": "Rag"
+  },
+  {
+    "className": "Mp133Shotgun",
+    "popularName": "BK-133"
+  },
+  {
+    "className": "NBCBootsGray",
+    "popularName": "NBC Boots"
+  },
+  {
+    "className": "NBCGlovesGray",
+    "popularName": "NBC Gloves"
+  },
+  {
+    "className": "NBCHoodGray",
+    "popularName": "NBC Hood"
+  },
+  {
+    "className": "NBCJacketGray",
+    "popularName": "NBC Jacket"
+  },
+  {
+    "className": "NBCPantsGray",
+    "popularName": "NBC Pants"
+  },
+  {
+    "className": "AirborneMask",
+    "popularName": "NBC Respirator"
+  },
+  {
+    "className": "NVGHeadstrap",
+    "popularName": "NVG Headstrap"
+  },
+  {
+    "className": "NVGoggles",
+    "popularName": "Night Vision Goggles"
+  },
+  {
+    "className": "Nail",
+    "popularName": "Nails"
+  },
+  {
+    "className": "NailBox",
+    "popularName": "Boxed Nails"
+  },
+  {
+    "className": "NailedBaseballBat",
+    "popularName": "Nailed Bat"
+  },
+  {
+    "className": "Netting",
+    "popularName": "Netting"
+  },
+  {
+    "className": "NioshFaceMask",
+    "popularName": "Dust Mask"
+  },
+  {
+    "className": "NonStrategic",
+    "popularName": "Building"
+  },
+  {
+    "className": "NonStrategic_Base",
+    "popularName": "Building"
+  },
+  {
+    "className": "NurseDress_Blue",
+    "popularName": "Nurse Dress"
+  },
+  {
+    "className": "NurseDress_White",
+    "popularName": "Nurse Dress"
+  },
+  {
+    "className": "NylonKnifeSheath",
+    "popularName": "Sheath"
+  },
+  {
+    "className": "OMNOGloves_Brown",
+    "popularName": "Combat Gloves"
+  },
+  {
+    "className": "OMNOGloves_Gray",
+    "popularName": "Combat Gloves"
+  },
+  {
+    "className": "OfficerHat",
+    "popularName": "Officer Cap"
+  },
+  {
+    "className": "OffroadHatchback",
+    "popularName": "Ada 4x4"
+  },
+  {
+    "className": "OffroadHatchback_Blue",
+    "popularName": "Ada 4x4"
+  },
+  {
+    "className": "OffroadHatchback_White",
+    "popularName": "Ada 4x4"
+  },
+  {
+    "className": "OrienteeringCompass",
+    "popularName": "Orienteering Compass"
+  },
+  {
+    "className": "Orange",
+    "popularName": "Food-Orange"
+  },
+  {
+    "className": "PSO11Optic",
+    "popularName": "PSO-1-1 Scope"
+  },
+  {
+    "className": "PSO1Optic",
+    "popularName": "PSO-1 Scope"
+  },
+  {
+    "className": "PUScopeOptic",
+    "popularName": "PU Scope"
+  },
+  {
+    "className": "PainkillerTablets",
+    "popularName": "Codeine Pills"
+  },
+  {
+    "className": "Paper",
+    "popularName": "Paper"
+  },
+  {
+    "className": "ParamedicJacket_Blue",
+    "popularName": "Paramedic Jacket"
+  },
+  {
+    "className": "ParamedicJacket_Crimson",
+    "popularName": "Paramedic Jacket"
+  },
+  {
+    "className": "ParamedicJacket_Green",
+    "popularName": "Paramedic Jacket"
+  },
+  {
+    "className": "ParamedicPants_Blue",
+    "popularName": "Paramedic Pants"
+  },
+  {
+    "className": "ParamedicPants_Crimson",
+    "popularName": "Paramedic Pants"
+  },
+  {
+    "className": "ParamedicPants_Green",
+    "popularName": "Paramedic Pants"
+  },
+  {
+    "className": "PartyTent",
+    "popularName": "Canopy Tent"
+  },
+  {
+    "className": "PeachesCan",
+    "popularName": "Canned Peaches"
+  },
+  {
+    "className": "PeachesCan_Opened",
+    "popularName": "Canned Peaches"
+  },
+  {
+    "className": "Pear",
+    "popularName": "Pear"
+  },
+  {
+    "className": "Pen_Black",
+    "popularName": "Pen"
+  },
+  {
+    "className": "Pen_Blue",
+    "popularName": "Pen"
+  },
+  {
+    "className": "Pen_Green",
+    "popularName": "Pen"
+  },
+  {
+    "className": "Pen_Red",
+    "popularName": "Pen"
+  },
+  {
+    "className": "PepperSeeds",
+    "popularName": "Pepper Seeds"
+  },
+  {
+    "className": "PepperSeedsPack",
+    "popularName": "Packed Pepper Seeds"
+  },
+  {
+    "className": "PersonalRadio",
+    "popularName": "Handheld Transceiver"
+  },
+  {
+    "className": "PetrolLighter",
+    "popularName": "Fire Lighter"
+  },
+  {
+    "className": "Pickaxe",
+    "popularName": "Pickaxe"
+  },
+  {
+    "className": "PigPelt",
+    "popularName": "Pig Pelt"
+  },
+  {
+    "className": "PigSteakMeat",
+    "popularName": "Pork Steak"
+  },
+  {
+    "className": "PileOfWoodenPlanks",
+    "popularName": "Lumber Pile"
+  },
+  {
+    "className": "PilotkaCap",
+    "popularName": "Pilotka"
+  },
+  {
+    "className": "Pipe",
+    "popularName": "Pipe"
+  },
+  {
+    "className": "PissGround",
+    "popularName": "Building"
+  },
+  {
+    "className": "PistolSuppressor",
+    "popularName": "Pistol Suppressor"
+  },
+  {
+    "className": "PlantMaterial",
+    "popularName": "Plant Material"
+  },
+  {
+    "className": "Plant_Pepper",
+    "popularName": "Pepper Plant"
+  },
+  {
+    "className": "Plant_Potato",
+    "popularName": "Potato Plant"
+  },
+  {
+    "className": "Plant_Pumpkin",
+    "popularName": "Pumpkin Plant"
+  },
+  {
+    "className": "Plant_Tomato",
+    "popularName": "Tomato Plant"
+  },
+  {
+    "className": "Plant_Zucchini",
+    "popularName": "Zucchini Plant"
+  },
+  {
+    "className": "PlateCarrierHolster",
+    "popularName": "Holster"
+  },
+  {
+    "className": "PlateCarrierPouches",
+    "popularName": "Pouches"
+  },
+  {
+    "className": "PlateCarrierVest",
+    "popularName": "Plate Carrier"
+  },
+  {
+    "className": "PleurotusMushroom",
+    "popularName": "Oyster Mushroom"
+  },
+  {
+    "className": "Pliers",
+    "popularName": "Pliers"
+  },
+  {
+    "className": "Plum",
+    "popularName": "Plum"
+  },
+  {
+    "className": "PoliceCap",
+    "popularName": "Police Cap"
+  },
+  {
+    "className": "PoliceJacket",
+    "popularName": "Police Jacket"
+  },
+  {
+    "className": "PoliceJacketOrel",
+    "popularName": "OREL Police Jacket"
+  },
+  {
+    "className": "PolicePants",
+    "popularName": "Police Pants"
+  },
+  {
+    "className": "PolicePantsOrel",
+    "popularName": "OREL Police Pants"
+  },
+  {
+    "className": "PoliceVest",
+    "popularName": "Stab Vest"
+  },
+  {
+    "className": "PortableGasLamp",
+    "popularName": "Gas Lamp"
+  },
+  {
+    "className": "PortableGasStove",
+    "popularName": "Gas Stove"
+  },
+  {
+    "className": "Pot",
+    "popularName": "Cooking Pot"
+  },
+  {
+    "className": "Potato",
+    "popularName": "Potato"
+  },
+  {
+    "className": "PowderedMilk",
+    "popularName": "Powdered Milk"
+  },
+  {
+    "className": "PowerGenerator",
+    "popularName": "Power Generator"
+  },
+  {
+    "className": "PressVest_Blue",
+    "popularName": "Ballistic Vest"
+  },
+  {
+    "className": "PressVest_LightBlue",
+    "popularName": "Ballistic Vest"
+  },
+  {
+    "className": "PrisonUniformJacket",
+    "popularName": "Prisoner Jacket"
+  },
+  {
+    "className": "PrisonUniformPants",
+    "popularName": "Prisoner Pants"
+  },
+  {
+    "className": "PrisonerCap",
+    "popularName": "Prisoner Cap"
+  },
+  {
+    "className": "PsilocybeMushroom",
+    "popularName": "Liberty Cap"
+  },
+  {
+    "className": "Pumpkin",
+    "popularName": "Pumpkin"
+  },
+  {
+    "className": "PumpkinHelmet",
+    "popularName": "Jack-o'-lantern"
+  },
+  {
+    "className": "PumpkinSeeds",
+    "popularName": "Pumpkin Seeds"
+  },
+  {
+    "className": "PumpkinSeedsPack",
+    "popularName": "Packed Pumpkin Seeds"
+  },
+  {
+    "className": "PurificationTablets",
+    "popularName": "Chlorine Tablets"
+  },
+  {
+    "className": "PitchFork",
+    "popularName": "Pitch Fork"
+  },
+  {
+    "className": "QuiltedJacket_Black",
+    "popularName": "Quilted Jacket"
+  },
+  {
+    "className": "QuiltedJacket_Blue",
+    "popularName": "Quilted Jacket"
+  },
+  {
+    "className": "QuiltedJacket_Green",
+    "popularName": "Quilted Jacket"
+  },
+  {
+    "className": "QuiltedJacket_Grey",
+    "popularName": "Quilted Jacket"
+  },
+  {
+    "className": "QuiltedJacket_Orange",
+    "popularName": "Quilted Jacket"
+  },
+  {
+    "className": "QuiltedJacket_Red",
+    "popularName": "Quilted Jacket"
+  },
+  {
+    "className": "QuiltedJacket_Violet",
+    "popularName": "Quilted Jacket"
+  },
+  {
+    "className": "QuiltedJacket_Yellow",
+    "popularName": "Quilted Jacket"
+  },
+  {
+    "className": "RDG2SmokeGrenade_Black",
+    "popularName": "EGD-2 Smoke Grenade"
+  },
+  {
+    "className": "RDG2SmokeGrenade_White",
+    "popularName": "EGD-2 Smoke Grenade"
+  },
+  {
+    "className": "RGD5Grenade",
+    "popularName": "EGD-5 Frag Grenade"
+  },
+  {
+    "className": "RadarCap_Black",
+    "popularName": "Radar Cap"
+  },
+  {
+    "className": "RadarCap_Blue",
+    "popularName": "Radar Cap"
+  },
+  {
+    "className": "RadarCap_Brown",
+    "popularName": "Radar Cap"
+  },
+  {
+    "className": "RadarCap_Green",
+    "popularName": "Radar Cap"
+  },
+  {
+    "className": "RadarCap_Red",
+    "popularName": "Radar Cap"
+  },
+  {
+    "className": "Rag",
+    "popularName": "Rag"
+  },
+  {
+    "className": "Raincoat_Black",
+    "popularName": "Raincoat"
+  },
+  {
+    "className": "Raincoat_Blue",
+    "popularName": "Raincoat"
+  },
+  {
+    "className": "Raincoat_Green",
+    "popularName": "Raincoat"
+  },
+  {
+    "className": "Raincoat_Orange",
+    "popularName": "Raincoat"
+  },
+  {
+    "className": "Raincoat_Pink",
+    "popularName": "Raincoat"
+  },
+  {
+    "className": "Raincoat_Red",
+    "popularName": "Raincoat"
+  },
+  {
+    "className": "Raincoat_Yellow",
+    "popularName": "Raincoat"
+  },
+  {
+    "className": "Rangefinder",
+    "popularName": "Rangefinder"
+  },
+  {
+    "className": "Raycaster",
+    "popularName": "Raycast Scanner"
+  },
+  {
+    "className": "ReflexOptic",
+    "popularName": "Baraka Sights"
+  },
+  {
+    "className": "ReflexVest",
+    "popularName": "Reflective Vest"
+  },
+  {
+    "className": "Rice",
+    "popularName": "Rice"
+  },
+  {
+    "className": "RidersJacket_Black",
+    "popularName": "Rider Jacket"
+  },
+  {
+    "className": "Roadflare",
+    "popularName": "Road Flare"
+  },
+  {
+    "className": "Rope",
+    "popularName": "Rope"
+  },
+  {
+    "className": "RopeLocked",
+    "popularName": "Restrained by Rope"
+  },
+  {
+    "className": "Ruins",
+    "popularName": "House"
+  },
+  {
+    "className": "Ruger1022",
+    "popularName": "Sporter 22."
+  },
+  {
+    "className": "SKS",
+    "popularName": "SK 59/66"
+  },
+  {
+    "className": "SKS_Bayonet",
+    "popularName": "SK 59/66 Bayonet"
+  },
+  {
+    "className": "SKS_Black",
+    "popularName": "SK 59/66"
+  },
+  {
+    "className": "SKS_Green",
+    "popularName": "SK 59/66"
+  },
+  {
+    "className": "SVD",
+    "popularName": "VSD"
+  },
+  {
+    "className": "ASVAL",
+    "popularName": "Sval"
+  },
+  {
+    "className": "Saiga",
+    "popularName": "Vaiga"
+  },
+  {
+    "className": "Saiga_Bttstck",
+    "popularName": "Vaiga Folding Buttstock"
+  },
+  {
+    "className": "SalineBag",
+    "popularName": "Saline Bag"
+  },
+  {
+    "className": "SalineBagIV",
+    "popularName": "IV Saline Bag"
+  },
+  {
+    "className": "SambucusBerry",
+    "popularName": "Elderberries"
+  },
+  {
+    "className": "SantasBeard",
+    "popularName": "Santa Beard"
+  },
+  {
+    "className": "SantasHat",
+    "popularName": "Santa Hat"
+  },
+  {
+    "className": "Sardines",
+    "popularName": "Sardines"
+  },
+  {
+    "className": "SardinesCan",
+    "popularName": "Canned Sardines"
+  },
+  {
+    "className": "SardinesCan_Opened",
+    "popularName": "Canned Sardines"
+  },
+  {
+    "className": "SawedoffIzh18",
+    "popularName": "Sawed-off BK-18"
+  },
+  {
+    "className": "SawedoffIzh43Shotgun",
+    "popularName": "Sawed-off BK-43"
+  },
+  {
+    "className": "SawedoffMosin9130",
+    "popularName": "Sawed-off Mosin 91/30"
+  },
+  {
+    "className": "SawedoffMosin9130_Black",
+    "popularName": "Sawed-off Mosin 91/30"
+  },
+  {
+    "className": "SawedoffMosin9130_Camo",
+    "popularName": "Sawed-off Mosin 91/30"
+  },
+  {
+    "className": "SawedoffMosin9130_Green",
+    "popularName": "Sawed-off Mosin 91/30"
+  },
+  {
+    "className": "Screwdriver",
+    "popularName": "Screwdriver"
+  },
+  {
+    "className": "Scout",
+    "popularName": "Pioneer rifle"
+  },
+  {
+    "className": "Scout_Chernarus",
+    "popularName": "Bolf pioneer rifle"
+  },
+  {
+    "className": "SeaChest",
+    "popularName": "Sea Chest"
+  },
+  {
+    "className": "Sedan_02",
+    "popularName": "Sarka 120"
+  },
+  {
+    "className": "Sedan_02_Door_1_1",
+    "popularName": "Sarka 120 Front Left Door"
+  },
+  {
+    "className": "Sedan_02_Door_1_1_Grey",
+    "popularName": "Sarka 120 Front Left Door"
+  },
+  {
+    "className": "Sedan_02_Door_1_1_GreyRust",
+    "popularName": "Sarka 120 Front Left Door"
+  },
+  {
+    "className": "Sedan_02_Door_1_1_Red",
+    "popularName": "Sarka 120 Front Left Door"
+  },
+  {
+    "className": "Sedan_02_Door_1_1_RedRust",
+    "popularName": "Sarka 120 Front Left Door"
+  },
+  {
+    "className": "Sedan_02_Door_1_1_YellowRust",
+    "popularName": "Sarka 120 Front Left Door"
+  },
+  {
+    "className": "Sedan_02_Door_1_2",
+    "popularName": "Sarka 120 Rear Left Door"
+  },
+  {
+    "className": "Sedan_02_Door_1_2_Grey",
+    "popularName": "Sarka 120 Rear Left Door"
+  },
+  {
+    "className": "Sedan_02_Door_1_2_GreyRust",
+    "popularName": "Sarka 120 Rear Left Door"
+  },
+  {
+    "className": "Sedan_02_Door_1_2_Red",
+    "popularName": "Sarka 120 Rear Left Door"
+  },
+  {
+    "className": "Sedan_02_Door_1_2_RedRust",
+    "popularName": "Sarka 120 Rear Left Door"
+  },
+  {
+    "className": "Sedan_02_Door_1_2_YellowRust",
+    "popularName": "Sarka 120 Rear Left Door"
+  },
+  {
+    "className": "Sedan_02_Door_2_1",
+    "popularName": "Sarka 120 Front Right Door"
+  },
+  {
+    "className": "Sedan_02_Door_2_1_Grey",
+    "popularName": "Sarka 120 Front Right Door"
+  },
+  {
+    "className": "Sedan_02_Door_2_1_GreyRust",
+    "popularName": "Sarka 120 Front Right Door"
+  },
+  {
+    "className": "Sedan_02_Door_2_1_Red",
+    "popularName": "Sarka 120 Front Right Door"
+  },
+  {
+    "className": "Sedan_02_Door_2_1_RedRust",
+    "popularName": "Sarka 120 Front Right Door"
+  },
+  {
+    "className": "Sedan_02_Door_2_1_YellowRust",
+    "popularName": "Sarka 120 Front Right Door"
+  },
+  {
+    "className": "Sedan_02_Door_2_2",
+    "popularName": "Sarka 120 Rear Right Door"
+  },
+  {
+    "className": "Sedan_02_Door_2_2_Grey",
+    "popularName": "Sarka 120 Rear Right Door"
+  },
+  {
+    "className": "Sedan_02_Door_2_2_GreyRust",
+    "popularName": "Sarka 120 Rear Right Door"
+  },
+  {
+    "className": "Sedan_02_Door_2_2_Red",
+    "popularName": "Sarka 120 Rear Right Door"
+  },
+  {
+    "className": "Sedan_02_Door_2_2_RedRust",
+    "popularName": "Sarka 120 Rear Right Door"
+  },
+  {
+    "className": "Sedan_02_Door_2_2_YellowRust",
+    "popularName": "Sarka 120 Rear Right Door"
+  },
+  {
+    "className": "Sedan_02_Grey",
+    "popularName": "Sarka 120"
+  },
+  {
+    "className": "Sedan_02_Hood",
+    "popularName": "Sarka 120 Hood"
+  },
+  {
+    "className": "Sedan_02_Hood_Grey",
+    "popularName": "Sarka 120 Hood"
+  },
+  {
+    "className": "Sedan_02_Hood_GreyRust",
+    "popularName": "Sarka 120 Hood"
+  },
+  {
+    "className": "Sedan_02_Hood_Red",
+    "popularName": "Sarka 120 Hood"
+  },
+  {
+    "className": "Sedan_02_Hood_RedRust",
+    "popularName": "Sarka 120 Hood"
+  },
+  {
+    "className": "Sedan_02_Hood_YellowRust",
+    "popularName": "Sarka 120 Hood"
+  },
+  {
+    "className": "Sedan_02_Red",
+    "popularName": "Sarka 120"
+  },
+  {
+    "className": "Sedan_02_Trunk",
+    "popularName": "Sarka 120 Trunk Door"
+  },
+  {
+    "className": "Sedan_02_Trunk_Grey",
+    "popularName": "Sarka 120 Trunk Door"
+  },
+  {
+    "className": "Sedan_02_Trunk_GreyRust",
+    "popularName": "Sarka 120 Trunk Door"
+  },
+  {
+    "className": "Sedan_02_Trunk_Red",
+    "popularName": "Sarka 120 Trunk Door"
+  },
+  {
+    "className": "Sedan_02_Trunk_RedRust",
+    "popularName": "Sarka 120 Trunk Door"
+  },
+  {
+    "className": "Sedan_02_Trunk_YellowRust",
+    "popularName": "Sarka 120 Trunk Door"
+  },
+  {
+    "className": "Sedan_02_Wheel",
+    "popularName": "Sarka 120 Wheel"
+  },
+  {
+    "className": "Sedan_02_Wheel_Ruined",
+    "popularName": "Sarka 120 Wheel"
+  },
+  {
+    "className": "SewingKit",
+    "popularName": "Sewing Kit"
+  },
+  {
+    "className": "SheepPelt",
+    "popularName": "Sheep Pelt"
+  },
+  {
+    "className": "Sickle",
+    "popularName": "Sickle"
+  },
+  {
+    "className": "Sword",
+    "popularName": "Knights Sword"
+  },
+  {
+    "className": "SheepSteakMeat",
+    "popularName": "Mutton Steak"
+  },
+  {
+    "className": "Shirt_BlueCheck",
+    "popularName": "Shirt"
+  },
+  {
+    "className": "Shirt_BlueCheckBright",
+    "popularName": "Shirt"
+  },
+  {
+    "className": "Shirt_GreenCheck",
+    "popularName": "Shirt"
+  },
+  {
+    "className": "Shirt_PlaneBlack",
+    "popularName": "Shirt"
+  },
+  {
+    "className": "Shirt_RedCheck",
+    "popularName": "Shirt"
+  },
+  {
+    "className": "Shirt_WhiteCheck",
+    "popularName": "Shirt"
+  },
+  {
+    "className": "ShitGround",
+    "popularName": "Building"
+  },
+  {
+    "className": "ShortJeans_Black",
+    "popularName": "Denim Shorts"
+  },
+  {
+    "className": "ShortJeans_Blue",
+    "popularName": "Denim Shorts"
+  },
+  {
+    "className": "ShortJeans_Brown",
+    "popularName": "Denim Shorts"
+  },
+  {
+    "className": "ShortJeans_Darkblue",
+    "popularName": "Denim Shorts"
+  },
+  {
+    "className": "ShortJeans_Green",
+    "popularName": "Denim Shorts"
+  },
+  {
+    "className": "ShortJeans_Red",
+    "popularName": "Denim Shorts"
+  },
+  {
+    "className": "Shovel",
+    "popularName": "Shovel"
+  },
+  {
+    "className": "SkateHelmet_Black",
+    "popularName": "Skate Helmet"
+  },
+  {
+    "className": "SkateHelmet_Blue",
+    "popularName": "Skate Helmet"
+  },
+  {
+    "className": "SkateHelmet_Gray",
+    "popularName": "Skate Helmet"
+  },
+  {
+    "className": "SkateHelmet_Green",
+    "popularName": "Skate Helmet"
+  },
+  {
+    "className": "SkateHelmet_Red",
+    "popularName": "Skate Helmet"
+  },
+  {
+    "className": "Skirt_Blue",
+    "popularName": "Denim Skirt"
+  },
+  {
+    "className": "Skirt_Red",
+    "popularName": "Denim Skirt"
+  },
+  {
+    "className": "Skirt_White",
+    "popularName": "Denim Skirt"
+  },
+  {
+    "className": "Skirt_Yellow",
+    "popularName": "Denim Skirt"
+  },
+  {
+    "className": "SlacksPants_Beige",
+    "popularName": "Suit Pants"
+  },
+  {
+    "className": "SlacksPants_Black",
+    "popularName": "Suit Pants"
+  },
+  {
+    "className": "SlacksPants_Blue",
+    "popularName": "Suit Pants"
+  },
+  {
+    "className": "SlacksPants_Brown",
+    "popularName": "Suit Pants"
+  },
+  {
+    "className": "SlacksPants_DarkGrey",
+    "popularName": "Suit Pants"
+  },
+  {
+    "className": "SlacksPants_Khaki",
+    "popularName": "Suit Pants"
+  },
+  {
+    "className": "SlacksPants_LightGrey",
+    "popularName": "Suit Pants"
+  },
+  {
+    "className": "SlacksPants_White",
+    "popularName": "Suit Pants"
+  },
+  {
+    "className": "SledgeHammer",
+    "popularName": "Sledgehammer"
+  },
+  {
+    "className": "SlicedPumpkin",
+    "popularName": "Pumpkin Slices"
+  },
+  {
+    "className": "SmallGasCanister",
+    "popularName": "Small Gas Canister"
+  },
+  {
+    "className": "SmallProtectorCase",
+    "popularName": "Protective Case"
+  },
+  {
+    "className": "SmallStone",
+    "popularName": "Small Stone"
+  },
+  {
+    "className": "SmershBag",
+    "popularName": "Utility Buttpack"
+  },
+  {
+    "className": "SmershVest",
+    "popularName": "Assault Vest"
+  },
+  {
+    "className": "Sneakers_Black",
+    "popularName": "Sneakers"
+  },
+  {
+    "className": "Sneakers_Gray",
+    "popularName": "Sneakers"
+  },
+  {
+    "className": "Sneakers_Green",
+    "popularName": "Sneakers"
+  },
+  {
+    "className": "Sneakers_Red",
+    "popularName": "Sneakers"
+  },
+  {
+    "className": "Sneakers_White",
+    "popularName": "Sneakers"
+  },
+  {
+    "className": "SodaCan_Cola",
+    "popularName": "Nota Cola"
+  },
+  {
+    "className": "SodaCan_Kvass",
+    "popularName": "Mad Monk Kvass"
+  },
+  {
+    "className": "SodaCan_Pipsi",
+    "popularName": "Pipsi Cola"
+  },
+  {
+    "className": "SodaCan_Spite",
+    "popularName": "Spite Lemonade"
+  },
+  {
+    "className": "SpaghettiCan",
+    "popularName": "Canned Spaghetti"
+  },
+  {
+    "className": "SpaghettiCan_Opened",
+    "popularName": "Canned Spaghetti"
+  },
+  {
+    "className": "SparkPlug",
+    "popularName": "Spark Plug"
+  },
+  {
+    "className": "Spear",
+    "popularName": "Spear"
+  },
+  {
+    "className": "SportGlasses_Black",
+    "popularName": "Athletic Sunglasses"
+  },
+  {
+    "className": "SportGlasses_Blue",
+    "popularName": "Athletic Sunglasses"
+  },
+  {
+    "className": "SportGlasses_Green",
+    "popularName": "Athletic Sunglasses"
+  },
+  {
+    "className": "SportGlasses_Orange",
+    "popularName": "Athletic Sunglasses"
+  },
+  {
+    "className": "Spotlight",
+    "popularName": "Construction Light"
+  },
+  {
+    "className": "Ssh68Helmet",
+    "popularName": "Combat Helmet"
+  },
+  {
+    "className": "StartKitIV",
+    "popularName": "IV Start Kit"
+  },
+  {
+    "className": "SteakKnife",
+    "popularName": "Steak Knife"
+  },
+  {
+    "className": "Stone",
+    "popularName": "Large Stone"
+  },
+  {
+    "className": "StoneKnife",
+    "popularName": "Stone Knife"
+  },
+  {
+    "className": "Strategic",
+    "popularName": "Building"
+  },
+  {
+    "className": "StunBaton",
+    "popularName": "Stun Baton"
+  },
+  {
+    "className": "SurgicalGloves_Blue",
+    "popularName": "Surgical Gloves"
+  },
+  {
+    "className": "SurgicalGloves_Green",
+    "popularName": "Surgical Gloves"
+  },
+  {
+    "className": "SurgicalGloves_LightBlue",
+    "popularName": "Surgical Gloves"
+  },
+  {
+    "className": "SurgicalGloves_White",
+    "popularName": "Surgical Gloves"
+  },
+  {
+    "className": "SurgicalMask",
+    "popularName": "Surgical Mask"
+  },
+  {
+    "className": "SurvivorF_Eva",
+    "popularName": "Survivor"
+  },
+  {
+    "className": "SurvivorF_Frida",
+    "popularName": "Survivor"
+  },
+  {
+    "className": "SurvivorF_Gabi",
+    "popularName": "Survivor"
+  },
+  {
+    "className": "SurvivorF_Helga",
+    "popularName": "Survivor"
+  },
+  {
+    "className": "SurvivorF_Irena",
+    "popularName": "Survivor"
+  },
+  {
+    "className": "SurvivorF_Judy",
+    "popularName": "Survivor"
+  },
+  {
+    "className": "SurvivorF_Keiko",
+    "popularName": "Survivor"
+  },
+  {
+    "className": "SurvivorF_Linda",
+    "popularName": "Survivor"
+  },
+  {
+    "className": "SurvivorF_Maria",
+    "popularName": "Survivor"
+  },
+  {
+    "className": "SurvivorF_Naomi",
+    "popularName": "Survivor"
+  },
+  {
+    "className": "SurvivorM_Boris",
+    "popularName": "Survivor"
+  },
+  {
+    "className": "SurvivorM_Cyril",
+    "popularName": "Survivor"
+  },
+  {
+    "className": "SurvivorM_Denis",
+    "popularName": "Survivor"
+  },
+  {
+    "className": "SurvivorM_Elias",
+    "popularName": "Survivor"
+  },
+  {
+    "className": "SurvivorM_Francis",
+    "popularName": "Survivor"
+  },
+  {
+    "className": "SurvivorM_Guo",
+    "popularName": "Survivor"
+  },
+  {
+    "className": "SurvivorM_Hassan",
+    "popularName": "Survivor"
+  },
+  {
+    "className": "SurvivorM_Indar",
+    "popularName": "Survivor"
+  },
+  {
+    "className": "SurvivorM_Jose",
+    "popularName": "Survivor"
+  },
+  {
+    "className": "SurvivorM_Kaito",
+    "popularName": "Survivor"
+  },
+  {
+    "className": "SurvivorM_Lewis",
+    "popularName": "Survivor"
+  },
+  {
+    "className": "SurvivorM_Manua",
+    "popularName": "Survivor"
+  },
+  {
+    "className": "SurvivorM_Mirek",
+    "popularName": "Survivor"
+  },
+  {
+    "className": "SurvivorM_Niki",
+    "popularName": "Survivor"
+  },
+  {
+    "className": "SurvivorM_Oliver",
+    "popularName": "Survivor"
+  },
+  {
+    "className": "SurvivorM_Peter",
+    "popularName": "Survivor"
+  },
+  {
+    "className": "SurvivorM_Quinn",
+    "popularName": "Survivor"
+  },
+  {
+    "className": "SurvivorM_Rolf",
+    "popularName": "Survivor"
+  },
+  {
+    "className": "SurvivorM_Seth",
+    "popularName": "Survivor"
+  },
+  {
+    "className": "SurvivorM_Taiki",
+    "popularName": "Survivor"
+  },
+  {
+    "className": "Sweater_Blue",
+    "popularName": "Sweater"
+  },
+  {
+    "className": "Sweater_Gray",
+    "popularName": "Sweater"
+  },
+  {
+    "className": "Sweater_Green",
+    "popularName": "Sweater"
+  },
+  {
+    "className": "Sweater_Red",
+    "popularName": "Sweater"
+  },
+  {
+    "className": "Syringe",
+    "popularName": "Syringe"
+  },
+  {
+    "className": "TelescopicBaton",
+    "popularName": "Telescopic Police Baton"
+  },
+  {
+    "className": "TLRLight",
+    "popularName": "Pistol Flashlight"
+  },
+  {
+    "className": "TShirt_Beige",
+    "popularName": "T-Shirt"
+  },
+  {
+    "className": "TShirt_Black",
+    "popularName": "T-Shirt"
+  },
+  {
+    "className": "TShirt_Blue",
+    "popularName": "T-Shirt"
+  },
+  {
+    "className": "TShirt_Green",
+    "popularName": "T-Shirt"
+  },
+  {
+    "className": "TShirt_Grey",
+    "popularName": "T-Shirt"
+  },
+  {
+    "className": "TShirt_OrangeWhiteStripes",
+    "popularName": "T-Shirt"
+  },
+  {
+    "className": "TShirt_Red",
+    "popularName": "T-Shirt"
+  },
+  {
+    "className": "TShirt_RedBlackStripes",
+    "popularName": "T-Shirt"
+  },
+  {
+    "className": "TShirt_White",
+    "popularName": "T-Shirt"
+  },
+  {
+    "className": "TTSKOBoots",
+    "popularName": "Combat Boots"
+  },
+  {
+    "className": "TTSKOPants",
+    "popularName": "Combat Pants"
+  },
+  {
+    "className": "TTsKOJacket_Camo",
+    "popularName": "Combat Jacket"
+  },
+  {
+    "className": "TacticalBaconCan",
+    "popularName": "Canned Bacon"
+  },
+  {
+    "className": "TacticalBaconCan_Opened",
+    "popularName": "Canned Bacon"
+  },
+  {
+    "className": "TacticalGloves_Beige",
+    "popularName": "Tactical Gloves"
+  },
+  {
+    "className": "TacticalGloves_Black",
+    "popularName": "Tactical Gloves"
+  },
+  {
+    "className": "TacticalGloves_Green",
+    "popularName": "Tactical Gloves"
+  },
+  {
+    "className": "TacticalGoggles",
+    "popularName": "Tactical Goggles"
+  },
+  {
+    "className": "TacticalShirt_Black",
+    "popularName": "Tactical Shirt"
+  },
+  {
+    "className": "TacticalShirt_Grey",
+    "popularName": "Tactical Shirt"
+  },
+  {
+    "className": "TacticalShirt_Olive",
+    "popularName": "Tactical Shirt"
+  },
+  {
+    "className": "TacticalShirt_Tan",
+    "popularName": "Tactical Shirt"
+  },
+  {
+    "className": "TaloonBag_Blue",
+    "popularName": "Hiking Backpack"
+  },
+  {
+    "className": "TaloonBag_Green",
+    "popularName": "Hiking Backpack"
+  },
+  {
+    "className": "TaloonBag_Orange",
+    "popularName": "Hiking Backpack"
+  },
+  {
+    "className": "TaloonBag_Violet",
+    "popularName": "Hiking Backpack"
+  },
+  {
+    "className": "TankerHelmet",
+    "popularName": "Tanker Helmet"
+  },
+  {
+    "className": "TannedLeather",
+    "popularName": "Tanned Leather"
+  },
+  {
+    "className": "TelnyashkaShirt",
+    "popularName": "Telnyashka"
+  },
+  {
+    "className": "TetracyclineAntibiotics",
+    "popularName": "Tetracycline Pills"
+  },
+  {
+    "className": "Thermometer",
+    "popularName": "Medical Thermometer"
+  },
+  {
+    "className": "ThickFramesGlasses",
+    "popularName": "Classic Glasses"
+  },
+  {
+    "className": "ThinFramesGlasses",
+    "popularName": "Slim Glasses"
+  },
+  {
+    "className": "TireRepairKit",
+    "popularName": "Tire Repair Kit"
+  },
+  {
+    "className": "Tomato",
+    "popularName": "Tomato"
+  },
+  {
+    "className": "TomatoSeeds",
+    "popularName": "Tomato Seeds"
+  },
+  {
+    "className": "TomatoSeedsPack",
+    "popularName": "Packed Tomato Seeds"
+  },
+  {
+    "className": "Torch",
+    "popularName": "Torch"
+  },
+  {
+    "className": "TortillaBag",
+    "popularName": "Combat Backpack"
+  },
+  {
+    "className": "TrackSuitJacket_Black",
+    "popularName": "Tracksuit Jacket"
+  },
+  {
+    "className": "TrackSuitJacket_Blue",
+    "popularName": "Tracksuit Jacket"
+  },
+  {
+    "className": "TrackSuitJacket_Green",
+    "popularName": "Tracksuit Jacket"
+  },
+  {
+    "className": "TrackSuitJacket_LightBlue",
+    "popularName": "Tracksuit Jacket"
+  },
+  {
+    "className": "TrackSuitJacket_Red",
+    "popularName": "Tracksuit Jacket"
+  },
+  {
+    "className": "TrackSuitPants_Black",
+    "popularName": "Tracksuit Pants"
+  },
+  {
+    "className": "TrackSuitPants_Blue",
+    "popularName": "Tracksuit Pants"
+  },
+  {
+    "className": "TrackSuitPants_Green",
+    "popularName": "Tracksuit Pants"
+  },
+  {
+    "className": "TrackSuitPants_LightBlue",
+    "popularName": "Tracksuit Pants"
+  },
+  {
+    "className": "TrackSuitPants_Red",
+    "popularName": "Tracksuit Pants"
+  },
+  {
+    "className": "Tripod",
+    "popularName": "Campfire Tripod"
+  },
+  {
+    "className": "TruckBattery",
+    "popularName": "Truck Battery"
+  },
+  {
+    "className": "Truck_01_Cargo",
+    "popularName": "M3S Cargo Chassis"
+  },
+  {
+    "className": "Truck_01_Cargo_Blue",
+    "popularName": "M3S Cargo Chassis"
+  },
+  {
+    "className": "Truck_01_Cargo_Grey",
+    "popularName": "M3S Cargo Chassis"
+  },
+  {
+    "className": "Truck_01_Cargo_Orange",
+    "popularName": "M3S Cargo Chassis"
+  },
+  {
+    "className": "Truck_01_Chassis",
+    "popularName": "M3S Chassis"
+  },
+  {
+    "className": "Truck_01_Chassis_Blue",
+    "popularName": "M3S Chassis"
+  },
+  {
+    "className": "Truck_01_Chassis_Grey",
+    "popularName": "M3S Chassis"
+  },
+  {
+    "className": "Truck_01_Chassis_Orange",
+    "popularName": "M3S Chassis"
+  },
+  {
+    "className": "Truck_01_Door_1_1",
+    "popularName": "M3S Left Door"
+  },
+  {
+    "className": "Truck_01_Door_1_1_Blue",
+    "popularName": "M3S Left Door"
+  },
+  {
+    "className": "Truck_01_Door_1_1_Grey",
+    "popularName": "M3S Left Door"
+  },
+  {
+    "className": "Truck_01_Door_1_1_Orange",
+    "popularName": "M3S Left Door"
+  },
+  {
+    "className": "Truck_01_Door_2_1",
+    "popularName": "M3S Right Door"
+  },
+  {
+    "className": "Truck_01_Door_2_1_Blue",
+    "popularName": "M3S Right Door"
+  },
+  {
+    "className": "Truck_01_Door_2_1_Grey",
+    "popularName": "M3S Right Door"
+  },
+  {
+    "className": "Truck_01_Door_2_1_Orange",
+    "popularName": "M3S Right Door"
+  },
+  {
+    "className": "Truck_01_Hood",
+    "popularName": "M3S Hood"
+  },
+  {
+    "className": "Truck_01_Hood_Blue",
+    "popularName": "M3S Hood"
+  },
+  {
+    "className": "Truck_01_Hood_Grey",
+    "popularName": "M3S Hood"
+  },
+  {
+    "className": "Truck_01_Hood_Orange",
+    "popularName": "M3S Hood"
+  },
+  {
+    "className": "Truck_01_Wheel",
+    "popularName": "M3S Wheel"
+  },
+  {
+    "className": "Truck_01_WheelDouble",
+    "popularName": "M3S Dual Wheel"
+  },
+  {
+    "className": "Truck_01_WheelDouble_Ruined",
+    "popularName": "M3S Dual Wheel"
+  },
+  {
+    "className": "Truck_01_Wheel_Ruined",
+    "popularName": "M3S Wheel"
+  },
+  {
+    "className": "Truck_02",
+    "popularName": "Utility Vehicle"
+  },
+  {
+    "className": "Truck_02_Door_1_1",
+    "popularName": "Left Door"
+  },
+  {
+    "className": "Truck_02_Door_2_1",
+    "popularName": "Right Door"
+  },
+  {
+    "className": "Truck_02_Wheel",
+    "popularName": "Utility Vehicle Wheel"
+  },
+  {
+    "className": "Truck_02_Wheel_Ruined",
+    "popularName": "Utility Vehicle Wheel"
+  },
+  {
+    "className": "TunaCan",
+    "popularName": "Canned Tuna"
+  },
+  {
+    "className": "TunaCan_Opened",
+    "popularName": "Canned Tuna"
+  },
+  {
+    "className": "UKAssVest_Black",
+    "popularName": "Field Vest"
+  },
+  {
+    "className": "UKAssVest_Camo",
+    "popularName": "Field Vest"
+  },
+  {
+    "className": "UKAssVest_Khaki",
+    "popularName": "Field Vest"
+  },
+  {
+    "className": "UKAssVest_Olive",
+    "popularName": "Field Vest"
+  },
+  {
+    "className": "UMP45",
+    "popularName": "USG-45"
+  },
+  {
+    "className": "USMCJacket_Desert",
+    "popularName": "CUU Jacket"
+  },
+  {
+    "className": "USMCJacket_Woodland",
+    "popularName": "CUU Jacket"
+  },
+  {
+    "className": "USMCPants_Desert",
+    "popularName": "CUU Pants"
+  },
+  {
+    "className": "USMCPants_Woodland",
+    "popularName": "CUU Pants"
+  },
+  {
+    "className": "UndergroundStash",
+    "popularName": "Pile of Dirt"
+  },
+  {
+    "className": "UniversalLight",
+    "popularName": "Universal Flashlight"
+  },
+  {
+    "className": "Ushanka_Black",
+    "popularName": "Ushanka"
+  },
+  {
+    "className": "Ushanka_Blue",
+    "popularName": "Ushanka"
+  },
+  {
+    "className": "Ushanka_Green",
+    "popularName": "Ushanka"
+  },
+  {
+    "className": "VSS",
+    "popularName": "VSS"
+  },
+  {
+    "className": "VitaminBottle",
+    "popularName": "Multivitamin Pills"
+  },
+  {
+    "className": "Vodka",
+    "popularName": "Glass Bottle"
+  },
+  {
+    "className": "VomitBloodGround",
+    "popularName": "Building"
+  },
+  {
+    "className": "VomitGround",
+    "popularName": "Building"
+  },
+  {
+    "className": "Watchtower",
+    "popularName": "Watchtower"
+  },
+  {
+    "className": "WatchtowerKit",
+    "popularName": "Watchtower Kit"
+  },
+  {
+    "className": "WatchtowerKitPlacing",
+    "popularName": "Watchtower Kit"
+  },
+  {
+    "className": "WaterBottle",
+    "popularName": "Plastic Bottle"
+  },
+  {
+    "className": "WaterPouch_Natural",
+    "popularName": "Leather Bottle"
+  },
+  {
+    "className": "WaterproofBag_Green",
+    "popularName": "Drysack"
+  },
+  {
+    "className": "WaterproofBag_Orange",
+    "popularName": "Drysack"
+  },
+  {
+    "className": "WaterproofBag_Yellow",
+    "popularName": "Drysack"
+  },
+  {
+    "className": "WeaponCleaningKit",
+    "popularName": "Gun Cleaning Kit"
+  },
+  {
+    "className": "WeldingMask",
+    "popularName": "Welding Mask"
+  },
+  {
+    "className": "Wellies_Black",
+    "popularName": "Wellies"
+  },
+  {
+    "className": "Wellies_Brown",
+    "popularName": "Wellies"
+  },
+  {
+    "className": "Wellies_Green",
+    "popularName": "Wellies"
+  },
+  {
+    "className": "Wellies_Grey",
+    "popularName": "Wellies"
+  },
+  {
+    "className": "Whetstone",
+    "popularName": "Sharpening Stone"
+  },
+  {
+    "className": "WildboarPelt",
+    "popularName": "Boar Pelt"
+  },
+  {
+    "className": "Winchester70",
+    "popularName": "M70 Tundra"
+  },
+  {
+    "className": "Winchester70_Black",
+    "popularName": "M70 Tundra"
+  },
+  {
+    "className": "Winchester70_Green",
+    "popularName": "M70 Tundra"
+  },
+  {
+    "className": "WolfPelt",
+    "popularName": "Wolf Pelt"
+  },
+  {
+    "className": "WolfSteakMeat",
+    "popularName": "Wolf Steak"
+  },
+  {
+    "className": "WomanSuit_Beige",
+    "popularName": "Womens Suit Jacket"
+  },
+  {
+    "className": "WomanSuit_Black",
+    "popularName": "Womens Suit Jacket"
+  },
+  {
+    "className": "WomanSuit_Blue",
+    "popularName": "Womens Suit Jacket"
+  },
+  {
+    "className": "WomanSuit_Brown",
+    "popularName": "Womens Suit Jacket"
+  },
+  {
+    "className": "WomanSuit_DarkGrey",
+    "popularName": "Womens Suit Jacket"
+  },
+  {
+    "className": "WomanSuit_Khaki",
+    "popularName": "Womens Suit Jacket"
+  },
+  {
+    "className": "WomanSuit_LightGrey",
+    "popularName": "Womens Suit Jacket"
+  },
+  {
+    "className": "WomanSuit_White",
+    "popularName": "Womens Suit Jacket"
+  },
+  {
+    "className": "WoodAxe",
+    "popularName": "Splitting Axe"
+  },
+  {
+    "className": "WoodenCrate",
+    "popularName": "Wooden Crate"
+  },
+  {
+    "className": "WoodenLog",
+    "popularName": "Wooden log"
+  },
+  {
+    "className": "WoodenPlank",
+    "popularName": "Plank"
+  },
+  {
+    "className": "WoodenStick",
+    "popularName": "Short Stick"
+  },
+  {
+    "className": "WoolCoat_Beige",
+    "popularName": "Pea Coat"
+  },
+  {
+    "className": "WoolCoat_Black",
+    "popularName": "Pea Coat"
+  },
+  {
+    "className": "WoolCoat_BlackCheck",
+    "popularName": "Pea Coat"
+  },
+  {
+    "className": "WoolCoat_Blue",
+    "popularName": "Pea Coat"
+  },
+  {
+    "className": "WoolCoat_BlueCheck",
+    "popularName": "Pea Coat"
+  },
+  {
+    "className": "WoolCoat_BrownCheck",
+    "popularName": "Pea Coat"
+  },
+  {
+    "className": "WoolCoat_Green",
+    "popularName": "Pea Coat"
+  },
+  {
+    "className": "WoolCoat_GreyCheck",
+    "popularName": "Pea Coat"
+  },
+  {
+    "className": "WoolCoat_Red",
+    "popularName": "Pea Coat"
+  },
+  {
+    "className": "WoolCoat_RedCheck",
+    "popularName": "Pea Coat"
+  },
+  {
+    "className": "WorkingBoots_Beige",
+    "popularName": "Working Boots"
+  },
+  {
+    "className": "WorkingBoots_Brown",
+    "popularName": "Working Boots"
+  },
+  {
+    "className": "WorkingBoots_Green",
+    "popularName": "Working Boots"
+  },
+  {
+    "className": "WorkingBoots_Grey",
+    "popularName": "Working Boots"
+  },
+  {
+    "className": "WorkingBoots_Yellow",
+    "popularName": "Working Boots"
+  },
+  {
+    "className": "WorkingGloves_Beige",
+    "popularName": "Working Gloves"
+  },
+  {
+    "className": "WorkingGloves_Black",
+    "popularName": "Working Gloves"
+  },
+  {
+    "className": "WorkingGloves_Brown",
+    "popularName": "Working Gloves"
+  },
+  {
+    "className": "WorkingGloves_Yellow",
+    "popularName": "Working Gloves"
+  },
+  {
+    "className": "Worm",
+    "popularName": "Earthworm"
+  },
+  {
+    "className": "Wrench",
+    "popularName": "Wrench"
+  },
+  {
+    "className": "XmasLights",
+    "popularName": "Xmas Lights"
+  },
+  {
+    "className": "ZSh3PilotHelmet",
+    "popularName": "Flight Helmet"
+  },
+  {
+    "className": "ZSh3PilotHelmet_Black",
+    "popularName": "Flight Helmet"
+  },
+  {
+    "className": "ZSh3PilotHelmet_Green",
+    "popularName": "Flight Helmet"
+  },
+  {
+    "className": "ZmbF_BlueCollarFat_Blue",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbF_BlueCollarFat_Green",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbF_BlueCollarFat_Red",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbF_BlueCollarFat_White",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbF_CitizenANormal_Beige",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbF_CitizenANormal_Blue",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbF_CitizenANormal_Brown",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbF_CitizenBSkinny",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbF_ClerkFat_Black",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbF_ClerkFat_BluePattern",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbF_ClerkFat_GreyPattern",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbF_ClerkFat_White",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbF_Clerk_Normal_Blue",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbF_Clerk_Normal_Green",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbF_Clerk_Normal_Red",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbF_Clerk_Normal_White",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbF_DoctorSkinny",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbF_HikerSkinny_Blue",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbF_HikerSkinny_Green",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbF_HikerSkinny_Grey",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbF_HikerSkinny_Red",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbF_JoggerSkinny_Blue",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbF_JoggerSkinny_Brown",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbF_JoggerSkinny_Green",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbF_JoggerSkinny_Red",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbF_JournalistNormal_Blue",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbF_JournalistNormal_Green",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbF_JournalistNormal_Red",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbF_JournalistNormal_White",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbF_MechanicNormal_Beige",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbF_MechanicNormal_Green",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbF_MechanicNormal_Grey",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbF_MechanicNormal_Orange",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbF_MilkMaidOld_Beige",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbF_MilkMaidOld_Black",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbF_MilkMaidOld_Green",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbF_MilkMaidOld_Grey",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbF_NurseFat",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbF_ParamedicNormal_Blue",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbF_ParamedicNormal_Green",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbF_ParamedicNormal_Red",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbF_PatientOld",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbF_PoliceWomanNormal",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbF_ShortSkirt_beige",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbF_ShortSkirt_black",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbF_ShortSkirt_brown",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbF_ShortSkirt_checks",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbF_ShortSkirt_green",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbF_ShortSkirt_grey",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbF_ShortSkirt_red",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbF_ShortSkirt_stripes",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbF_ShortSkirt_white",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbF_ShortSkirt_yellow",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbF_SkaterYoung_Brown",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbF_SkaterYoung_Striped",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbF_SkaterYoung_Violet",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbF_SurvivorNormal_Blue",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbF_SurvivorNormal_Orange",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbF_SurvivorNormal_Red",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbF_SurvivorNormal_White",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbF_VillagerOld_Blue",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbF_VillagerOld_Green",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbF_VillagerOld_Red",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbF_VillagerOld_White",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_CitizenASkinny_Blue",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_CitizenASkinny_Brown",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_CitizenASkinny_Grey",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_CitizenASkinny_Red",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_CitizenBFat_Blue",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_CitizenBFat_Green",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_CitizenBFat_Red",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_ClerkFat_Brown",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_ClerkFat_Grey",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_ClerkFat_Khaki",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_ClerkFat_White",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_CommercialPilotOld_Blue",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_CommercialPilotOld_Brown",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_CommercialPilotOld_Grey",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_CommercialPilotOld_Olive",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_ConstrWorkerNormal_Beige",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_ConstrWorkerNormal_Black",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_ConstrWorkerNormal_Green",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_ConstrWorkerNormal_Grey",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_DoctorFat",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_FarmerFat_Beige",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_FarmerFat_Blue",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_FarmerFat_Brown",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_FarmerFat_Green",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_FirefighterNormal",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_FishermanOld_Blue",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_FishermanOld_Green",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_FishermanOld_Grey",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_FishermanOld_Red",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_HandymanNormal_Beige",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_HandymanNormal_Blue",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_HandymanNormal_Green",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_HandymanNormal_Grey",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_HandymanNormal_White",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_HeavyIndustryWorker",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_HermitSkinny_Beige",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_HermitSkinny_Black",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_HermitSkinny_Green",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_HermitSkinny_Red",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_HikerSkinny_Blue",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_HikerSkinny_Green",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_HikerSkinny_Yellow",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_HunterOld_Autumn",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_HunterOld_Spring",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_HunterOld_Summer",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_HunterOld_Winter",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_Jacket_beige",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_Jacket_black",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_Jacket_blue",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_Jacket_bluechecks",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_Jacket_brown",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_Jacket_greenchecks",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_Jacket_grey",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_Jacket_khaki",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_Jacket_magenta",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_Jacket_stripes",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_JoggerSkinny_Blue",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_JoggerSkinny_Green",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_JoggerSkinny_Red",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_JournalistSkinny",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_MechanicSkinny_Blue",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_MechanicSkinny_Green",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_MechanicSkinny_Grey",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_MechanicSkinny_Red",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_MotobikerFat_Beige",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_MotobikerFat_Black",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_MotobikerFat_Blue",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_OffshoreWorker_Green",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_OffshoreWorker_Orange",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_OffshoreWorker_Red",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_OffshoreWorker_Yellow",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_ParamedicNormal_Black",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_ParamedicNormal_Blue",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_ParamedicNormal_Green",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_ParamedicNormal_Red",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_PatientSkinny",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_PatrolNormal_Autumn",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_PatrolNormal_Flat",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_PatrolNormal_PautRev",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_PatrolNormal_Summer",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_PolicemanFat",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_PolicemanSpecForce",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_PrisonerSkinny",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_SkaterYoung_Blue",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_SkaterYoung_Brown",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_SkaterYoung_Green",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_SkaterYoung_Grey",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_SoldierNormal",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_VillagerOld_Blue",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_VillagerOld_Green",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_VillagerOld_White",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_priestPopSkinny",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_usSoldier_normal_Desert",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmbM_usSoldier_normal_Woodland",
+    "popularName": "Infected"
+  },
+  {
+    "className": "ZmijovkaCap_Black",
+    "popularName": "Zmiovka"
+  },
+  {
+    "className": "ZmijovkaCap_Blue",
+    "popularName": "Zmiovka"
+  },
+  {
+    "className": "ZmijovkaCap_Brown",
+    "popularName": "Zmiovka"
+  },
+  {
+    "className": "ZmijovkaCap_Green",
+    "popularName": "Zmiovka"
+  },
+  {
+    "className": "ZmijovkaCap_Red",
+    "popularName": "Zmiovka"
+  },
+  {
+    "className": "Zucchini",
+    "popularName": "Zucchini"
+  },
+  {
+    "className": "ZucchiniSeeds",
+    "popularName": "Zucchini Seeds"
+  },
+  {
+    "className": "ZucchiniSeedsPack",
+    "popularName": "Packed Zucchini Seeds"
+  },
+  {
+    "className": "C130",
+    "popularName": "Lockheed C-130 Hercules"
+  }
+]

@@ -2,7 +2,21 @@ import { Router } from "express";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { getShopRuntimeStatus } from "../lib/shop";
-import { getShopCategories, getShopItems } from "../lib/shopCatalog";
+import {
+  deleteShopCatalogItem,
+  getShopCatalog,
+  getShopCategories,
+  getShopItems,
+  normalizeShopCatalogId,
+  toggleShopCatalogItem,
+  upsertShopCatalogItem,
+  type ShopItem,
+} from "../lib/shopCatalog";
+import {
+  findDayzItem,
+  getDayzItems,
+  searchDayzItems,
+} from "../lib/dayzItemDatabase";
 import type { AppState } from "../lib/state";
 
 const router = Router();
@@ -22,8 +36,6 @@ function getAdminTokenFromRequest(req: { query: any; headers: any }) {
 function requireAdmin(req: any, res: any) {
   const configuredToken = process.env.SHOP_ADMIN_TOKEN;
 
-  // Local/dev compatibility: if no token is configured, keep the route open.
-  // In production, set SHOP_ADMIN_TOKEN.
   if (!configuredToken) return true;
 
   const receivedToken = getAdminTokenFromRequest(req);
@@ -75,7 +87,7 @@ function formatDateTime(value: unknown) {
 function buildDashboardPayload(state: DashboardState) {
   const shopOrders = Array.isArray(state.shopOrders) ? state.shopOrders : [];
   const runtime = getShopRuntimeStatus(state);
-  const categories = getShopCategories();
+  const categories = getShopCategories(true);
   const catalogItems = getShopItems(true);
 
   const pending = shopOrders.filter((order: any) => order.status === "pending_spawn");
@@ -110,6 +122,7 @@ function buildDashboardPayload(state: DashboardState) {
       items: catalogItems.length,
       enabledItems: catalogItems.filter((item: any) => item.enabled !== false).length,
       disabledItems: catalogItems.filter((item: any) => item.enabled === false).length,
+      dayzItems: getDayzItems().length,
     },
 
     leaderboard: {
@@ -134,15 +147,15 @@ function buildDashboardPayload(state: DashboardState) {
   };
 }
 
-function renderDashboardHtml(token: string) {
-  const tokenQuery = token ? `?token=${encodeURIComponent(token)}` : "";
+function renderBaseHtml(options: { title: string; token: string; body: string; script?: string }) {
+  const tokenQuery = options.token ? `?token=${encodeURIComponent(options.token)}` : "";
 
   return `<!doctype html>
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>DayZ Shop Admin</title>
+  <title>${options.title}</title>
   <style>
     :root {
       color-scheme: dark;
@@ -157,305 +170,193 @@ function renderDashboardHtml(token: string) {
       --accent: #6c7cff;
       --border: #2b3140;
     }
-
     * { box-sizing: border-box; }
-
     body {
       margin: 0;
       font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       background: radial-gradient(circle at top, #1c2230 0, var(--bg) 48%);
       color: var(--text);
     }
-
-    header {
-      padding: 28px 28px 8px;
-      max-width: 1180px;
-      margin: 0 auto;
-    }
-
-    h1 {
-      margin: 0;
-      font-size: 30px;
-      letter-spacing: -0.03em;
-    }
-
-    .subtitle {
-      margin-top: 8px;
-      color: var(--muted);
-    }
-
-    main {
-      max-width: 1180px;
-      margin: 0 auto;
-      padding: 20px 28px 48px;
-    }
-
-    .grid {
-      display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 14px;
-    }
-
-    .card {
-      background: linear-gradient(180deg, var(--panel), #141720);
-      border: 1px solid var(--border);
-      border-radius: 16px;
-      padding: 18px;
-      box-shadow: 0 18px 50px rgba(0, 0, 0, 0.22);
-    }
-
-    .card h2 {
-      margin: 0 0 8px;
-      font-size: 13px;
-      color: var(--muted);
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      font-weight: 700;
-    }
-
-    .value {
-      font-size: 28px;
-      font-weight: 800;
-      letter-spacing: -0.04em;
-    }
-
-    .hint {
-      margin-top: 6px;
-      color: var(--muted);
-      font-size: 13px;
-      line-height: 1.45;
-    }
-
-    .wide {
-      grid-column: span 2;
-    }
-
-    .full {
-      grid-column: 1 / -1;
-    }
-
-    .status {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      padding: 8px 11px;
-      border-radius: 999px;
-      background: var(--panel-2);
-      border: 1px solid var(--border);
-      font-weight: 700;
-    }
-
-    .dot {
-      width: 9px;
-      height: 9px;
-      border-radius: 50%;
-      background: var(--muted);
-    }
-
-    .dot.ok { background: var(--ok); }
-    .dot.warn { background: var(--warn); }
-    .dot.bad { background: var(--bad); }
-
-    pre {
-      white-space: pre-wrap;
-      word-break: break-word;
-      margin: 0;
-      color: #d7def0;
-      background: #0b0d12;
-      padding: 14px;
-      border-radius: 12px;
-      border: 1px solid var(--border);
-      max-height: 420px;
-      overflow: auto;
-    }
-
-    .toolbar {
-      display: flex;
-      gap: 10px;
-      align-items: center;
-      margin-bottom: 18px;
-      flex-wrap: wrap;
-    }
-
+    header { padding: 28px 28px 8px; max-width: 1180px; margin: 0 auto; }
+    h1 { margin: 0; font-size: 30px; letter-spacing: -0.03em; }
+    .subtitle { margin-top: 8px; color: var(--muted); }
+    main { max-width: 1180px; margin: 0 auto; padding: 20px 28px 48px; }
+    .toolbar { display: flex; gap: 10px; align-items: center; margin-bottom: 18px; flex-wrap: wrap; }
     button, a.button {
-      border: 0;
-      border-radius: 10px;
-      padding: 10px 13px;
-      font-weight: 800;
-      background: var(--accent);
-      color: white;
-      text-decoration: none;
-      cursor: pointer;
+      border: 0; border-radius: 10px; padding: 10px 13px; font-weight: 800;
+      background: var(--accent); color: white; text-decoration: none; cursor: pointer;
     }
-
-    a.link {
-      color: #aab4ff;
-      text-decoration: none;
+    button.secondary, a.secondary { background: var(--panel-2); border: 1px solid var(--border); }
+    button.danger { background: #a73a3a; }
+    a.link { color: #aab4ff; text-decoration: none; }
+    .grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+    .card {
+      background: linear-gradient(180deg, var(--panel), #141720); border: 1px solid var(--border);
+      border-radius: 16px; padding: 18px; box-shadow: 0 18px 50px rgba(0,0,0,.22);
     }
-
-    @media (max-width: 900px) {
-      .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-      .wide { grid-column: 1 / -1; }
+    .card h2 { margin: 0 0 8px; font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; font-weight: 700; }
+    .value { font-size: 28px; font-weight: 800; letter-spacing: -.04em; }
+    .hint { margin-top: 6px; color: var(--muted); font-size: 13px; line-height: 1.45; }
+    .wide { grid-column: span 2; }
+    .full { grid-column: 1 / -1; }
+    .status { display: inline-flex; align-items: center; gap: 8px; padding: 8px 11px; border-radius: 999px; background: var(--panel-2); border: 1px solid var(--border); font-weight: 700; }
+    .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); }
+    .dot.ok { background: var(--ok); } .dot.warn { background: var(--warn); } .dot.bad { background: var(--bad); }
+    pre { white-space: pre-wrap; word-break: break-word; margin: 0; color: #d7def0; background: #0b0d12; padding: 14px; border-radius: 12px; border: 1px solid var(--border); max-height: 420px; overflow: auto; }
+    table { width: 100%; border-collapse: collapse; overflow: hidden; border-radius: 12px; }
+    th, td { padding: 12px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: middle; }
+    th { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .08em; }
+    tr:hover td { background: rgba(255,255,255,.025); }
+    input, select, textarea {
+      width: 100%; padding: 11px 12px; border-radius: 10px; border: 1px solid var(--border);
+      background: #0b0d12; color: var(--text); outline: none;
     }
-
-    @media (max-width: 560px) {
-      .grid { grid-template-columns: 1fr; }
-    }
+    textarea { min-height: 70px; resize: vertical; }
+    label { display: block; color: var(--muted); font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; margin-bottom: 6px; }
+    .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+    .span-2 { grid-column: span 2; }
+    .item-img { width: 54px; height: 54px; border-radius: 12px; object-fit: cover; background: var(--panel-2); border: 1px solid var(--border); }
+    .pill { display: inline-flex; border-radius: 999px; padding: 5px 9px; background: var(--panel-2); border: 1px solid var(--border); font-size: 12px; font-weight: 800; }
+    .pill.ok { color: var(--ok); } .pill.bad { color: var(--bad); }
+    .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    .search-results { position: relative; }
+    .dropdown { position: absolute; z-index: 20; left: 0; right: 0; top: 100%; background: #0b0d12; border: 1px solid var(--border); border-radius: 12px; max-height: 280px; overflow: auto; margin-top: 6px; box-shadow: 0 18px 50px rgba(0,0,0,.4); }
+    .option { padding: 10px 12px; cursor: pointer; border-bottom: 1px solid var(--border); }
+    .option:hover { background: var(--panel-2); }
+    .option small { color: var(--muted); display: block; margin-top: 2px; }
+    @media (max-width: 900px) { .grid { grid-template-columns: repeat(2, minmax(0,1fr)); } .wide, .span-2 { grid-column: 1 / -1; } .form-grid { grid-template-columns: 1fr; } }
+    @media (max-width: 560px) { .grid { grid-template-columns: 1fr; } }
   </style>
 </head>
 <body>
   <header>
-    <h1>DayZ Shop Admin</h1>
-    <div class="subtitle">Dashboard operacional da loja, deploy automático e ciclo de entrega.</div>
+    <h1>${options.title}</h1>
+    <div class="subtitle">Admin da loja DayZ. O className real é usado no events.xml; o nome popular é apenas referência visual.</div>
   </header>
-
   <main>
     <div class="toolbar">
-      <button onclick="loadDashboard()">Atualizar</button>
-      <a class="button" href="/admin/api/dashboard${tokenQuery}">Ver JSON</a>
+      <a class="button secondary" href="/admin${tokenQuery}">Dashboard</a>
+      <a class="button secondary" href="/admin/catalog${tokenQuery}">Catálogo</a>
       <a class="link" href="/admin/health${tokenQuery}">Health</a>
     </div>
-
-    <section class="grid">
-      <div class="card wide">
-        <h2>Estado da shop</h2>
-        <div id="shopStatus" class="status"><span class="dot"></span><span>Carregando...</span></div>
-        <div id="shopReason" class="hint"></div>
-      </div>
-
-      <div class="card">
-        <h2>Próximo restart</h2>
-        <div id="nextRestart" class="value">-</div>
-        <div id="restartHint" class="hint"></div>
-      </div>
-
-      <div class="card">
-        <h2>Freeze window</h2>
-        <div id="freeze" class="value">-</div>
-        <div class="hint">Bloqueia checkout perto do reset.</div>
-      </div>
-
-      <div class="card">
-        <h2>Pending</h2>
-        <div id="pending" class="value">-</div>
-        <div class="hint">Pedidos aguardando deploy.</div>
-      </div>
-
-      <div class="card">
-        <h2>Batch aguardando clear</h2>
-        <div id="waitingClear" class="value">-</div>
-        <div class="hint">XML injetado/entrega em finalização.</div>
-      </div>
-
-      <div class="card">
-        <h2>Included</h2>
-        <div id="included" class="value">-</div>
-        <div class="hint">Pedidos no próximo restart.</div>
-      </div>
-
-      <div class="card">
-        <h2>Spawned</h2>
-        <div id="spawned" class="value">-</div>
-        <div class="hint">Pedidos entregues.</div>
-      </div>
-
-      <div class="card">
-        <h2>Auto deploy</h2>
-        <div id="autoDeploy" class="value">-</div>
-        <div id="autoDeployHint" class="hint"></div>
-      </div>
-
-      <div class="card">
-        <h2>Nitrado status</h2>
-        <div id="nitrado" class="value">-</div>
-        <div id="nitradoHint" class="hint"></div>
-      </div>
-
-      <div class="card">
-        <h2>Online</h2>
-        <div id="online" class="value">-</div>
-        <div class="hint">Jogadores online pelo state atual.</div>
-      </div>
-
-      <div class="card">
-        <h2>Catálogo</h2>
-        <div id="catalog" class="value">-</div>
-        <div id="catalogHint" class="hint"></div>
-      </div>
-
-      <div class="card full">
-        <h2>Payload</h2>
-        <pre id="payload">Carregando...</pre>
-      </div>
-    </section>
+    ${options.body}
   </main>
-
-  <script>
-    const tokenQuery = ${JSON.stringify(tokenQuery)};
-
-    function setText(id, value) {
-      const element = document.getElementById(id);
-      if (element) element.textContent = value;
-    }
-
-    function setStatus(payload) {
-      const wrapper = document.getElementById("shopStatus");
-      const dot = wrapper.querySelector(".dot");
-      const label = wrapper.querySelector("span:last-child");
-
-      dot.className = "dot";
-      if (payload.shop.canAcceptPurchase) dot.classList.add("ok");
-      else if (payload.shop.state === "FROZEN") dot.classList.add("warn");
-      else dot.classList.add("bad");
-
-      label.textContent = payload.shop.state + (payload.shop.canAcceptPurchase ? " / Checkout aberto" : " / Checkout fechado");
-    }
-
-    async function loadDashboard() {
-      const response = await fetch("/admin/api/dashboard" + tokenQuery);
-      const payload = await response.json();
-
-      setStatus(payload);
-      setText("shopReason", payload.shop.reason || "-");
-      setText("nextRestart", payload.shop.nextRestart || "unknown");
-      setText("restartHint", payload.shop.minutesUntilRestart === null ? "Sem janela ativa" : payload.shop.minutesUntilRestart + " min");
-      setText("freeze", payload.shop.freezeWindowActive ? "Ativa" : "Não");
-      setText("pending", payload.shop.pending);
-      setText("waitingClear", payload.shop.batchWaitingClear ? "Sim" : "Não");
-      setText("included", payload.shop.includedInRestart);
-      setText("spawned", payload.shop.spawned);
-      setText("autoDeploy", payload.meta.lastAutoDeployWindow || "none");
-      setText("autoDeployHint", payload.meta.lastAutoDeployAt ? "Último deploy: " + payload.meta.lastAutoDeployAt : "Sem deploy registrado");
-      setText("nitrado", payload.meta.lastResetStatus || "unknown");
-      setText("nitradoHint", payload.meta.lastResetCheckedAt ? "Última checagem: " + payload.meta.lastResetCheckedAt : "Sem checagem");
-      setText("online", payload.online);
-      setText("catalog", payload.catalog.items + " itens");
-      setText("catalogHint", payload.catalog.categories + " categorias / " + payload.catalog.enabledItems + " ativos");
-      setText("payload", JSON.stringify(payload, null, 2));
-    }
-
-    loadDashboard();
-    setInterval(loadDashboard, 30000);
-  </script>
+  <script>const tokenQuery = ${JSON.stringify(tokenQuery)};</script>
+  ${options.script || ""}
 </body>
 </html>`;
 }
 
+function renderDashboardHtml(token: string) {
+  return renderBaseHtml({
+    title: "DayZ Shop Admin",
+    token,
+    body: `
+    <div class="toolbar">
+      <button onclick="loadDashboard()">Atualizar</button>
+      <a class="button" href="/admin/api/dashboard${token ? `?token=${encodeURIComponent(token)}` : ""}">Ver JSON</a>
+    </div>
+    <section class="grid">
+      <div class="card wide"><h2>Estado da shop</h2><div id="shopStatus" class="status"><span class="dot"></span><span>Carregando...</span></div><div id="shopReason" class="hint"></div></div>
+      <div class="card"><h2>Próximo restart</h2><div id="nextRestart" class="value">-</div><div id="restartHint" class="hint"></div></div>
+      <div class="card"><h2>Freeze window</h2><div id="freeze" class="value">-</div><div class="hint">Bloqueia checkout perto do reset.</div></div>
+      <div class="card"><h2>Pending</h2><div id="pending" class="value">-</div><div class="hint">Pedidos aguardando deploy.</div></div>
+      <div class="card"><h2>Batch aguardando clear</h2><div id="waitingClear" class="value">-</div><div class="hint">XML injetado/entrega em finalização.</div></div>
+      <div class="card"><h2>Included</h2><div id="included" class="value">-</div><div class="hint">Pedidos no próximo restart.</div></div>
+      <div class="card"><h2>Spawned</h2><div id="spawned" class="value">-</div><div class="hint">Pedidos entregues.</div></div>
+      <div class="card"><h2>Auto deploy</h2><div id="autoDeploy" class="value">-</div><div id="autoDeployHint" class="hint"></div></div>
+      <div class="card"><h2>Nitrado status</h2><div id="nitrado" class="value">-</div><div id="nitradoHint" class="hint"></div></div>
+      <div class="card"><h2>Online</h2><div id="online" class="value">-</div><div class="hint">Jogadores online pelo state atual.</div></div>
+      <div class="card"><h2>Catálogo</h2><div id="catalog" class="value">-</div><div id="catalogHint" class="hint"></div></div>
+      <div class="card full"><h2>Payload</h2><pre id="payload">Carregando...</pre></div>
+    </section>`,
+    script: `<script>
+    function setText(id, value) { const element = document.getElementById(id); if (element) element.textContent = value; }
+    function setStatus(payload) {
+      const wrapper = document.getElementById("shopStatus"); const dot = wrapper.querySelector(".dot"); const label = wrapper.querySelector("span:last-child");
+      dot.className = "dot"; if (payload.shop.canAcceptPurchase) dot.classList.add("ok"); else if (payload.shop.state === "FROZEN") dot.classList.add("warn"); else dot.classList.add("bad");
+      label.textContent = payload.shop.state + (payload.shop.canAcceptPurchase ? " / Checkout aberto" : " / Checkout fechado");
+    }
+    async function loadDashboard() {
+      const response = await fetch("/admin/api/dashboard" + tokenQuery); const payload = await response.json();
+      setStatus(payload); setText("shopReason", payload.shop.reason || "-"); setText("nextRestart", payload.shop.nextRestart || "unknown");
+      setText("restartHint", payload.shop.minutesUntilRestart === null ? "Sem janela ativa" : payload.shop.minutesUntilRestart + " min");
+      setText("freeze", payload.shop.freezeWindowActive ? "Ativa" : "Não"); setText("pending", payload.shop.pending); setText("waitingClear", payload.shop.batchWaitingClear ? "Sim" : "Não");
+      setText("included", payload.shop.includedInRestart); setText("spawned", payload.shop.spawned); setText("autoDeploy", payload.meta.lastAutoDeployWindow || "none");
+      setText("autoDeployHint", payload.meta.lastAutoDeployAt ? "Último deploy: " + payload.meta.lastAutoDeployAt : "Sem deploy registrado"); setText("nitrado", payload.meta.lastResetStatus || "unknown");
+      setText("nitradoHint", payload.meta.lastResetCheckedAt ? "Última checagem: " + payload.meta.lastResetCheckedAt : "Sem checagem"); setText("online", payload.online);
+      setText("catalog", payload.catalog.items + " itens"); setText("catalogHint", payload.catalog.categories + " categorias / " + payload.catalog.enabledItems + " ativos / " + payload.catalog.dayzItems + " classNames");
+      setText("payload", JSON.stringify(payload, null, 2));
+    }
+    loadDashboard(); setInterval(loadDashboard, 30000);
+    </script>`,
+  });
+}
+
+function renderCatalogHtml(token: string) {
+  return renderBaseHtml({
+    title: "DayZ Shop Catalog",
+    token,
+    body: `
+    <section class="card full">
+      <h2>Novo / editar item</h2>
+      <div class="hint" style="margin-bottom:14px">Pesquise por nome popular ou className real. Ex.: ATOG mostra ATOG Scope, mas salva <b>ACOGOptic</b> para spawn.</div>
+      <form id="catalogForm" class="form-grid">
+        <input type="hidden" id="editingId" />
+        <div class="span-2 search-results">
+          <label>Item real do DayZ</label>
+          <input id="dayzSearch" autocomplete="off" placeholder="Pesquise: ATOG, Barrel_Red, M4-A1..." />
+          <div id="dayzResults" class="dropdown" style="display:none"></div>
+        </div>
+        <div><label>ClassName real</label><input id="className" required readonly placeholder="ACOGOptic" /></div>
+        <div><label>Nome popular da base</label><input id="popularName" readonly placeholder="ATOG Scope" /></div>
+        <div><label>Nome na loja</label><input id="name" required placeholder="Mira ATOG" /></div>
+        <div><label>Categoria</label><input id="category" required placeholder="optics" /></div>
+        <div><label>Preço</label><input id="price" required type="number" min="0" step="1" placeholder="5000" /></div>
+        <div><label>URL da imagem</label><input id="imageUrl" placeholder="https://..." /></div>
+        <div class="span-2"><label>Descrição</label><textarea id="description" placeholder="Descrição opcional para aparecer na loja"></textarea></div>
+        <div><label>Status</label><select id="enabled"><option value="true">Ativo</option><option value="false">Inativo</option></select></div>
+        <div style="display:flex;align-items:end;gap:10px"><button type="submit">Salvar item</button><button type="button" class="secondary" onclick="resetForm()">Limpar</button></div>
+      </form>
+    </section>
+    <section class="card full" style="margin-top:14px">
+      <h2>Itens da loja</h2>
+      <div class="toolbar"><button onclick="loadCatalog()">Atualizar</button><a class="button" href="/admin/api/catalog${token ? `?token=${encodeURIComponent(token)}` : ""}">Ver JSON</a></div>
+      <div style="overflow:auto"><table><thead><tr><th>Imagem</th><th>Nome</th><th>ClassName real</th><th>Popular</th><th>Categoria</th><th>Preço</th><th>Status</th><th>Ações</th></tr></thead><tbody id="catalogRows"></tbody></table></div>
+    </section>`,
+    script: `<script>
+    const form = document.getElementById("catalogForm");
+    const results = document.getElementById("dayzResults");
+    const search = document.getElementById("dayzSearch");
+    function field(id) { return document.getElementById(id); }
+    function escapeHtml(value) { return String(value ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c])); }
+    function resetForm() { form.reset(); field("editingId").value = ""; field("className").readOnly = true; field("popularName").readOnly = true; results.style.display = "none"; }
+    function selectDayzItem(item) { field("className").value = item.className; field("popularName").value = item.popularName; field("dayzSearch").value = item.popularName + " — " + item.className; if (!field("name").value) field("name").value = item.popularName; results.style.display = "none"; }
+    async function searchDayz() { const q = search.value.trim(); if (!q) { results.style.display = "none"; return; } const response = await fetch("/admin/api/dayz-items" + tokenQuery + (tokenQuery ? "&" : "?") + "q=" + encodeURIComponent(q)); const payload = await response.json(); results.innerHTML = payload.items.map(item => '<div class="option" data-class="'+escapeHtml(item.className)+'"><b>'+escapeHtml(item.popularName)+'</b><small>'+escapeHtml(item.className)+'</small></div>').join(""); results.style.display = payload.items.length ? "block" : "none"; Array.from(results.querySelectorAll(".option")).forEach((el, index) => el.addEventListener("click", () => selectDayzItem(payload.items[index]))); }
+    let searchTimer = null; search.addEventListener("input", () => { clearTimeout(searchTimer); searchTimer = setTimeout(searchDayz, 180); });
+    async function loadCatalog() { const response = await fetch("/admin/api/catalog" + tokenQuery); const payload = await response.json(); const rows = document.getElementById("catalogRows"); rows.innerHTML = payload.items.map(item => '<tr><td>'+(item.imageUrl ? '<img class="item-img" src="'+escapeHtml(item.imageUrl)+'" />' : '<div class="item-img"></div>')+'</td><td><b>'+escapeHtml(item.name)+'</b><div class="hint">ID: '+escapeHtml(item.id)+'</div></td><td><code>'+escapeHtml(item.className)+'</code></td><td>'+escapeHtml(item.popularName || "-")+'</td><td>'+escapeHtml(item.category || "misc")+'</td><td>'+Number(item.price || 0).toLocaleString('pt-BR')+'</td><td><span class="pill '+(item.enabled === false ? 'bad' : 'ok')+'">'+(item.enabled === false ? 'Inativo' : 'Ativo')+'</span></td><td><div class="actions"><button class="secondary" onclick=\'editItem("'+escapeHtml(item.id)+'")\'>Editar</button><button class="secondary" onclick=\'toggleItem("'+escapeHtml(item.id)+'")\'>Alternar</button><button class="danger" onclick=\'deleteItem("'+escapeHtml(item.id)+'")\'>Excluir</button></div></td></tr>').join(""); window.catalogItems = payload.items; }
+    function editItem(id) { const item = (window.catalogItems || []).find(x => x.id === id); if (!item) return; field("editingId").value = item.id; field("className").value = item.className; field("popularName").value = item.popularName || ""; field("dayzSearch").value = (item.popularName || item.name) + " — " + item.className; field("name").value = item.name || ""; field("category").value = item.category || "misc"; field("price").value = item.price || 0; field("imageUrl").value = item.imageUrl || ""; field("description").value = item.description || ""; field("enabled").value = item.enabled === false ? "false" : "true"; window.scrollTo({ top: 0, behavior: 'smooth' }); }
+    async function toggleItem(id) { await fetch("/admin/api/catalog/" + encodeURIComponent(id) + "/toggle" + tokenQuery, { method: "POST" }); await loadCatalog(); }
+    async function deleteItem(id) { if (!confirm("Excluir item do catálogo?")) return; await fetch("/admin/api/catalog/" + encodeURIComponent(id) + tokenQuery, { method: "DELETE" }); await loadCatalog(); }
+    form.addEventListener("submit", async (event) => { event.preventDefault(); const body = { id: field("editingId").value || undefined, className: field("className").value, popularName: field("popularName").value, name: field("name").value, category: field("category").value, price: Number(field("price").value || 0), imageUrl: field("imageUrl").value, description: field("description").value, enabled: field("enabled").value !== "false" }; const response = await fetch("/admin/api/catalog" + tokenQuery, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); if (!response.ok) { alert(await response.text()); return; } resetForm(); await loadCatalog(); });
+    loadCatalog();
+    </script>`,
+  });
+}
+
 router.get("/", (req, res) => {
   if (!requireAdmin(req, res)) return;
+  res.type("html").send(renderDashboardHtml(getAdminTokenFromRequest(req)));
+});
 
-  const token = getAdminTokenFromRequest(req);
-  res.type("html").send(renderDashboardHtml(token));
+router.get("/catalog", (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  res.type("html").send(renderCatalogHtml(getAdminTokenFromRequest(req)));
 });
 
 router.get("/health", (req, res) => {
   if (!requireAdmin(req, res)) return;
-
-  res.json({
-    ok: true,
-    uptime: process.uptime(),
-    timestamp: Date.now(),
-  });
+  res.json({ ok: true, uptime: process.uptime(), timestamp: Date.now() });
 });
 
 async function handleDashboard(req: any, res: any) {
@@ -465,13 +366,78 @@ async function handleDashboard(req: any, res: any) {
     const state = await readAppState();
     res.json(buildDashboardPayload(state));
   } catch (err) {
-    res.status(500).json({
-      error: String(err),
-    });
+    res.status(500).json({ error: String(err) });
   }
 }
 
 router.get("/dashboard", handleDashboard);
 router.get("/api/dashboard", handleDashboard);
+
+router.get("/api/dayz-items", (req, res) => {
+  if (!requireAdmin(req, res)) return;
+
+  const query = typeof req.query.q === "string" ? req.query.q : "";
+  const limit = Math.min(Number(req.query.limit || 50), 100);
+  res.json({ items: searchDayzItems(query, limit), total: getDayzItems().length });
+});
+
+router.get("/api/catalog", (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  res.json(getShopCatalog());
+});
+
+router.post("/api/catalog", (req, res) => {
+  if (!requireAdmin(req, res)) return;
+
+  try {
+    const className = String(req.body?.className || "").trim();
+    const dayzItem = findDayzItem(className);
+
+    if (!dayzItem) {
+      res.status(400).send(`Invalid DayZ className: ${className}`);
+      return;
+    }
+
+    const item: ShopItem = {
+      id: normalizeShopCatalogId(req.body?.id || req.body?.name || className),
+      className: dayzItem.className,
+      popularName: dayzItem.popularName,
+      name: String(req.body?.name || dayzItem.popularName).trim(),
+      category: normalizeShopCatalogId(req.body?.category || "misc"),
+      price: Number(req.body?.price || 0),
+      imageUrl: req.body?.imageUrl ? String(req.body.imageUrl).trim() : undefined,
+      description: req.body?.description ? String(req.body.description).trim() : undefined,
+      enabled: req.body?.enabled !== false,
+    };
+
+    res.json({ item: upsertShopCatalogItem(item), catalog: getShopCatalog() });
+  } catch (err) {
+    res.status(500).send(String(err));
+  }
+});
+
+router.post("/api/catalog/:id/toggle", (req, res) => {
+  if (!requireAdmin(req, res)) return;
+
+  const item = toggleShopCatalogItem(req.params.id);
+  if (!item) {
+    res.status(404).send("Catalog item not found");
+    return;
+  }
+
+  res.json({ item, catalog: getShopCatalog() });
+});
+
+router.delete("/api/catalog/:id", (req, res) => {
+  if (!requireAdmin(req, res)) return;
+
+  const deleted = deleteShopCatalogItem(req.params.id);
+  if (!deleted) {
+    res.status(404).send("Catalog item not found");
+    return;
+  }
+
+  res.json({ ok: true, catalog: getShopCatalog() });
+});
 
 export default router;

@@ -1,0 +1,104 @@
+import fs from "fs";
+import path from "path";
+
+export type DayzItemDefinition = {
+  className: string;
+  popularName: string;
+};
+
+const DEFAULT_DAYZ_ITEMS: DayzItemDefinition[] = [
+  { className: "Barrel_Green", popularName: "Barrel" },
+  { className: "Barrel_Red", popularName: "Barrel" },
+];
+
+function dayzItemsPath() {
+  return path.resolve(
+    process.cwd(),
+    process.env.DAYZ_ITEMS_FILE || "data/dayz-items.json",
+  );
+}
+
+function normalizeSearch(value: string) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function safeDayzItems(input: unknown): DayzItemDefinition[] {
+  if (!Array.isArray(input)) return DEFAULT_DAYZ_ITEMS;
+
+  const seen = new Set<string>();
+  const items: DayzItemDefinition[] = [];
+
+  for (const item of input) {
+    const className = String((item as any)?.className || "").trim();
+    const popularName = String((item as any)?.popularName || className).trim();
+
+    if (!className || seen.has(className)) continue;
+    seen.add(className);
+    items.push({ className, popularName });
+  }
+
+  return items.length ? items : DEFAULT_DAYZ_ITEMS;
+}
+
+export function getDayzItems(): DayzItemDefinition[] {
+  const file = dayzItemsPath();
+
+  if (!fs.existsSync(file)) return DEFAULT_DAYZ_ITEMS;
+
+  try {
+    return safeDayzItems(JSON.parse(fs.readFileSync(file, "utf8")));
+  } catch (err) {
+    console.error("❌ failed to read DayZ item database:", err);
+    return DEFAULT_DAYZ_ITEMS;
+  }
+}
+
+export function findDayzItem(className: string) {
+  const normalized = String(className || "").trim().toLowerCase();
+  if (!normalized) return null;
+
+  return (
+    getDayzItems().find(
+      (item) => item.className.trim().toLowerCase() === normalized,
+    ) || null
+  );
+}
+
+export function searchDayzItems(query: string, limit = 50) {
+  const normalizedQuery = normalizeSearch(query);
+  const items = getDayzItems();
+
+  if (!normalizedQuery) return items.slice(0, limit);
+
+  const tokens = normalizedQuery.split(/\s+/g).filter(Boolean);
+
+  return items
+    .map((item) => {
+      const classSearch = normalizeSearch(item.className);
+      const popularSearch = normalizeSearch(item.popularName);
+      const combined = `${classSearch} ${popularSearch}`;
+
+      let score = 0;
+      for (const token of tokens) {
+        if (classSearch === token) score += 100;
+        if (popularSearch === token) score += 80;
+        if (classSearch.startsWith(token)) score += 50;
+        if (popularSearch.startsWith(token)) score += 40;
+        if (classSearch.includes(token)) score += 25;
+        if (popularSearch.includes(token)) score += 20;
+        if (combined.includes(token)) score += 10;
+      }
+
+      return { item, score };
+    })
+    .filter((entry) => entry.score > 0)
+    .sort((a, b) => b.score - a.score || a.item.className.localeCompare(b.item.className))
+    .slice(0, limit)
+    .map((entry) => entry.item);
+}
