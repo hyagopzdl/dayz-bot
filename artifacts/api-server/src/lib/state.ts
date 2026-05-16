@@ -92,6 +92,17 @@ export type ShopAutoDeployState = {
   lastDeployAt?: string;
 };
 
+export type ShopSavedLocation = {
+  id: string;
+  discordUserId: string;
+  name: string;
+  x: number;
+  y: number;
+  z: number;
+  createdAt: string;
+  lastUsedAt?: string;
+};
+
 export type ShopOrder = {
   id: string;
   discordUserId: string;
@@ -128,6 +139,7 @@ export type AppState = {
   onlineSessions: Record<string, OnlineSession>;
 
   shopOrders: ShopOrder[];
+  shopSavedLocations?: ShopSavedLocation[];
   shopResetMonitor?: ShopResetMonitor | null;
   shopAutoDeploy?: ShopAutoDeployState | null;
 
@@ -163,6 +175,7 @@ function defaultState(): AppState {
     onlinePlayers: {},
     onlineSessions: {},
     shopOrders: [],
+    shopSavedLocations: [],
     shopResetMonitor: null,
     shopAutoDeploy: null,
     files: {},

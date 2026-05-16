@@ -1,4 +1,4 @@
-import type { AppState, ShopOrder } from "./state";
+import type { AppState, ShopOrder, ShopSavedLocation } from "./state";
 import { getNitradoGameserverStatus } from "./nitradoDownloader";
 import { downloadTextFile, uploadTextFile } from "./nitradoFtp";
 import {
@@ -7,34 +7,23 @@ import {
   removeShopBotBlock,
 } from "./shopXml";
 
-export type ShopItem = {
-  id: string;
-  name: string;
-  className: string;
-  price: number;
-  category?: string;
-  description?: string;
-  imageUrl?: string;
-};
+import {
+  findShopItem,
+  getShopCategories,
+  getShopItems,
+  getShopItemsByCategory,
+  type ShopItem,
+} from "./shopCatalog";
 
-export const SHOP_ITEMS: ShopItem[] = [
-  {
-    id: "barrel_green",
-    name: "Green Barrel",
-    className: "Barrel_Green",
-    price: 250,
-    category: "containers",
-    description: "Storage barrel delivered on the next restart.",
-  },
-  {
-    id: "barrel_red",
-    name: "Red Barrel",
-    className: "Barrel_Red",
-    price: 250,
-    category: "containers",
-    description: "Storage barrel delivered on the next restart.",
-  },
-];
+export type { ShopItem } from "./shopCatalog";
+export {
+  findShopItem,
+  getShopCategories,
+  getShopItems,
+  getShopItemsByCategory,
+} from "./shopCatalog";
+
+export const SHOP_ITEMS: ShopItem[] = getShopItems(true);
 
 const DEFAULT_DAYZ_MISSION_DIR =
   process.env.DAYZ_MISSION_DIR || "dayzps_missions/dayzOffline.chernarusplus";
@@ -128,6 +117,7 @@ export function getShopItemsByCategory(category: string) {
 
 export function ensureShopState(state: AppState) {
   state.shopOrders = state.shopOrders || [];
+  state.shopSavedLocations = state.shopSavedLocations || [];
   state.shopResetMonitor = state.shopResetMonitor || null;
   return state;
 }
@@ -143,6 +133,68 @@ export function findShopItem(input: string) {
         normalizeItemName(item.className) === normalized,
     ) || null
   );
+}
+
+
+export function getSavedShopLocations(state: AppState, discordUserId: string) {
+  ensureShopState(state);
+  return (state.shopSavedLocations || [])
+    .filter((location) => location.discordUserId === discordUserId)
+    .sort((a, b) => String(b.lastUsedAt || b.createdAt).localeCompare(String(a.lastUsedAt || a.createdAt)))
+    .slice(0, 25);
+}
+
+export function findSavedShopLocation(
+  state: AppState,
+  discordUserId: string,
+  locationId: string,
+) {
+  return getSavedShopLocations(state, discordUserId).find(
+    (location) => location.id === locationId,
+  ) || null;
+}
+
+export function saveShopLocation(options: {
+  state: AppState;
+  discordUserId: string;
+  name: string;
+  x: number;
+  y: number;
+  z: number;
+}) {
+  const state = ensureShopState(options.state);
+  const now = new Date().toISOString();
+  const cleanName = String(options.name || "").trim().slice(0, 40);
+
+  if (!cleanName) return null;
+
+  const existing = (state.shopSavedLocations || []).find(
+    (location) =>
+      location.discordUserId === options.discordUserId &&
+      location.name.trim().toLowerCase() === cleanName.toLowerCase(),
+  );
+
+  const payload: ShopSavedLocation = {
+    id:
+      existing?.id ||
+      `loc_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    discordUserId: options.discordUserId,
+    name: cleanName,
+    x: Number(options.x.toFixed(2)),
+    y: Number(options.y.toFixed(2)),
+    z: Number(options.z.toFixed(2)),
+    createdAt: existing?.createdAt || now,
+    lastUsedAt: now,
+  };
+
+  if (existing) Object.assign(existing, payload);
+  else state.shopSavedLocations!.push(payload);
+
+  return payload;
+}
+
+export function markShopLocationUsed(location: ShopSavedLocation | null | undefined) {
+  if (location) location.lastUsedAt = new Date().toISOString();
 }
 
 export function parseShopCoordinates(input: string, fallbackY = 0) {
@@ -245,7 +297,7 @@ export function createShopOrder(options: {
 
   if (!item) {
     throw new Error(
-      `Item not found. Available items: ${SHOP_ITEMS.map((i) => i.id).join(", ")}`,
+      `Item not found. Available items: ${getShopItems().map((i) => i.id).join(", ")}`,
     );
   }
 
@@ -729,7 +781,7 @@ export function formatShopQueue(state: AppState) {
     ...autoDeployLines,
     "",
     "**Catalog**",
-    ...SHOP_ITEMS.map((item) => `• \`${item.id}\` → ${item.className}`),
+    ...getShopItems(true).map((item) => `• \`${item.id}\` → ${item.className}`),
     "",
     "**Latest orders**",
   ];

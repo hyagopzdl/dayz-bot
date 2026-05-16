@@ -26,10 +26,14 @@ import {
   pollShopResetStatusAndAutoClear,
   formatShopQueue,
   parseShopCoordinates,
-  SHOP_ITEMS,
+  getShopItems,
   getShopCategories,
   getShopItemsByCategory,
   getShopRuntimeStatus,
+  getSavedShopLocations,
+  findSavedShopLocation,
+  markShopLocationUsed,
+  saveShopLocation,
 } from "./shop";
 
 const client = new Client({
@@ -70,6 +74,7 @@ function ensureBotState(state: any) {
   state.onlinePlayers = state.onlinePlayers || {};
   state.onlineSessions = state.onlineSessions || {};
   state.shopOrders = state.shopOrders || [];
+  state.shopSavedLocations = state.shopSavedLocations || [];
   state.shopResetMonitor = state.shopResetMonitor || null;
   state.shopAutoDeploy = state.shopAutoDeploy || null;
   state.files = state.files || {};
@@ -203,7 +208,7 @@ function buildShopCategoryPayload(state: any, categoryId: string) {
     .setPlaceholder("Select an item")
     .setDisabled(!items.length)
     .addOptions(
-      (items.length ? items : SHOP_ITEMS).slice(0, 25).map((item) => ({
+      (items.length ? items : getShopItems()).slice(0, 25).map((item) => ({
         label: item.name,
         value: item.id,
         description: `$${item.price} • ${item.className}`,
@@ -224,9 +229,15 @@ function buildShopCategoryPayload(state: any, categoryId: string) {
   };
 }
 
-function buildShopItemPayload(state: any, itemId: string, categoryId?: string) {
+function buildShopItemPayload(
+  state: any,
+  itemId: string,
+  categoryId?: string,
+  discordUserId?: string,
+  selectedLocationId?: string,
+) {
   const runtime = getShopRuntimeStatus(state);
-  const item = SHOP_ITEMS.find((candidate) => candidate.id === itemId);
+  const item = getShopItems().find((candidate) => candidate.id === itemId);
 
   if (!item) {
     return {
@@ -236,6 +247,13 @@ function buildShopItemPayload(state: any, itemId: string, categoryId?: string) {
     };
   }
 
+  const savedLocations = discordUserId
+    ? getSavedShopLocations(state, discordUserId)
+    : [];
+  const selectedLocation = selectedLocationId
+    ? savedLocations.find((location) => location.id === selectedLocationId)
+    : null;
+
   const embed = new EmbedBuilder()
     .setTitle(`📦 ${item.name}`)
     .setDescription(
@@ -244,6 +262,14 @@ function buildShopItemPayload(state: any, itemId: string, categoryId?: string) {
         "",
         `Class: \`${item.className}\``,
         `Price: **${item.price}**`,
+        selectedLocation
+          ? `Delivery: **${selectedLocation.name}** — \`${selectedLocation.x}, ${selectedLocation.y}, ${selectedLocation.z}\``
+          : savedLocations.length
+            ? "Delivery: select a saved coordinate or choose custom."
+            : "Delivery: custom coordinate required at checkout.",
+        runtime.nextRestartLabel
+          ? `Estimated delivery: next restart window **${runtime.nextRestartLabel}**`
+          : null,
         runtime.canAcceptPurchase ? null : `\n⚠️ ${runtime.reason}`,
       ]
         .filter(Boolean)
@@ -254,8 +280,14 @@ function buildShopItemPayload(state: any, itemId: string, categoryId?: string) {
   if (item.imageUrl) embed.setThumbnail(item.imageUrl);
 
   const buyButton = new ButtonBuilder()
-    .setCustomId(`shop-buy-ui:${item.id}`)
-    .setLabel(runtime.canAcceptPurchase ? "Buy" : "Checkout closed")
+    .setCustomId(`shop-buy-ui:${item.id}:${selectedLocation?.id || "custom"}`)
+    .setLabel(
+      runtime.canAcceptPurchase
+        ? selectedLocation
+          ? `Buy to ${selectedLocation.name}`
+          : "Buy with custom coordinate"
+        : "Checkout closed",
+    )
     .setStyle(runtime.canAcceptPurchase ? ButtonStyle.Success : ButtonStyle.Secondary)
     .setDisabled(!runtime.canAcceptPurchase);
 
@@ -269,15 +301,43 @@ function buildShopItemPayload(state: any, itemId: string, categoryId?: string) {
     .setLabel("Cancel")
     .setStyle(ButtonStyle.Danger);
 
+  const components: any[] = [];
+
+  if (savedLocations.length) {
+    const locationMenu = new StringSelectMenuBuilder()
+      .setCustomId(`shop-location:${item.id}:${categoryId || item.category || "misc"}`)
+      .setPlaceholder("Select delivery coordinate")
+      .addOptions([
+        ...savedLocations.slice(0, 24).map((location) => ({
+          label: location.name,
+          value: location.id,
+          description: `${location.x}, ${location.y}, ${location.z}`,
+          default: location.id === selectedLocation?.id,
+        })),
+        {
+          label: "Custom coordinate",
+          value: "custom",
+          description: "Type a new iZurvive coordinate during checkout",
+          default: !selectedLocation,
+        },
+      ]);
+
+    components.push(
+      new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(locationMenu),
+    );
+  }
+
+  components.push(
+    new ActionRowBuilder<ButtonBuilder>().addComponents(
+      buyButton,
+      backButton,
+      cancelButton,
+    ),
+  );
+
   return {
     embeds: [embed],
-    components: [
-      new ActionRowBuilder<ButtonBuilder>().addComponents(
-        buyButton,
-        backButton,
-        cancelButton,
-      ),
-    ],
+    components,
   };
 }
 
@@ -2190,7 +2250,22 @@ export async function startDiscordBot() {
           if (interaction.customId.startsWith("shop-item:")) {
             const categoryId = interaction.customId.split(":")[1];
             await interaction.update(
-              buildShopItemPayload(state, interaction.values[0], categoryId),
+              buildShopItemPayload(state, interaction.values[0], categoryId, interaction.user.id),
+            );
+            return;
+          }
+
+          if (interaction.customId.startsWith("shop-location:")) {
+            const [, itemId, categoryId] = interaction.customId.split(":");
+            const selectedLocationId = interaction.values[0] === "custom" ? undefined : interaction.values[0];
+            await interaction.update(
+              buildShopItemPayload(
+                state,
+                itemId,
+                categoryId,
+                interaction.user.id,
+                selectedLocationId,
+              ),
             );
             return;
           }
@@ -2226,10 +2301,54 @@ export async function startDiscordBot() {
               return;
             }
 
-            const itemId = interaction.customId.split(":")[1];
-            const item = SHOP_ITEMS.find((candidate) => candidate.id === itemId);
+            const [, itemId, locationId = "custom"] = interaction.customId.split(":");
+            const item = getShopItems().find((candidate) => candidate.id === itemId);
             if (!item) {
               await interaction.reply({ content: "❌ Item not found.", ephemeral: true });
+              return;
+            }
+
+            if (locationId !== "custom") {
+              const location = findSavedShopLocation(state, interaction.user.id, locationId);
+              if (!location) {
+                await interaction.reply({
+                  content: "❌ Saved coordinate not found. Select another delivery location.",
+                  ephemeral: true,
+                });
+                return;
+              }
+
+              try {
+                markShopLocationUsed(location);
+                const order = createShopOrder({
+                  state,
+                  discordUserId: interaction.user.id,
+                  itemInput: itemId,
+                  x: location.x,
+                  y: location.y,
+                  z: location.z,
+                });
+
+                await saveState(state);
+
+                await interaction.reply({
+                  ephemeral: true,
+                  content: [
+                    "✅ Shop order created for the next restart.",
+                    "",
+                    `Order: \`${order.id}\``,
+                    `Item: \`${order.itemClass}\``,
+                    `Delivery: **${location.name}**`,
+                    `Position: \`${order.x}, ${order.y}, ${order.z}\``,
+                    `Status: \`${order.status}\``,
+                  ].join("\n"),
+                });
+              } catch (err: any) {
+                await interaction.reply({
+                  ephemeral: true,
+                  content: `❌ ${err?.message || err}`,
+                });
+              }
               return;
             }
 
@@ -2244,8 +2363,16 @@ export async function startDiscordBot() {
               .setRequired(true)
               .setPlaceholder("4579.03 / 8506.52");
 
+            const saveName = new TextInputBuilder()
+              .setCustomId("save_location_name")
+              .setLabel("Save coordinate as (optional)")
+              .setStyle(TextInputStyle.Short)
+              .setRequired(false)
+              .setPlaceholder("Base Principal");
+
             modal.addComponents(
               new ActionRowBuilder<TextInputBuilder>().addComponents(coords),
+              new ActionRowBuilder<TextInputBuilder>().addComponents(saveName),
             );
 
             await interaction.showModal(modal);
@@ -2257,10 +2384,19 @@ export async function startDiscordBot() {
           if (interaction.customId.startsWith("shop-modal:")) {
             const itemId = interaction.customId.split(":")[1];
             const coordsInput = interaction.fields.getTextInputValue("coords");
+            const saveLocationName = interaction.fields.getTextInputValue("save_location_name") || "";
             const state = await getState();
 
             try {
               const { x, y, z } = parseShopCoordinates(coordsInput, 0);
+              const savedLocation = saveShopLocation({
+                state,
+                discordUserId: interaction.user.id,
+                name: saveLocationName,
+                x,
+                y,
+                z,
+              });
               const order = createShopOrder({
                 state,
                 discordUserId: interaction.user.id,
@@ -2280,8 +2416,9 @@ export async function startDiscordBot() {
                   `Order: \`${order.id}\``,
                   `Item: \`${order.itemClass}\``,
                   `Position: \`${order.x}, ${order.y}, ${order.z}\``,
+                  savedLocation ? `Saved coordinate: **${savedLocation.name}**` : null,
                   `Status: \`${order.status}\``,
-                ].join("\n"),
+                ].filter(Boolean).join("\n"),
               });
             } catch (err: any) {
               await interaction.reply({
@@ -2325,9 +2462,9 @@ export async function startDiscordBot() {
             [
               "🛒 **Shop Catalog**",
               "",
-              ...SHOP_ITEMS.map(
+              ...getShopItems(true).map(
                 (item) =>
-                  `• **${item.name}** — class \`${item.className}\` — price \`${item.price}\``,
+                  `• **${item.name}** — class \`${item.className}\` — price \`${item.price}\` — ${item.enabled === false ? "disabled" : "enabled"}`,
               ),
             ].join("\n"),
           );
