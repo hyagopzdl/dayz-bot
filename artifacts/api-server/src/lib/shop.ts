@@ -40,12 +40,6 @@ const DAYZ_MISSION_DIR = normalizeRelativePath(DEFAULT_DAYZ_MISSION_DIR);
 export const SHOP_EVENTS_PATH = `${DAYZ_MISSION_DIR}/db/events.xml`;
 export const SHOP_EVENT_SPAWNS_PATH = `${DAYZ_MISSION_DIR}/cfgeventspawns.xml`;
 
-function normalizeItemName(value: string) {
-  return String(value || "")
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, "_");
-}
 
 function boolEnv(name: string, defaultValue: boolean) {
   const value = process.env[name];
@@ -94,26 +88,7 @@ export type ShopRuntimeStatus = {
   minutesUntilRestart?: number;
 };
 
-export function getShopCategories() {
-  const categories = Array.from(
-    new Set(SHOP_ITEMS.map((item) => item.category || "misc")),
-  );
 
-  return categories.map((id) => ({
-    id,
-    label: id
-      .split(/[_-]+/g)
-      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-      .join(" "),
-  }));
-}
-
-export function getShopItemsByCategory(category: string) {
-  const normalized = normalizeItemName(category);
-  return SHOP_ITEMS.filter(
-    (item) => normalizeItemName(item.category || "misc") === normalized,
-  );
-}
 
 export function ensureShopState(state: AppState) {
   state.shopOrders = state.shopOrders || [];
@@ -122,18 +97,6 @@ export function ensureShopState(state: AppState) {
   return state;
 }
 
-export function findShopItem(input: string) {
-  const normalized = normalizeItemName(input);
-
-  return (
-    SHOP_ITEMS.find(
-      (item) =>
-        normalizeItemName(item.id) === normalized ||
-        normalizeItemName(item.name) === normalized ||
-        normalizeItemName(item.className) === normalized,
-    ) || null
-  );
-}
 
 
 export function getSavedShopLocations(state: AppState, discordUserId: string) {
