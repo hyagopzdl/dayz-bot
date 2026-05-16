@@ -16,8 +16,9 @@ import {
   findDayzItem,
   getDayzItems,
   searchDayzItems,
+  upsertDayzItemImage,
 } from "../lib/dayzItemDatabase";
-import type { AppState } from "../lib/state";
+import { getStateAsync, saveStateAsync, type AppState } from "../lib/state";
 
 const router = Router();
 
@@ -373,7 +374,7 @@ function renderCatalogHtml(token: string) {
         <div><label>URL da imagem</label><input id="imageUrl" placeholder="https://..." /></div>
         <div><label>Preço</label><input id="price" required type="number" min="0" step="1" placeholder="5000" /></div>
         <div class="span-2"><label>Descrição</label><textarea id="description" placeholder="Descrição opcional para aparecer na loja"></textarea></div>
-        <div><label>Status</label><select id="enabled"><option value="true">Ativo</option><option value="false">Inativo</option></select></div>
+        <div><label>Status</label><label class="switch"><input id="enabled" type="checkbox" checked><span></span></label></div>
         <div style="display:flex;align-items:end;gap:10px"><button type="submit">Salvar item</button><button type="button" class="secondary" onclick="resetForm()">Limpar</button></div>
       </form>
     </section>
@@ -432,6 +433,8 @@ function renderCatalogHtml(token: string) {
       if (!field("name").value) {
         field("name").value = item.popularName || item.className;
       }
+
+      field("imageUrl").value = item.imageUrl || field("imageUrl").value || "";
 
       results.style.display = "none";
       results.innerHTML = "";
@@ -509,10 +512,9 @@ function renderCatalogHtml(token: string) {
             '<td><b>' + escapeHtml(item.popularName || item.className) + '</b><div class="hint"><code>' + escapeHtml(item.className) + '</code></div></td>' +
             '<td>' + escapeHtml(item.category || "misc") + '</td>' +
             '<td>' + Number(item.price || 0).toLocaleString("pt-BR") + '</td>' +
-            '<td><span class="pill ' + (item.enabled === false ? "bad" : "ok") + '">' + (item.enabled === false ? "Inativo" : "Ativo") + '</span></td>' +
+            '<td><label class="switch"><input type="checkbox" data-action="toggle" data-id="' + escapeHtml(id) + '" ' + (item.enabled === false ? "" : "checked") + '><span></span></label></td>' +
             '<td><div class="actions">' +
               '<button type="button" class="secondary" data-action="edit" data-id="' + escapeHtml(id) + '">Editar</button>' +
-              '<button type="button" class="secondary" data-action="toggle" data-id="' + escapeHtml(id) + '">Alternar</button>' +
               '<button type="button" class="danger" data-action="delete" data-id="' + escapeHtml(id) + '">Excluir</button>' +
             '</div></td>' +
           '</tr>';
@@ -527,8 +529,14 @@ function renderCatalogHtml(token: string) {
           const id = button.getAttribute("data-id") || "";
 
           if (action === "edit") editItem(id);
-          if (action === "toggle") toggleItem(id);
           if (action === "delete") deleteItem(id);
+        });
+      });
+
+      Array.from(rows.querySelectorAll("input[data-action=toggle]")).forEach(function (input) {
+        input.addEventListener("change", function () {
+          const id = input.getAttribute("data-id") || "";
+          toggleItem(id, input.checked);
         });
       });
     }
@@ -552,14 +560,16 @@ function renderCatalogHtml(token: string) {
       field("price").value = item.price || 0;
       field("imageUrl").value = item.imageUrl || "";
       field("description").value = item.description || "";
-      field("enabled").value = item.enabled === false ? "false" : "true";
+      field("enabled").checked = item.enabled !== false;
 
       window.scrollTo({ top: 0, behavior: "smooth" });
     }
 
-    async function toggleItem(id) {
+    async function toggleItem(id, enabled) {
       const response = await apiFetch("/admin/api/catalog/" + encodeURIComponent(id) + "/toggle", {
-        method: "POST"
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: Boolean(enabled) })
       });
 
       if (!response.ok) {
@@ -616,7 +626,7 @@ function renderCatalogHtml(token: string) {
         price,
         imageUrl: field("imageUrl").value.trim(),
         description: field("description").value.trim(),
-        enabled: field("enabled").value !== "false"
+        enabled: field("enabled").checked !== false
       };
 
       const response = await apiFetch("/admin/api/catalog", {
@@ -699,7 +709,14 @@ router.get("/api/catalog", (req, res) => {
   res.json(getShopCatalog());
 });
 
-router.post("/api/catalog", (req, res) => {
+async function persistCatalogToState() {
+  const state = await getStateAsync();
+  state.shopCatalog = getShopCatalog();
+  state.dayzItems = getDayzItems();
+  await saveStateAsync(state);
+}
+
+router.post("/api/catalog", async (req, res) => {
   if (!requireAdmin(req, res)) return;
 
   try {
@@ -711,6 +728,14 @@ router.post("/api/catalog", (req, res) => {
       return;
     }
 
+    const imageUrl = req.body?.imageUrl
+      ? String(req.body.imageUrl).trim()
+      : dayzItem.imageUrl || undefined;
+
+    if (imageUrl !== dayzItem.imageUrl) {
+      upsertDayzItemImage(dayzItem.className, imageUrl);
+    }
+
     const item: ShopItem = {
       id: normalizeShopCatalogId(req.body?.id || req.body?.name || className),
       className: dayzItem.className,
@@ -720,34 +745,36 @@ router.post("/api/catalog", (req, res) => {
       ).trim(),
       category: normalizeShopCatalogId(req.body?.category || "misc"),
       price: Number(req.body?.price || 0),
-      imageUrl: req.body?.imageUrl
-        ? String(req.body.imageUrl).trim()
-        : undefined,
+      imageUrl,
       description: req.body?.description
         ? String(req.body.description).trim()
         : undefined,
       enabled: req.body?.enabled !== false,
     };
 
-    res.json({ item: upsertShopCatalogItem(item), catalog: getShopCatalog() });
+    const savedItem = upsertShopCatalogItem(item);
+    await persistCatalogToState();
+    res.json({ item: savedItem, catalog: getShopCatalog() });
   } catch (err) {
     res.status(500).send(String(err));
   }
 });
 
-router.post("/api/catalog/:id/toggle", (req, res) => {
+router.post("/api/catalog/:id/toggle", async (req, res) => {
   if (!requireAdmin(req, res)) return;
 
-  const item = toggleShopCatalogItem(req.params.id);
+  const enabled = typeof req.body?.enabled === "boolean" ? req.body.enabled : undefined;
+  const item = toggleShopCatalogItem(req.params.id, enabled);
   if (!item) {
     res.status(404).send("Catalog item not found");
     return;
   }
 
+  await persistCatalogToState();
   res.json({ item, catalog: getShopCatalog() });
 });
 
-router.delete("/api/catalog/:id", (req, res) => {
+router.delete("/api/catalog/:id", async (req, res) => {
   if (!requireAdmin(req, res)) return;
 
   const deleted = deleteShopCatalogItem(req.params.id);
@@ -756,6 +783,7 @@ router.delete("/api/catalog/:id", (req, res) => {
     return;
   }
 
+  await persistCatalogToState();
   res.json({ ok: true, catalog: getShopCatalog() });
 });
 

@@ -4,6 +4,7 @@ import path from "path";
 export type DayzItemDefinition = {
   className: string;
   popularName: string;
+  imageUrl?: string;
 };
 
 const DEFAULT_DAYZ_ITEMS: DayzItemDefinition[] = [
@@ -16,6 +17,46 @@ function dayzItemsPath() {
     process.cwd(),
     process.env.DAYZ_ITEMS_FILE || "data/dayz-items.json",
   );
+}
+
+function statePathCandidates() {
+  return Array.from(
+    new Set([
+      path.resolve(process.cwd(), "state.json"),
+      path.resolve(process.cwd(), "artifacts/api-server/state.json"),
+    ]),
+  );
+}
+
+function readDayzItemsFromStateFile() {
+  for (const file of statePathCandidates()) {
+    if (!fs.existsSync(file)) continue;
+
+    try {
+      const state = JSON.parse(fs.readFileSync(file, "utf8"));
+      if (Array.isArray(state?.dayzItems)) return safeDayzItems(state.dayzItems);
+    } catch {
+      // Ignore invalid local state and continue with normal database fallback.
+    }
+  }
+
+  return null;
+}
+
+function mergeStateImages(items: DayzItemDefinition[]) {
+  const stateItems = readDayzItemsFromStateFile();
+  if (!stateItems?.length) return items;
+
+  const imagesByClass = new Map(
+    stateItems
+      .filter((item) => item.imageUrl)
+      .map((item) => [item.className.trim().toLowerCase(), item.imageUrl] as const),
+  );
+
+  return items.map((item) => {
+    const imageUrl = imagesByClass.get(item.className.trim().toLowerCase());
+    return imageUrl && !item.imageUrl ? { ...item, imageUrl } : item;
+  });
 }
 
 function dayzItemsPathCandidates() {
@@ -41,6 +82,12 @@ function normalizeSearch(value: string) {
     .trim();
 }
 
+function saveDayzItems(items: DayzItemDefinition[]) {
+  const file = dayzItemsPath();
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, `${JSON.stringify(safeDayzItems(items), null, 2)}\n`, "utf8");
+}
+
 function safeDayzItems(input: unknown): DayzItemDefinition[] {
   if (!Array.isArray(input)) return DEFAULT_DAYZ_ITEMS;
 
@@ -50,10 +97,11 @@ function safeDayzItems(input: unknown): DayzItemDefinition[] {
   for (const item of input) {
     const className = String((item as any)?.className || "").trim();
     const popularName = String((item as any)?.popularName || className).trim();
+    const imageUrl = (item as any)?.imageUrl ? String((item as any).imageUrl).trim() : undefined;
 
     if (!className || seen.has(className)) continue;
     seen.add(className);
-    items.push({ className, popularName });
+    items.push({ className, popularName, ...(imageUrl ? { imageUrl } : {}) });
   }
 
   return items.length ? items : DEFAULT_DAYZ_ITEMS;
@@ -66,11 +114,14 @@ export function getDayzItems(): DayzItemDefinition[] {
     if (!fs.existsSync(file)) continue;
 
     try {
-      return safeDayzItems(JSON.parse(fs.readFileSync(file, "utf8")));
+      return mergeStateImages(safeDayzItems(JSON.parse(fs.readFileSync(file, "utf8"))));
     } catch (err) {
       lastError = err;
     }
   }
+
+  const stateItems = readDayzItemsFromStateFile();
+  if (stateItems?.length) return stateItems;
 
   if (lastError) console.error("❌ failed to read DayZ item database:", lastError);
   return DEFAULT_DAYZ_ITEMS;
@@ -118,4 +169,21 @@ export function searchDayzItems(query: string, limit = 50) {
     .sort((a, b) => b.score - a.score || a.item.className.localeCompare(b.item.className))
     .slice(0, limit)
     .map((entry) => entry.item);
+}
+
+
+export function upsertDayzItemImage(className: string, imageUrl?: string) {
+  const normalized = String(className || "").trim().toLowerCase();
+  if (!normalized) return null;
+
+  const items = getDayzItems();
+  const item = items.find((entry) => entry.className.trim().toLowerCase() === normalized);
+  if (!item) return null;
+
+  const cleanImageUrl = String(imageUrl || "").trim();
+  if (cleanImageUrl) item.imageUrl = cleanImageUrl;
+  else delete item.imageUrl;
+
+  saveDayzItems(items);
+  return item;
 }

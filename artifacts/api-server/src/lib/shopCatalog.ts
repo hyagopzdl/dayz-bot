@@ -70,6 +70,30 @@ function catalogPath() {
   );
 }
 
+function statePathCandidates() {
+  return Array.from(
+    new Set([
+      path.resolve(process.cwd(), "state.json"),
+      path.resolve(process.cwd(), "artifacts/api-server/state.json"),
+    ]),
+  );
+}
+
+function readCatalogFromStateFile() {
+  for (const file of statePathCandidates()) {
+    if (!fs.existsSync(file)) continue;
+
+    try {
+      const state = JSON.parse(fs.readFileSync(file, "utf8"));
+      if (state?.shopCatalog) return safeCatalog(state.shopCatalog);
+    } catch {
+      // Ignore invalid local state and continue with normal catalog fallback.
+    }
+  }
+
+  return null;
+}
+
 function catalogPathCandidates() {
   const configured = catalogPath();
   return Array.from(
@@ -166,6 +190,9 @@ export function getShopCatalog(): ShopCatalog {
       lastError = err;
     }
   }
+
+  const stateCatalog = readCatalogFromStateFile();
+  if (stateCatalog) return stateCatalog;
 
   if (lastError) {
     console.error("❌ failed to read shop catalog, falling back to defaults:", lastError);

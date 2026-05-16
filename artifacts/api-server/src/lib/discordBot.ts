@@ -188,12 +188,7 @@ function buildShopCategoryPayload(state: any, categoryId: string) {
     .setTitle(`🛒 ${categoryLabel}`)
     .setDescription(
       items.length
-        ? items
-            .map(
-              (item) =>
-                `**${item.name}**\n💰 ${item.price}\n\`${item.id}\``,
-            )
-            .join("\n\n")
+        ? "Produtos disponíveis nesta categoria. Selecione um item no menu abaixo para ver detalhes e comprar."
         : "No items in this category.",
     )
     .setFooter({
@@ -202,6 +197,16 @@ function buildShopCategoryPayload(state: any, categoryId: string) {
         : "Checkout is currently closed; browsing is still available.",
     })
     .setColor(runtime.canAcceptPurchase ? "Blue" : "Orange");
+
+  const itemEmbeds = items.slice(0, 9).map((item) => {
+    const itemEmbed = new EmbedBuilder()
+      .setTitle(item.name)
+      .setDescription([`💰 **${item.price}**`, `ID: \`${item.id}\``].join("\n"))
+      .setColor(runtime.canAcceptPurchase ? "Blue" : "Orange");
+
+    if (item.imageUrl) itemEmbed.setThumbnail(item.imageUrl);
+    return itemEmbed;
+  });
 
   const itemMenu = new StringSelectMenuBuilder()
     .setCustomId(`shop-item:${categoryId}`)
@@ -221,7 +226,7 @@ function buildShopCategoryPayload(state: any, categoryId: string) {
     .setStyle(ButtonStyle.Secondary);
 
   return {
-    embeds: [embed],
+    embeds: [embed, ...itemEmbeds],
     components: [
       new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(itemMenu),
       new ActionRowBuilder<ButtonBuilder>().addComponents(backButton),
@@ -339,6 +344,37 @@ function buildShopItemPayload(
     embeds: [embed],
     components,
   };
+}
+
+async function respondShopOrderConfirmation(interaction: any, lines: Array<string | null | undefined>) {
+  const payload = {
+    content: lines.filter(Boolean).join("\n"),
+    embeds: [],
+    components: [],
+  };
+
+  try {
+    if (typeof interaction.update === "function") {
+      await interaction.update(payload);
+      return;
+    }
+  } catch (err) {
+    console.error("❌ erro atualizando mensagem da shop:", (err as any)?.message || err);
+  }
+
+  try {
+    if (interaction.message?.edit) {
+      await interaction.message.edit(payload);
+      if (!interaction.replied && !interaction.deferred) {
+        await interaction.deferUpdate?.();
+      }
+      return;
+    }
+  } catch (err) {
+    console.error("❌ erro editando mensagem original da shop:", (err as any)?.message || err);
+  }
+
+  await interaction.reply({ ephemeral: true, content: payload.content });
 }
 
 function getKillStreakMeta(streak: number) {
@@ -2331,18 +2367,15 @@ export async function startDiscordBot() {
 
                 await saveState(state);
 
-                await interaction.reply({
-                  ephemeral: true,
-                  content: [
-                    "✅ Shop order created for the next restart.",
-                    "",
-                    `Order: \`${order.id}\``,
-                    `Item: \`${order.itemClass}\``,
-                    `Delivery: **${location.name}**`,
-                    `Position: \`${order.x}, ${order.y}, ${order.z}\``,
-                    `Status: \`${order.status}\``,
-                  ].join("\n"),
-                });
+                await respondShopOrderConfirmation(interaction, [
+                  "✅ Shop order created for the next restart.",
+                  "",
+                  `Order: \`${order.id}\``,
+                  `Item: \`${order.itemClass}\``,
+                  `Delivery: **${location.name}**`,
+                  `Position: \`${order.x}, ${order.y}, ${order.z}\``,
+                  `Status: \`${order.status}\``,
+                ]);
               } catch (err: any) {
                 await interaction.reply({
                   ephemeral: true,
@@ -2408,18 +2441,15 @@ export async function startDiscordBot() {
 
               await saveState(state);
 
-              await interaction.reply({
-                ephemeral: true,
-                content: [
-                  "✅ Shop order created for the next restart.",
-                  "",
-                  `Order: \`${order.id}\``,
-                  `Item: \`${order.itemClass}\``,
-                  `Position: \`${order.x}, ${order.y}, ${order.z}\``,
-                  savedLocation ? `Saved coordinate: **${savedLocation.name}**` : null,
-                  `Status: \`${order.status}\``,
-                ].filter(Boolean).join("\n"),
-              });
+              await respondShopOrderConfirmation(interaction, [
+                "✅ Shop order created for the next restart.",
+                "",
+                `Order: \`${order.id}\``,
+                `Item: \`${order.itemClass}\``,
+                `Position: \`${order.x}, ${order.y}, ${order.z}\``,
+                savedLocation ? `Saved coordinate: **${savedLocation.name}**` : null,
+                `Status: \`${order.status}\``,
+              ]);
             } catch (err: any) {
               await interaction.reply({
                 ephemeral: true,

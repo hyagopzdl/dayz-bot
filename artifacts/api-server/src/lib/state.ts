@@ -1,6 +1,8 @@
 import fs from "fs";
 import path from "path";
 import postgres from "postgres";
+import type { ShopCatalog } from "./shopCatalog";
+import type { DayzItemDefinition } from "./dayzItemDatabase";
 
 const FILE = path.resolve(process.cwd(), "state.json");
 const STATE_ID = "main";
@@ -149,6 +151,8 @@ export type AppState = {
 
   shopOrders: ShopOrder[];
   shopSavedLocations?: ShopSavedLocation[];
+  shopCatalog?: ShopCatalog;
+  dayzItems?: DayzItemDefinition[];
   shopResetMonitor?: ShopResetMonitor | null;
   shopAutoDeploy?: ShopAutoDeployState | null;
 
@@ -185,6 +189,8 @@ function defaultState(): AppState {
     onlineSessions: {},
     shopOrders: [],
     shopSavedLocations: [],
+    shopCatalog: undefined,
+    dayzItems: undefined,
     shopResetMonitor: null,
     shopAutoDeploy: null,
     files: {},
@@ -265,6 +271,9 @@ function migrateLegacyState(data: any): AppState {
 
   state.onlineSessions = data.onlineSessions || {};
   state.shopOrders = Array.isArray(data.shopOrders) ? data.shopOrders : [];
+  state.shopSavedLocations = Array.isArray(data.shopSavedLocations) ? data.shopSavedLocations : [];
+  state.shopCatalog = data.shopCatalog;
+  state.dayzItems = Array.isArray(data.dayzItems) ? data.dayzItems : undefined;
   state.shopResetMonitor = data.shopResetMonitor || null;
   state.shopAutoDeploy = data.shopAutoDeploy || null;
 
@@ -371,6 +380,9 @@ export async function saveStateAsync(data: AppState) {
     onlinePlayers: data.onlinePlayers || {},
     onlineSessions: data.onlineSessions || {},
     shopOrders: Array.isArray(data.shopOrders) ? data.shopOrders : [],
+    shopSavedLocations: Array.isArray(data.shopSavedLocations) ? data.shopSavedLocations : [],
+    shopCatalog: data.shopCatalog,
+    dayzItems: Array.isArray(data.dayzItems) ? data.dayzItems : undefined,
     shopResetMonitor: data.shopResetMonitor || null,
     shopAutoDeploy: data.shopAutoDeploy || null,
     files: data.files || {},

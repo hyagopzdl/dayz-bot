@@ -364,17 +364,22 @@ function getIncludedBatchOrders(state: AppState) {
   return included.filter((order) => order.restartTarget === batchId);
 }
 
-async function backupShopXmlFiles(eventsXml: string, eventSpawnsXml: string) {
-  const stamp = new Date()
-    .toISOString()
-    .replace(/[-:]/g, "")
-    .replace(/\.\d{3}Z$/, "Z");
+async function backupShopXmlFiles(_eventsXml: string, _eventSpawnsXml: string) {
+  // Backup generation was intentionally disabled for DayZ console/Nitrado.
+  // The automatic shop cycle rewrites XML often, and keeping a backup on every
+  // deploy/clear made the FTP directory too large.
+  if (boolEnv("SHOP_XML_BACKUP_ENABLED", false)) {
+    const stamp = new Date()
+      .toISOString()
+      .replace(/[-:]/g, "")
+      .replace(/\.\d{3}Z$/, "Z");
 
-  await uploadTextFile(`${SHOP_EVENTS_PATH}.shop-backup-${stamp}`, eventsXml);
-  await uploadTextFile(
-    `${SHOP_EVENT_SPAWNS_PATH}.shop-backup-${stamp}`,
-    eventSpawnsXml,
-  );
+    await uploadTextFile(`${SHOP_EVENTS_PATH}.shop-backup-${stamp}`, _eventsXml);
+    await uploadTextFile(
+      `${SHOP_EVENT_SPAWNS_PATH}.shop-backup-${stamp}`,
+      _eventSpawnsXml,
+    );
+  }
 }
 
 export async function deployPendingShopOrders(state: AppState) {
