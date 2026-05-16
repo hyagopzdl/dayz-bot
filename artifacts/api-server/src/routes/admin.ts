@@ -313,7 +313,7 @@ function renderDashboardHtml(token: string) {
     token,
     body: `
     <div class="toolbar">
-      <button onclick="loadDashboard()">Atualizar</button>
+      <button type="button" onclick="loadDashboard()">Atualizar</button>
     </div>
     <section class="grid">
       <div class="card wide"><h2>Estado da shop</h2><div id="shopStatus" class="status"><span class="dot"></span><span>Carregando...</span></div><div id="shopReason" class="hint"></div></div>
@@ -379,60 +379,270 @@ function renderCatalogHtml(token: string) {
     </section>
     <section class="card full" style="margin-top:14px">
       <h2>Catálogo atual</h2>
-      <div class="toolbar"><button onclick="loadCatalog()">Atualizar</button></div>
+      <div class="toolbar"><button type="button" onclick="loadCatalog()">Atualizar</button></div>
       <div style="overflow:auto"><table><thead><tr><th>Imagem</th><th>Nome na loja</th><th>Item real</th><th>Categoria</th><th>Preço</th><th>Status</th><th>Ações</th></tr></thead><tbody id="catalogRows"></tbody></table></div>
     </section>`,
     script: `<script>
     const form = document.getElementById("catalogForm");
     const results = document.getElementById("dayzResults");
     const search = document.getElementById("dayzSearch");
-    function field(id) { return document.getElementById(id); }
-    function escapeHtml(value) { return String(value ?? "").replace(/[&<>\"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\\\"":"&quot;"}[c] || c)); }
+
+    function field(id) {
+      return document.getElementById(id);
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? "").replace(/[&<>"]/g, function (char) {
+        return {
+          "&": "&amp;",
+          "<": "&lt;",
+          ">": "&gt;",
+          '"': "&quot;"
+        }[char] || char;
+      });
+    }
+
     function setSelected(item) {
       field("className").value = item?.className || "";
-      field("selectedItem").innerHTML = item?.className ? "Selecionado: <b>" + escapeHtml(item.popularName || item.className) + "</b> <code>" + escapeHtml(item.className) + "</code>" : "Nenhum item selecionado.";
+
+      if (item?.className) {
+        field("selectedItem").innerHTML =
+          "Selecionado: <b>" +
+          escapeHtml(item.popularName || item.className) +
+          "</b> <code>" +
+          escapeHtml(item.className) +
+          "</code>";
+      } else {
+        field("selectedItem").innerHTML = "Nenhum item selecionado.";
+      }
     }
-    function resetForm() { form.reset(); field("editingId").value = ""; setSelected(null); results.style.display = "none"; }
+
+    function resetForm() {
+      form.reset();
+      field("editingId").value = "";
+      setSelected(null);
+      results.style.display = "none";
+      results.innerHTML = "";
+    }
+
     function selectDayzItem(item) {
       setSelected(item);
       field("dayzSearch").value = (item.popularName || item.className) + " — " + item.className;
-      if (!field("name").value) field("name").value = item.popularName || item.className;
+
+      if (!field("name").value) {
+        field("name").value = item.popularName || item.className;
+      }
+
       results.style.display = "none";
+      results.innerHTML = "";
     }
+
     async function searchDayz() {
       const q = search.value.trim();
+
       setSelected(null);
-      if (!q) { results.style.display = "none"; return; }
+
+      if (!q) {
+        results.style.display = "none";
+        results.innerHTML = "";
+        return;
+      }
+
       const response = await apiFetch("/admin/api/dayz-items?q=" + encodeURIComponent(q));
-      if (!response.ok) { alert(await response.text()); return; }
+
+      if (!response.ok) {
+        alert(await response.text());
+        return;
+      }
+
       const payload = await response.json();
-      results.innerHTML = payload.items.map(item => '<div class="option"><b>'+escapeHtml(item.popularName || item.className)+'</b><small>'+escapeHtml(item.className)+'</small></div>').join("");
-      results.style.display = payload.items.length ? "block" : "none";
-      Array.from(results.querySelectorAll(".option")).forEach((el, index) => el.addEventListener("click", () => selectDayzItem(payload.items[index])));
+      const items = Array.isArray(payload.items) ? payload.items : [];
+
+      results.innerHTML = items
+        .map(function (item, index) {
+          return '<div class="option" data-index="' + index + '">' +
+            '<b>' + escapeHtml(item.popularName || item.className) + '</b>' +
+            '<small>' + escapeHtml(item.className) + '</small>' +
+          '</div>';
+        })
+        .join("");
+
+      results.style.display = items.length ? "block" : "none";
+
+      Array.from(results.querySelectorAll(".option")).forEach(function (el) {
+        el.addEventListener("click", function () {
+          const index = Number(el.getAttribute("data-index"));
+          selectDayzItem(items[index]);
+        });
+      });
     }
-    let searchTimer = null; search.addEventListener("input", () => { clearTimeout(searchTimer); searchTimer = setTimeout(searchDayz, 180); });
+
+    let searchTimer = null;
+    search.addEventListener("input", function () {
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(searchDayz, 180);
+    });
+
     async function loadCatalog() {
       const response = await apiFetch("/admin/api/catalog");
-      if (!response.ok) { alert(await response.text()); return; }
-      const payload = await response.json(); const rows = document.getElementById("catalogRows");
-      rows.innerHTML = payload.items.map(item => '<tr><td>'+(item.imageUrl ? '<img class="item-img" src="'+escapeHtml(item.imageUrl)+'" />' : '<div class="item-img"></div>')+'</td><td><b>'+escapeHtml(item.name)+'</b><div class="hint">ID: '+escapeHtml(item.id)+'</div></td><td><b>'+escapeHtml(item.popularName || item.className)+'</b><div class="hint"><code>'+escapeHtml(item.className)+'</code></div></td><td>'+escapeHtml(item.category || "misc")+'</td><td>'+Number(item.price || 0).toLocaleString('pt-BR')+'</td><td><span class="pill '+(item.enabled === false ? 'bad' : 'ok')+'">'+(item.enabled === false ? 'Inativo' : 'Ativo')+'</span></td><td><div class="actions"><button class="secondary" onclick=\'editItem("'+escapeHtml(item.id)+'")\'>Editar</button><button class="secondary" onclick=\'toggleItem("'+escapeHtml(item.id)+'")\'>Alternar</button><button class="danger" onclick=\'deleteItem("'+escapeHtml(item.id)+'")\'>Excluir</button></div></td></tr>').join(""); window.catalogItems = payload.items;
+
+      if (!response.ok) {
+        alert(await response.text());
+        return;
+      }
+
+      const payload = await response.json();
+      const rows = document.getElementById("catalogRows");
+      const items = Array.isArray(payload.items) ? payload.items : [];
+
+      rows.innerHTML = items
+        .map(function (item) {
+          const id = String(item.id || "");
+
+          return '<tr>' +
+            '<td>' +
+              (item.imageUrl
+                ? '<img class="item-img" src="' + escapeHtml(item.imageUrl) + '" />'
+                : '<div class="item-img"></div>') +
+            '</td>' +
+            '<td><b>' + escapeHtml(item.name) + '</b><div class="hint">ID: ' + escapeHtml(id) + '</div></td>' +
+            '<td><b>' + escapeHtml(item.popularName || item.className) + '</b><div class="hint"><code>' + escapeHtml(item.className) + '</code></div></td>' +
+            '<td>' + escapeHtml(item.category || "misc") + '</td>' +
+            '<td>' + Number(item.price || 0).toLocaleString("pt-BR") + '</td>' +
+            '<td><span class="pill ' + (item.enabled === false ? "bad" : "ok") + '">' + (item.enabled === false ? "Inativo" : "Ativo") + '</span></td>' +
+            '<td><div class="actions">' +
+              '<button type="button" class="secondary" data-action="edit" data-id="' + escapeHtml(id) + '">Editar</button>' +
+              '<button type="button" class="secondary" data-action="toggle" data-id="' + escapeHtml(id) + '">Alternar</button>' +
+              '<button type="button" class="danger" data-action="delete" data-id="' + escapeHtml(id) + '">Excluir</button>' +
+            '</div></td>' +
+          '</tr>';
+        })
+        .join("");
+
+      window.catalogItems = items;
+
+      Array.from(rows.querySelectorAll("button[data-action]")).forEach(function (button) {
+        button.addEventListener("click", function () {
+          const action = button.getAttribute("data-action");
+          const id = button.getAttribute("data-id") || "";
+
+          if (action === "edit") editItem(id);
+          if (action === "toggle") toggleItem(id);
+          if (action === "delete") deleteItem(id);
+        });
+      });
     }
+
     function editItem(id) {
-      const item = (window.catalogItems || []).find(x => x.id === id); if (!item) return;
-      field("editingId").value = item.id; setSelected({ className: item.className, popularName: item.popularName || item.className });
+      const item = (window.catalogItems || []).find(function (entry) {
+        return entry.id === id;
+      });
+
+      if (!item) return;
+
+      field("editingId").value = item.id;
+      setSelected({
+        className: item.className,
+        popularName: item.popularName || item.className
+      });
+
       field("dayzSearch").value = (item.popularName || item.className) + " — " + item.className;
-      field("name").value = item.name || ""; field("category").value = item.category || "misc"; field("price").value = item.price || 0; field("imageUrl").value = item.imageUrl || ""; field("description").value = item.description || ""; field("enabled").value = item.enabled === false ? "false" : "true"; window.scrollTo({ top: 0, behavior: 'smooth' });
+      field("name").value = item.name || "";
+      field("category").value = item.category || "misc";
+      field("price").value = item.price || 0;
+      field("imageUrl").value = item.imageUrl || "";
+      field("description").value = item.description || "";
+      field("enabled").value = item.enabled === false ? "false" : "true";
+
+      window.scrollTo({ top: 0, behavior: "smooth" });
     }
-    async function toggleItem(id) { const response = await apiFetch("/admin/api/catalog/" + encodeURIComponent(id) + "/toggle", { method: "POST" }); if (!response.ok) { alert(await response.text()); return; } await loadCatalog(); }
-    async function deleteItem(id) { if (!confirm("Excluir item do catálogo?")) return; const response = await apiFetch("/admin/api/catalog/" + encodeURIComponent(id), { method: "DELETE" }); if (!response.ok) { alert(await response.text()); return; } await loadCatalog(); }
-    form.addEventListener("submit", async (event) => {
+
+    async function toggleItem(id) {
+      const response = await apiFetch("/admin/api/catalog/" + encodeURIComponent(id) + "/toggle", {
+        method: "POST"
+      });
+
+      if (!response.ok) {
+        alert(await response.text());
+        return;
+      }
+
+      await loadCatalog();
+    }
+
+    async function deleteItem(id) {
+      if (!confirm("Excluir item do catálogo?")) return;
+
+      const response = await apiFetch("/admin/api/catalog/" + encodeURIComponent(id), {
+        method: "DELETE"
+      });
+
+      if (!response.ok) {
+        alert(await response.text());
+        return;
+      }
+
+      await loadCatalog();
+    }
+
+    form.addEventListener("submit", async function (event) {
       event.preventDefault();
-      if (!field("className").value) { alert("Selecione um item válido da lista de autocomplete."); return; }
-      const body = { id: field("editingId").value || undefined, className: field("className").value, name: field("name").value, category: field("category").value, price: Number(field("price").value || 0), imageUrl: field("imageUrl").value, description: field("description").value, enabled: field("enabled").value !== "false" };
-      const response = await apiFetch("/admin/api/catalog", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-      if (!response.ok) { alert(await response.text()); return; }
-      resetForm(); await loadCatalog();
+
+      const className = field("className").value.trim();
+      const name = field("name").value.trim();
+      const category = field("category").value.trim();
+      const price = Number(field("price").value || 0);
+
+      if (!className) {
+        alert("Selecione um item válido da lista de autocomplete.");
+        return;
+      }
+
+      if (!name) {
+        alert("Informe o nome na loja.");
+        return;
+      }
+
+      if (!category) {
+        alert("Informe a categoria.");
+        return;
+      }
+
+      const body = {
+        id: field("editingId").value || undefined,
+        className,
+        name,
+        category,
+        price,
+        imageUrl: field("imageUrl").value.trim(),
+        description: field("description").value.trim(),
+        enabled: field("enabled").value !== "false"
+      };
+
+      const response = await apiFetch("/admin/api/catalog", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(body)
+      });
+
+      if (!response.ok) {
+        alert(await response.text());
+        return;
+      }
+
+      resetForm();
+      await loadCatalog();
+      alert("Item salvo com sucesso.");
     });
+
+    document.addEventListener("click", function (event) {
+      if (!results.contains(event.target) && event.target !== search) {
+        results.style.display = "none";
+      }
+    });
+
     loadCatalog();
     </script>`,
   });
