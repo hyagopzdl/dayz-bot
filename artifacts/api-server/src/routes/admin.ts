@@ -202,7 +202,6 @@ function renderBaseHtml(options: { title: string; token: string; body: string; s
     .status { display: inline-flex; align-items: center; gap: 8px; padding: 8px 11px; border-radius: 999px; background: var(--panel-2); border: 1px solid var(--border); font-weight: 700; }
     .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); }
     .dot.ok { background: var(--ok); } .dot.warn { background: var(--warn); } .dot.bad { background: var(--bad); }
-    pre { white-space: pre-wrap; word-break: break-word; margin: 0; color: #d7def0; background: #0b0d12; padding: 14px; border-radius: 12px; border: 1px solid var(--border); max-height: 420px; overflow: auto; }
     table { width: 100%; border-collapse: collapse; overflow: hidden; border-radius: 12px; }
     th, td { padding: 12px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: middle; }
     th { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .08em; }
@@ -224,6 +223,8 @@ function renderBaseHtml(options: { title: string; token: string; body: string; s
     .option { padding: 10px 12px; cursor: pointer; border-bottom: 1px solid var(--border); }
     .option:hover { background: var(--panel-2); }
     .option small { color: var(--muted); display: block; margin-top: 2px; }
+    .selected { margin-top: 8px; color: var(--muted); font-size: 13px; }
+    .selected code { color: #dfe5ff; }
     @media (max-width: 900px) { .grid { grid-template-columns: repeat(2, minmax(0,1fr)); } .wide, .span-2 { grid-column: 1 / -1; } .form-grid { grid-template-columns: 1fr; } }
     @media (max-width: 560px) { .grid { grid-template-columns: 1fr; } }
   </style>
@@ -231,7 +232,7 @@ function renderBaseHtml(options: { title: string; token: string; body: string; s
 <body>
   <header>
     <h1>${options.title}</h1>
-    <div class="subtitle">Admin da loja DayZ. O className real é usado no events.xml; o nome popular é apenas referência visual.</div>
+    <div class="subtitle">Admin da loja DayZ. O campo Item busca na base e salva o className real para o spawn.</div>
   </header>
   <main>
     <div class="toolbar">
@@ -241,7 +242,13 @@ function renderBaseHtml(options: { title: string; token: string; body: string; s
     </div>
     ${options.body}
   </main>
-  <script>const tokenQuery = ${JSON.stringify(tokenQuery)};</script>
+  <script>
+    const adminToken = ${JSON.stringify(options.token || "")};
+    function apiUrl(path) {
+      const separator = path.includes("?") ? "&" : "?";
+      return adminToken ? path + separator + "token=" + encodeURIComponent(adminToken) : path;
+    }
+  </script>
   ${options.script || ""}
 </body>
 </html>`;
@@ -254,7 +261,6 @@ function renderDashboardHtml(token: string) {
     body: `
     <div class="toolbar">
       <button onclick="loadDashboard()">Atualizar</button>
-      <a class="button" href="/admin/api/dashboard${token ? `?token=${encodeURIComponent(token)}` : ""}">Ver JSON</a>
     </div>
     <section class="grid">
       <div class="card wide"><h2>Estado da shop</h2><div id="shopStatus" class="status"><span class="dot"></span><span>Carregando...</span></div><div id="shopReason" class="hint"></div></div>
@@ -268,7 +274,6 @@ function renderDashboardHtml(token: string) {
       <div class="card"><h2>Nitrado status</h2><div id="nitrado" class="value">-</div><div id="nitradoHint" class="hint"></div></div>
       <div class="card"><h2>Online</h2><div id="online" class="value">-</div><div class="hint">Jogadores online pelo state atual.</div></div>
       <div class="card"><h2>Catálogo</h2><div id="catalog" class="value">-</div><div id="catalogHint" class="hint"></div></div>
-      <div class="card full"><h2>Payload</h2><pre id="payload">Carregando...</pre></div>
     </section>`,
     script: `<script>
     function setText(id, value) { const element = document.getElementById(id); if (element) element.textContent = value; }
@@ -278,7 +283,9 @@ function renderDashboardHtml(token: string) {
       label.textContent = payload.shop.state + (payload.shop.canAcceptPurchase ? " / Checkout aberto" : " / Checkout fechado");
     }
     async function loadDashboard() {
-      const response = await fetch("/admin/api/dashboard" + tokenQuery); const payload = await response.json();
+      const response = await fetch(apiUrl("/admin/api/dashboard"));
+      if (!response.ok) { alert(await response.text()); return; }
+      const payload = await response.json();
       setStatus(payload); setText("shopReason", payload.shop.reason || "-"); setText("nextRestart", payload.shop.nextRestart || "unknown");
       setText("restartHint", payload.shop.minutesUntilRestart === null ? "Sem janela ativa" : payload.shop.minutesUntilRestart + " min");
       setText("freeze", payload.shop.freezeWindowActive ? "Ativa" : "Não"); setText("pending", payload.shop.pending); setText("waitingClear", payload.shop.batchWaitingClear ? "Sim" : "Não");
@@ -286,7 +293,6 @@ function renderDashboardHtml(token: string) {
       setText("autoDeployHint", payload.meta.lastAutoDeployAt ? "Último deploy: " + payload.meta.lastAutoDeployAt : "Sem deploy registrado"); setText("nitrado", payload.meta.lastResetStatus || "unknown");
       setText("nitradoHint", payload.meta.lastResetCheckedAt ? "Última checagem: " + payload.meta.lastResetCheckedAt : "Sem checagem"); setText("online", payload.online);
       setText("catalog", payload.catalog.items + " itens"); setText("catalogHint", payload.catalog.categories + " categorias / " + payload.catalog.enabledItems + " ativos / " + payload.catalog.dayzItems + " classNames");
-      setText("payload", JSON.stringify(payload, null, 2));
     }
     loadDashboard(); setInterval(loadDashboard, 30000);
     </script>`,
@@ -295,50 +301,85 @@ function renderDashboardHtml(token: string) {
 
 function renderCatalogHtml(token: string) {
   return renderBaseHtml({
-    title: "DayZ Shop Catalog",
+    title: "Gerenciar Catálogo",
     token,
     body: `
     <section class="card full">
       <h2>Novo / editar item</h2>
-      <div class="hint" style="margin-bottom:14px">Pesquise por nome popular ou className real. Ex.: ATOG mostra ATOG Scope, mas salva <b>ACOGOptic</b> para spawn.</div>
       <form id="catalogForm" class="form-grid">
         <input type="hidden" id="editingId" />
+        <input type="hidden" id="className" />
         <div class="span-2 search-results">
-          <label>Item real do DayZ</label>
-          <input id="dayzSearch" autocomplete="off" placeholder="Pesquise: ATOG, Barrel_Red, M4-A1..." />
+          <label>Item</label>
+          <input id="dayzSearch" autocomplete="off" required placeholder="Digite para buscar: ATOG, Barrel, M4A1, ACOGOptic..." />
+          <div id="selectedItem" class="selected">Nenhum item selecionado.</div>
           <div id="dayzResults" class="dropdown" style="display:none"></div>
         </div>
-        <div><label>ClassName real</label><input id="className" required readonly placeholder="ACOGOptic" /></div>
-        <div><label>Nome popular da base</label><input id="popularName" readonly placeholder="ATOG Scope" /></div>
-        <div><label>Nome na loja</label><input id="name" required placeholder="Mira ATOG" /></div>
-        <div><label>Categoria</label><input id="category" required placeholder="optics" /></div>
-        <div><label>Preço</label><input id="price" required type="number" min="0" step="1" placeholder="5000" /></div>
+        <div><label>Nome na loja</label><input id="name" required placeholder="Ex.: Mira ATOG" /></div>
+        <div><label>Categoria</label><input id="category" required placeholder="Ex.: Optics" /></div>
         <div><label>URL da imagem</label><input id="imageUrl" placeholder="https://..." /></div>
+        <div><label>Preço</label><input id="price" required type="number" min="0" step="1" placeholder="5000" /></div>
         <div class="span-2"><label>Descrição</label><textarea id="description" placeholder="Descrição opcional para aparecer na loja"></textarea></div>
         <div><label>Status</label><select id="enabled"><option value="true">Ativo</option><option value="false">Inativo</option></select></div>
         <div style="display:flex;align-items:end;gap:10px"><button type="submit">Salvar item</button><button type="button" class="secondary" onclick="resetForm()">Limpar</button></div>
       </form>
     </section>
     <section class="card full" style="margin-top:14px">
-      <h2>Itens da loja</h2>
-      <div class="toolbar"><button onclick="loadCatalog()">Atualizar</button><a class="button" href="/admin/api/catalog${token ? `?token=${encodeURIComponent(token)}` : ""}">Ver JSON</a></div>
-      <div style="overflow:auto"><table><thead><tr><th>Imagem</th><th>Nome</th><th>ClassName real</th><th>Popular</th><th>Categoria</th><th>Preço</th><th>Status</th><th>Ações</th></tr></thead><tbody id="catalogRows"></tbody></table></div>
+      <h2>Catálogo atual</h2>
+      <div class="toolbar"><button onclick="loadCatalog()">Atualizar</button></div>
+      <div style="overflow:auto"><table><thead><tr><th>Imagem</th><th>Nome na loja</th><th>Item real</th><th>Categoria</th><th>Preço</th><th>Status</th><th>Ações</th></tr></thead><tbody id="catalogRows"></tbody></table></div>
     </section>`,
     script: `<script>
     const form = document.getElementById("catalogForm");
     const results = document.getElementById("dayzResults");
     const search = document.getElementById("dayzSearch");
     function field(id) { return document.getElementById(id); }
-    function escapeHtml(value) { return String(value ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c])); }
-    function resetForm() { form.reset(); field("editingId").value = ""; field("className").readOnly = true; field("popularName").readOnly = true; results.style.display = "none"; }
-    function selectDayzItem(item) { field("className").value = item.className; field("popularName").value = item.popularName; field("dayzSearch").value = item.popularName + " — " + item.className; if (!field("name").value) field("name").value = item.popularName; results.style.display = "none"; }
-    async function searchDayz() { const q = search.value.trim(); if (!q) { results.style.display = "none"; return; } const response = await fetch("/admin/api/dayz-items" + tokenQuery + (tokenQuery ? "&" : "?") + "q=" + encodeURIComponent(q)); const payload = await response.json(); results.innerHTML = payload.items.map(item => '<div class="option" data-class="'+escapeHtml(item.className)+'"><b>'+escapeHtml(item.popularName)+'</b><small>'+escapeHtml(item.className)+'</small></div>').join(""); results.style.display = payload.items.length ? "block" : "none"; Array.from(results.querySelectorAll(".option")).forEach((el, index) => el.addEventListener("click", () => selectDayzItem(payload.items[index]))); }
+    function escapeHtml(value) { return String(value ?? "").replace(/[&<>\"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\\\"":"&quot;"}[c] || c)); }
+    function setSelected(item) {
+      field("className").value = item?.className || "";
+      field("selectedItem").innerHTML = item?.className ? "Selecionado: <b>" + escapeHtml(item.popularName || item.className) + "</b> <code>" + escapeHtml(item.className) + "</code>" : "Nenhum item selecionado.";
+    }
+    function resetForm() { form.reset(); field("editingId").value = ""; setSelected(null); results.style.display = "none"; }
+    function selectDayzItem(item) {
+      setSelected(item);
+      field("dayzSearch").value = (item.popularName || item.className) + " — " + item.className;
+      if (!field("name").value) field("name").value = item.popularName || item.className;
+      results.style.display = "none";
+    }
+    async function searchDayz() {
+      const q = search.value.trim();
+      setSelected(null);
+      if (!q) { results.style.display = "none"; return; }
+      const response = await fetch(apiUrl("/admin/api/dayz-items?q=" + encodeURIComponent(q)));
+      if (!response.ok) { alert(await response.text()); return; }
+      const payload = await response.json();
+      results.innerHTML = payload.items.map(item => '<div class="option"><b>'+escapeHtml(item.popularName || item.className)+'</b><small>'+escapeHtml(item.className)+'</small></div>').join("");
+      results.style.display = payload.items.length ? "block" : "none";
+      Array.from(results.querySelectorAll(".option")).forEach((el, index) => el.addEventListener("click", () => selectDayzItem(payload.items[index])));
+    }
     let searchTimer = null; search.addEventListener("input", () => { clearTimeout(searchTimer); searchTimer = setTimeout(searchDayz, 180); });
-    async function loadCatalog() { const response = await fetch("/admin/api/catalog" + tokenQuery); const payload = await response.json(); const rows = document.getElementById("catalogRows"); rows.innerHTML = payload.items.map(item => '<tr><td>'+(item.imageUrl ? '<img class="item-img" src="'+escapeHtml(item.imageUrl)+'" />' : '<div class="item-img"></div>')+'</td><td><b>'+escapeHtml(item.name)+'</b><div class="hint">ID: '+escapeHtml(item.id)+'</div></td><td><code>'+escapeHtml(item.className)+'</code></td><td>'+escapeHtml(item.popularName || "-")+'</td><td>'+escapeHtml(item.category || "misc")+'</td><td>'+Number(item.price || 0).toLocaleString('pt-BR')+'</td><td><span class="pill '+(item.enabled === false ? 'bad' : 'ok')+'">'+(item.enabled === false ? 'Inativo' : 'Ativo')+'</span></td><td><div class="actions"><button class="secondary" onclick=\'editItem("'+escapeHtml(item.id)+'")\'>Editar</button><button class="secondary" onclick=\'toggleItem("'+escapeHtml(item.id)+'")\'>Alternar</button><button class="danger" onclick=\'deleteItem("'+escapeHtml(item.id)+'")\'>Excluir</button></div></td></tr>').join(""); window.catalogItems = payload.items; }
-    function editItem(id) { const item = (window.catalogItems || []).find(x => x.id === id); if (!item) return; field("editingId").value = item.id; field("className").value = item.className; field("popularName").value = item.popularName || ""; field("dayzSearch").value = (item.popularName || item.name) + " — " + item.className; field("name").value = item.name || ""; field("category").value = item.category || "misc"; field("price").value = item.price || 0; field("imageUrl").value = item.imageUrl || ""; field("description").value = item.description || ""; field("enabled").value = item.enabled === false ? "false" : "true"; window.scrollTo({ top: 0, behavior: 'smooth' }); }
-    async function toggleItem(id) { await fetch("/admin/api/catalog/" + encodeURIComponent(id) + "/toggle" + tokenQuery, { method: "POST" }); await loadCatalog(); }
-    async function deleteItem(id) { if (!confirm("Excluir item do catálogo?")) return; await fetch("/admin/api/catalog/" + encodeURIComponent(id) + tokenQuery, { method: "DELETE" }); await loadCatalog(); }
-    form.addEventListener("submit", async (event) => { event.preventDefault(); const body = { id: field("editingId").value || undefined, className: field("className").value, popularName: field("popularName").value, name: field("name").value, category: field("category").value, price: Number(field("price").value || 0), imageUrl: field("imageUrl").value, description: field("description").value, enabled: field("enabled").value !== "false" }; const response = await fetch("/admin/api/catalog" + tokenQuery, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); if (!response.ok) { alert(await response.text()); return; } resetForm(); await loadCatalog(); });
+    async function loadCatalog() {
+      const response = await fetch(apiUrl("/admin/api/catalog"));
+      if (!response.ok) { alert(await response.text()); return; }
+      const payload = await response.json(); const rows = document.getElementById("catalogRows");
+      rows.innerHTML = payload.items.map(item => '<tr><td>'+(item.imageUrl ? '<img class="item-img" src="'+escapeHtml(item.imageUrl)+'" />' : '<div class="item-img"></div>')+'</td><td><b>'+escapeHtml(item.name)+'</b><div class="hint">ID: '+escapeHtml(item.id)+'</div></td><td><b>'+escapeHtml(item.popularName || item.className)+'</b><div class="hint"><code>'+escapeHtml(item.className)+'</code></div></td><td>'+escapeHtml(item.category || "misc")+'</td><td>'+Number(item.price || 0).toLocaleString('pt-BR')+'</td><td><span class="pill '+(item.enabled === false ? 'bad' : 'ok')+'">'+(item.enabled === false ? 'Inativo' : 'Ativo')+'</span></td><td><div class="actions"><button class="secondary" onclick=\'editItem("'+escapeHtml(item.id)+'")\'>Editar</button><button class="secondary" onclick=\'toggleItem("'+escapeHtml(item.id)+'")\'>Alternar</button><button class="danger" onclick=\'deleteItem("'+escapeHtml(item.id)+'")\'>Excluir</button></div></td></tr>').join(""); window.catalogItems = payload.items;
+    }
+    function editItem(id) {
+      const item = (window.catalogItems || []).find(x => x.id === id); if (!item) return;
+      field("editingId").value = item.id; setSelected({ className: item.className, popularName: item.popularName || item.className });
+      field("dayzSearch").value = (item.popularName || item.className) + " — " + item.className;
+      field("name").value = item.name || ""; field("category").value = item.category || "misc"; field("price").value = item.price || 0; field("imageUrl").value = item.imageUrl || ""; field("description").value = item.description || ""; field("enabled").value = item.enabled === false ? "false" : "true"; window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+    async function toggleItem(id) { const response = await fetch(apiUrl("/admin/api/catalog/" + encodeURIComponent(id) + "/toggle"), { method: "POST" }); if (!response.ok) { alert(await response.text()); return; } await loadCatalog(); }
+    async function deleteItem(id) { if (!confirm("Excluir item do catálogo?")) return; const response = await fetch(apiUrl("/admin/api/catalog/" + encodeURIComponent(id)), { method: "DELETE" }); if (!response.ok) { alert(await response.text()); return; } await loadCatalog(); }
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (!field("className").value) { alert("Selecione um item válido da lista de autocomplete."); return; }
+      const body = { id: field("editingId").value || undefined, className: field("className").value, name: field("name").value, category: field("category").value, price: Number(field("price").value || 0), imageUrl: field("imageUrl").value, description: field("description").value, enabled: field("enabled").value !== "false" };
+      const response = await fetch(apiUrl("/admin/api/catalog"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      if (!response.ok) { alert(await response.text()); return; }
+      resetForm(); await loadCatalog();
+    });
     loadCatalog();
     </script>`,
   });
@@ -394,7 +435,7 @@ router.post("/api/catalog", (req, res) => {
     const dayzItem = findDayzItem(className);
 
     if (!dayzItem) {
-      res.status(400).send(`Invalid DayZ className: ${className}`);
+      res.status(400).send(`Item inválido na base DayZ: ${className}`);
       return;
     }
 
@@ -402,7 +443,7 @@ router.post("/api/catalog", (req, res) => {
       id: normalizeShopCatalogId(req.body?.id || req.body?.name || className),
       className: dayzItem.className,
       popularName: dayzItem.popularName,
-      name: String(req.body?.name || dayzItem.popularName).trim(),
+      name: String(req.body?.name || dayzItem.popularName || dayzItem.className).trim(),
       category: normalizeShopCatalogId(req.body?.category || "misc"),
       price: Number(req.body?.price || 0),
       imageUrl: req.body?.imageUrl ? String(req.body.imageUrl).trim() : undefined,
