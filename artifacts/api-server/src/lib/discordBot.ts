@@ -2553,32 +2553,81 @@ export async function startDiscordBot() {
 
         if (interaction.commandName === "shop-deploy") {
           const state = await getState();
-          const result = await deployPendingShopOrders(state);
-          await saveState(state);
 
-          if (!result) {
+          try {
+            const result = await deployPendingShopOrders(state);
+
+            if (!result) {
+              await interaction.editReply(
+                "⚠️ Shop deploy is currently unavailable because the shop or Nitrado system is disabled.",
+              );
+              return;
+            }
+
+            if (result.deployed <= 0) {
+              await interaction.editReply(
+                `⚠️ ${result.reason || "No pending shop orders to deploy."}`,
+              );
+              return;
+            }
+
+            await saveState(state);
+
             await interaction.editReply(
-              "⚠️ Shop deploy is currently unavailable because the shop system is disabled.",
+              [
+                `✅ Injected and verified **${result.deployed}** shop order(s) in the Nitrado XML files.`,
+                "",
+                `Batch: \`${result.batchId || "unknown"}\``,
+                `Path: \`${result.path}\``,
+                "",
+                "Restart the server after this upload. Orders are only marked as included after the SHOP_BOT blocks are verified on FTP.",
+              ].join("\n"),
             );
-            return;
+          } catch (err) {
+            console.error("❌ SHOP_BOT manual deploy failed:", err);
+            await interaction.editReply(
+              [
+                "❌ Shop deploy failed before orders were marked as included.",
+                "",
+                `Reason: \`${String((err as Error)?.message || err).slice(0, 1500)}\``,
+                "",
+                "No order should be considered spawned from this failed deploy. Check Render logs for the full stack trace.",
+              ].join("\n"),
+            );
           }
 
-          await interaction.editReply(
-            result.deployed > 0
-              ? `✅ Injected **${result.deployed}** shop order(s) into XML files. Restart the server after this upload.`
-              : `⚠️ ${result.reason || "No pending shop orders to deploy."}`,
-          );
           return;
         }
 
         if (interaction.commandName === "shop-clear") {
           const state = await getState();
-          const result = await clearShopSpawnerAndMarkSpawned(state);
-          await saveState(state);
 
-          await interaction.editReply(
-            `✅ Removed SHOP_BOT XML blocks. Marked **${result.cleared}** included order(s) as spawned and cancelled **${result.cancelled}** pending order(s).`,
-          );
+          try {
+            const result = await clearShopSpawnerAndMarkSpawned(state);
+            await saveState(state);
+
+            await interaction.editReply(
+              [
+                "✅ Removed verified SHOP_BOT XML blocks.",
+                "",
+                `Marked **${result.cleared}** included order(s) as spawned.`,
+                `Cancelled **${result.cancelled}** pending order(s).`,
+                `Path: \`${result.path}\``,
+              ].join("\n"),
+            );
+          } catch (err) {
+            console.error("❌ SHOP_BOT manual clear failed:", err);
+            await interaction.editReply(
+              [
+                "❌ Shop clear failed. Orders were not marked as spawned.",
+                "",
+                `Reason: \`${String((err as Error)?.message || err).slice(0, 1500)}\``,
+                "",
+                "This usually means SHOP_BOT blocks were already missing from one or both XML files, so the clear was aborted to avoid a false spawned status.",
+              ].join("\n"),
+            );
+          }
+
           return;
         }
 

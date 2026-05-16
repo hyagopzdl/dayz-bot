@@ -5,6 +5,8 @@ import {
   injectShopEventSpawnsXml,
   injectShopEventsXml,
   removeShopBotBlock,
+  SHOP_BOT_END,
+  SHOP_BOT_START,
 } from "./shopXml";
 import { systems } from "./systems";
 
@@ -40,6 +42,117 @@ const DAYZ_MISSION_DIR = normalizeRelativePath(DEFAULT_DAYZ_MISSION_DIR);
 
 export const SHOP_EVENTS_PATH = `${DAYZ_MISSION_DIR}/db/events.xml`;
 export const SHOP_EVENT_SPAWNS_PATH = `${DAYZ_MISSION_DIR}/cfgeventspawns.xml`;
+
+
+function hasShopBotBlock(xml: string) {
+  const value = String(xml || "");
+  return value.includes(SHOP_BOT_START) && value.includes(SHOP_BOT_END);
+}
+
+function missingShopBotError(fileLabel: string) {
+  return `SHOP DEPLOY FAILED: ${fileLabel} does not contain SHOP_BOT block after injection/upload. Orders were not marked as included.`;
+}
+
+function validateOrdersReadyForXml(orders: ShopOrder[]) {
+  if (!orders.length) {
+    throw new Error("SHOP DEPLOY ABORTED: no pending orders to inject.");
+  }
+
+  for (const order of orders) {
+    const itemClass = String(order.itemClass || "").trim();
+
+    if (!itemClass) {
+      throw new Error(
+        `SHOP DEPLOY ABORTED: order ${order.id || "unknown"} has empty itemClass.`,
+      );
+    }
+
+    if (![order.x, order.y, order.z].every(Number.isFinite)) {
+      throw new Error(
+        `SHOP DEPLOY ABORTED: order ${order.id || "unknown"} has invalid coordinates.`,
+      );
+    }
+  }
+}
+
+function validateInjectedShopXml(options: {
+  eventsXml: string;
+  eventSpawnsXml: string;
+  expectedOrders: ShopOrder[];
+  eventNames?: string[];
+  stage: "generated" | "uploaded";
+}) {
+  const { eventsXml, eventSpawnsXml, expectedOrders, eventNames, stage } = options;
+
+  if (!hasShopBotBlock(eventsXml)) {
+    throw new Error(missingShopBotError(`events.xml (${stage})`));
+  }
+
+  if (!hasShopBotBlock(eventSpawnsXml)) {
+    throw new Error(missingShopBotError(`cfgeventspawns.xml (${stage})`));
+  }
+
+  for (const order of expectedOrders) {
+    const itemClass = String(order.itemClass || "").trim();
+    if (!eventsXml.includes(`type="${itemClass}"`)) {
+      throw new Error(
+        `SHOP DEPLOY FAILED: events.xml (${stage}) is missing item class ${itemClass} for order ${order.id}.`,
+      );
+    }
+  }
+
+  if (eventNames?.length && eventNames.length !== expectedOrders.length) {
+    throw new Error(
+      `SHOP DEPLOY FAILED: generated ${eventNames.length} event name(s) for ${expectedOrders.length} order(s).`,
+    );
+  }
+
+  for (const eventName of eventNames || []) {
+    if (!eventsXml.includes(`event name="${eventName}"`)) {
+      throw new Error(
+        `SHOP DEPLOY FAILED: events.xml (${stage}) is missing generated event ${eventName}.`,
+      );
+    }
+
+    if (!eventSpawnsXml.includes(`event name="${eventName}"`)) {
+      throw new Error(
+        `SHOP DEPLOY FAILED: cfgeventspawns.xml (${stage}) is missing generated event ${eventName}.`,
+      );
+    }
+  }
+}
+
+async function verifyUploadedShopBlocks(expectedOrders: ShopOrder[], eventNames: string[]) {
+  const [uploadedEventsXml, uploadedEventSpawnsXml] = await Promise.all([
+    downloadTextFile(SHOP_EVENTS_PATH),
+    downloadTextFile(SHOP_EVENT_SPAWNS_PATH),
+  ]);
+
+  validateInjectedShopXml({
+    eventsXml: uploadedEventsXml,
+    eventSpawnsXml: uploadedEventSpawnsXml,
+    expectedOrders,
+    eventNames,
+    stage: "uploaded",
+  });
+}
+
+async function verifyShopBlocksRemoved() {
+  const [uploadedEventsXml, uploadedEventSpawnsXml] = await Promise.all([
+    downloadTextFile(SHOP_EVENTS_PATH),
+    downloadTextFile(SHOP_EVENT_SPAWNS_PATH),
+  ]);
+
+  if (hasShopBotBlock(uploadedEventsXml) || hasShopBotBlock(uploadedEventSpawnsXml)) {
+    throw new Error(
+      "SHOP CLEAR FAILED: SHOP_BOT block is still present after upload.",
+    );
+  }
+}
+
+function isShopResetFallbackEnabled() {
+  return boolEnv("SHOP_RESET_CONFIRM_FALLBACK_ENABLED", false);
+}
 
 
 function boolEnv(name: string, defaultValue: boolean) {
@@ -429,9 +542,17 @@ export async function deployPendingShopOrders(state: AppState) {
     return {
       deployed: 0,
       path: `${SHOP_EVENTS_PATH} + ${SHOP_EVENT_SPAWNS_PATH}`,
+      reason: "No pending shop orders to deploy.",
     };
   }
 
+  console.log(
+    `🛒 SHOP DEPLOY START pending=${pendingOrders.length} events=${SHOP_EVENTS_PATH} spawns=${SHOP_EVENT_SPAWNS_PATH}`,
+  );
+
+  validateOrdersReadyForXml(pendingOrders);
+
+  console.log("🛒 SHOP DEPLOY downloading XML files");
   const [eventsXml, eventSpawnsXml] = await Promise.all([
     downloadTextFile(SHOP_EVENTS_PATH),
     downloadTextFile(SHOP_EVENT_SPAWNS_PATH),
@@ -439,14 +560,29 @@ export async function deployPendingShopOrders(state: AppState) {
 
   await backupShopXmlFiles(eventsXml, eventSpawnsXml);
 
+  console.log("🛒 SHOP DEPLOY injecting SHOP_BOT XML blocks");
   const injectedEvents = injectShopEventsXml(eventsXml, pendingOrders);
   const injectedEventSpawns = injectShopEventSpawnsXml(
     eventSpawnsXml,
     pendingOrders,
   );
 
+  validateInjectedShopXml({
+    eventsXml: injectedEvents.xml,
+    eventSpawnsXml: injectedEventSpawns,
+    expectedOrders: pendingOrders,
+    eventNames: injectedEvents.eventNames,
+    stage: "generated",
+  });
+
+  console.log(
+    `🛒 SHOP DEPLOY uploading XML files events=${injectedEvents.eventNames.length}`,
+  );
   await uploadTextFile(SHOP_EVENTS_PATH, injectedEvents.xml);
   await uploadTextFile(SHOP_EVENT_SPAWNS_PATH, injectedEventSpawns);
+
+  console.log("🛒 SHOP DEPLOY verifying uploaded XML files");
+  await verifyUploadedShopBlocks(pendingOrders, injectedEvents.eventNames);
 
   const now = new Date().toISOString();
   const batchId = `restart_${Date.now()}`;
@@ -479,6 +615,10 @@ export async function deployPendingShopOrders(state: AppState) {
     confirmationReason: undefined,
   };
 
+  console.log(
+    `✅ SHOP DEPLOY VERIFIED deployed=${pendingOrders.length} batch=${batchId}`,
+  );
+
   return {
     deployed: pendingOrders.length,
     path: `${SHOP_EVENTS_PATH} + ${SHOP_EVENT_SPAWNS_PATH}`,
@@ -486,11 +626,20 @@ export async function deployPendingShopOrders(state: AppState) {
   };
 }
 
-async function removeShopXmlBlocks() {
+async function removeShopXmlBlocks(options?: { requireExistingBlock?: boolean }) {
   const [eventsXml, eventSpawnsXml] = await Promise.all([
     downloadTextFile(SHOP_EVENTS_PATH),
     downloadTextFile(SHOP_EVENT_SPAWNS_PATH),
   ]);
+
+  const eventsHasBlock = hasShopBotBlock(eventsXml);
+  const spawnsHasBlock = hasShopBotBlock(eventSpawnsXml);
+
+  if (options?.requireExistingBlock && (!eventsHasBlock || !spawnsHasBlock)) {
+    throw new Error(
+      `SHOP CLEAR ABORTED: SHOP_BOT block missing before clear. events=${eventsHasBlock ? "yes" : "no"} spawns=${spawnsHasBlock ? "yes" : "no"}. Orders were not marked as spawned.`,
+    );
+  }
 
   await backupShopXmlFiles(eventsXml, eventSpawnsXml);
 
@@ -499,6 +648,8 @@ async function removeShopXmlBlocks() {
     SHOP_EVENT_SPAWNS_PATH,
     removeShopBotBlock(eventSpawnsXml),
   );
+
+  await verifyShopBlocksRemoved();
 }
 
 export async function clearShopSpawnerAndMarkSpawned(
@@ -531,7 +682,7 @@ export async function clearShopSpawnerAndMarkSpawned(
     : getIncludedShopOrders(state);
   const pendingOrders = cancelPending ? getPendingShopOrders(state) : [];
 
-  await removeShopXmlBlocks();
+  await removeShopXmlBlocks({ requireExistingBlock: includedOrders.length > 0 });
 
   const now = new Date().toISOString();
 
@@ -622,15 +773,21 @@ export async function pollShopResetStatusAndAutoClear(state: AppState) {
   const fallbackExpired = isPastIsoDate(monitor.restartFallbackAt, now);
 
   if (!monitor.sawOnlineAt && fallbackExpired) {
-    monitor.sawOnlineAt = nowIso;
-    monitor.autoConfirmedAt = nowIso;
-    monitor.confirmationReason = monitor.sawOfflineAt
-      ? "fallback_timeout_after_offline"
-      : "fallback_timeout_no_status_transition";
+    if (!isShopResetFallbackEnabled()) {
+      console.warn(
+        `⚠️ shop reset monitor: fallback expired, but SHOP_RESET_CONFIRM_FALLBACK_ENABLED is false. Not clearing XML automatically. status=${normalized} deployedAt=${monitor.deployedAt || "unknown"} fallbackAt=${monitor.restartFallbackAt || "unknown"}`,
+      );
+    } else {
+      monitor.sawOnlineAt = nowIso;
+      monitor.autoConfirmedAt = nowIso;
+      monitor.confirmationReason = monitor.sawOfflineAt
+        ? "fallback_timeout_after_offline"
+        : "fallback_timeout_no_status_transition";
 
-    console.warn(
-      `⚠️ shop reset monitor: auto-confirming restart by timeout. status=${normalized} deployedAt=${monitor.deployedAt || "unknown"} fallbackAt=${monitor.restartFallbackAt || "unknown"}`,
-    );
+      console.warn(
+        `⚠️ shop reset monitor: auto-confirming restart by timeout. status=${normalized} deployedAt=${monitor.deployedAt || "unknown"} fallbackAt=${monitor.restartFallbackAt || "unknown"}`,
+      );
+    }
   }
 
   if (!monitor.sawOfflineAt && !monitor.sawOnlineAt) {
