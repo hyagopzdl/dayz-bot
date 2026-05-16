@@ -7,6 +7,13 @@ import {
   PermissionFlagsBits,
   ColorResolvable,
   ChannelType,
+  ActionRowBuilder,
+  StringSelectMenuBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle,
 } from "discord.js";
 import fs from "fs";
 import path from "path";
@@ -1914,6 +1921,11 @@ export async function startDiscordBot() {
             dmPermission: false,
           },
           {
+            name: "shop",
+            description: "Open interactive DayZ shop UI.",
+            dmPermission: false,
+          },
+          {
             name: "shop-buy",
             description: "Create a DayZ shop spawn order for the next restart.",
             defaultMemberPermissions: adminPermission,
@@ -1995,6 +2007,97 @@ export async function startDiscordBot() {
     }
 
     client.on("interactionCreate", async (interaction) => {
+      if (interaction.isStringSelectMenu()) {
+        if (interaction.customId === "shop-category") {
+          const category = interaction.values[0];
+          const items = SHOP_ITEMS.filter((i:any)=> (i.category || "misc") === category);
+
+          const embed = new EmbedBuilder()
+            .setTitle(`🛒 ${category.toUpperCase()} SHOP`)
+            .setDescription(items.map((item:any)=>`**${item.name}**\n💰 ${item.price}`).join("\n\n"))
+            .setColor("Blue");
+
+          const itemMenu = new StringSelectMenuBuilder()
+            .setCustomId("shop-item")
+            .setPlaceholder("Select an item")
+            .addOptions(items.slice(0,25).map((item:any)=>({label:item.name,value:item.className,description:`$${item.price}`})));
+
+          await interaction.update({embeds:[embed],components:[new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(itemMenu)]});
+          return;
+        }
+
+        if (interaction.customId === "shop-item") {
+          const itemClass = interaction.values[0];
+          const item:any = SHOP_ITEMS.find((i:any)=>i.className===itemClass);
+
+          const embed = new EmbedBuilder()
+            .setTitle(`📦 ${item.name}`)
+            .setDescription(`💰 Price: ${item.price}\n\nClick buy to continue.`)
+            .setColor("Green");
+
+          const buyButton = new ButtonBuilder()
+            .setCustomId(`shop-buy:${item.className}`)
+            .setLabel("Buy")
+            .setStyle(ButtonStyle.Success);
+
+          await interaction.update({embeds:[embed],components:[new ActionRowBuilder<ButtonBuilder>().addComponents(buyButton)]});
+          return;
+        }
+      }
+
+      if (interaction.isButton()) {
+        if (interaction.customId.startsWith("shop-buy:")) {
+          const itemClass = interaction.customId.split(":")[1];
+
+          const modal = new ModalBuilder()
+            .setCustomId(`shop-modal:${itemClass}`)
+            .setTitle("Shop Purchase");
+
+          const coords = new TextInputBuilder()
+            .setCustomId("coords")
+            .setLabel("Coordinates (x z or x y z)")
+            .setStyle(TextInputStyle.Short)
+            .setRequired(true)
+            .setPlaceholder("7421 0 12311");
+
+          modal.addComponents(new ActionRowBuilder<TextInputBuilder>().addComponents(coords));
+
+          await interaction.showModal(modal);
+          return;
+        }
+      }
+
+      if (interaction.isModalSubmit()) {
+        if (interaction.customId.startsWith("shop-modal:")) {
+          const itemClass = interaction.customId.split(":")[1];
+          const coordsInput = interaction.fields.getTextInputValue("coords");
+
+          try {
+            const state = await getState();
+            const { x, y, z } = parseShopCoordinates(coordsInput, 0);
+
+            const order = createShopOrder({
+              state,
+              discordUserId: interaction.user.id,
+              itemInput: itemClass,
+              x,
+              y,
+              z,
+            });
+
+            await saveState(state);
+
+            await interaction.reply({
+              ephemeral: true,
+              content: `✅ Purchase created\n\n📦 ${order.itemClass}\n📍 ${x}, ${y}, ${z}\n🕒 Delivery after next restart.`,
+            });
+          } catch (err:any) {
+            await interaction.reply({ephemeral:true,content:`❌ ${err?.message || err}`});
+          }
+          return;
+        }
+      }
+
       if (!interaction.isChatInputCommand()) return;
 
       try {
@@ -2014,6 +2117,26 @@ export async function startDiscordBot() {
         if (!acknowledged) return;
 
         if (!(await assertAdmin(interaction))) return;
+
+        if (interaction.commandName === "shop") {
+          const categories = [...new Set(SHOP_ITEMS.map((i:any)=>i.category || "misc"))];
+
+          const embed = new EmbedBuilder()
+            .setTitle("🛒 DayZ Shop")
+            .setDescription("Choose a category below.")
+            .setColor("Blue");
+
+          const menu = new StringSelectMenuBuilder()
+            .setCustomId("shop-category")
+            .setPlaceholder("Select a category")
+            .addOptions(categories.slice(0,25).map((category:any)=>({label:String(category),value:String(category)})));
+
+          await interaction.editReply({
+            embeds:[embed],
+            components:[new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(menu)],
+          });
+          return;
+        }
 
         if (interaction.commandName === "shop-catalog") {
           await interaction.editReply(
