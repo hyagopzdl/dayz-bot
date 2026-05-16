@@ -9,11 +9,11 @@
   },
   {
     "className": "AK101_Black",
-    "popularName": "KA-101"
+    "popularName": "KA-101 Black"
   },
   {
     "className": "AK101_Green",
-    "popularName": "KA-101"
+    "popularName": "KA-101 Green"
   },
   {
     "className": "AK74",
@@ -21,11 +21,11 @@
   },
   {
     "className": "AK74_Black",
-    "popularName": "KA-74"
+    "popularName": "KA-74 Black"
   },
   {
     "className": "AK74_Green",
-    "popularName": "KA-74"
+    "popularName": "KA-74 Green"
   },
   {
     "className": "AK74_Hndgrd",
@@ -33,11 +33,11 @@
   },
   {
     "className": "AK74_Hndgrd_Black",
-    "popularName": "KA Wooden Handguard"
+    "popularName": "KA Wooden Handguard Black"
   },
   {
     "className": "AK74_Hndgrd_Camo",
-    "popularName": "KA Wooden Handguard"
+    "popularName": "KA Wooden Handguard Camo"
   },
   {
     "className": "AK74_WoodBttstck",
@@ -45,11 +45,11 @@
   },
   {
     "className": "AK74_WoodBttstck_Black",
-    "popularName": "KA Wooden Buttstock"
+    "popularName": "KA Wooden Buttstock Black"
   },
   {
     "className": "AK74_WoodBttstck_Camo",
-    "popularName": "KA Wooden Buttstock"
+    "popularName": "KA Wooden Buttstock Camo"
   },
   {
     "className": "AKM",
@@ -65,7 +65,7 @@
   },
   {
     "className": "AKS74U_Black",
-    "popularName": "KAS-74U"
+    "popularName": "KAS-74U Black"
   },
   {
     "className": "AKS74U_Bttstck",
@@ -73,15 +73,15 @@
   },
   {
     "className": "AKS74U_Bttstck_Black",
-    "popularName": "KAS-74U Folding Buttstock"
+    "popularName": "KAS-74U Folding Buttstock Black"
   },
   {
     "className": "AKS74U_Bttstck_Green",
-    "popularName": "KAS-74U Folding Buttstock"
+    "popularName": "KAS-74U Folding Buttstock Green"
   },
   {
     "className": "AKS74U_Green",
-    "popularName": "KAS-74U"
+    "popularName": "KAS-74U Green"
   },
   {
     "className": "AK_Bayonet",
@@ -93,11 +93,11 @@
   },
   {
     "className": "AK_FoldingBttstck_Black",
-    "popularName": "KA Folding Buttstock"
+    "popularName": "KA Folding Buttstock Black"
   },
   {
     "className": "AK_FoldingBttstck_Green",
-    "popularName": "KA Folding Buttstock"
+    "popularName": "KA Folding Buttstock Green"
   },
   {
     "className": "AK_PlasticBttstck",
@@ -105,11 +105,11 @@
   },
   {
     "className": "AK_PlasticBttstck_Black",
-    "popularName": "KA Polymer Buttstock"
+    "popularName": "KA Polymer Buttstock Black"
   },
   {
     "className": "AK_PlasticBttstck_Green",
-    "popularName": "KA Polymer Buttstock"
+    "popularName": "KA Polymer Buttstock Green"
   },
   {
     "className": "AK_PlasticHndgrd",
@@ -121,11 +121,11 @@
   },
   {
     "className": "AK_RailHndgrd_Black",
-    "popularName": "KA Rail Handguard"
+    "popularName": "KA Rail Handguard Black"
   },
   {
     "className": "AK_RailHndgrd_Green",
-    "popularName": "KA Rail Handguard"
+    "popularName": "KA Rail Handguard Green"
   },
   {
     "className": "AK_Suppressor",
@@ -137,11 +137,11 @@
   },
   {
     "className": "AK_WoodBttstck_Black",
-    "popularName": "KA Wooden Buttstock"
+    "popularName": "KA Wooden Buttstock Black"
   },
   {
     "className": "AK_WoodBttstck_Camo",
-    "popularName": "KA Wooden Buttstock"
+    "popularName": "KA Wooden Buttstock Camo"
   },
   {
     "className": "AK_WoodHndgrd",
@@ -149,11 +149,11 @@
   },
   {
     "className": "AK_WoodHndgrd_Black",
-    "popularName": "KA Wooden Handguard"
+    "popularName": "KA Wooden Handguard Black"
   },
   {
     "className": "AK_WoodHndgrd_Camo",
-    "popularName": "KA Wooden Handguard"
+    "popularName": "KA Wooden Handguard Camo"
   },
   {
     "className": "AgaricusMushroom",
@@ -161,15 +161,15 @@
   },
   {
     "className": "AliceBag_Black",
-    "popularName": "Field Backpack"
+    "popularName": "Field Backpack Black"
   },
   {
     "className": "AliceBag_Camo",
-    "popularName": "Field Backpack"
+    "popularName": "Field Backpack Camo"
   },
   {
     "className": "AliceBag_Green",
-    "popularName": "Field Backpack"
+    "popularName": "Field Backpack Green"
   },
   {
     "className": "AmanitaMushroom",
@@ -325,7 +325,7 @@
   },
   {
     "className": "Animal_BosTaurusF_Brown",
-    "popularName": "Cow"
+    "popularName": "Cow Brown"
   },
   {
     "className": "Animal_BosTaurusF_Spotted",
@@ -333,11 +333,11 @@
   },
   {
     "className": "Animal_BosTaurusF_White",
-    "popularName": "Cow"
+    "popularName": "Cow White"
   },
   {
     "className": "Animal_BosTaurus_Brown",
-    "popularName": "Bull"
+    "popularName": "Bull Brown"
   },
   {
     "className": "Animal_BosTaurus_Spotted",
@@ -345,15 +345,15 @@
   },
   {
     "className": "Animal_BosTaurus_White",
-    "popularName": "Bull"
+    "popularName": "Bull White"
   },
   {
     "className": "Animal_CanisLupus_Grey",
-    "popularName": "Wolf"
+    "popularName": "Wolf Grey"
   },
   {
     "className": "Animal_CanisLupus_White",
-    "popularName": "Wolf"
+    "popularName": "Wolf White"
   },
   {
     "className": "Animal_CapraHircusF",
@@ -361,15 +361,15 @@
   },
   {
     "className": "Animal_CapraHircus_Black",
-    "popularName": "Buck"
+    "popularName": "Buck Black"
   },
   {
     "className": "Animal_CapraHircus_Brown",
-    "popularName": "Buck"
+    "popularName": "Buck Brown"
   },
   {
     "className": "Animal_CapraHircus_White",
-    "popularName": "Buck"
+    "popularName": "Buck White"
   },
   {
     "className": "Animal_CapreolusCapreolus",
@@ -393,7 +393,7 @@
   },
   {
     "className": "Animal_GallusGallusDomesticusF_Brown",
-    "popularName": "Hen"
+    "popularName": "Hen Brown"
   },
   {
     "className": "Animal_GallusGallusDomesticusF_Spotted",
@@ -401,7 +401,7 @@
   },
   {
     "className": "Animal_GallusGallusDomesticusF_White",
-    "popularName": "Hen"
+    "popularName": "Hen White"
   },
   {
     "className": "Animal_OvisAries",
@@ -433,67 +433,67 @@
   },
   {
     "className": "Armband_Black",
-    "popularName": "Armband"
+    "popularName": "Armband Black"
   },
   {
     "className": "Armband_Blue",
-    "popularName": "Armband"
+    "popularName": "Armband Blue"
   },
   {
     "className": "Armband_Green",
-    "popularName": "Armband"
+    "popularName": "Armband Green"
   },
   {
     "className": "Armband_Orange",
-    "popularName": "Armband"
+    "popularName": "Armband Orange"
   },
   {
     "className": "Armband_Pink",
-    "popularName": "Armband"
+    "popularName": "Armband Pink"
   },
   {
     "className": "Armband_Red",
-    "popularName": "Armband"
+    "popularName": "Armband Red"
   },
   {
     "className": "Armband_White",
-    "popularName": "Armband"
+    "popularName": "Armband White"
   },
   {
     "className": "Armband_Yellow",
-    "popularName": "Armband"
+    "popularName": "Armband Yellow"
   },
   {
     "className": "AssaultBag_Black",
-    "popularName": "Assault Backpack"
+    "popularName": "Assault Backpack Black"
   },
   {
     "className": "AssaultBag_Green",
-    "popularName": "Assault Backpack"
+    "popularName": "Assault Backpack Green"
   },
   {
     "className": "AssaultBag_Ttsko",
-    "popularName": "Assault Backpack"
+    "popularName": "Assault Backpack TTSKO"
   },
   {
     "className": "AthleticShoes_Black",
-    "popularName": "Athletic Shoes"
+    "popularName": "Athletic Shoes Black"
   },
   {
     "className": "AthleticShoes_Blue",
-    "popularName": "Athletic Shoes"
+    "popularName": "Athletic Shoes Blue"
   },
   {
     "className": "AthleticShoes_Brown",
-    "popularName": "Athletic Shoes"
+    "popularName": "Athletic Shoes Brown"
   },
   {
     "className": "AthleticShoes_Green",
-    "popularName": "Athletic Shoes"
+    "popularName": "Athletic Shoes Green"
   },
   {
     "className": "AthleticShoes_Grey",
-    "popularName": "Athletic Shoes"
+    "popularName": "Athletic Shoes Grey"
   },
   {
     "className": "AuriculariaMushroom",
@@ -509,11 +509,11 @@
   },
   {
     "className": "B95_Black",
-    "popularName": "Blaze"
+    "popularName": "Blaze Black"
   },
   {
     "className": "B95_Green",
-    "popularName": "Blaze"
+    "popularName": "Blaze Green"
   },
   {
     "className": "BDUJacket",
@@ -541,71 +541,71 @@
   },
   {
     "className": "Balaclava3Holes_Beige",
-    "popularName": "Balaclava"
+    "popularName": "Balaclava Beige"
   },
   {
     "className": "Balaclava3Holes_Black",
-    "popularName": "Balaclava"
+    "popularName": "Balaclava Black"
   },
   {
     "className": "Balaclava3Holes_Blue",
-    "popularName": "Balaclava"
+    "popularName": "Balaclava Blue"
   },
   {
     "className": "Balaclava3Holes_Green",
-    "popularName": "Balaclava"
+    "popularName": "Balaclava Green"
   },
   {
     "className": "BalaclavaMask_Beige",
-    "popularName": "Ski Mask"
+    "popularName": "Ski Mask Beige"
   },
   {
     "className": "BalaclavaMask_Black",
-    "popularName": "Ski Mask"
+    "popularName": "Ski Mask Black"
   },
   {
     "className": "BalaclavaMask_Blackskull",
-    "popularName": "Ski Mask"
+    "popularName": "Ski Mask Black Skull"
   },
   {
     "className": "BalaclavaMask_Blue",
-    "popularName": "Ski Mask"
+    "popularName": "Ski Mask Blue"
   },
   {
     "className": "BalaclavaMask_Green",
-    "popularName": "Ski Mask"
+    "popularName": "Ski Mask Green"
   },
   {
     "className": "BalaclavaMask_Pink",
-    "popularName": "Ski Mask"
+    "popularName": "Ski Mask Pink"
   },
   {
     "className": "BalaclavaMask_White",
-    "popularName": "Ski Mask"
+    "popularName": "Ski Mask White"
   },
   {
     "className": "Ballerinas_Blue",
-    "popularName": "Flat Shoes"
+    "popularName": "Flat Shoes Blue"
   },
   {
     "className": "Ballerinas_Red",
-    "popularName": "Flat Shoes"
+    "popularName": "Flat Shoes Red"
   },
   {
     "className": "Ballerinas_White",
-    "popularName": "Flat Shoes"
+    "popularName": "Flat Shoes White"
   },
   {
     "className": "Ballerinas_Yellow",
-    "popularName": "Flat Shoes"
+    "popularName": "Flat Shoes Yellow"
   },
   {
     "className": "BallisticHelmet_Black",
-    "popularName": "Ballistic Helmet"
+    "popularName": "Ballistic Helmet Black"
   },
   {
     "className": "BallisticHelmet_Green",
-    "popularName": "Ballistic Helmet"
+    "popularName": "Ballistic Helmet Green"
   },
   {
     "className": "BallisticHelmet_UN",
@@ -661,7 +661,7 @@
   },
   {
     "className": "Bandana_Blue",
-    "popularName": "Bandana"
+    "popularName": "Bandana Blue"
   },
   {
     "className": "Bandana_CamoPattern",
@@ -673,7 +673,7 @@
   },
   {
     "className": "Bandana_Pink",
-    "popularName": "Bandana"
+    "popularName": "Bandana Pink"
   },
   {
     "className": "Bandana_PolkaPattern",
@@ -685,7 +685,7 @@
   },
   {
     "className": "Bandana_Yellow",
-    "popularName": "Bandana"
+    "popularName": "Bandana Yellow"
   },
   {
     "className": "BarbedWire",
@@ -705,35 +705,35 @@
   },
   {
     "className": "BarrelHoles_Blue",
-    "popularName": "Fire Barrel"
+    "popularName": "Fire Barrel Blue"
   },
   {
     "className": "BarrelHoles_Green",
-    "popularName": "Fire Barrel"
+    "popularName": "Fire Barrel Green"
   },
   {
     "className": "BarrelHoles_Red",
-    "popularName": "Fire Barrel"
+    "popularName": "Fire Barrel Red"
   },
   {
     "className": "BarrelHoles_Yellow",
-    "popularName": "Fire Barrel"
+    "popularName": "Fire Barrel Yellow"
   },
   {
     "className": "Barrel_Blue",
-    "popularName": "Barrel"
+    "popularName": "Barrel Blue"
   },
   {
     "className": "Barrel_Green",
-    "popularName": "Barrel"
+    "popularName": "Barrel Green"
   },
   {
     "className": "Barrel_Red",
-    "popularName": "Barrel"
+    "popularName": "Barrel Red"
   },
   {
     "className": "Barrel_Yellow",
-    "popularName": "Barrel"
+    "popularName": "Barrel Yellow"
   },
   {
     "className": "Banana",
@@ -749,39 +749,39 @@
   },
   {
     "className": "BaseballCap_Beige",
-    "popularName": "Baseball Cap"
+    "popularName": "Baseball Cap Beige"
   },
   {
     "className": "BaseballCap_Black",
-    "popularName": "Baseball Cap"
+    "popularName": "Baseball Cap Black"
   },
   {
     "className": "BaseballCap_Blue",
-    "popularName": "Baseball Cap"
+    "popularName": "Baseball Cap Blue"
   },
   {
     "className": "BaseballCap_CMMG_Black",
-    "popularName": "Baseball Cap"
+    "popularName": "Baseball Cap Black"
   },
   {
     "className": "BaseballCap_CMMG_Pink",
-    "popularName": "Baseball Cap"
+    "popularName": "Baseball Cap Pink"
   },
   {
     "className": "BaseballCap_Camo",
-    "popularName": "Baseball Cap"
+    "popularName": "Baseball Cap Camo"
   },
   {
     "className": "BaseballCap_Olive",
-    "popularName": "Baseball Cap"
+    "popularName": "Baseball Cap Olive"
   },
   {
     "className": "BaseballCap_Pink",
-    "popularName": "Baseball Cap"
+    "popularName": "Baseball Cap Pink"
   },
   {
     "className": "BaseballCap_Red",
-    "popularName": "Baseball Cap"
+    "popularName": "Baseball Cap Red"
   },
   {
     "className": "Battery9V",
@@ -793,35 +793,35 @@
   },
   {
     "className": "BeanieHat_Beige",
-    "popularName": "Beanie"
+    "popularName": "Beanie Beige"
   },
   {
     "className": "BeanieHat_Black",
-    "popularName": "Beanie"
+    "popularName": "Beanie Black"
   },
   {
     "className": "BeanieHat_Blue",
-    "popularName": "Beanie"
+    "popularName": "Beanie Blue"
   },
   {
     "className": "BeanieHat_Brown",
-    "popularName": "Beanie"
+    "popularName": "Beanie Brown"
   },
   {
     "className": "BeanieHat_Green",
-    "popularName": "Beanie"
+    "popularName": "Beanie Green"
   },
   {
     "className": "BeanieHat_Grey",
-    "popularName": "Beanie"
+    "popularName": "Beanie Grey"
   },
   {
     "className": "BeanieHat_Pink",
-    "popularName": "Beanie"
+    "popularName": "Beanie Pink"
   },
   {
     "className": "BeanieHat_Red",
-    "popularName": "Beanie"
+    "popularName": "Beanie Red"
   },
   {
     "className": "BearPelt",
@@ -837,19 +837,19 @@
   },
   {
     "className": "Bear_Beige",
-    "popularName": "Teddy Bear"
+    "popularName": "Teddy Bear Beige"
   },
   {
     "className": "Bear_Dark",
-    "popularName": "Teddy Bear"
+    "popularName": "Teddy Bear Dark"
   },
   {
     "className": "Bear_Pink",
-    "popularName": "Teddy Bear"
+    "popularName": "Teddy Bear Pink"
   },
   {
     "className": "Bear_White",
-    "popularName": "Teddy Bear"
+    "popularName": "Teddy Bear White"
   },
   {
     "className": "Binoculars",
@@ -877,11 +877,11 @@
   },
   {
     "className": "Blouse_Blue",
-    "popularName": "Blouse"
+    "popularName": "Blouse Blue"
   },
   {
     "className": "Blouse_Green",
-    "popularName": "Blouse"
+    "popularName": "Blouse Green"
   },
   {
     "className": "Blouse_Violet",
@@ -889,7 +889,7 @@
   },
   {
     "className": "Blouse_White",
-    "popularName": "Blouse"
+    "popularName": "Blouse White"
   },
   {
     "className": "BoarSteakMeat",
@@ -901,19 +901,19 @@
   },
   {
     "className": "BomberJacket_Black",
-    "popularName": "Bomber Jacket"
+    "popularName": "Bomber Jacket Black"
   },
   {
     "className": "BomberJacket_Blue",
-    "popularName": "Bomber Jacket"
+    "popularName": "Bomber Jacket Blue"
   },
   {
     "className": "BomberJacket_Brown",
-    "popularName": "Bomber Jacket"
+    "popularName": "Bomber Jacket Brown"
   },
   {
     "className": "BomberJacket_Grey",
-    "popularName": "Bomber Jacket"
+    "popularName": "Bomber Jacket Grey"
   },
   {
     "className": "BomberJacket_Maroon",
@@ -921,7 +921,7 @@
   },
   {
     "className": "BomberJacket_Olive",
-    "popularName": "Bomber Jacket"
+    "popularName": "Bomber Jacket Olive"
   },
   {
     "className": "BomberJacket_SkyBlue",
@@ -1517,11 +1517,11 @@
   },
   {
     "className": "BoonieHat_Black",
-    "popularName": "Boonie Hat"
+    "popularName": "Boonie Hat Black"
   },
   {
     "className": "BoonieHat_Blue",
-    "popularName": "Boonie Hat"
+    "popularName": "Boonie Hat Blue"
   },
   {
     "className": "BoonieHat_DPM",
@@ -1529,7 +1529,7 @@
   },
   {
     "className": "BoonieHat_Dubok",
-    "popularName": "Boonie Hat"
+    "popularName": "Boonie Hat Dubok"
   },
   {
     "className": "BoonieHat_Flecktran",
@@ -1541,19 +1541,19 @@
   },
   {
     "className": "BoonieHat_Olive",
-    "popularName": "Boonie Hat"
+    "popularName": "Boonie Hat Olive"
   },
   {
     "className": "BoonieHat_Orange",
-    "popularName": "Boonie Hat"
+    "popularName": "Boonie Hat Orange"
   },
   {
     "className": "BoonieHat_Red",
-    "popularName": "Boonie Hat"
+    "popularName": "Boonie Hat Red"
   },
   {
     "className": "BoonieHat_Tan",
-    "popularName": "Boonie Hat"
+    "popularName": "Boonie Hat Tan"
   },
   {
     "className": "BoxCerealCrunchin",
@@ -1577,11 +1577,11 @@
   },
   {
     "className": "Breeches_Beige",
-    "popularName": "Capri Pants"
+    "popularName": "Capri Pants Beige"
   },
   {
     "className": "Breeches_Black",
-    "popularName": "Capri Pants"
+    "popularName": "Capri Pants Black"
   },
   {
     "className": "Breeches_Blackcheck",
@@ -1589,7 +1589,7 @@
   },
   {
     "className": "Breeches_Blue",
-    "popularName": "Capri Pants"
+    "popularName": "Capri Pants Blue"
   },
   {
     "className": "Breeches_Browncheck",
@@ -1597,19 +1597,19 @@
   },
   {
     "className": "Breeches_Green",
-    "popularName": "Capri Pants"
+    "popularName": "Capri Pants Green"
   },
   {
     "className": "Breeches_Pink",
-    "popularName": "Capri Pants"
+    "popularName": "Capri Pants Pink"
   },
   {
     "className": "Breeches_Red",
-    "popularName": "Capri Pants"
+    "popularName": "Capri Pants Red"
   },
   {
     "className": "Breeches_White",
-    "popularName": "Capri Pants"
+    "popularName": "Capri Pants White"
   },
   {
     "className": "Building",
@@ -1637,15 +1637,15 @@
   },
   {
     "className": "CZ527_Black",
-    "popularName": "CR-527"
+    "popularName": "CR-527 Black"
   },
   {
     "className": "CZ527_Camo",
-    "popularName": "CR-527"
+    "popularName": "CR-527 Camo"
   },
   {
     "className": "CZ527_Green",
-    "popularName": "CR-527"
+    "popularName": "CR-527 Green"
   },
   {
     "className": "CZ61",
@@ -1681,19 +1681,19 @@
   },
   {
     "className": "CanvasPantsMidi_Beige",
-    "popularName": "Crop Hiking Pants"
+    "popularName": "Crop Hiking Pants Beige"
   },
   {
     "className": "CanvasPantsMidi_Blue",
-    "popularName": "Crop Hiking Pants"
+    "popularName": "Crop Hiking Pants Blue"
   },
   {
     "className": "CanvasPantsMidi_Grey",
-    "popularName": "Crop Hiking Pants"
+    "popularName": "Crop Hiking Pants Grey"
   },
   {
     "className": "CanvasPantsMidi_Red",
-    "popularName": "Crop Hiking Pants"
+    "popularName": "Crop Hiking Pants Red"
   },
   {
     "className": "CanvasPantsMidi_Violet",
@@ -1701,19 +1701,19 @@
   },
   {
     "className": "CanvasPants_Beige",
-    "popularName": "Hiking Pants"
+    "popularName": "Hiking Pants Beige"
   },
   {
     "className": "CanvasPants_Blue",
-    "popularName": "Hiking Pants"
+    "popularName": "Hiking Pants Blue"
   },
   {
     "className": "CanvasPants_Grey",
-    "popularName": "Hiking Pants"
+    "popularName": "Hiking Pants Grey"
   },
   {
     "className": "CanvasPants_Red",
-    "popularName": "Hiking Pants"
+    "popularName": "Hiking Pants Red"
   },
   {
     "className": "CanvasPants_Violet",
@@ -1737,23 +1737,23 @@
   },
   {
     "className": "CargoPants_Beige",
-    "popularName": "Cargo Pants"
+    "popularName": "Cargo Pants Beige"
   },
   {
     "className": "CargoPants_Black",
-    "popularName": "Cargo Pants"
+    "popularName": "Cargo Pants Black"
   },
   {
     "className": "CargoPants_Blue",
-    "popularName": "Cargo Pants"
+    "popularName": "Cargo Pants Blue"
   },
   {
     "className": "CargoPants_Green",
-    "popularName": "Cargo Pants"
+    "popularName": "Cargo Pants Green"
   },
   {
     "className": "CargoPants_Grey",
-    "popularName": "Cargo Pants"
+    "popularName": "Cargo Pants Grey"
   },
   {
     "className": "Carp",
@@ -1773,23 +1773,23 @@
   },
   {
     "className": "Chemlight_Blue",
-    "popularName": "Glow Stick"
+    "popularName": "Glow Stick Blue"
   },
   {
     "className": "Chemlight_Green",
-    "popularName": "Glow Stick"
+    "popularName": "Glow Stick Green"
   },
   {
     "className": "Chemlight_Red",
-    "popularName": "Glow Stick"
+    "popularName": "Glow Stick Red"
   },
   {
     "className": "Chemlight_White",
-    "popularName": "Glow Stick"
+    "popularName": "Glow Stick White"
   },
   {
     "className": "Chemlight_Yellow",
-    "popularName": "Glow Stick"
+    "popularName": "Glow Stick Yellow"
   },
   {
     "className": "ChernarusMap",
@@ -1813,15 +1813,15 @@
   },
   {
     "className": "ChildBag_Blue",
-    "popularName": "School Backpack"
+    "popularName": "School Backpack Blue"
   },
   {
     "className": "ChildBag_Green",
-    "popularName": "School Backpack"
+    "popularName": "School Backpack Green"
   },
   {
     "className": "ChildBag_Red",
-    "popularName": "School Backpack"
+    "popularName": "School Backpack Red"
   },
   {
     "className": "CivSedanDoors_BackLeft",
@@ -1829,7 +1829,7 @@
   },
   {
     "className": "CivSedanDoors_BackLeft_Black",
-    "popularName": "Olga 24 Rear Left Door"
+    "popularName": "Olga 24 Rear Left Door Black"
   },
   {
     "className": "CivSedanDoors_BackLeft_BlackRust",
@@ -1853,7 +1853,7 @@
   },
   {
     "className": "CivSedanDoors_BackRight_Black",
-    "popularName": "Olga 24 Rear Right Door"
+    "popularName": "Olga 24 Rear Right Door Black"
   },
   {
     "className": "CivSedanDoors_BackRight_BlackRust",
@@ -1877,7 +1877,7 @@
   },
   {
     "className": "CivSedanDoors_CoDriver_Black",
-    "popularName": "Olga 24 Front Right Door"
+    "popularName": "Olga 24 Front Right Door Black"
   },
   {
     "className": "CivSedanDoors_CoDriver_BlackRust",
@@ -1901,7 +1901,7 @@
   },
   {
     "className": "CivSedanDoors_Driver_Black",
-    "popularName": "Olga 24 Front Left Door"
+    "popularName": "Olga 24 Front Left Door Black"
   },
   {
     "className": "CivSedanDoors_Driver_BlackRust",
@@ -1925,7 +1925,7 @@
   },
   {
     "className": "CivSedanHood_Black",
-    "popularName": "Olga 24 Hood"
+    "popularName": "Olga 24 Hood Black"
   },
   {
     "className": "CivSedanHood_BlackRust",
@@ -1949,7 +1949,7 @@
   },
   {
     "className": "CivSedanTrunk_Black",
-    "popularName": "Olga 24 Trunk Lid"
+    "popularName": "Olga 24 Trunk Lid Black"
   },
   {
     "className": "CivSedanTrunk_BlackRust",
@@ -1985,7 +1985,7 @@
   },
   {
     "className": "CivilianSedan_Black",
-    "popularName": "Olga 24"
+    "popularName": "Olga 24 Black"
   },
   {
     "className": "CivilianSedan_Wine",
@@ -2001,23 +2001,23 @@
   },
   {
     "className": "CombatBoots_Beige",
-    "popularName": "Hunter Boots"
+    "popularName": "Hunter Boots Beige"
   },
   {
     "className": "CombatBoots_Black",
-    "popularName": "Hunter Boots"
+    "popularName": "Hunter Boots Black"
   },
   {
     "className": "CombatBoots_Brown",
-    "popularName": "Hunter Boots"
+    "popularName": "Hunter Boots Brown"
   },
   {
     "className": "CombatBoots_Green",
-    "popularName": "Hunter Boots"
+    "popularName": "Hunter Boots Green"
   },
   {
     "className": "CombatBoots_Grey",
-    "popularName": "Hunter Boots"
+    "popularName": "Hunter Boots Grey"
   },
   {
     "className": "CombatKnife",
@@ -2037,7 +2037,7 @@
   },
   {
     "className": "ConstructionHelmet_Blue",
-    "popularName": "Hard Hat"
+    "popularName": "Hard Hat Blue"
   },
   {
     "className": "ConstructionHelmet_Lime",
@@ -2045,19 +2045,19 @@
   },
   {
     "className": "ConstructionHelmet_Orange",
-    "popularName": "Hard Hat"
+    "popularName": "Hard Hat Orange"
   },
   {
     "className": "ConstructionHelmet_Red",
-    "popularName": "Hard Hat"
+    "popularName": "Hard Hat Red"
   },
   {
     "className": "ConstructionHelmet_White",
-    "popularName": "Hard Hat"
+    "popularName": "Hard Hat White"
   },
   {
     "className": "ConstructionHelmet_Yellow",
-    "popularName": "Hard Hat"
+    "popularName": "Hard Hat Yellow"
   },
   {
     "className": "CourierBag",
@@ -2073,11 +2073,11 @@
   },
   {
     "className": "CowboyHat_Brown",
-    "popularName": "Cowboy Hat"
+    "popularName": "Cowboy Hat Brown"
   },
   {
     "className": "CowboyHat_black",
-    "popularName": "Cowboy Hat"
+    "popularName": "Cowboy Hat Black"
   },
   {
     "className": "CowboyHat_darkBrown",
@@ -2085,15 +2085,15 @@
   },
   {
     "className": "CowboyHat_green",
-    "popularName": "Cowboy Hat"
+    "popularName": "Cowboy Hat Green"
   },
   {
     "className": "CoyoteBag_Brown",
-    "popularName": "Tactical Backpack"
+    "popularName": "Tactical Backpack Brown"
   },
   {
     "className": "CoyoteBag_Green",
-    "popularName": "Tactical Backpack"
+    "popularName": "Tactical Backpack Green"
   },
   {
     "className": "CraterLong",
@@ -2109,19 +2109,19 @@
   },
   {
     "className": "DarkMotoHelmet_Black",
-    "popularName": "Motorbike Helmet"
+    "popularName": "Motorbike Helmet Black"
   },
   {
     "className": "DarkMotoHelmet_Blue",
-    "popularName": "Motorbike Helmet"
+    "popularName": "Motorbike Helmet Blue"
   },
   {
     "className": "DarkMotoHelmet_Green",
-    "popularName": "Motorbike Helmet"
+    "popularName": "Motorbike Helmet Green"
   },
   {
     "className": "DarkMotoHelmet_Grey",
-    "popularName": "Motorbike Helmet"
+    "popularName": "Motorbike Helmet Grey"
   },
   {
     "className": "DarkMotoHelmet_Lime",
@@ -2129,11 +2129,11 @@
   },
   {
     "className": "DarkMotoHelmet_Red",
-    "popularName": "Motorbike Helmet"
+    "popularName": "Motorbike Helmet Red"
   },
   {
     "className": "DarkMotoHelmet_White",
-    "popularName": "Motorbike Helmet"
+    "popularName": "Motorbike Helmet White"
   },
   {
     "className": "DeerPelt",
@@ -2157,11 +2157,11 @@
   },
   {
     "className": "DirtBikeHelmet_Black",
-    "popularName": "Enduro Helmet"
+    "popularName": "Enduro Helmet Black"
   },
   {
     "className": "DirtBikeHelmet_Blue",
-    "popularName": "Enduro Helmet"
+    "popularName": "Enduro Helmet Blue"
   },
   {
     "className": "DirtBikeHelmet_Chernarus",
@@ -2169,11 +2169,11 @@
   },
   {
     "className": "DirtBikeHelmet_Green",
-    "popularName": "Enduro Helmet"
+    "popularName": "Enduro Helmet Green"
   },
   {
     "className": "DirtBikeHelmet_Khaki",
-    "popularName": "Enduro Helmet"
+    "popularName": "Enduro Helmet Khaki"
   },
   {
     "className": "DirtBikeHelmet_Mouthguard",
@@ -2185,7 +2185,7 @@
   },
   {
     "className": "DirtBikeHelmet_Red",
-    "popularName": "Enduro Helmet"
+    "popularName": "Enduro Helmet Red"
   },
   {
     "className": "DirtBikeHelmet_Visor",
@@ -2205,15 +2205,15 @@
   },
   {
     "className": "DressShoes_Beige",
-    "popularName": "Dress Shoes"
+    "popularName": "Dress Shoes Beige"
   },
   {
     "className": "DressShoes_Black",
-    "popularName": "Dress Shoes"
+    "popularName": "Dress Shoes Black"
   },
   {
     "className": "DressShoes_Brown",
-    "popularName": "Dress Shoes"
+    "popularName": "Dress Shoes Brown"
   },
   {
     "className": "DressShoes_Sunburst",
@@ -2221,31 +2221,31 @@
   },
   {
     "className": "DressShoes_White",
-    "popularName": "Dress Shoes"
+    "popularName": "Dress Shoes White"
   },
   {
     "className": "DryBag_Black",
-    "popularName": "Drybag Backpack"
+    "popularName": "Drybag Backpack Black"
   },
   {
     "className": "DryBag_Blue",
-    "popularName": "Drybag Backpack"
+    "popularName": "Drybag Backpack Blue"
   },
   {
     "className": "DryBag_Green",
-    "popularName": "Drybag Backpack"
+    "popularName": "Drybag Backpack Green"
   },
   {
     "className": "DryBag_Orange",
-    "popularName": "Drybag Backpack"
+    "popularName": "Drybag Backpack Orange"
   },
   {
     "className": "DryBag_Red",
-    "popularName": "Drybag Backpack"
+    "popularName": "Drybag Backpack Red"
   },
   {
     "className": "DryBag_Yellow",
-    "popularName": "Drybag Backpack"
+    "popularName": "Drybag Backpack Yellow"
   },
   {
     "className": "DuctTape",
@@ -2465,39 +2465,39 @@
   },
   {
     "className": "FirefighterAxe_Black",
-    "popularName": "Firefighter Axe"
+    "popularName": "Firefighter Axe Black"
   },
   {
     "className": "FirefighterAxe_Green",
-    "popularName": "Firefighter Axe"
+    "popularName": "Firefighter Axe Green"
   },
   {
     "className": "FirefighterJacket_Beige",
-    "popularName": "Firefighter Jacket"
+    "popularName": "Firefighter Jacket Beige"
   },
   {
     "className": "FirefighterJacket_Black",
-    "popularName": "Firefighter Jacket"
+    "popularName": "Firefighter Jacket Black"
   },
   {
     "className": "FirefightersHelmet_Red",
-    "popularName": "Firefighter Helmet"
+    "popularName": "Firefighter Helmet Red"
   },
   {
     "className": "FirefightersHelmet_White",
-    "popularName": "Firefighter Helmet"
+    "popularName": "Firefighter Helmet White"
   },
   {
     "className": "FirefightersHelmet_Yellow",
-    "popularName": "Firefighter Helmet"
+    "popularName": "Firefighter Helmet Yellow"
   },
   {
     "className": "FirefightersPants_Beige",
-    "popularName": "Firefighter Pants"
+    "popularName": "Firefighter Pants Beige"
   },
   {
     "className": "FirefightersPants_Black",
-    "popularName": "Firefighter Pants"
+    "popularName": "Firefighter Pants Black"
   },
   {
     "className": "Fireplace",
@@ -2529,7 +2529,7 @@
   },
   {
     "className": "FlatCap_Black",
-    "popularName": "Flat Cap"
+    "popularName": "Flat Cap Black"
   },
   {
     "className": "FlatCap_BlackCheck",
@@ -2537,11 +2537,11 @@
   },
   {
     "className": "FlatCap_Blue",
-    "popularName": "Flat Cap"
+    "popularName": "Flat Cap Blue"
   },
   {
     "className": "FlatCap_Brown",
-    "popularName": "Flat Cap"
+    "popularName": "Flat Cap Brown"
   },
   {
     "className": "FlatCap_BrownCheck",
@@ -2549,7 +2549,7 @@
   },
   {
     "className": "FlatCap_Grey",
-    "popularName": "Flat Cap"
+    "popularName": "Flat Cap Grey"
   },
   {
     "className": "FlatCap_GreyCheck",
@@ -2557,7 +2557,7 @@
   },
   {
     "className": "FlatCap_Red",
-    "popularName": "Flat Cap"
+    "popularName": "Flat Cap Red"
   },
   {
     "className": "FurCourierBag",
@@ -2649,63 +2649,63 @@
   },
   {
     "className": "GhillieAtt_Mossy",
-    "popularName": "Ghillie Rifle Wrap"
+    "popularName": "Ghillie Rifle Wrap Mossy"
   },
   {
     "className": "GhillieAtt_Tan",
-    "popularName": "Ghillie Rifle Wrap"
+    "popularName": "Ghillie Rifle Wrap Tan"
   },
   {
     "className": "GhillieAtt_Woodland",
-    "popularName": "Ghillie Rifle Wrap"
+    "popularName": "Ghillie Rifle Wrap Woodland"
   },
   {
     "className": "GhillieBushrag_Mossy",
-    "popularName": "Ghillie Shrug"
+    "popularName": "Ghillie Shrug Mossy"
   },
   {
     "className": "GhillieBushrag_Tan",
-    "popularName": "Ghillie Shrug"
+    "popularName": "Ghillie Shrug Tan"
   },
   {
     "className": "GhillieBushrag_Woodland",
-    "popularName": "Ghillie Shrug"
+    "popularName": "Ghillie Shrug Woodland"
   },
   {
     "className": "GhillieHood_Mossy",
-    "popularName": "Ghillie Hood"
+    "popularName": "Ghillie Hood Mossy"
   },
   {
     "className": "GhillieHood_Tan",
-    "popularName": "Ghillie Hood"
+    "popularName": "Ghillie Hood Tan"
   },
   {
     "className": "GhillieHood_Woodland",
-    "popularName": "Ghillie Hood"
+    "popularName": "Ghillie Hood Woodland"
   },
   {
     "className": "GhillieSuit_Mossy",
-    "popularName": "Ghillie Suit"
+    "popularName": "Ghillie Suit Mossy"
   },
   {
     "className": "GhillieSuit_Tan",
-    "popularName": "Ghillie Suit"
+    "popularName": "Ghillie Suit Tan"
   },
   {
     "className": "GhillieSuit_Woodland",
-    "popularName": "Ghillie Suit"
+    "popularName": "Ghillie Suit Woodland"
   },
   {
     "className": "GhillieTop_Mossy",
-    "popularName": "Ghillie Cloak"
+    "popularName": "Ghillie Cloak Mossy"
   },
   {
     "className": "GhillieTop_Tan",
-    "popularName": "Ghillie Cloak"
+    "popularName": "Ghillie Cloak Tan"
   },
   {
     "className": "GhillieTop_Woodland",
-    "popularName": "Ghillie Cloak"
+    "popularName": "Ghillie Cloak Woodland"
   },
   {
     "className": "GiftBox_Large_1",
@@ -2793,11 +2793,11 @@
   },
   {
     "className": "GorkaHelmet_Black",
-    "popularName": "Assault Helmet"
+    "popularName": "Assault Helmet Black"
   },
   {
     "className": "GorkaHelmet_Green",
-    "popularName": "Assault Helmet"
+    "popularName": "Assault Helmet Green"
   },
   {
     "className": "GorkaPants_Autumn",
@@ -2861,7 +2861,7 @@
   },
   {
     "className": "HatchbackDoors_CoDriver_Blue",
-    "popularName": "Ada 4x4 Right Door"
+    "popularName": "Ada 4x4 Right Door Blue"
   },
   {
     "className": "HatchbackDoors_CoDriver_BlueRust",
@@ -2873,7 +2873,7 @@
   },
   {
     "className": "HatchbackDoors_CoDriver_White",
-    "popularName": "Ada 4x4 Right Door"
+    "popularName": "Ada 4x4 Right Door White"
   },
   {
     "className": "HatchbackDoors_CoDriver_WhiteRust",
@@ -2885,7 +2885,7 @@
   },
   {
     "className": "HatchbackDoors_Driver_Blue",
-    "popularName": "Ada 4x4 Left Door"
+    "popularName": "Ada 4x4 Left Door Blue"
   },
   {
     "className": "HatchbackDoors_Driver_BlueRust",
@@ -2897,7 +2897,7 @@
   },
   {
     "className": "HatchbackDoors_Driver_White",
-    "popularName": "Ada 4x4 Left Door"
+    "popularName": "Ada 4x4 Left Door White"
   },
   {
     "className": "HatchbackDoors_Driver_WhiteRust",
@@ -2909,7 +2909,7 @@
   },
   {
     "className": "HatchbackHood_Blue",
-    "popularName": "Ada 4x4 Hood"
+    "popularName": "Ada 4x4 Hood Blue"
   },
   {
     "className": "HatchbackHood_BlueRust",
@@ -2921,7 +2921,7 @@
   },
   {
     "className": "HatchbackHood_White",
-    "popularName": "Ada 4x4 Hood"
+    "popularName": "Ada 4x4 Hood White"
   },
   {
     "className": "HatchbackHood_WhiteRust",
@@ -2933,7 +2933,7 @@
   },
   {
     "className": "HatchbackTrunk_Blue",
-    "popularName": "Ada 4x4 Trunk Door"
+    "popularName": "Ada 4x4 Trunk Door Blue"
   },
   {
     "className": "HatchbackTrunk_BlueRust",
@@ -2945,7 +2945,7 @@
   },
   {
     "className": "HatchbackTrunk_White",
-    "popularName": "Ada 4x4 Trunk Door"
+    "popularName": "Ada 4x4 Trunk Door White"
   },
   {
     "className": "HatchbackTrunk_WhiteRust",
@@ -2965,11 +2965,11 @@
   },
   {
     "className": "Hatchback_02_Black",
-    "popularName": "Gunter 2"
+    "popularName": "Gunter 2 Black"
   },
   {
     "className": "Hatchback_02_Blue",
-    "popularName": "Gunter 2"
+    "popularName": "Gunter 2 Blue"
   },
   {
     "className": "Hatchback_02_Door_1_1",
@@ -2977,7 +2977,7 @@
   },
   {
     "className": "Hatchback_02_Door_1_1_Black",
-    "popularName": "Gunter 2 Front Left Door"
+    "popularName": "Gunter 2 Front Left Door Black"
   },
   {
     "className": "Hatchback_02_Door_1_1_BlackRust",
@@ -2985,7 +2985,7 @@
   },
   {
     "className": "Hatchback_02_Door_1_1_Blue",
-    "popularName": "Gunter 2 Front Left Door"
+    "popularName": "Gunter 2 Front Left Door Blue"
   },
   {
     "className": "Hatchback_02_Door_1_1_BlueRust",
@@ -3001,7 +3001,7 @@
   },
   {
     "className": "Hatchback_02_Door_1_2_Black",
-    "popularName": "Gunter 2 Rear Left Door"
+    "popularName": "Gunter 2 Rear Left Door Black"
   },
   {
     "className": "Hatchback_02_Door_1_2_BlackRust",
@@ -3009,7 +3009,7 @@
   },
   {
     "className": "Hatchback_02_Door_1_2_Blue",
-    "popularName": "Gunter 2 Rear Left Door"
+    "popularName": "Gunter 2 Rear Left Door Blue"
   },
   {
     "className": "Hatchback_02_Door_1_2_BlueRust",
@@ -3025,7 +3025,7 @@
   },
   {
     "className": "Hatchback_02_Door_2_1_Black",
-    "popularName": "Gunter 2 Front Right Door"
+    "popularName": "Gunter 2 Front Right Door Black"
   },
   {
     "className": "Hatchback_02_Door_2_1_BlackRust",
@@ -3033,7 +3033,7 @@
   },
   {
     "className": "Hatchback_02_Door_2_1_Blue",
-    "popularName": "Gunter 2 Front Right Door"
+    "popularName": "Gunter 2 Front Right Door Blue"
   },
   {
     "className": "Hatchback_02_Door_2_1_BlueRust",
@@ -3049,7 +3049,7 @@
   },
   {
     "className": "Hatchback_02_Door_2_2_Black",
-    "popularName": "Gunter 2 Rear Right Door"
+    "popularName": "Gunter 2 Rear Right Door Black"
   },
   {
     "className": "Hatchback_02_Door_2_2_BlackRust",
@@ -3057,7 +3057,7 @@
   },
   {
     "className": "Hatchback_02_Door_2_2_Blue",
-    "popularName": "Gunter 2 Rear Right Door"
+    "popularName": "Gunter 2 Rear Right Door Blue"
   },
   {
     "className": "Hatchback_02_Door_2_2_BlueRust",
@@ -3073,7 +3073,7 @@
   },
   {
     "className": "Hatchback_02_Hood_Black",
-    "popularName": "Gunter 2 Hood"
+    "popularName": "Gunter 2 Hood Black"
   },
   {
     "className": "Hatchback_02_Hood_BlackRust",
@@ -3081,7 +3081,7 @@
   },
   {
     "className": "Hatchback_02_Hood_Blue",
-    "popularName": "Gunter 2 Hood"
+    "popularName": "Gunter 2 Hood Blue"
   },
   {
     "className": "Hatchback_02_Hood_BlueRust",
@@ -3097,7 +3097,7 @@
   },
   {
     "className": "Hatchback_02_Trunk_Black",
-    "popularName": "Gunter 2 Trunk Door"
+    "popularName": "Gunter 2 Trunk Door Black"
   },
   {
     "className": "Hatchback_02_Trunk_BlackRust",
@@ -3105,7 +3105,7 @@
   },
   {
     "className": "Hatchback_02_Trunk_Blue",
-    "popularName": "Gunter 2 Trunk Door"
+    "popularName": "Gunter 2 Trunk Door Blue"
   },
   {
     "className": "Hatchback_02_Trunk_BlueRust",
@@ -3145,11 +3145,11 @@
   },
   {
     "className": "Headtorch_Black",
-    "popularName": "Head Torch"
+    "popularName": "Head Torch Black"
   },
   {
     "className": "Headtorch_Grey",
-    "popularName": "Head Torch"
+    "popularName": "Head Torch Grey"
   },
   {
     "className": "Heatpack",
@@ -3161,67 +3161,67 @@
   },
   {
     "className": "HighCapacityVest_Black",
-    "popularName": "Tactical Vest"
+    "popularName": "Tactical Vest Black"
   },
   {
     "className": "HighCapacityVest_Olive",
-    "popularName": "Tactical Vest"
+    "popularName": "Tactical Vest Olive"
   },
   {
     "className": "HikingBootsLow_Beige",
-    "popularName": "Trail Shoes"
+    "popularName": "Trail Shoes Beige"
   },
   {
     "className": "HikingBootsLow_Black",
-    "popularName": "Trail Shoes"
+    "popularName": "Trail Shoes Black"
   },
   {
     "className": "HikingBootsLow_Blue",
-    "popularName": "Trail Shoes"
+    "popularName": "Trail Shoes Blue"
   },
   {
     "className": "HikingBootsLow_Grey",
-    "popularName": "Trail Shoes"
+    "popularName": "Trail Shoes Grey"
   },
   {
     "className": "HikingBoots_Black",
-    "popularName": "Hiking Boots"
+    "popularName": "Hiking Boots Black"
   },
   {
     "className": "HikingBoots_Brown",
-    "popularName": "Hiking Boots"
+    "popularName": "Hiking Boots Brown"
   },
   {
     "className": "HikingJacket_Black",
-    "popularName": "Hiking Jacket"
+    "popularName": "Hiking Jacket Black"
   },
   {
     "className": "HikingJacket_Blue",
-    "popularName": "Hiking Jacket"
+    "popularName": "Hiking Jacket Blue"
   },
   {
     "className": "HikingJacket_Green",
-    "popularName": "Hiking Jacket"
+    "popularName": "Hiking Jacket Green"
   },
   {
     "className": "HikingJacket_Red",
-    "popularName": "Hiking Jacket"
+    "popularName": "Hiking Jacket Red"
   },
   {
     "className": "HockeyHelmet_Black",
-    "popularName": "Hockey Helmet"
+    "popularName": "Hockey Helmet Black"
   },
   {
     "className": "HockeyHelmet_Blue",
-    "popularName": "Hockey Helmet"
+    "popularName": "Hockey Helmet Blue"
   },
   {
     "className": "HockeyHelmet_Red",
-    "popularName": "Hockey Helmet"
+    "popularName": "Hockey Helmet Red"
   },
   {
     "className": "HockeyHelmet_White",
-    "popularName": "Hockey Helmet"
+    "popularName": "Hockey Helmet White"
   },
   {
     "className": "HockeyMask",
@@ -3229,27 +3229,27 @@
   },
   {
     "className": "Hoodie_Black",
-    "popularName": "Hoodie"
+    "popularName": "Hoodie Black"
   },
   {
     "className": "Hoodie_Blue",
-    "popularName": "Hoodie"
+    "popularName": "Hoodie Blue"
   },
   {
     "className": "Hoodie_Brown",
-    "popularName": "Hoodie"
+    "popularName": "Hoodie Brown"
   },
   {
     "className": "Hoodie_Green",
-    "popularName": "Hoodie"
+    "popularName": "Hoodie Green"
   },
   {
     "className": "Hoodie_Grey",
-    "popularName": "Hoodie"
+    "popularName": "Hoodie Grey"
   },
   {
     "className": "Hoodie_Red",
-    "popularName": "Hoodie"
+    "popularName": "Hoodie Red"
   },
   {
     "className": "Hook",
@@ -3273,7 +3273,7 @@
   },
   {
     "className": "HunterPants_Brown",
-    "popularName": "Hunter pants"
+    "popularName": "Hunter pants Brown"
   },
   {
     "className": "HunterPants_Spring",
@@ -3297,7 +3297,7 @@
   },
   {
     "className": "HuntingJacket_Brown",
-    "popularName": "Hunter Jacket"
+    "popularName": "Hunter Jacket Brown"
   },
   {
     "className": "HuntingJacket_Spring",
@@ -3353,11 +3353,11 @@
   },
   {
     "className": "Jeans_Black",
-    "popularName": "Jeans"
+    "popularName": "Jeans Black"
   },
   {
     "className": "Jeans_Blue",
-    "popularName": "Jeans"
+    "popularName": "Jeans Blue"
   },
   {
     "className": "Jeans_BlueDark",
@@ -3365,27 +3365,27 @@
   },
   {
     "className": "Jeans_Brown",
-    "popularName": "Jeans"
+    "popularName": "Jeans Brown"
   },
   {
     "className": "Jeans_Green",
-    "popularName": "Jeans"
+    "popularName": "Jeans Green"
   },
   {
     "className": "Jeans_Grey",
-    "popularName": "Jeans"
+    "popularName": "Jeans Grey"
   },
   {
     "className": "JoggingShoes_Black",
-    "popularName": "Running Shoes"
+    "popularName": "Running Shoes Black"
   },
   {
     "className": "JoggingShoes_Blue",
-    "popularName": "Running Shoes"
+    "popularName": "Running Shoes Blue"
   },
   {
     "className": "JoggingShoes_Red",
-    "popularName": "Running Shoes"
+    "popularName": "Running Shoes Red"
   },
   {
     "className": "JoggingShoes_Violet",
@@ -3393,59 +3393,59 @@
   },
   {
     "className": "JoggingShoes_White",
-    "popularName": "Running Shoes"
+    "popularName": "Running Shoes White"
   },
   {
     "className": "JumpsuitJacket_Blue",
-    "popularName": "Jumpsuit Jacket"
+    "popularName": "Jumpsuit Jacket Blue"
   },
   {
     "className": "JumpsuitJacket_Gray",
-    "popularName": "Jumpsuit Jacket"
+    "popularName": "Jumpsuit Jacket Grey"
   },
   {
     "className": "JumpsuitJacket_Green",
-    "popularName": "Jumpsuit Jacket"
+    "popularName": "Jumpsuit Jacket Green"
   },
   {
     "className": "JumpsuitJacket_Red",
-    "popularName": "Jumpsuit Jacket"
+    "popularName": "Jumpsuit Jacket Red"
   },
   {
     "className": "JumpsuitPants_Blue",
-    "popularName": "Jumpsuit Pants"
+    "popularName": "Jumpsuit Pants Blue"
   },
   {
     "className": "JumpsuitPants_Green",
-    "popularName": "Jumpsuit Pants"
+    "popularName": "Jumpsuit Pants Green"
   },
   {
     "className": "JumpsuitPants_Grey",
-    "popularName": "Jumpsuit Pants"
+    "popularName": "Jumpsuit Pants Grey"
   },
   {
     "className": "JumpsuitPants_Red",
-    "popularName": "Jumpsuit Pants"
+    "popularName": "Jumpsuit Pants Red"
   },
   {
     "className": "JungleBoots_Beige",
-    "popularName": "Jungle Boots"
+    "popularName": "Jungle Boots Beige"
   },
   {
     "className": "JungleBoots_Black",
-    "popularName": "Jungle Boots"
+    "popularName": "Jungle Boots Black"
   },
   {
     "className": "JungleBoots_Brown",
-    "popularName": "Jungle Boots"
+    "popularName": "Jungle Boots Brown"
   },
   {
     "className": "JungleBoots_Green",
-    "popularName": "Jungle Boots"
+    "popularName": "Jungle Boots Green"
   },
   {
     "className": "JungleBoots_Olive",
-    "popularName": "Jungle Boots"
+    "popularName": "Jungle Boots Olive"
   },
   {
     "className": "KashtanOptic",
@@ -3521,15 +3521,15 @@
   },
   {
     "className": "LeatherBelt_Beige",
-    "popularName": "Leather Belt"
+    "popularName": "Leather Belt Beige"
   },
   {
     "className": "LeatherBelt_Black",
-    "popularName": "Leather Belt"
+    "popularName": "Leather Belt Black"
   },
   {
     "className": "LeatherBelt_Brown",
-    "popularName": "Leather Belt"
+    "popularName": "Leather Belt Brown"
   },
   {
     "className": "LeatherBelt_Natural",
@@ -3537,15 +3537,15 @@
   },
   {
     "className": "LeatherGloves_Beige",
-    "popularName": "Leather Gloves"
+    "popularName": "Leather Gloves Beige"
   },
   {
     "className": "LeatherGloves_Black",
-    "popularName": "Leather Gloves"
+    "popularName": "Leather Gloves Black"
   },
   {
     "className": "LeatherGloves_Brown",
-    "popularName": "Leather Gloves"
+    "popularName": "Leather Gloves Brown"
   },
   {
     "className": "LeatherGloves_Natural",
@@ -3553,15 +3553,15 @@
   },
   {
     "className": "LeatherHat_Beige",
-    "popularName": "Leather Hat"
+    "popularName": "Leather Hat Beige"
   },
   {
     "className": "LeatherHat_Black",
-    "popularName": "Leather Hat"
+    "popularName": "Leather Hat Black"
   },
   {
     "className": "LeatherHat_Brown",
-    "popularName": "Leather Hat"
+    "popularName": "Leather Hat Brown"
   },
   {
     "className": "LeatherHat_Natural",
@@ -3569,15 +3569,15 @@
   },
   {
     "className": "LeatherJacket_Beige",
-    "popularName": "Leather Jacket"
+    "popularName": "Leather Jacket Beige"
   },
   {
     "className": "LeatherJacket_Black",
-    "popularName": "Leather Jacket"
+    "popularName": "Leather Jacket Black"
   },
   {
     "className": "LeatherJacket_Brown",
-    "popularName": "Leather Jacket"
+    "popularName": "Leather Jacket Brown"
   },
   {
     "className": "LeatherJacket_Natural",
@@ -3589,15 +3589,15 @@
   },
   {
     "className": "LeatherPants_Beige",
-    "popularName": "Leather Pants"
+    "popularName": "Leather Pants Beige"
   },
   {
     "className": "LeatherPants_Black",
-    "popularName": "Leather Pants"
+    "popularName": "Leather Pants Black"
   },
   {
     "className": "LeatherPants_Brown",
-    "popularName": "Leather Pants"
+    "popularName": "Leather Pants Brown"
   },
   {
     "className": "LeatherPants_Natural",
@@ -3605,15 +3605,15 @@
   },
   {
     "className": "LeatherSack_Beige",
-    "popularName": "Leather Backpack"
+    "popularName": "Leather Backpack Beige"
   },
   {
     "className": "LeatherSack_Black",
-    "popularName": "Leather Backpack"
+    "popularName": "Leather Backpack Black"
   },
   {
     "className": "LeatherSack_Brown",
-    "popularName": "Leather Backpack"
+    "popularName": "Leather Backpack Brown"
   },
   {
     "className": "LeatherSack_Natural",
@@ -3629,15 +3629,15 @@
   },
   {
     "className": "LeatherShoes_Beige",
-    "popularName": "Leather Shoes"
+    "popularName": "Leather Shoes Beige"
   },
   {
     "className": "LeatherShoes_Black",
-    "popularName": "Leather Shoes"
+    "popularName": "Leather Shoes Black"
   },
   {
     "className": "LeatherShoes_Brown",
-    "popularName": "Leather Shoes"
+    "popularName": "Leather Shoes Brown"
   },
   {
     "className": "LeatherShoes_Natural",
@@ -3645,15 +3645,15 @@
   },
   {
     "className": "LeatherStorageVest_Beige",
-    "popularName": "Leather Vest"
+    "popularName": "Leather Vest Beige"
   },
   {
     "className": "LeatherStorageVest_Black",
-    "popularName": "Leather Vest"
+    "popularName": "Leather Vest Black"
   },
   {
     "className": "LeatherStorageVest_Brown",
-    "popularName": "Leather Vest"
+    "popularName": "Leather Vest Brown"
   },
   {
     "className": "LeatherStorageVest_Natural",
@@ -3681,7 +3681,7 @@
   },
   {
     "className": "M18SmokeGrenade_Green",
-    "popularName": "1-M8 Smoke Grenade"
+    "popularName": "1-M8 Smoke Grenade Green"
   },
   {
     "className": "M18SmokeGrenade_Purple",
@@ -3689,15 +3689,15 @@
   },
   {
     "className": "M18SmokeGrenade_Red",
-    "popularName": "1-M8 Smoke Grenade"
+    "popularName": "1-M8 Smoke Grenade Red"
   },
   {
     "className": "M18SmokeGrenade_White",
-    "popularName": "1-M8 Smoke Grenade"
+    "popularName": "1-M8 Smoke Grenade White"
   },
   {
     "className": "M18SmokeGrenade_Yellow",
-    "popularName": "1-M8 Smoke Grenade"
+    "popularName": "1-M8 Smoke Grenade Yellow"
   },
   {
     "className": "M4A1",
@@ -3705,11 +3705,11 @@
   },
   {
     "className": "M4A1_Black",
-    "popularName": "M4-A1"
+    "popularName": "M4-A1 Black"
   },
   {
     "className": "M4A1_Green",
-    "popularName": "M4-A1"
+    "popularName": "M4-A1 Green"
   },
   {
     "className": "M4_CQBBttstck",
@@ -3717,11 +3717,11 @@
   },
   {
     "className": "M4_CQBBttstck_Black",
-    "popularName": "M4-A1 CQB Buttstock"
+    "popularName": "M4-A1 CQB Buttstock Black"
   },
   {
     "className": "M4_CQBBttstck_Green",
-    "popularName": "M4-A1 CQB Buttstock"
+    "popularName": "M4-A1 CQB Buttstock Green"
   },
   {
     "className": "M4_CarryHandleOptic",
@@ -3733,11 +3733,11 @@
   },
   {
     "className": "M4_MPBttstck_Black",
-    "popularName": "M4-A1 MP Buttstock"
+    "popularName": "M4-A1 MP Buttstock Black"
   },
   {
     "className": "M4_MPBttstck_Green",
-    "popularName": "M4-A1 MP Buttstock"
+    "popularName": "M4-A1 MP Buttstock Green"
   },
   {
     "className": "M4_MPHndgrd",
@@ -3745,11 +3745,11 @@
   },
   {
     "className": "M4_MPHndgrd_Black",
-    "popularName": "M4-A1 MP Handguard"
+    "popularName": "M4-A1 MP Handguard Black"
   },
   {
     "className": "M4_MPHndgrd_Green",
-    "popularName": "M4-A1 MP Handguard"
+    "popularName": "M4-A1 MP Handguard Green"
   },
   {
     "className": "M4_OEBttstck",
@@ -3757,11 +3757,11 @@
   },
   {
     "className": "M4_OEBttstck_Black",
-    "popularName": "M4-A1 Telescopic Buttstock"
+    "popularName": "M4-A1 Telescopic Buttstock Black"
   },
   {
     "className": "M4_OEBttstck_Green",
-    "popularName": "M4-A1 Telescopic Buttstock"
+    "popularName": "M4-A1 Telescopic Buttstock Green"
   },
   {
     "className": "M4_PlasticHndgrd",
@@ -3769,11 +3769,11 @@
   },
   {
     "className": "M4_PlasticHndgrd_Black",
-    "popularName": "M4-A1 Polymer Handguard"
+    "popularName": "M4-A1 Polymer Handguard Black"
   },
   {
     "className": "M4_PlasticHndgrd_Green",
-    "popularName": "M4-A1 Polymer Handguard"
+    "popularName": "M4-A1 Polymer Handguard Green"
   },
   {
     "className": "M4_RISHndgrd",
@@ -3781,11 +3781,11 @@
   },
   {
     "className": "M4_RISHndgrd_Black",
-    "popularName": "M4-A1 Rail Handguard"
+    "popularName": "M4-A1 Rail Handguard Black"
   },
   {
     "className": "M4_RISHndgrd_Green",
-    "popularName": "M4-A1 Rail Handguard"
+    "popularName": "M4-A1 Rail Handguard Green"
   },
   {
     "className": "M4_Suppressor",
@@ -3797,19 +3797,19 @@
   },
   {
     "className": "M65Jacket_Black",
-    "popularName": "Field Jacket"
+    "popularName": "Field Jacket Black"
   },
   {
     "className": "M65Jacket_Khaki",
-    "popularName": "Field Jacket"
+    "popularName": "Field Jacket Khaki"
   },
   {
     "className": "M65Jacket_Olive",
-    "popularName": "Field Jacket"
+    "popularName": "Field Jacket Olive"
   },
   {
     "className": "M65Jacket_Tan",
-    "popularName": "Field Jacket"
+    "popularName": "Field Jacket Tan"
   },
   {
     "className": "M67Grenade",
@@ -3873,11 +3873,11 @@
   },
   {
     "className": "Mag_AK101_30Rnd_Black",
-    "popularName": "30rd KA-101 Mag"
+    "popularName": "30rd KA-101 Mag Black"
   },
   {
     "className": "Mag_AK101_30Rnd_Green",
-    "popularName": "30rd KA-101 Mag"
+    "popularName": "30rd KA-101 Mag Green"
   },
   {
     "className": "Mag_AK74_30Rnd",
@@ -3885,11 +3885,11 @@
   },
   {
     "className": "Mag_AK74_30Rnd_Black",
-    "popularName": "30rd KA-74 Mag"
+    "popularName": "30rd KA-74 Mag Black"
   },
   {
     "className": "Mag_AK74_30Rnd_Green",
-    "popularName": "30rd KA-74 Mag"
+    "popularName": "30rd KA-74 Mag Green"
   },
   {
     "className": "Mag_AKM_30Rnd",
@@ -3901,11 +3901,11 @@
   },
   {
     "className": "Mag_AKM_Drum75Rnd_Black",
-    "popularName": "75rd KA-M Drum Mag"
+    "popularName": "75rd KA-M Drum Mag Black"
   },
   {
     "className": "Mag_AKM_Drum75Rnd_Green",
-    "popularName": "75rd KA-M Drum Mag"
+    "popularName": "75rd KA-M Drum Mag Green"
   },
   {
     "className": "Mag_AKM_Drum_TEST",
@@ -3917,11 +3917,11 @@
   },
   {
     "className": "Mag_AKM_Palm30Rnd_Black",
-    "popularName": "30rd KA-M Polymer Mag"
+    "popularName": "30rd KA-M Polymer Mag Black"
   },
   {
     "className": "Mag_AKM_Palm30Rnd_Green",
-    "popularName": "30rd KA-M Polymer Mag"
+    "popularName": "30rd KA-M Polymer Mag Green"
   },
   {
     "className": "Mag_CLIP762x39_10Rnd",
@@ -3937,11 +3937,11 @@
   },
   {
     "className": "Mag_CMAG_10Rnd_Black",
-    "popularName": "10rd Mag-C Magazine"
+    "popularName": "10rd Mag-C Magazine Black"
   },
   {
     "className": "Mag_CMAG_10Rnd_Green",
-    "popularName": "10rd Mag-C Magazine"
+    "popularName": "10rd Mag-C Magazine Green"
   },
   {
     "className": "Mag_CMAG_20Rnd",
@@ -3949,11 +3949,11 @@
   },
   {
     "className": "Mag_CMAG_20Rnd_Black",
-    "popularName": "20rd Mag-C Magazine"
+    "popularName": "20rd Mag-C Magazine Black"
   },
   {
     "className": "Mag_CMAG_20Rnd_Green",
-    "popularName": "20rd Mag-C Magazine"
+    "popularName": "20rd Mag-C Magazine Green"
   },
   {
     "className": "Mag_CMAG_30Rnd",
@@ -3961,11 +3961,11 @@
   },
   {
     "className": "Mag_CMAG_30Rnd_Black",
-    "popularName": "30rd Mag-C Magazine"
+    "popularName": "30rd Mag-C Magazine Black"
   },
   {
     "className": "Mag_CMAG_30Rnd_Green",
-    "popularName": "30rd Mag-C Magazine"
+    "popularName": "30rd Mag-C Magazine Green"
   },
   {
     "className": "Mag_CMAG_40Rnd",
@@ -3973,11 +3973,11 @@
   },
   {
     "className": "Mag_CMAG_40Rnd_Black",
-    "popularName": "40rd Mag-C Magazine"
+    "popularName": "40rd Mag-C Magazine Black"
   },
   {
     "className": "Mag_CMAG_40Rnd_Green",
-    "popularName": "40rd Mag-C Magazine"
+    "popularName": "40rd Mag-C Magazine Green"
   },
   {
     "className": "Mag_CZ527_5rnd",
@@ -4333,19 +4333,19 @@
   },
   {
     "className": "ManSuit_Beige",
-    "popularName": "Mens Suit Jacket"
+    "popularName": "Mens Suit Jacket Beige"
   },
   {
     "className": "ManSuit_Black",
-    "popularName": "Mens Suit Jacket"
+    "popularName": "Mens Suit Jacket Black"
   },
   {
     "className": "ManSuit_Blue",
-    "popularName": "Mens Suit Jacket"
+    "popularName": "Mens Suit Jacket Blue"
   },
   {
     "className": "ManSuit_Brown",
-    "popularName": "Mens Suit Jacket"
+    "popularName": "Mens Suit Jacket Brown"
   },
   {
     "className": "ManSuit_DarkGrey",
@@ -4353,7 +4353,7 @@
   },
   {
     "className": "ManSuit_Khaki",
-    "popularName": "Mens Suit Jacket"
+    "popularName": "Mens Suit Jacket Khaki"
   },
   {
     "className": "ManSuit_LightGrey",
@@ -4361,7 +4361,7 @@
   },
   {
     "className": "ManSuit_White",
-    "popularName": "Mens Suit Jacket"
+    "popularName": "Mens Suit Jacket White"
   },
   {
     "className": "Marmalade",
@@ -4373,39 +4373,39 @@
   },
   {
     "className": "MedicalScrubsHat_Blue",
-    "popularName": "Scrub Hat"
+    "popularName": "Scrub Hat Blue"
   },
   {
     "className": "MedicalScrubsHat_Green",
-    "popularName": "Scrub Hat"
+    "popularName": "Scrub Hat Green"
   },
   {
     "className": "MedicalScrubsHat_White",
-    "popularName": "Scrub Hat"
+    "popularName": "Scrub Hat White"
   },
   {
     "className": "MedicalScrubsPants_Blue",
-    "popularName": "Scrub Pants"
+    "popularName": "Scrub Pants Blue"
   },
   {
     "className": "MedicalScrubsPants_Green",
-    "popularName": "Scrub Pants"
+    "popularName": "Scrub Pants Green"
   },
   {
     "className": "MedicalScrubsPants_White",
-    "popularName": "Scrub Pants"
+    "popularName": "Scrub Pants White"
   },
   {
     "className": "MedicalScrubsShirt_Blue",
-    "popularName": "Scrub T-Shirt"
+    "popularName": "Scrub T-Shirt Blue"
   },
   {
     "className": "MedicalScrubsShirt_Green",
-    "popularName": "Scrub T-Shirt"
+    "popularName": "Scrub T-Shirt Green"
   },
   {
     "className": "MedicalScrubsShirt_White",
-    "popularName": "Scrub T-Shirt"
+    "popularName": "Scrub T-Shirt White"
   },
   {
     "className": "MediumGasCanister",
@@ -4457,7 +4457,7 @@
   },
   {
     "className": "MilitaryBeret_Red",
-    "popularName": "Beret"
+    "popularName": "Beret Red"
   },
   {
     "className": "MilitaryBeret_UN",
@@ -4465,11 +4465,11 @@
   },
   {
     "className": "MilitaryBoots_Beige",
-    "popularName": "Assault Boots"
+    "popularName": "Assault Boots Beige"
   },
   {
     "className": "MilitaryBoots_Black",
-    "popularName": "Assault Boots"
+    "popularName": "Assault Boots Black"
   },
   {
     "className": "MilitaryBoots_Bluerock",
@@ -4477,7 +4477,7 @@
   },
   {
     "className": "MilitaryBoots_Brown",
-    "popularName": "Assault Boots"
+    "popularName": "Assault Boots Brown"
   },
   {
     "className": "MilitaryBoots_Redpunk",
@@ -4501,7 +4501,7 @@
   },
   {
     "className": "MiniDress_Pink",
-    "popularName": "Collar Dress"
+    "popularName": "Collar Dress Pink"
   },
   {
     "className": "MiniDress_PinkChecker",
@@ -4525,15 +4525,15 @@
   },
   {
     "className": "Mosin9130_Black",
-    "popularName": "Mosin 91/30"
+    "popularName": "Mosin 91/30 Black"
   },
   {
     "className": "Mosin9130_Camo",
-    "popularName": "Mosin 91/30"
+    "popularName": "Mosin 91/30 Camo"
   },
   {
     "className": "Mosin9130_Green",
-    "popularName": "Mosin 91/30"
+    "popularName": "Mosin 91/30 Green"
   },
   {
     "className": "Mosin_Bayonet",
@@ -4545,19 +4545,19 @@
   },
   {
     "className": "MotoHelmet_Black",
-    "popularName": "Motorbike Helmet"
+    "popularName": "Motorbike Helmet Black"
   },
   {
     "className": "MotoHelmet_Blue",
-    "popularName": "Motorbike Helmet"
+    "popularName": "Motorbike Helmet Blue"
   },
   {
     "className": "MotoHelmet_Green",
-    "popularName": "Motorbike Helmet"
+    "popularName": "Motorbike Helmet Green"
   },
   {
     "className": "MotoHelmet_Grey",
-    "popularName": "Motorbike Helmet"
+    "popularName": "Motorbike Helmet Grey"
   },
   {
     "className": "MotoHelmet_Lime",
@@ -4565,27 +4565,27 @@
   },
   {
     "className": "MotoHelmet_Red",
-    "popularName": "Motorbike Helmet"
+    "popularName": "Motorbike Helmet Red"
   },
   {
     "className": "MotoHelmet_White",
-    "popularName": "Motorbike Helmet"
+    "popularName": "Motorbike Helmet White"
   },
   {
     "className": "MountainBag_Blue",
-    "popularName": "Mountain Backpack"
+    "popularName": "Mountain Backpack Blue"
   },
   {
     "className": "MountainBag_Green",
-    "popularName": "Mountain Backpack"
+    "popularName": "Mountain Backpack Green"
   },
   {
     "className": "MountainBag_Orange",
-    "popularName": "Mountain Backpack"
+    "popularName": "Mountain Backpack Orange"
   },
   {
     "className": "MountainBag_Red",
-    "popularName": "Mountain Backpack"
+    "popularName": "Mountain Backpack Red"
   },
   {
     "className": "MouthRag",
@@ -4657,11 +4657,11 @@
   },
   {
     "className": "NurseDress_Blue",
-    "popularName": "Nurse Dress"
+    "popularName": "Nurse Dress Blue"
   },
   {
     "className": "NurseDress_White",
-    "popularName": "Nurse Dress"
+    "popularName": "Nurse Dress White"
   },
   {
     "className": "NylonKnifeSheath",
@@ -4669,11 +4669,11 @@
   },
   {
     "className": "OMNOGloves_Brown",
-    "popularName": "Combat Gloves"
+    "popularName": "Combat Gloves Brown"
   },
   {
     "className": "OMNOGloves_Gray",
-    "popularName": "Combat Gloves"
+    "popularName": "Combat Gloves Grey"
   },
   {
     "className": "OfficerHat",
@@ -4685,11 +4685,11 @@
   },
   {
     "className": "OffroadHatchback_Blue",
-    "popularName": "Ada 4x4"
+    "popularName": "Ada 4x4 Blue"
   },
   {
     "className": "OffroadHatchback_White",
-    "popularName": "Ada 4x4"
+    "popularName": "Ada 4x4 White"
   },
   {
     "className": "OrienteeringCompass",
@@ -4721,27 +4721,27 @@
   },
   {
     "className": "ParamedicJacket_Blue",
-    "popularName": "Paramedic Jacket"
+    "popularName": "Paramedic Jacket Blue"
   },
   {
     "className": "ParamedicJacket_Crimson",
-    "popularName": "Paramedic Jacket"
+    "popularName": "Paramedic Jacket Crimson"
   },
   {
     "className": "ParamedicJacket_Green",
-    "popularName": "Paramedic Jacket"
+    "popularName": "Paramedic Jacket Green"
   },
   {
     "className": "ParamedicPants_Blue",
-    "popularName": "Paramedic Pants"
+    "popularName": "Paramedic Pants Blue"
   },
   {
     "className": "ParamedicPants_Crimson",
-    "popularName": "Paramedic Pants"
+    "popularName": "Paramedic Pants Crimson"
   },
   {
     "className": "ParamedicPants_Green",
-    "popularName": "Paramedic Pants"
+    "popularName": "Paramedic Pants Green"
   },
   {
     "className": "PartyTent",
@@ -4761,19 +4761,19 @@
   },
   {
     "className": "Pen_Black",
-    "popularName": "Pen"
+    "popularName": "Pen Black"
   },
   {
     "className": "Pen_Blue",
-    "popularName": "Pen"
+    "popularName": "Pen Blue"
   },
   {
     "className": "Pen_Green",
-    "popularName": "Pen"
+    "popularName": "Pen Green"
   },
   {
     "className": "Pen_Red",
-    "popularName": "Pen"
+    "popularName": "Pen Red"
   },
   {
     "className": "PepperSeeds",
@@ -4921,7 +4921,7 @@
   },
   {
     "className": "PressVest_Blue",
-    "popularName": "Ballistic Vest"
+    "popularName": "Ballistic Vest Blue"
   },
   {
     "className": "PressVest_LightBlue",
@@ -4969,27 +4969,27 @@
   },
   {
     "className": "QuiltedJacket_Black",
-    "popularName": "Quilted Jacket"
+    "popularName": "Quilted Jacket Black"
   },
   {
     "className": "QuiltedJacket_Blue",
-    "popularName": "Quilted Jacket"
+    "popularName": "Quilted Jacket Blue"
   },
   {
     "className": "QuiltedJacket_Green",
-    "popularName": "Quilted Jacket"
+    "popularName": "Quilted Jacket Green"
   },
   {
     "className": "QuiltedJacket_Grey",
-    "popularName": "Quilted Jacket"
+    "popularName": "Quilted Jacket Grey"
   },
   {
     "className": "QuiltedJacket_Orange",
-    "popularName": "Quilted Jacket"
+    "popularName": "Quilted Jacket Orange"
   },
   {
     "className": "QuiltedJacket_Red",
-    "popularName": "Quilted Jacket"
+    "popularName": "Quilted Jacket Red"
   },
   {
     "className": "QuiltedJacket_Violet",
@@ -4997,15 +4997,15 @@
   },
   {
     "className": "QuiltedJacket_Yellow",
-    "popularName": "Quilted Jacket"
+    "popularName": "Quilted Jacket Yellow"
   },
   {
     "className": "RDG2SmokeGrenade_Black",
-    "popularName": "EGD-2 Smoke Grenade"
+    "popularName": "EGD-2 Smoke Grenade Black"
   },
   {
     "className": "RDG2SmokeGrenade_White",
-    "popularName": "EGD-2 Smoke Grenade"
+    "popularName": "EGD-2 Smoke Grenade White"
   },
   {
     "className": "RGD5Grenade",
@@ -5013,23 +5013,23 @@
   },
   {
     "className": "RadarCap_Black",
-    "popularName": "Radar Cap"
+    "popularName": "Radar Cap Black"
   },
   {
     "className": "RadarCap_Blue",
-    "popularName": "Radar Cap"
+    "popularName": "Radar Cap Blue"
   },
   {
     "className": "RadarCap_Brown",
-    "popularName": "Radar Cap"
+    "popularName": "Radar Cap Brown"
   },
   {
     "className": "RadarCap_Green",
-    "popularName": "Radar Cap"
+    "popularName": "Radar Cap Green"
   },
   {
     "className": "RadarCap_Red",
-    "popularName": "Radar Cap"
+    "popularName": "Radar Cap Red"
   },
   {
     "className": "Rag",
@@ -5037,31 +5037,31 @@
   },
   {
     "className": "Raincoat_Black",
-    "popularName": "Raincoat"
+    "popularName": "Raincoat Black"
   },
   {
     "className": "Raincoat_Blue",
-    "popularName": "Raincoat"
+    "popularName": "Raincoat Blue"
   },
   {
     "className": "Raincoat_Green",
-    "popularName": "Raincoat"
+    "popularName": "Raincoat Green"
   },
   {
     "className": "Raincoat_Orange",
-    "popularName": "Raincoat"
+    "popularName": "Raincoat Orange"
   },
   {
     "className": "Raincoat_Pink",
-    "popularName": "Raincoat"
+    "popularName": "Raincoat Pink"
   },
   {
     "className": "Raincoat_Red",
-    "popularName": "Raincoat"
+    "popularName": "Raincoat Red"
   },
   {
     "className": "Raincoat_Yellow",
-    "popularName": "Raincoat"
+    "popularName": "Raincoat Yellow"
   },
   {
     "className": "Rangefinder",
@@ -5085,7 +5085,7 @@
   },
   {
     "className": "RidersJacket_Black",
-    "popularName": "Rider Jacket"
+    "popularName": "Rider Jacket Black"
   },
   {
     "className": "Roadflare",
@@ -5117,11 +5117,11 @@
   },
   {
     "className": "SKS_Black",
-    "popularName": "SK 59/66"
+    "popularName": "SK 59/66 Black"
   },
   {
     "className": "SKS_Green",
-    "popularName": "SK 59/66"
+    "popularName": "SK 59/66 Green"
   },
   {
     "className": "SVD",
@@ -5185,15 +5185,15 @@
   },
   {
     "className": "SawedoffMosin9130_Black",
-    "popularName": "Sawed-off Mosin 91/30"
+    "popularName": "Sawed-off Mosin 91/30 Black"
   },
   {
     "className": "SawedoffMosin9130_Camo",
-    "popularName": "Sawed-off Mosin 91/30"
+    "popularName": "Sawed-off Mosin 91/30 Camo"
   },
   {
     "className": "SawedoffMosin9130_Green",
-    "popularName": "Sawed-off Mosin 91/30"
+    "popularName": "Sawed-off Mosin 91/30 Green"
   },
   {
     "className": "Screwdriver",
@@ -5221,7 +5221,7 @@
   },
   {
     "className": "Sedan_02_Door_1_1_Grey",
-    "popularName": "Sarka 120 Front Left Door"
+    "popularName": "Sarka 120 Front Left Door Grey"
   },
   {
     "className": "Sedan_02_Door_1_1_GreyRust",
@@ -5229,7 +5229,7 @@
   },
   {
     "className": "Sedan_02_Door_1_1_Red",
-    "popularName": "Sarka 120 Front Left Door"
+    "popularName": "Sarka 120 Front Left Door Red"
   },
   {
     "className": "Sedan_02_Door_1_1_RedRust",
@@ -5245,7 +5245,7 @@
   },
   {
     "className": "Sedan_02_Door_1_2_Grey",
-    "popularName": "Sarka 120 Rear Left Door"
+    "popularName": "Sarka 120 Rear Left Door Grey"
   },
   {
     "className": "Sedan_02_Door_1_2_GreyRust",
@@ -5253,7 +5253,7 @@
   },
   {
     "className": "Sedan_02_Door_1_2_Red",
-    "popularName": "Sarka 120 Rear Left Door"
+    "popularName": "Sarka 120 Rear Left Door Red"
   },
   {
     "className": "Sedan_02_Door_1_2_RedRust",
@@ -5269,7 +5269,7 @@
   },
   {
     "className": "Sedan_02_Door_2_1_Grey",
-    "popularName": "Sarka 120 Front Right Door"
+    "popularName": "Sarka 120 Front Right Door Grey"
   },
   {
     "className": "Sedan_02_Door_2_1_GreyRust",
@@ -5277,7 +5277,7 @@
   },
   {
     "className": "Sedan_02_Door_2_1_Red",
-    "popularName": "Sarka 120 Front Right Door"
+    "popularName": "Sarka 120 Front Right Door Red"
   },
   {
     "className": "Sedan_02_Door_2_1_RedRust",
@@ -5293,7 +5293,7 @@
   },
   {
     "className": "Sedan_02_Door_2_2_Grey",
-    "popularName": "Sarka 120 Rear Right Door"
+    "popularName": "Sarka 120 Rear Right Door Grey"
   },
   {
     "className": "Sedan_02_Door_2_2_GreyRust",
@@ -5301,7 +5301,7 @@
   },
   {
     "className": "Sedan_02_Door_2_2_Red",
-    "popularName": "Sarka 120 Rear Right Door"
+    "popularName": "Sarka 120 Rear Right Door Red"
   },
   {
     "className": "Sedan_02_Door_2_2_RedRust",
@@ -5313,7 +5313,7 @@
   },
   {
     "className": "Sedan_02_Grey",
-    "popularName": "Sarka 120"
+    "popularName": "Sarka 120 Grey"
   },
   {
     "className": "Sedan_02_Hood",
@@ -5321,7 +5321,7 @@
   },
   {
     "className": "Sedan_02_Hood_Grey",
-    "popularName": "Sarka 120 Hood"
+    "popularName": "Sarka 120 Hood Grey"
   },
   {
     "className": "Sedan_02_Hood_GreyRust",
@@ -5329,7 +5329,7 @@
   },
   {
     "className": "Sedan_02_Hood_Red",
-    "popularName": "Sarka 120 Hood"
+    "popularName": "Sarka 120 Hood Red"
   },
   {
     "className": "Sedan_02_Hood_RedRust",
@@ -5341,7 +5341,7 @@
   },
   {
     "className": "Sedan_02_Red",
-    "popularName": "Sarka 120"
+    "popularName": "Sarka 120 Red"
   },
   {
     "className": "Sedan_02_Trunk",
@@ -5349,7 +5349,7 @@
   },
   {
     "className": "Sedan_02_Trunk_Grey",
-    "popularName": "Sarka 120 Trunk Door"
+    "popularName": "Sarka 120 Trunk Door Grey"
   },
   {
     "className": "Sedan_02_Trunk_GreyRust",
@@ -5357,7 +5357,7 @@
   },
   {
     "className": "Sedan_02_Trunk_Red",
-    "popularName": "Sarka 120 Trunk Door"
+    "popularName": "Sarka 120 Trunk Door Red"
   },
   {
     "className": "Sedan_02_Trunk_RedRust",
@@ -5425,15 +5425,15 @@
   },
   {
     "className": "ShortJeans_Black",
-    "popularName": "Denim Shorts"
+    "popularName": "Denim Shorts Black"
   },
   {
     "className": "ShortJeans_Blue",
-    "popularName": "Denim Shorts"
+    "popularName": "Denim Shorts Blue"
   },
   {
     "className": "ShortJeans_Brown",
-    "popularName": "Denim Shorts"
+    "popularName": "Denim Shorts Brown"
   },
   {
     "className": "ShortJeans_Darkblue",
@@ -5441,11 +5441,11 @@
   },
   {
     "className": "ShortJeans_Green",
-    "popularName": "Denim Shorts"
+    "popularName": "Denim Shorts Green"
   },
   {
     "className": "ShortJeans_Red",
-    "popularName": "Denim Shorts"
+    "popularName": "Denim Shorts Red"
   },
   {
     "className": "Shovel",
@@ -5453,55 +5453,55 @@
   },
   {
     "className": "SkateHelmet_Black",
-    "popularName": "Skate Helmet"
+    "popularName": "Skate Helmet Black"
   },
   {
     "className": "SkateHelmet_Blue",
-    "popularName": "Skate Helmet"
+    "popularName": "Skate Helmet Blue"
   },
   {
     "className": "SkateHelmet_Gray",
-    "popularName": "Skate Helmet"
+    "popularName": "Skate Helmet Grey"
   },
   {
     "className": "SkateHelmet_Green",
-    "popularName": "Skate Helmet"
+    "popularName": "Skate Helmet Green"
   },
   {
     "className": "SkateHelmet_Red",
-    "popularName": "Skate Helmet"
+    "popularName": "Skate Helmet Red"
   },
   {
     "className": "Skirt_Blue",
-    "popularName": "Denim Skirt"
+    "popularName": "Denim Skirt Blue"
   },
   {
     "className": "Skirt_Red",
-    "popularName": "Denim Skirt"
+    "popularName": "Denim Skirt Red"
   },
   {
     "className": "Skirt_White",
-    "popularName": "Denim Skirt"
+    "popularName": "Denim Skirt White"
   },
   {
     "className": "Skirt_Yellow",
-    "popularName": "Denim Skirt"
+    "popularName": "Denim Skirt Yellow"
   },
   {
     "className": "SlacksPants_Beige",
-    "popularName": "Suit Pants"
+    "popularName": "Suit Pants Beige"
   },
   {
     "className": "SlacksPants_Black",
-    "popularName": "Suit Pants"
+    "popularName": "Suit Pants Black"
   },
   {
     "className": "SlacksPants_Blue",
-    "popularName": "Suit Pants"
+    "popularName": "Suit Pants Blue"
   },
   {
     "className": "SlacksPants_Brown",
-    "popularName": "Suit Pants"
+    "popularName": "Suit Pants Brown"
   },
   {
     "className": "SlacksPants_DarkGrey",
@@ -5509,7 +5509,7 @@
   },
   {
     "className": "SlacksPants_Khaki",
-    "popularName": "Suit Pants"
+    "popularName": "Suit Pants Khaki"
   },
   {
     "className": "SlacksPants_LightGrey",
@@ -5517,7 +5517,7 @@
   },
   {
     "className": "SlacksPants_White",
-    "popularName": "Suit Pants"
+    "popularName": "Suit Pants White"
   },
   {
     "className": "SledgeHammer",
@@ -5549,23 +5549,23 @@
   },
   {
     "className": "Sneakers_Black",
-    "popularName": "Sneakers"
+    "popularName": "Sneakers Black"
   },
   {
     "className": "Sneakers_Gray",
-    "popularName": "Sneakers"
+    "popularName": "Sneakers Grey"
   },
   {
     "className": "Sneakers_Green",
-    "popularName": "Sneakers"
+    "popularName": "Sneakers Green"
   },
   {
     "className": "Sneakers_Red",
-    "popularName": "Sneakers"
+    "popularName": "Sneakers Red"
   },
   {
     "className": "Sneakers_White",
-    "popularName": "Sneakers"
+    "popularName": "Sneakers White"
   },
   {
     "className": "SodaCan_Cola",
@@ -5601,19 +5601,19 @@
   },
   {
     "className": "SportGlasses_Black",
-    "popularName": "Athletic Sunglasses"
+    "popularName": "Athletic Sunglasses Black"
   },
   {
     "className": "SportGlasses_Blue",
-    "popularName": "Athletic Sunglasses"
+    "popularName": "Athletic Sunglasses Blue"
   },
   {
     "className": "SportGlasses_Green",
-    "popularName": "Athletic Sunglasses"
+    "popularName": "Athletic Sunglasses Green"
   },
   {
     "className": "SportGlasses_Orange",
-    "popularName": "Athletic Sunglasses"
+    "popularName": "Athletic Sunglasses Orange"
   },
   {
     "className": "Spotlight",
@@ -5649,11 +5649,11 @@
   },
   {
     "className": "SurgicalGloves_Blue",
-    "popularName": "Surgical Gloves"
+    "popularName": "Surgical Gloves Blue"
   },
   {
     "className": "SurgicalGloves_Green",
-    "popularName": "Surgical Gloves"
+    "popularName": "Surgical Gloves Green"
   },
   {
     "className": "SurgicalGloves_LightBlue",
@@ -5661,7 +5661,7 @@
   },
   {
     "className": "SurgicalGloves_White",
-    "popularName": "Surgical Gloves"
+    "popularName": "Surgical Gloves White"
   },
   {
     "className": "SurgicalMask",
@@ -5789,19 +5789,19 @@
   },
   {
     "className": "Sweater_Blue",
-    "popularName": "Sweater"
+    "popularName": "Sweater Blue"
   },
   {
     "className": "Sweater_Gray",
-    "popularName": "Sweater"
+    "popularName": "Sweater Grey"
   },
   {
     "className": "Sweater_Green",
-    "popularName": "Sweater"
+    "popularName": "Sweater Green"
   },
   {
     "className": "Sweater_Red",
-    "popularName": "Sweater"
+    "popularName": "Sweater Red"
   },
   {
     "className": "Syringe",
@@ -5817,23 +5817,23 @@
   },
   {
     "className": "TShirt_Beige",
-    "popularName": "T-Shirt"
+    "popularName": "T-Shirt Beige"
   },
   {
     "className": "TShirt_Black",
-    "popularName": "T-Shirt"
+    "popularName": "T-Shirt Black"
   },
   {
     "className": "TShirt_Blue",
-    "popularName": "T-Shirt"
+    "popularName": "T-Shirt Blue"
   },
   {
     "className": "TShirt_Green",
-    "popularName": "T-Shirt"
+    "popularName": "T-Shirt Green"
   },
   {
     "className": "TShirt_Grey",
-    "popularName": "T-Shirt"
+    "popularName": "T-Shirt Grey"
   },
   {
     "className": "TShirt_OrangeWhiteStripes",
@@ -5841,7 +5841,7 @@
   },
   {
     "className": "TShirt_Red",
-    "popularName": "T-Shirt"
+    "popularName": "T-Shirt Red"
   },
   {
     "className": "TShirt_RedBlackStripes",
@@ -5849,7 +5849,7 @@
   },
   {
     "className": "TShirt_White",
-    "popularName": "T-Shirt"
+    "popularName": "T-Shirt White"
   },
   {
     "className": "TTSKOBoots",
@@ -5861,7 +5861,7 @@
   },
   {
     "className": "TTsKOJacket_Camo",
-    "popularName": "Combat Jacket"
+    "popularName": "Combat Jacket Camo"
   },
   {
     "className": "TacticalBaconCan",
@@ -5873,15 +5873,15 @@
   },
   {
     "className": "TacticalGloves_Beige",
-    "popularName": "Tactical Gloves"
+    "popularName": "Tactical Gloves Beige"
   },
   {
     "className": "TacticalGloves_Black",
-    "popularName": "Tactical Gloves"
+    "popularName": "Tactical Gloves Black"
   },
   {
     "className": "TacticalGloves_Green",
-    "popularName": "Tactical Gloves"
+    "popularName": "Tactical Gloves Green"
   },
   {
     "className": "TacticalGoggles",
@@ -5889,31 +5889,31 @@
   },
   {
     "className": "TacticalShirt_Black",
-    "popularName": "Tactical Shirt"
+    "popularName": "Tactical Shirt Black"
   },
   {
     "className": "TacticalShirt_Grey",
-    "popularName": "Tactical Shirt"
+    "popularName": "Tactical Shirt Grey"
   },
   {
     "className": "TacticalShirt_Olive",
-    "popularName": "Tactical Shirt"
+    "popularName": "Tactical Shirt Olive"
   },
   {
     "className": "TacticalShirt_Tan",
-    "popularName": "Tactical Shirt"
+    "popularName": "Tactical Shirt Tan"
   },
   {
     "className": "TaloonBag_Blue",
-    "popularName": "Hiking Backpack"
+    "popularName": "Hiking Backpack Blue"
   },
   {
     "className": "TaloonBag_Green",
-    "popularName": "Hiking Backpack"
+    "popularName": "Hiking Backpack Green"
   },
   {
     "className": "TaloonBag_Orange",
-    "popularName": "Hiking Backpack"
+    "popularName": "Hiking Backpack Orange"
   },
   {
     "className": "TaloonBag_Violet",
@@ -5973,15 +5973,15 @@
   },
   {
     "className": "TrackSuitJacket_Black",
-    "popularName": "Tracksuit Jacket"
+    "popularName": "Tracksuit Jacket Black"
   },
   {
     "className": "TrackSuitJacket_Blue",
-    "popularName": "Tracksuit Jacket"
+    "popularName": "Tracksuit Jacket Blue"
   },
   {
     "className": "TrackSuitJacket_Green",
-    "popularName": "Tracksuit Jacket"
+    "popularName": "Tracksuit Jacket Green"
   },
   {
     "className": "TrackSuitJacket_LightBlue",
@@ -5989,19 +5989,19 @@
   },
   {
     "className": "TrackSuitJacket_Red",
-    "popularName": "Tracksuit Jacket"
+    "popularName": "Tracksuit Jacket Red"
   },
   {
     "className": "TrackSuitPants_Black",
-    "popularName": "Tracksuit Pants"
+    "popularName": "Tracksuit Pants Black"
   },
   {
     "className": "TrackSuitPants_Blue",
-    "popularName": "Tracksuit Pants"
+    "popularName": "Tracksuit Pants Blue"
   },
   {
     "className": "TrackSuitPants_Green",
-    "popularName": "Tracksuit Pants"
+    "popularName": "Tracksuit Pants Green"
   },
   {
     "className": "TrackSuitPants_LightBlue",
@@ -6009,7 +6009,7 @@
   },
   {
     "className": "TrackSuitPants_Red",
-    "popularName": "Tracksuit Pants"
+    "popularName": "Tracksuit Pants Red"
   },
   {
     "className": "Tripod",
@@ -6025,15 +6025,15 @@
   },
   {
     "className": "Truck_01_Cargo_Blue",
-    "popularName": "M3S Cargo Chassis"
+    "popularName": "M3S Cargo Chassis Blue"
   },
   {
     "className": "Truck_01_Cargo_Grey",
-    "popularName": "M3S Cargo Chassis"
+    "popularName": "M3S Cargo Chassis Grey"
   },
   {
     "className": "Truck_01_Cargo_Orange",
-    "popularName": "M3S Cargo Chassis"
+    "popularName": "M3S Cargo Chassis Orange"
   },
   {
     "className": "Truck_01_Chassis",
@@ -6041,15 +6041,15 @@
   },
   {
     "className": "Truck_01_Chassis_Blue",
-    "popularName": "M3S Chassis"
+    "popularName": "M3S Chassis Blue"
   },
   {
     "className": "Truck_01_Chassis_Grey",
-    "popularName": "M3S Chassis"
+    "popularName": "M3S Chassis Grey"
   },
   {
     "className": "Truck_01_Chassis_Orange",
-    "popularName": "M3S Chassis"
+    "popularName": "M3S Chassis Orange"
   },
   {
     "className": "Truck_01_Door_1_1",
@@ -6057,15 +6057,15 @@
   },
   {
     "className": "Truck_01_Door_1_1_Blue",
-    "popularName": "M3S Left Door"
+    "popularName": "M3S Left Door Blue"
   },
   {
     "className": "Truck_01_Door_1_1_Grey",
-    "popularName": "M3S Left Door"
+    "popularName": "M3S Left Door Grey"
   },
   {
     "className": "Truck_01_Door_1_1_Orange",
-    "popularName": "M3S Left Door"
+    "popularName": "M3S Left Door Orange"
   },
   {
     "className": "Truck_01_Door_2_1",
@@ -6073,15 +6073,15 @@
   },
   {
     "className": "Truck_01_Door_2_1_Blue",
-    "popularName": "M3S Right Door"
+    "popularName": "M3S Right Door Blue"
   },
   {
     "className": "Truck_01_Door_2_1_Grey",
-    "popularName": "M3S Right Door"
+    "popularName": "M3S Right Door Grey"
   },
   {
     "className": "Truck_01_Door_2_1_Orange",
-    "popularName": "M3S Right Door"
+    "popularName": "M3S Right Door Orange"
   },
   {
     "className": "Truck_01_Hood",
@@ -6089,15 +6089,15 @@
   },
   {
     "className": "Truck_01_Hood_Blue",
-    "popularName": "M3S Hood"
+    "popularName": "M3S Hood Blue"
   },
   {
     "className": "Truck_01_Hood_Grey",
-    "popularName": "M3S Hood"
+    "popularName": "M3S Hood Grey"
   },
   {
     "className": "Truck_01_Hood_Orange",
-    "popularName": "M3S Hood"
+    "popularName": "M3S Hood Orange"
   },
   {
     "className": "Truck_01_Wheel",
@@ -6145,19 +6145,19 @@
   },
   {
     "className": "UKAssVest_Black",
-    "popularName": "Field Vest"
+    "popularName": "Field Vest Black"
   },
   {
     "className": "UKAssVest_Camo",
-    "popularName": "Field Vest"
+    "popularName": "Field Vest Camo"
   },
   {
     "className": "UKAssVest_Khaki",
-    "popularName": "Field Vest"
+    "popularName": "Field Vest Khaki"
   },
   {
     "className": "UKAssVest_Olive",
-    "popularName": "Field Vest"
+    "popularName": "Field Vest Olive"
   },
   {
     "className": "UMP45",
@@ -6169,7 +6169,7 @@
   },
   {
     "className": "USMCJacket_Woodland",
-    "popularName": "CUU Jacket"
+    "popularName": "CUU Jacket Woodland"
   },
   {
     "className": "USMCPants_Desert",
@@ -6177,7 +6177,7 @@
   },
   {
     "className": "USMCPants_Woodland",
-    "popularName": "CUU Pants"
+    "popularName": "CUU Pants Woodland"
   },
   {
     "className": "UndergroundStash",
@@ -6189,15 +6189,15 @@
   },
   {
     "className": "Ushanka_Black",
-    "popularName": "Ushanka"
+    "popularName": "Ushanka Black"
   },
   {
     "className": "Ushanka_Blue",
-    "popularName": "Ushanka"
+    "popularName": "Ushanka Blue"
   },
   {
     "className": "Ushanka_Green",
-    "popularName": "Ushanka"
+    "popularName": "Ushanka Green"
   },
   {
     "className": "VSS",
@@ -6241,15 +6241,15 @@
   },
   {
     "className": "WaterproofBag_Green",
-    "popularName": "Drysack"
+    "popularName": "Drysack Green"
   },
   {
     "className": "WaterproofBag_Orange",
-    "popularName": "Drysack"
+    "popularName": "Drysack Orange"
   },
   {
     "className": "WaterproofBag_Yellow",
-    "popularName": "Drysack"
+    "popularName": "Drysack Yellow"
   },
   {
     "className": "WeaponCleaningKit",
@@ -6261,19 +6261,19 @@
   },
   {
     "className": "Wellies_Black",
-    "popularName": "Wellies"
+    "popularName": "Wellies Black"
   },
   {
     "className": "Wellies_Brown",
-    "popularName": "Wellies"
+    "popularName": "Wellies Brown"
   },
   {
     "className": "Wellies_Green",
-    "popularName": "Wellies"
+    "popularName": "Wellies Green"
   },
   {
     "className": "Wellies_Grey",
-    "popularName": "Wellies"
+    "popularName": "Wellies Grey"
   },
   {
     "className": "Whetstone",
@@ -6289,11 +6289,11 @@
   },
   {
     "className": "Winchester70_Black",
-    "popularName": "M70 Tundra"
+    "popularName": "M70 Tundra Black"
   },
   {
     "className": "Winchester70_Green",
-    "popularName": "M70 Tundra"
+    "popularName": "M70 Tundra Green"
   },
   {
     "className": "WolfPelt",
@@ -6305,19 +6305,19 @@
   },
   {
     "className": "WomanSuit_Beige",
-    "popularName": "Womens Suit Jacket"
+    "popularName": "Womens Suit Jacket Beige"
   },
   {
     "className": "WomanSuit_Black",
-    "popularName": "Womens Suit Jacket"
+    "popularName": "Womens Suit Jacket Black"
   },
   {
     "className": "WomanSuit_Blue",
-    "popularName": "Womens Suit Jacket"
+    "popularName": "Womens Suit Jacket Blue"
   },
   {
     "className": "WomanSuit_Brown",
-    "popularName": "Womens Suit Jacket"
+    "popularName": "Womens Suit Jacket Brown"
   },
   {
     "className": "WomanSuit_DarkGrey",
@@ -6325,7 +6325,7 @@
   },
   {
     "className": "WomanSuit_Khaki",
-    "popularName": "Womens Suit Jacket"
+    "popularName": "Womens Suit Jacket Khaki"
   },
   {
     "className": "WomanSuit_LightGrey",
@@ -6333,7 +6333,7 @@
   },
   {
     "className": "WomanSuit_White",
-    "popularName": "Womens Suit Jacket"
+    "popularName": "Womens Suit Jacket White"
   },
   {
     "className": "WoodAxe",
@@ -6357,11 +6357,11 @@
   },
   {
     "className": "WoolCoat_Beige",
-    "popularName": "Pea Coat"
+    "popularName": "Pea Coat Beige"
   },
   {
     "className": "WoolCoat_Black",
-    "popularName": "Pea Coat"
+    "popularName": "Pea Coat Black"
   },
   {
     "className": "WoolCoat_BlackCheck",
@@ -6369,7 +6369,7 @@
   },
   {
     "className": "WoolCoat_Blue",
-    "popularName": "Pea Coat"
+    "popularName": "Pea Coat Blue"
   },
   {
     "className": "WoolCoat_BlueCheck",
@@ -6381,7 +6381,7 @@
   },
   {
     "className": "WoolCoat_Green",
-    "popularName": "Pea Coat"
+    "popularName": "Pea Coat Green"
   },
   {
     "className": "WoolCoat_GreyCheck",
@@ -6389,7 +6389,7 @@
   },
   {
     "className": "WoolCoat_Red",
-    "popularName": "Pea Coat"
+    "popularName": "Pea Coat Red"
   },
   {
     "className": "WoolCoat_RedCheck",
@@ -6397,39 +6397,39 @@
   },
   {
     "className": "WorkingBoots_Beige",
-    "popularName": "Working Boots"
+    "popularName": "Working Boots Beige"
   },
   {
     "className": "WorkingBoots_Brown",
-    "popularName": "Working Boots"
+    "popularName": "Working Boots Brown"
   },
   {
     "className": "WorkingBoots_Green",
-    "popularName": "Working Boots"
+    "popularName": "Working Boots Green"
   },
   {
     "className": "WorkingBoots_Grey",
-    "popularName": "Working Boots"
+    "popularName": "Working Boots Grey"
   },
   {
     "className": "WorkingBoots_Yellow",
-    "popularName": "Working Boots"
+    "popularName": "Working Boots Yellow"
   },
   {
     "className": "WorkingGloves_Beige",
-    "popularName": "Working Gloves"
+    "popularName": "Working Gloves Beige"
   },
   {
     "className": "WorkingGloves_Black",
-    "popularName": "Working Gloves"
+    "popularName": "Working Gloves Black"
   },
   {
     "className": "WorkingGloves_Brown",
-    "popularName": "Working Gloves"
+    "popularName": "Working Gloves Brown"
   },
   {
     "className": "WorkingGloves_Yellow",
-    "popularName": "Working Gloves"
+    "popularName": "Working Gloves Yellow"
   },
   {
     "className": "Worm",
@@ -6449,39 +6449,39 @@
   },
   {
     "className": "ZSh3PilotHelmet_Black",
-    "popularName": "Flight Helmet"
+    "popularName": "Flight Helmet Black"
   },
   {
     "className": "ZSh3PilotHelmet_Green",
-    "popularName": "Flight Helmet"
+    "popularName": "Flight Helmet Green"
   },
   {
     "className": "ZmbF_BlueCollarFat_Blue",
-    "popularName": "Infected"
+    "popularName": "Infected Blue"
   },
   {
     "className": "ZmbF_BlueCollarFat_Green",
-    "popularName": "Infected"
+    "popularName": "Infected Green"
   },
   {
     "className": "ZmbF_BlueCollarFat_Red",
-    "popularName": "Infected"
+    "popularName": "Infected Red"
   },
   {
     "className": "ZmbF_BlueCollarFat_White",
-    "popularName": "Infected"
+    "popularName": "Infected White"
   },
   {
     "className": "ZmbF_CitizenANormal_Beige",
-    "popularName": "Infected"
+    "popularName": "Infected Beige"
   },
   {
     "className": "ZmbF_CitizenANormal_Blue",
-    "popularName": "Infected"
+    "popularName": "Infected Blue"
   },
   {
     "className": "ZmbF_CitizenANormal_Brown",
-    "popularName": "Infected"
+    "popularName": "Infected Brown"
   },
   {
     "className": "ZmbF_CitizenBSkinny",
@@ -6489,7 +6489,7 @@
   },
   {
     "className": "ZmbF_ClerkFat_Black",
-    "popularName": "Infected"
+    "popularName": "Infected Black"
   },
   {
     "className": "ZmbF_ClerkFat_BluePattern",
@@ -6501,23 +6501,23 @@
   },
   {
     "className": "ZmbF_ClerkFat_White",
-    "popularName": "Infected"
+    "popularName": "Infected White"
   },
   {
     "className": "ZmbF_Clerk_Normal_Blue",
-    "popularName": "Infected"
+    "popularName": "Infected Blue"
   },
   {
     "className": "ZmbF_Clerk_Normal_Green",
-    "popularName": "Infected"
+    "popularName": "Infected Green"
   },
   {
     "className": "ZmbF_Clerk_Normal_Red",
-    "popularName": "Infected"
+    "popularName": "Infected Red"
   },
   {
     "className": "ZmbF_Clerk_Normal_White",
-    "popularName": "Infected"
+    "popularName": "Infected White"
   },
   {
     "className": "ZmbF_DoctorSkinny",
@@ -6525,83 +6525,83 @@
   },
   {
     "className": "ZmbF_HikerSkinny_Blue",
-    "popularName": "Infected"
+    "popularName": "Infected Blue"
   },
   {
     "className": "ZmbF_HikerSkinny_Green",
-    "popularName": "Infected"
+    "popularName": "Infected Green"
   },
   {
     "className": "ZmbF_HikerSkinny_Grey",
-    "popularName": "Infected"
+    "popularName": "Infected Grey"
   },
   {
     "className": "ZmbF_HikerSkinny_Red",
-    "popularName": "Infected"
+    "popularName": "Infected Red"
   },
   {
     "className": "ZmbF_JoggerSkinny_Blue",
-    "popularName": "Infected"
+    "popularName": "Infected Blue"
   },
   {
     "className": "ZmbF_JoggerSkinny_Brown",
-    "popularName": "Infected"
+    "popularName": "Infected Brown"
   },
   {
     "className": "ZmbF_JoggerSkinny_Green",
-    "popularName": "Infected"
+    "popularName": "Infected Green"
   },
   {
     "className": "ZmbF_JoggerSkinny_Red",
-    "popularName": "Infected"
+    "popularName": "Infected Red"
   },
   {
     "className": "ZmbF_JournalistNormal_Blue",
-    "popularName": "Infected"
+    "popularName": "Infected Blue"
   },
   {
     "className": "ZmbF_JournalistNormal_Green",
-    "popularName": "Infected"
+    "popularName": "Infected Green"
   },
   {
     "className": "ZmbF_JournalistNormal_Red",
-    "popularName": "Infected"
+    "popularName": "Infected Red"
   },
   {
     "className": "ZmbF_JournalistNormal_White",
-    "popularName": "Infected"
+    "popularName": "Infected White"
   },
   {
     "className": "ZmbF_MechanicNormal_Beige",
-    "popularName": "Infected"
+    "popularName": "Infected Beige"
   },
   {
     "className": "ZmbF_MechanicNormal_Green",
-    "popularName": "Infected"
+    "popularName": "Infected Green"
   },
   {
     "className": "ZmbF_MechanicNormal_Grey",
-    "popularName": "Infected"
+    "popularName": "Infected Grey"
   },
   {
     "className": "ZmbF_MechanicNormal_Orange",
-    "popularName": "Infected"
+    "popularName": "Infected Orange"
   },
   {
     "className": "ZmbF_MilkMaidOld_Beige",
-    "popularName": "Infected"
+    "popularName": "Infected Beige"
   },
   {
     "className": "ZmbF_MilkMaidOld_Black",
-    "popularName": "Infected"
+    "popularName": "Infected Black"
   },
   {
     "className": "ZmbF_MilkMaidOld_Green",
-    "popularName": "Infected"
+    "popularName": "Infected Green"
   },
   {
     "className": "ZmbF_MilkMaidOld_Grey",
-    "popularName": "Infected"
+    "popularName": "Infected Grey"
   },
   {
     "className": "ZmbF_NurseFat",
@@ -6609,15 +6609,15 @@
   },
   {
     "className": "ZmbF_ParamedicNormal_Blue",
-    "popularName": "Infected"
+    "popularName": "Infected Blue"
   },
   {
     "className": "ZmbF_ParamedicNormal_Green",
-    "popularName": "Infected"
+    "popularName": "Infected Green"
   },
   {
     "className": "ZmbF_ParamedicNormal_Red",
-    "popularName": "Infected"
+    "popularName": "Infected Red"
   },
   {
     "className": "ZmbF_PatientOld",
@@ -6629,15 +6629,15 @@
   },
   {
     "className": "ZmbF_ShortSkirt_beige",
-    "popularName": "Infected"
+    "popularName": "Infected Beige"
   },
   {
     "className": "ZmbF_ShortSkirt_black",
-    "popularName": "Infected"
+    "popularName": "Infected Black"
   },
   {
     "className": "ZmbF_ShortSkirt_brown",
-    "popularName": "Infected"
+    "popularName": "Infected Brown"
   },
   {
     "className": "ZmbF_ShortSkirt_checks",
@@ -6645,15 +6645,15 @@
   },
   {
     "className": "ZmbF_ShortSkirt_green",
-    "popularName": "Infected"
+    "popularName": "Infected Green"
   },
   {
     "className": "ZmbF_ShortSkirt_grey",
-    "popularName": "Infected"
+    "popularName": "Infected Grey"
   },
   {
     "className": "ZmbF_ShortSkirt_red",
-    "popularName": "Infected"
+    "popularName": "Infected Red"
   },
   {
     "className": "ZmbF_ShortSkirt_stripes",
@@ -6661,15 +6661,15 @@
   },
   {
     "className": "ZmbF_ShortSkirt_white",
-    "popularName": "Infected"
+    "popularName": "Infected White"
   },
   {
     "className": "ZmbF_ShortSkirt_yellow",
-    "popularName": "Infected"
+    "popularName": "Infected Yellow"
   },
   {
     "className": "ZmbF_SkaterYoung_Brown",
-    "popularName": "Infected"
+    "popularName": "Infected Brown"
   },
   {
     "className": "ZmbF_SkaterYoung_Striped",
@@ -6681,111 +6681,111 @@
   },
   {
     "className": "ZmbF_SurvivorNormal_Blue",
-    "popularName": "Infected"
+    "popularName": "Infected Blue"
   },
   {
     "className": "ZmbF_SurvivorNormal_Orange",
-    "popularName": "Infected"
+    "popularName": "Infected Orange"
   },
   {
     "className": "ZmbF_SurvivorNormal_Red",
-    "popularName": "Infected"
+    "popularName": "Infected Red"
   },
   {
     "className": "ZmbF_SurvivorNormal_White",
-    "popularName": "Infected"
+    "popularName": "Infected White"
   },
   {
     "className": "ZmbF_VillagerOld_Blue",
-    "popularName": "Infected"
+    "popularName": "Infected Blue"
   },
   {
     "className": "ZmbF_VillagerOld_Green",
-    "popularName": "Infected"
+    "popularName": "Infected Green"
   },
   {
     "className": "ZmbF_VillagerOld_Red",
-    "popularName": "Infected"
+    "popularName": "Infected Red"
   },
   {
     "className": "ZmbF_VillagerOld_White",
-    "popularName": "Infected"
+    "popularName": "Infected White"
   },
   {
     "className": "ZmbM_CitizenASkinny_Blue",
-    "popularName": "Infected"
+    "popularName": "Infected Blue"
   },
   {
     "className": "ZmbM_CitizenASkinny_Brown",
-    "popularName": "Infected"
+    "popularName": "Infected Brown"
   },
   {
     "className": "ZmbM_CitizenASkinny_Grey",
-    "popularName": "Infected"
+    "popularName": "Infected Grey"
   },
   {
     "className": "ZmbM_CitizenASkinny_Red",
-    "popularName": "Infected"
+    "popularName": "Infected Red"
   },
   {
     "className": "ZmbM_CitizenBFat_Blue",
-    "popularName": "Infected"
+    "popularName": "Infected Blue"
   },
   {
     "className": "ZmbM_CitizenBFat_Green",
-    "popularName": "Infected"
+    "popularName": "Infected Green"
   },
   {
     "className": "ZmbM_CitizenBFat_Red",
-    "popularName": "Infected"
+    "popularName": "Infected Red"
   },
   {
     "className": "ZmbM_ClerkFat_Brown",
-    "popularName": "Infected"
+    "popularName": "Infected Brown"
   },
   {
     "className": "ZmbM_ClerkFat_Grey",
-    "popularName": "Infected"
+    "popularName": "Infected Grey"
   },
   {
     "className": "ZmbM_ClerkFat_Khaki",
-    "popularName": "Infected"
+    "popularName": "Infected Khaki"
   },
   {
     "className": "ZmbM_ClerkFat_White",
-    "popularName": "Infected"
+    "popularName": "Infected White"
   },
   {
     "className": "ZmbM_CommercialPilotOld_Blue",
-    "popularName": "Infected"
+    "popularName": "Infected Blue"
   },
   {
     "className": "ZmbM_CommercialPilotOld_Brown",
-    "popularName": "Infected"
+    "popularName": "Infected Brown"
   },
   {
     "className": "ZmbM_CommercialPilotOld_Grey",
-    "popularName": "Infected"
+    "popularName": "Infected Grey"
   },
   {
     "className": "ZmbM_CommercialPilotOld_Olive",
-    "popularName": "Infected"
+    "popularName": "Infected Olive"
   },
   {
     "className": "ZmbM_ConstrWorkerNormal_Beige",
-    "popularName": "Infected"
+    "popularName": "Infected Beige"
   },
   {
     "className": "ZmbM_ConstrWorkerNormal_Black",
-    "popularName": "Infected"
+    "popularName": "Infected Black"
   },
   {
     "className": "ZmbM_ConstrWorkerNormal_Green",
-    "popularName": "Infected"
+    "popularName": "Infected Green"
   },
   {
     "className": "ZmbM_ConstrWorkerNormal_Grey",
-    "popularName": "Infected"
+    "popularName": "Infected Grey"
   },
   {
     "className": "ZmbM_DoctorFat",
@@ -6793,19 +6793,19 @@
   },
   {
     "className": "ZmbM_FarmerFat_Beige",
-    "popularName": "Infected"
+    "popularName": "Infected Beige"
   },
   {
     "className": "ZmbM_FarmerFat_Blue",
-    "popularName": "Infected"
+    "popularName": "Infected Blue"
   },
   {
     "className": "ZmbM_FarmerFat_Brown",
-    "popularName": "Infected"
+    "popularName": "Infected Brown"
   },
   {
     "className": "ZmbM_FarmerFat_Green",
-    "popularName": "Infected"
+    "popularName": "Infected Green"
   },
   {
     "className": "ZmbM_FirefighterNormal",
@@ -6813,39 +6813,39 @@
   },
   {
     "className": "ZmbM_FishermanOld_Blue",
-    "popularName": "Infected"
+    "popularName": "Infected Blue"
   },
   {
     "className": "ZmbM_FishermanOld_Green",
-    "popularName": "Infected"
+    "popularName": "Infected Green"
   },
   {
     "className": "ZmbM_FishermanOld_Grey",
-    "popularName": "Infected"
+    "popularName": "Infected Grey"
   },
   {
     "className": "ZmbM_FishermanOld_Red",
-    "popularName": "Infected"
+    "popularName": "Infected Red"
   },
   {
     "className": "ZmbM_HandymanNormal_Beige",
-    "popularName": "Infected"
+    "popularName": "Infected Beige"
   },
   {
     "className": "ZmbM_HandymanNormal_Blue",
-    "popularName": "Infected"
+    "popularName": "Infected Blue"
   },
   {
     "className": "ZmbM_HandymanNormal_Green",
-    "popularName": "Infected"
+    "popularName": "Infected Green"
   },
   {
     "className": "ZmbM_HandymanNormal_Grey",
-    "popularName": "Infected"
+    "popularName": "Infected Grey"
   },
   {
     "className": "ZmbM_HandymanNormal_White",
-    "popularName": "Infected"
+    "popularName": "Infected White"
   },
   {
     "className": "ZmbM_HeavyIndustryWorker",
@@ -6853,31 +6853,31 @@
   },
   {
     "className": "ZmbM_HermitSkinny_Beige",
-    "popularName": "Infected"
+    "popularName": "Infected Beige"
   },
   {
     "className": "ZmbM_HermitSkinny_Black",
-    "popularName": "Infected"
+    "popularName": "Infected Black"
   },
   {
     "className": "ZmbM_HermitSkinny_Green",
-    "popularName": "Infected"
+    "popularName": "Infected Green"
   },
   {
     "className": "ZmbM_HermitSkinny_Red",
-    "popularName": "Infected"
+    "popularName": "Infected Red"
   },
   {
     "className": "ZmbM_HikerSkinny_Blue",
-    "popularName": "Infected"
+    "popularName": "Infected Blue"
   },
   {
     "className": "ZmbM_HikerSkinny_Green",
-    "popularName": "Infected"
+    "popularName": "Infected Green"
   },
   {
     "className": "ZmbM_HikerSkinny_Yellow",
-    "popularName": "Infected"
+    "popularName": "Infected Yellow"
   },
   {
     "className": "ZmbM_HunterOld_Autumn",
@@ -6897,15 +6897,15 @@
   },
   {
     "className": "ZmbM_Jacket_beige",
-    "popularName": "Infected"
+    "popularName": "Infected Beige"
   },
   {
     "className": "ZmbM_Jacket_black",
-    "popularName": "Infected"
+    "popularName": "Infected Black"
   },
   {
     "className": "ZmbM_Jacket_blue",
-    "popularName": "Infected"
+    "popularName": "Infected Blue"
   },
   {
     "className": "ZmbM_Jacket_bluechecks",
@@ -6913,7 +6913,7 @@
   },
   {
     "className": "ZmbM_Jacket_brown",
-    "popularName": "Infected"
+    "popularName": "Infected Brown"
   },
   {
     "className": "ZmbM_Jacket_greenchecks",
@@ -6921,11 +6921,11 @@
   },
   {
     "className": "ZmbM_Jacket_grey",
-    "popularName": "Infected"
+    "popularName": "Infected Grey"
   },
   {
     "className": "ZmbM_Jacket_khaki",
-    "popularName": "Infected"
+    "popularName": "Infected Khaki"
   },
   {
     "className": "ZmbM_Jacket_magenta",
@@ -6937,15 +6937,15 @@
   },
   {
     "className": "ZmbM_JoggerSkinny_Blue",
-    "popularName": "Infected"
+    "popularName": "Infected Blue"
   },
   {
     "className": "ZmbM_JoggerSkinny_Green",
-    "popularName": "Infected"
+    "popularName": "Infected Green"
   },
   {
     "className": "ZmbM_JoggerSkinny_Red",
-    "popularName": "Infected"
+    "popularName": "Infected Red"
   },
   {
     "className": "ZmbM_JournalistSkinny",
@@ -6953,63 +6953,63 @@
   },
   {
     "className": "ZmbM_MechanicSkinny_Blue",
-    "popularName": "Infected"
+    "popularName": "Infected Blue"
   },
   {
     "className": "ZmbM_MechanicSkinny_Green",
-    "popularName": "Infected"
+    "popularName": "Infected Green"
   },
   {
     "className": "ZmbM_MechanicSkinny_Grey",
-    "popularName": "Infected"
+    "popularName": "Infected Grey"
   },
   {
     "className": "ZmbM_MechanicSkinny_Red",
-    "popularName": "Infected"
+    "popularName": "Infected Red"
   },
   {
     "className": "ZmbM_MotobikerFat_Beige",
-    "popularName": "Infected"
+    "popularName": "Infected Beige"
   },
   {
     "className": "ZmbM_MotobikerFat_Black",
-    "popularName": "Infected"
+    "popularName": "Infected Black"
   },
   {
     "className": "ZmbM_MotobikerFat_Blue",
-    "popularName": "Infected"
+    "popularName": "Infected Blue"
   },
   {
     "className": "ZmbM_OffshoreWorker_Green",
-    "popularName": "Infected"
+    "popularName": "Infected Green"
   },
   {
     "className": "ZmbM_OffshoreWorker_Orange",
-    "popularName": "Infected"
+    "popularName": "Infected Orange"
   },
   {
     "className": "ZmbM_OffshoreWorker_Red",
-    "popularName": "Infected"
+    "popularName": "Infected Red"
   },
   {
     "className": "ZmbM_OffshoreWorker_Yellow",
-    "popularName": "Infected"
+    "popularName": "Infected Yellow"
   },
   {
     "className": "ZmbM_ParamedicNormal_Black",
-    "popularName": "Infected"
+    "popularName": "Infected Black"
   },
   {
     "className": "ZmbM_ParamedicNormal_Blue",
-    "popularName": "Infected"
+    "popularName": "Infected Blue"
   },
   {
     "className": "ZmbM_ParamedicNormal_Green",
-    "popularName": "Infected"
+    "popularName": "Infected Green"
   },
   {
     "className": "ZmbM_ParamedicNormal_Red",
-    "popularName": "Infected"
+    "popularName": "Infected Red"
   },
   {
     "className": "ZmbM_PatientSkinny",
@@ -7045,19 +7045,19 @@
   },
   {
     "className": "ZmbM_SkaterYoung_Blue",
-    "popularName": "Infected"
+    "popularName": "Infected Blue"
   },
   {
     "className": "ZmbM_SkaterYoung_Brown",
-    "popularName": "Infected"
+    "popularName": "Infected Brown"
   },
   {
     "className": "ZmbM_SkaterYoung_Green",
-    "popularName": "Infected"
+    "popularName": "Infected Green"
   },
   {
     "className": "ZmbM_SkaterYoung_Grey",
-    "popularName": "Infected"
+    "popularName": "Infected Grey"
   },
   {
     "className": "ZmbM_SoldierNormal",
@@ -7065,15 +7065,15 @@
   },
   {
     "className": "ZmbM_VillagerOld_Blue",
-    "popularName": "Infected"
+    "popularName": "Infected Blue"
   },
   {
     "className": "ZmbM_VillagerOld_Green",
-    "popularName": "Infected"
+    "popularName": "Infected Green"
   },
   {
     "className": "ZmbM_VillagerOld_White",
-    "popularName": "Infected"
+    "popularName": "Infected White"
   },
   {
     "className": "ZmbM_priestPopSkinny",
@@ -7085,27 +7085,27 @@
   },
   {
     "className": "ZmbM_usSoldier_normal_Woodland",
-    "popularName": "Infected"
+    "popularName": "Infected Woodland"
   },
   {
     "className": "ZmijovkaCap_Black",
-    "popularName": "Zmiovka"
+    "popularName": "Zmiovka Black"
   },
   {
     "className": "ZmijovkaCap_Blue",
-    "popularName": "Zmiovka"
+    "popularName": "Zmiovka Blue"
   },
   {
     "className": "ZmijovkaCap_Brown",
-    "popularName": "Zmiovka"
+    "popularName": "Zmiovka Brown"
   },
   {
     "className": "ZmijovkaCap_Green",
-    "popularName": "Zmiovka"
+    "popularName": "Zmiovka Green"
   },
   {
     "className": "ZmijovkaCap_Red",
-    "popularName": "Zmiovka"
+    "popularName": "Zmiovka Red"
   },
   {
     "className": "Zucchini",

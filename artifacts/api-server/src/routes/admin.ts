@@ -19,7 +19,6 @@ import {
   upsertDayzItemImage,
 } from "../lib/dayzItemDatabase";
 import { getStateAsync, saveStateAsync, type AppState } from "../lib/state";
-import { getSystemsSnapshot } from "../lib/systems";
 
 const router = Router();
 
@@ -134,8 +133,6 @@ function buildDashboardPayload(state: DashboardState) {
   const failed = shopOrders.filter((order: any) => order.status === "failed");
 
   return {
-    systems: getSystemsSnapshot(),
-
     shop: {
       state: runtime.state,
       canAcceptPurchase: runtime.canAcceptPurchase,
@@ -264,6 +261,15 @@ function renderBaseHtml(options: {
     .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
     .span-2 { grid-column: span 2; }
     .item-img { width: 54px; height: 54px; border-radius: 12px; object-fit: cover; background: var(--panel-2); border: 1px solid var(--border); }
+    .option { display: flex; align-items: center; gap: 10px; }
+    .option-preview { width: 38px; height: 38px; border-radius: 10px; object-fit: cover; flex: 0 0 auto; background: var(--panel-2); border: 1px solid var(--border); }
+    .option-main { min-width: 0; }
+    .switch { position: relative; display: inline-flex; align-items: center; width: 54px; height: 30px; border: 1px solid var(--border); border-radius: 999px; background: #3a4052; padding: 0; cursor: pointer; transition: background .18s ease, border-color .18s ease, box-shadow .18s ease; vertical-align: middle; }
+    .switch::after { content: ""; position: absolute; width: 24px; height: 24px; left: 2px; top: 2px; border-radius: 50%; background: #fff; transition: transform .18s ease; box-shadow: 0 3px 12px rgba(0,0,0,.35); }
+    .switch[aria-checked="true"] { background: var(--ok); border-color: rgba(40,199,111,.65); box-shadow: 0 0 0 3px rgba(40,199,111,.12); }
+    .switch[aria-checked="true"]::after { transform: translateX(24px); }
+    .switch-label { display: inline-flex; align-items: center; gap: 10px; color: var(--muted); font-size: 13px; font-weight: 800; }
+    .switch-state { min-width: 48px; color: var(--text); text-transform: none; letter-spacing: normal; }
     .pill { display: inline-flex; border-radius: 999px; padding: 5px 9px; background: var(--panel-2); border: 1px solid var(--border); font-size: 12px; font-weight: 800; }
     .pill.ok { color: var(--ok); } .pill.bad { color: var(--bad); }
     .actions { display: flex; gap: 8px; flex-wrap: wrap; }
@@ -377,13 +383,18 @@ function renderCatalogHtml(token: string) {
         <div><label>URL da imagem</label><input id="imageUrl" placeholder="https://..." /></div>
         <div><label>Preço</label><input id="price" required type="number" min="0" step="1" placeholder="5000" /></div>
         <div class="span-2"><label>Descrição</label><textarea id="description" placeholder="Descrição opcional para aparecer na loja"></textarea></div>
-        <div><label>Status</label><label class="switch"><input id="enabled" type="checkbox" checked><span></span></label></div>
+        <div><label>Status</label><input id="enabled" type="hidden" value="true" /><div class="switch-label"><button id="enabledSwitch" type="button" class="switch" role="switch" aria-checked="true" aria-label="Status do item"></button><span id="enabledText" class="switch-state">Ativo</span></div></div>
         <div style="display:flex;align-items:end;gap:10px"><button type="submit">Salvar item</button><button type="button" class="secondary" onclick="resetForm()">Limpar</button></div>
       </form>
     </section>
     <section class="card full" style="margin-top:14px">
       <h2>Catálogo atual</h2>
-      <div class="toolbar"><button type="button" onclick="loadCatalog()">Atualizar</button></div>
+      <div class="toolbar">
+        <button type="button" onclick="loadCatalog()">Atualizar</button>
+        <select id="categoryFilter" onchange="renderCatalogRows()" style="max-width:260px">
+          <option value="">Todas as categorias</option>
+        </select>
+      </div>
       <div style="overflow:auto"><table><thead><tr><th>Imagem</th><th>Nome na loja</th><th>Item real</th><th>Categoria</th><th>Preço</th><th>Status</th><th>Ações</th></tr></thead><tbody id="catalogRows"></tbody></table></div>
     </section>`,
     script: `<script>
@@ -421,12 +432,29 @@ function renderCatalogHtml(token: string) {
       }
     }
 
+    function setFormEnabled(enabled) {
+      const isEnabled = enabled !== false;
+      field("enabled").value = isEnabled ? "true" : "false";
+      const switchEl = document.getElementById("enabledSwitch");
+      const textEl = document.getElementById("enabledText");
+      if (switchEl) switchEl.setAttribute("aria-checked", isEnabled ? "true" : "false");
+      if (textEl) textEl.textContent = isEnabled ? "Ativo" : "Inativo";
+    }
+
     function resetForm() {
       form.reset();
       field("editingId").value = "";
+      setFormEnabled(true);
       setSelected(null);
       results.style.display = "none";
       results.innerHTML = "";
+    }
+
+    const enabledSwitch = document.getElementById("enabledSwitch");
+    if (enabledSwitch) {
+      enabledSwitch.addEventListener("click", function () {
+        setFormEnabled(field("enabled").value !== "true");
+      });
     }
 
     function selectDayzItem(item) {
@@ -466,9 +494,13 @@ function renderCatalogHtml(token: string) {
 
       results.innerHTML = items
         .map(function (item, index) {
+          const image = item.imageUrl
+            ? '<img class="option-preview" src="' + escapeHtml(item.imageUrl) + '" />'
+            : '<div class="option-preview"></div>';
           return '<div class="option" data-index="' + index + '">' +
-            '<b>' + escapeHtml(item.popularName || item.className) + '</b>' +
-            '<small>' + escapeHtml(item.className) + '</small>' +
+            image +
+            '<div class="option-main"><b>' + escapeHtml(item.popularName || item.className) + '</b>' +
+            '<small>' + escapeHtml(item.className) + '</small></div>' +
           '</div>';
         })
         .join("");
@@ -489,17 +521,26 @@ function renderCatalogHtml(token: string) {
       searchTimer = setTimeout(searchDayz, 180);
     });
 
-    async function loadCatalog() {
-      const response = await apiFetch("/admin/api/catalog");
+    function updateCategoryFilter(items) {
+      const filter = document.getElementById("categoryFilter");
+      if (!filter) return;
 
-      if (!response.ok) {
-        alert(await response.text());
-        return;
-      }
+      const previous = filter.value || "";
+      const categories = Array.from(new Set(items.map(function (item) { return item.category || "misc"; }))).sort();
+      filter.innerHTML = '<option value="">Todas as categorias</option>' + categories.map(function (category) {
+        return '<option value="' + escapeHtml(category) + '">' + escapeHtml(category) + '</option>';
+      }).join("");
+      filter.value = categories.includes(previous) ? previous : "";
+    }
 
-      const payload = await response.json();
+    function renderCatalogRows() {
       const rows = document.getElementById("catalogRows");
-      const items = Array.isArray(payload.items) ? payload.items : [];
+      const filter = document.getElementById("categoryFilter");
+      const selectedCategory = filter ? filter.value : "";
+      const sourceItems = Array.isArray(window.catalogItems) ? window.catalogItems : [];
+      const items = selectedCategory
+        ? sourceItems.filter(function (item) { return (item.category || "misc") === selectedCategory; })
+        : sourceItems;
 
       rows.innerHTML = items
         .map(function (item) {
@@ -511,11 +552,11 @@ function renderCatalogHtml(token: string) {
                 ? '<img class="item-img" src="' + escapeHtml(item.imageUrl) + '" />'
                 : '<div class="item-img"></div>') +
             '</td>' +
-            '<td><b>' + escapeHtml(item.name) + '</b><div class="hint">ID: ' + escapeHtml(id) + '</div></td>' +
+            '<td><b>' + escapeHtml(item.name) + '</b></td>' +
             '<td><b>' + escapeHtml(item.popularName || item.className) + '</b><div class="hint"><code>' + escapeHtml(item.className) + '</code></div></td>' +
             '<td>' + escapeHtml(item.category || "misc") + '</td>' +
             '<td>' + Number(item.price || 0).toLocaleString("pt-BR") + '</td>' +
-            '<td><label class="switch"><input type="checkbox" data-action="toggle" data-id="' + escapeHtml(id) + '" ' + (item.enabled === false ? "" : "checked") + '><span></span></label></td>' +
+            '<td><div class="switch-label"><button type="button" class="switch" role="switch" aria-checked="' + (item.enabled === false ? "false" : "true") + '" title="' + (item.enabled === false ? "Inativo" : "Ativo") + '" data-action="toggle" data-id="' + escapeHtml(id) + '"></button><span class="switch-state">' + (item.enabled === false ? "Inativo" : "Ativo") + '</span></div></td>' +
             '<td><div class="actions">' +
               '<button type="button" class="secondary" data-action="edit" data-id="' + escapeHtml(id) + '">Editar</button>' +
               '<button type="button" class="danger" data-action="delete" data-id="' + escapeHtml(id) + '">Excluir</button>' +
@@ -523,8 +564,6 @@ function renderCatalogHtml(token: string) {
           '</tr>';
         })
         .join("");
-
-      window.catalogItems = items;
 
       Array.from(rows.querySelectorAll("button[data-action]")).forEach(function (button) {
         button.addEventListener("click", function () {
@@ -536,12 +575,28 @@ function renderCatalogHtml(token: string) {
         });
       });
 
-      Array.from(rows.querySelectorAll("input[data-action=toggle]")).forEach(function (input) {
-        input.addEventListener("change", function () {
-          const id = input.getAttribute("data-id") || "";
-          toggleItem(id, input.checked);
+      Array.from(rows.querySelectorAll("button[data-action=toggle]")).forEach(function (button) {
+        button.addEventListener("click", function () {
+          const id = button.getAttribute("data-id") || "";
+          const nextEnabled = button.getAttribute("aria-checked") !== "true";
+          toggleItem(id, nextEnabled);
         });
       });
+    }
+
+    async function loadCatalog() {
+      const response = await apiFetch("/admin/api/catalog");
+
+      if (!response.ok) {
+        alert(await response.text());
+        return;
+      }
+
+      const payload = await response.json();
+      const items = Array.isArray(payload.items) ? payload.items : [];
+      window.catalogItems = items;
+      updateCategoryFilter(items);
+      renderCatalogRows();
     }
 
     function editItem(id) {
@@ -563,7 +618,7 @@ function renderCatalogHtml(token: string) {
       field("price").value = item.price || 0;
       field("imageUrl").value = item.imageUrl || "";
       field("description").value = item.description || "";
-      field("enabled").checked = item.enabled !== false;
+      setFormEnabled(item.enabled !== false);
 
       window.scrollTo({ top: 0, behavior: "smooth" });
     }
@@ -629,7 +684,7 @@ function renderCatalogHtml(token: string) {
         price,
         imageUrl: field("imageUrl").value.trim(),
         description: field("description").value.trim(),
-        enabled: field("enabled").checked !== false
+        enabled: field("enabled").value !== "false"
       };
 
       const response = await apiFetch("/admin/api/catalog", {
@@ -679,7 +734,7 @@ router.get("/catalog", (req, res) => {
 
 router.get("/health", (req, res) => {
   if (!requireAdmin(req, res)) return;
-  res.json({ ok: true, uptime: process.uptime(), timestamp: Date.now(), systems: getSystemsSnapshot() });
+  res.json({ ok: true, uptime: process.uptime(), timestamp: Date.now() });
 });
 
 async function handleDashboard(req: any, res: any) {

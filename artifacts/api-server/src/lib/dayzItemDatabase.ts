@@ -12,6 +12,60 @@ const DEFAULT_DAYZ_ITEMS: DayzItemDefinition[] = [
   { className: "Barrel_Red", popularName: "Barrel" },
 ];
 
+
+const COLOR_VARIANT_LABELS: Record<string, string> = {
+  beige: "Beige",
+  black: "Black",
+  blackskull: "Black Skull",
+  blue: "Blue",
+  brown: "Brown",
+  camo: "Camo",
+  crimson: "Crimson",
+  dark: "Dark",
+  digital: "Digital",
+  dubok: "Dubok",
+  flecktarn: "Flecktarn",
+  green: "Green",
+  grey: "Grey",
+  gray: "Grey",
+  khaki: "Khaki",
+  mossy: "Mossy",
+  multicolor: "Multicolor",
+  multicam: "Multicam",
+  navy: "Navy",
+  olive: "Olive",
+  orange: "Orange",
+  pattern: "Pattern",
+  pink: "Pink",
+  red: "Red",
+  skull: "Skull",
+  tan: "Tan",
+  ttsko: "TTSKO",
+  white: "White",
+  woodland: "Woodland",
+  yellow: "Yellow",
+};
+
+function getClassNameVariantLabel(className: string) {
+  const parts = String(className || "").split("_").filter(Boolean);
+  if (parts.length < 2) return "";
+
+  const suffix = parts[parts.length - 1].toLowerCase();
+  return COLOR_VARIANT_LABELS[suffix] || "";
+}
+
+function enrichPopularNameWithVariant(className: string, popularName: string) {
+  const cleanPopularName = String(popularName || className).trim();
+  const variant = getClassNameVariantLabel(className);
+  if (!variant) return cleanPopularName;
+
+  const normalizedPopularName = cleanPopularName.toLowerCase();
+  const normalizedVariant = variant.toLowerCase();
+  if (normalizedPopularName.includes(normalizedVariant)) return cleanPopularName;
+
+  return `${cleanPopularName} ${variant}`;
+}
+
 function dayzItemsPath() {
   return path.resolve(
     process.cwd(),
@@ -96,7 +150,10 @@ function safeDayzItems(input: unknown): DayzItemDefinition[] {
 
   for (const item of input) {
     const className = String((item as any)?.className || "").trim();
-    const popularName = String((item as any)?.popularName || className).trim();
+    const popularName = enrichPopularNameWithVariant(
+      className,
+      String((item as any)?.popularName || className).trim(),
+    );
     const imageUrl = (item as any)?.imageUrl ? String((item as any).imageUrl).trim() : undefined;
 
     if (!className || seen.has(className)) continue;
