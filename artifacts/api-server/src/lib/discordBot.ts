@@ -27,6 +27,9 @@ import {
   formatShopQueue,
   parseShopCoordinates,
   SHOP_ITEMS,
+  getShopCategories,
+  getShopItemsByCategory,
+  getShopRuntimeStatus,
 } from "./shop";
 
 const client = new Client({
@@ -67,6 +70,7 @@ function ensureBotState(state: any) {
   state.onlinePlayers = state.onlinePlayers || {};
   state.onlineSessions = state.onlineSessions || {};
   state.shopOrders = state.shopOrders || [];
+  state.shopResetMonitor = state.shopResetMonitor || null;
   state.shopAutoDeploy = state.shopAutoDeploy || null;
   state.files = state.files || {};
   state.recentEventIds = state.recentEventIds || [];
@@ -110,6 +114,171 @@ async function respondEphemeral(interaction: any, content: any) {
     const code = err?.code || err?.status || err?.message || err;
     console.error("❌ erro respondendo interaction com segurança:", code);
   }
+}
+
+function formatShopClosedMessage(state: any) {
+  const runtime = getShopRuntimeStatus(state);
+  if (runtime.canAcceptPurchase) return null;
+
+  return [
+    "⚠️ **Shop temporarily closed**",
+    "",
+    runtime.reason,
+    runtime.nextRestartLabel
+      ? `Restart window: **${runtime.nextRestartLabel}**`
+      : null,
+    "",
+    "You can browse the catalog, but checkout is locked until the delivery cycle finishes.",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+function buildShopHomePayload(state: any) {
+  const runtime = getShopRuntimeStatus(state);
+  const categories = getShopCategories();
+
+  const embed = new EmbedBuilder()
+    .setTitle("🛒 DayZ Shop")
+    .setDescription(
+      [
+        runtime.canAcceptPurchase
+          ? "Select a category to browse items."
+          : `⚠️ **Checkout closed**\n${runtime.reason}`,
+        runtime.nextRestartLabel
+          ? `\nNext restart window: **${runtime.nextRestartLabel}**`
+          : null,
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    )
+    .setColor(runtime.canAcceptPurchase ? "Green" : "Orange");
+
+  const categoryMenu = new StringSelectMenuBuilder()
+    .setCustomId("shop-category")
+    .setPlaceholder("Select a category")
+    .addOptions(
+      categories.slice(0, 25).map((category) => ({
+        label: category.label,
+        value: category.id,
+      })),
+    );
+
+  return {
+    embeds: [embed],
+    components: [
+      new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+        categoryMenu,
+      ),
+    ],
+  };
+}
+
+function buildShopCategoryPayload(state: any, categoryId: string) {
+  const runtime = getShopRuntimeStatus(state);
+  const items = getShopItemsByCategory(categoryId);
+  const categoryLabel = getShopCategories().find((c) => c.id === categoryId)?.label || categoryId;
+
+  const embed = new EmbedBuilder()
+    .setTitle(`🛒 ${categoryLabel}`)
+    .setDescription(
+      items.length
+        ? items
+            .map(
+              (item) =>
+                `**${item.name}**\n💰 ${item.price}\n\`${item.id}\``,
+            )
+            .join("\n\n")
+        : "No items in this category.",
+    )
+    .setFooter({
+      text: runtime.canAcceptPurchase
+        ? "Select an item below to continue."
+        : "Checkout is currently closed; browsing is still available.",
+    })
+    .setColor(runtime.canAcceptPurchase ? "Blue" : "Orange");
+
+  const itemMenu = new StringSelectMenuBuilder()
+    .setCustomId(`shop-item:${categoryId}`)
+    .setPlaceholder("Select an item")
+    .setDisabled(!items.length)
+    .addOptions(
+      (items.length ? items : SHOP_ITEMS).slice(0, 25).map((item) => ({
+        label: item.name,
+        value: item.id,
+        description: `$${item.price} • ${item.className}`,
+      })),
+    );
+
+  const backButton = new ButtonBuilder()
+    .setCustomId("shop-back-home")
+    .setLabel("Back to categories")
+    .setStyle(ButtonStyle.Secondary);
+
+  return {
+    embeds: [embed],
+    components: [
+      new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(itemMenu),
+      new ActionRowBuilder<ButtonBuilder>().addComponents(backButton),
+    ],
+  };
+}
+
+function buildShopItemPayload(state: any, itemId: string, categoryId?: string) {
+  const runtime = getShopRuntimeStatus(state);
+  const item = SHOP_ITEMS.find((candidate) => candidate.id === itemId);
+
+  if (!item) {
+    return {
+      content: "❌ Item not found.",
+      embeds: [],
+      components: [],
+    };
+  }
+
+  const embed = new EmbedBuilder()
+    .setTitle(`📦 ${item.name}`)
+    .setDescription(
+      [
+        item.description || "Delivered on the next restart.",
+        "",
+        `Class: \`${item.className}\``,
+        `Price: **${item.price}**`,
+        runtime.canAcceptPurchase ? null : `\n⚠️ ${runtime.reason}`,
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    )
+    .setColor(runtime.canAcceptPurchase ? "Green" : "Orange");
+
+  if (item.imageUrl) embed.setThumbnail(item.imageUrl);
+
+  const buyButton = new ButtonBuilder()
+    .setCustomId(`shop-buy-ui:${item.id}`)
+    .setLabel(runtime.canAcceptPurchase ? "Buy" : "Checkout closed")
+    .setStyle(runtime.canAcceptPurchase ? ButtonStyle.Success : ButtonStyle.Secondary)
+    .setDisabled(!runtime.canAcceptPurchase);
+
+  const backButton = new ButtonBuilder()
+    .setCustomId(`shop-back-category:${categoryId || item.category || "misc"}`)
+    .setLabel("Back")
+    .setStyle(ButtonStyle.Secondary);
+
+  const cancelButton = new ButtonBuilder()
+    .setCustomId("shop-cancel")
+    .setLabel("Cancel")
+    .setStyle(ButtonStyle.Danger);
+
+  return {
+    embeds: [embed],
+    components: [
+      new ActionRowBuilder<ButtonBuilder>().addComponents(
+        buyButton,
+        backButton,
+        cancelButton,
+      ),
+    ],
+  };
 }
 
 function getKillStreakMeta(streak: number) {
@@ -2007,100 +2176,133 @@ export async function startDiscordBot() {
     }
 
     client.on("interactionCreate", async (interaction) => {
-      if (interaction.isStringSelectMenu()) {
-        if (interaction.customId === "shop-category") {
-          const category = interaction.values[0];
-          const items = SHOP_ITEMS.filter((i:any)=> (i.category || "misc") === category);
-
-          const embed = new EmbedBuilder()
-            .setTitle(`🛒 ${category.toUpperCase()} SHOP`)
-            .setDescription(items.map((item:any)=>`**${item.name}**\n💰 ${item.price}`).join("\n\n"))
-            .setColor("Blue");
-
-          const itemMenu = new StringSelectMenuBuilder()
-            .setCustomId("shop-item")
-            .setPlaceholder("Select an item")
-            .addOptions(items.slice(0,25).map((item:any)=>({label:item.name,value:item.className,description:`$${item.price}`})));
-
-          await interaction.update({embeds:[embed],components:[new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(itemMenu)]});
-          return;
-        }
-
-        if (interaction.customId === "shop-item") {
-          const itemClass = interaction.values[0];
-          const item:any = SHOP_ITEMS.find((i:any)=>i.className===itemClass);
-
-          const embed = new EmbedBuilder()
-            .setTitle(`📦 ${item.name}`)
-            .setDescription(`💰 Price: ${item.price}\n\nClick buy to continue.`)
-            .setColor("Green");
-
-          const buyButton = new ButtonBuilder()
-            .setCustomId(`shop-buy:${item.className}`)
-            .setLabel("Buy")
-            .setStyle(ButtonStyle.Success);
-
-          await interaction.update({embeds:[embed],components:[new ActionRowBuilder<ButtonBuilder>().addComponents(buyButton)]});
-          return;
-        }
-      }
-
-      if (interaction.isButton()) {
-        if (interaction.customId.startsWith("shop-buy:")) {
-          const itemClass = interaction.customId.split(":")[1];
-
-          const modal = new ModalBuilder()
-            .setCustomId(`shop-modal:${itemClass}`)
-            .setTitle("Shop Purchase");
-
-          const coords = new TextInputBuilder()
-            .setCustomId("coords")
-            .setLabel("Coordinates (x z or x y z)")
-            .setStyle(TextInputStyle.Short)
-            .setRequired(true)
-            .setPlaceholder("7421 0 12311");
-
-          modal.addComponents(new ActionRowBuilder<TextInputBuilder>().addComponents(coords));
-
-          await interaction.showModal(modal);
-          return;
-        }
-      }
-
-      if (interaction.isModalSubmit()) {
-        if (interaction.customId.startsWith("shop-modal:")) {
-          const itemClass = interaction.customId.split(":")[1];
-          const coordsInput = interaction.fields.getTextInputValue("coords");
-
-          try {
-            const state = await getState();
-            const { x, y, z } = parseShopCoordinates(coordsInput, 0);
-
-            const order = createShopOrder({
-              state,
-              discordUserId: interaction.user.id,
-              itemInput: itemClass,
-              x,
-              y,
-              z,
-            });
-
-            await saveState(state);
-
-            await interaction.reply({
-              ephemeral: true,
-              content: `✅ Purchase created\n\n📦 ${order.itemClass}\n📍 ${x}, ${y}, ${z}\n🕒 Delivery after next restart.`,
-            });
-          } catch (err:any) {
-            await interaction.reply({ephemeral:true,content:`❌ ${err?.message || err}`});
-          }
-          return;
-        }
-      }
-
-      if (!interaction.isChatInputCommand()) return;
-
       try {
+        if (interaction.isStringSelectMenu()) {
+          const state = await getState();
+
+          if (interaction.customId === "shop-category") {
+            await interaction.update(
+              buildShopCategoryPayload(state, interaction.values[0]),
+            );
+            return;
+          }
+
+          if (interaction.customId.startsWith("shop-item:")) {
+            const categoryId = interaction.customId.split(":")[1];
+            await interaction.update(
+              buildShopItemPayload(state, interaction.values[0], categoryId),
+            );
+            return;
+          }
+        }
+
+        if (interaction.isButton()) {
+          const state = await getState();
+
+          if (interaction.customId === "shop-back-home") {
+            await interaction.update(buildShopHomePayload(state));
+            return;
+          }
+
+          if (interaction.customId.startsWith("shop-back-category:")) {
+            const categoryId = interaction.customId.split(":")[1];
+            await interaction.update(buildShopCategoryPayload(state, categoryId));
+            return;
+          }
+
+          if (interaction.customId === "shop-cancel") {
+            await interaction.update({
+              content: "🛒 Shop closed.",
+              embeds: [],
+              components: [],
+            });
+            return;
+          }
+
+          if (interaction.customId.startsWith("shop-buy-ui:")) {
+            const closedMessage = formatShopClosedMessage(state);
+            if (closedMessage) {
+              await interaction.reply({ content: closedMessage, ephemeral: true });
+              return;
+            }
+
+            const itemId = interaction.customId.split(":")[1];
+            const item = SHOP_ITEMS.find((candidate) => candidate.id === itemId);
+            if (!item) {
+              await interaction.reply({ content: "❌ Item not found.", ephemeral: true });
+              return;
+            }
+
+            const modal = new ModalBuilder()
+              .setCustomId(`shop-modal:${item.id}`)
+              .setTitle(`Buy ${item.name}`);
+
+            const coords = new TextInputBuilder()
+              .setCustomId("coords")
+              .setLabel("Coordinates (iZurvive: x / z or x y z)")
+              .setStyle(TextInputStyle.Short)
+              .setRequired(true)
+              .setPlaceholder("4579.03 / 8506.52");
+
+            modal.addComponents(
+              new ActionRowBuilder<TextInputBuilder>().addComponents(coords),
+            );
+
+            await interaction.showModal(modal);
+            return;
+          }
+        }
+
+        if (interaction.isModalSubmit()) {
+          if (interaction.customId.startsWith("shop-modal:")) {
+            const itemId = interaction.customId.split(":")[1];
+            const coordsInput = interaction.fields.getTextInputValue("coords");
+            const state = await getState();
+
+            try {
+              const { x, y, z } = parseShopCoordinates(coordsInput, 0);
+              const order = createShopOrder({
+                state,
+                discordUserId: interaction.user.id,
+                itemInput: itemId,
+                x,
+                y,
+                z,
+              });
+
+              await saveState(state);
+
+              await interaction.reply({
+                ephemeral: true,
+                content: [
+                  "✅ Shop order created for the next restart.",
+                  "",
+                  `Order: \`${order.id}\``,
+                  `Item: \`${order.itemClass}\``,
+                  `Position: \`${order.x}, ${order.y}, ${order.z}\``,
+                  `Status: \`${order.status}\``,
+                ].join("\n"),
+              });
+            } catch (err: any) {
+              await interaction.reply({
+                ephemeral: true,
+                content: `❌ ${err?.message || err}`,
+              });
+            }
+            return;
+          }
+        }
+
+        if (!interaction.isChatInputCommand()) return;
+        if (interaction.commandName === "shop") {
+          const state = await getState();
+          await interaction.reply({
+            ...buildShopHomePayload(state),
+            ephemeral: true,
+          });
+          return;
+        }
+
         if (interaction.commandName === "player-stats") {
           const player = interaction.options.getString("player", true);
           const state = await getState();
@@ -2117,26 +2319,6 @@ export async function startDiscordBot() {
         if (!acknowledged) return;
 
         if (!(await assertAdmin(interaction))) return;
-
-        if (interaction.commandName === "shop") {
-          const categories = [...new Set(SHOP_ITEMS.map((i:any)=>i.category || "misc"))];
-
-          const embed = new EmbedBuilder()
-            .setTitle("🛒 DayZ Shop")
-            .setDescription("Choose a category below.")
-            .setColor("Blue");
-
-          const menu = new StringSelectMenuBuilder()
-            .setCustomId("shop-category")
-            .setPlaceholder("Select a category")
-            .addOptions(categories.slice(0,25).map((category:any)=>({label:String(category),value:String(category)})));
-
-          await interaction.editReply({
-            embeds:[embed],
-            components:[new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(menu)],
-          });
-          return;
-        }
 
         if (interaction.commandName === "shop-catalog") {
           await interaction.editReply(
@@ -2197,7 +2379,7 @@ export async function startDiscordBot() {
           await interaction.editReply(
             result.deployed > 0
               ? `✅ Injected **${result.deployed}** shop order(s) into XML files. Restart the server after this upload.`
-              : "⚠️ No pending shop orders to deploy.",
+              : `⚠️ ${result.reason || "No pending shop orders to deploy."}`,
           );
           return;
         }

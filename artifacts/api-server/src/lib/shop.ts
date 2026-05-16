@@ -12,6 +12,9 @@ export type ShopItem = {
   name: string;
   className: string;
   price: number;
+  category?: string;
+  description?: string;
+  imageUrl?: string;
 };
 
 export const SHOP_ITEMS: ShopItem[] = [
@@ -20,12 +23,16 @@ export const SHOP_ITEMS: ShopItem[] = [
     name: "Green Barrel",
     className: "Barrel_Green",
     price: 250,
+    category: "containers",
+    description: "Storage barrel delivered on the next restart.",
   },
   {
     id: "barrel_red",
     name: "Red Barrel",
     className: "Barrel_Red",
     price: 250,
+    category: "containers",
+    description: "Storage barrel delivered on the next restart.",
   },
 ];
 
@@ -90,6 +97,35 @@ function isOnlineLikeStatus(status: string | null | undefined) {
   );
 }
 
+export type ShopRuntimeStatus = {
+  state: "READY" | "FROZEN" | "WAITING_RESET" | "WAITING_CLEAR";
+  canAcceptPurchase: boolean;
+  reason: string;
+  nextRestartLabel?: string;
+  minutesUntilRestart?: number;
+};
+
+export function getShopCategories() {
+  const categories = Array.from(
+    new Set(SHOP_ITEMS.map((item) => item.category || "misc")),
+  );
+
+  return categories.map((id) => ({
+    id,
+    label: id
+      .split(/[_-]+/g)
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(" "),
+  }));
+}
+
+export function getShopItemsByCategory(category: string) {
+  const normalized = normalizeItemName(category);
+  return SHOP_ITEMS.filter(
+    (item) => normalizeItemName(item.category || "misc") === normalized,
+  );
+}
+
 export function ensureShopState(state: AppState) {
   state.shopOrders = state.shopOrders || [];
   state.shopResetMonitor = state.shopResetMonitor || null;
@@ -140,6 +176,61 @@ export function parseShopCoordinates(input: string, fallbackY = 0) {
   return { x, y, z };
 }
 
+
+export function getShopRuntimeStatus(state: AppState): ShopRuntimeStatus {
+  ensureShopState(state);
+
+  const included = getIncludedShopOrders(state);
+  if (included.length) {
+    const monitor = state.shopResetMonitor;
+    const waitingClear = Boolean(monitor?.sawOnlineAt);
+
+    return {
+      state: waitingClear ? "WAITING_CLEAR" : "WAITING_RESET",
+      canAcceptPurchase: false,
+      reason: waitingClear
+        ? "Shop delivery is being finalized after the server restart. Try again in a few minutes."
+        : "Shop delivery is prepared and waiting for the server restart. Try again after the restart.",
+    };
+  }
+
+  const freezeWindow = getActiveAutoDeployWindow(new Date(), {
+    requireAutoDeployEnabled: true,
+    allowFreezeWindow: true,
+  });
+
+  if (freezeWindow) {
+    const freezeMinutes = numberEnv("SHOP_DEPLOY_FREEZE_MINUTES", 2);
+    if (freezeWindow.minutesUntilRestart <= freezeMinutes) {
+      return {
+        state: "FROZEN",
+        canAcceptPurchase: false,
+        reason:
+          "Shop is temporarily closed while the server restart window is active. Try again after the delivery cycle finishes.",
+        nextRestartLabel: freezeWindow.restartLabel,
+        minutesUntilRestart: freezeWindow.minutesUntilRestart,
+      };
+    }
+  }
+
+  return {
+    state: "READY",
+    canAcceptPurchase: true,
+    reason: "Shop is open.",
+    nextRestartLabel: freezeWindow?.restartLabel,
+    minutesUntilRestart: freezeWindow?.minutesUntilRestart,
+  };
+}
+
+export function assertShopCanAcceptPurchase(state: AppState) {
+  const status = getShopRuntimeStatus(state);
+  if (!status.canAcceptPurchase) {
+    throw new Error(status.reason);
+  }
+
+  return status;
+}
+
 export function createShopOrder(options: {
   state: AppState;
   discordUserId: string;
@@ -149,6 +240,7 @@ export function createShopOrder(options: {
   z: number;
 }) {
   const state = ensureShopState(options.state);
+  assertShopCanAcceptPurchase(state);
   const item = findShopItem(options.itemInput);
 
   if (!item) {
@@ -215,6 +307,16 @@ async function backupShopXmlFiles(eventsXml: string, eventSpawnsXml: string) {
 }
 
 export async function deployPendingShopOrders(state: AppState) {
+  ensureShopState(state);
+
+  if (getIncludedShopOrders(state).length) {
+    return {
+      deployed: 0,
+      path: `${SHOP_EVENTS_PATH} + ${SHOP_EVENT_SPAWNS_PATH}`,
+      reason: "A shop batch is already waiting for restart/clear.",
+    };
+  }
+
   const pendingOrders = getPendingShopOrders(state);
 
   if (!pendingOrders.length) {
@@ -484,15 +586,22 @@ type AutoDeployWindow = {
   minutesUntilRestart: number;
 };
 
-function getActiveAutoDeployWindow(now = new Date()): AutoDeployWindow | null {
-  if (!boolEnv("SHOP_AUTO_DEPLOY_ENABLED", false)) return null;
+function getActiveAutoDeployWindow(
+  now = new Date(),
+  options: { requireAutoDeployEnabled?: boolean; allowFreezeWindow?: boolean } = {},
+): AutoDeployWindow | null {
+  const requireAutoDeployEnabled = options.requireAutoDeployEnabled ?? true;
+  const allowFreezeWindow = options.allowFreezeWindow ?? false;
+
+  if (requireAutoDeployEnabled && !boolEnv("SHOP_AUTO_DEPLOY_ENABLED", false)) return null;
 
   const times = parseRestartTimes();
   if (!times.length) return null;
 
   const timeZone = process.env.SHOP_RESTART_TIMEZONE || "America/Sao_Paulo";
   const deployBefore = numberEnv("SHOP_DEPLOY_MINUTES_BEFORE_RESET", 15);
-  const deployGraceAfter = numberEnv("SHOP_DEPLOY_GRACE_MINUTES_AFTER_SCHEDULE", 5);
+  const deployGraceAfter = numberEnv("SHOP_DEPLOY_GRACE_MINUTES_AFTER_SCHEDULE", 15);
+  const freezeMinutes = numberEnv("SHOP_DEPLOY_FREEZE_MINUTES", 2);
   const local = getLocalDateParts(now, timeZone);
 
   for (const restart of times) {
@@ -502,7 +611,10 @@ function getActiveAutoDeployWindow(now = new Date()): AutoDeployWindow | null {
     // treat it as the next occurrence.
     if (diff < -deployGraceAfter) diff += 24 * 60;
 
-    if (diff <= deployBefore && diff >= -deployGraceAfter) {
+    const inDeployWindow = diff <= deployBefore && diff >= -deployGraceAfter;
+    const inFreezeWindow = diff <= freezeMinutes && diff >= -deployGraceAfter;
+
+    if (inDeployWindow && (allowFreezeWindow || !inFreezeWindow)) {
       const windowDateKey = diff < 0 ? `${local.dateKey}` : local.dateKey;
       return {
         windowId: `${windowDateKey}_${restart.label}`,
@@ -577,6 +689,7 @@ export function formatShopQueue(state: AppState) {
     .slice(0, 10);
 
   const ensuredState = ensureShopState(state);
+  const runtime = getShopRuntimeStatus(ensuredState);
   const monitor = ensuredState.shopResetMonitor;
   const autoDeploy = ensuredState.shopAutoDeploy;
   const monitorLines = monitor
@@ -601,6 +714,12 @@ export function formatShopQueue(state: AppState) {
 
   const lines = [
     "🛒 **Shop Queue**",
+    "",
+    `Shop status: **${runtime.state}**`,
+    runtime.nextRestartLabel
+      ? `Next restart window: **${runtime.nextRestartLabel}** (${runtime.minutesUntilRestart} min)`
+      : "Next restart window: unknown",
+    runtime.canAcceptPurchase ? "Checkout: **open**" : `Checkout: **closed** — ${runtime.reason}`,
     "",
     `Pending: **${pending.length}**`,
     `Included in next restart: **${included.length}**`,
