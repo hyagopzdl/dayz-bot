@@ -80,6 +80,62 @@ function isOnlineLikeStatus(status: string | null | undefined) {
   );
 }
 
+function addMinutes(date: Date, minutes: number) {
+  return new Date(date.getTime() + minutes * 60 * 1000);
+}
+
+function getShopResetFallbackMinutes() {
+  // DayZ console/Nitrado may keep returning "started" during restarts.
+  // This timeout is a safety valve so WAITING_RESET never becomes permanent.
+  return Math.max(
+    1,
+    numberEnv("SHOP_RESET_CONFIRM_FALLBACK_MINUTES", 45),
+  );
+}
+
+function getShopResetExpectedDelayMinutes() {
+  const deployBefore = numberEnv("SHOP_DEPLOY_MINUTES_BEFORE_RESET", 15);
+  const graceAfter = numberEnv("SHOP_DEPLOY_GRACE_MINUTES_AFTER_SCHEDULE", 15);
+  return Math.max(1, deployBefore + graceAfter);
+}
+
+function getMonitorDeployDate(monitor: NonNullable<AppState["shopResetMonitor"]>, includedOrders: ShopOrder[]) {
+  const raw = monitor.deployedAt || includedOrders[0]?.includedAt || includedOrders[0]?.createdAt;
+  const date = raw ? new Date(raw) : new Date();
+  return Number.isNaN(date.getTime()) ? new Date() : date;
+}
+
+function ensureResetMonitorDeadlines(
+  monitor: NonNullable<AppState["shopResetMonitor"]>,
+  includedOrders: ShopOrder[],
+) {
+  const deployedAt = getMonitorDeployDate(monitor, includedOrders);
+
+  if (!monitor.deployedAt) {
+    monitor.deployedAt = deployedAt.toISOString();
+  }
+
+  if (!monitor.expectedRestartAt) {
+    monitor.expectedRestartAt = addMinutes(
+      deployedAt,
+      getShopResetExpectedDelayMinutes(),
+    ).toISOString();
+  }
+
+  if (!monitor.restartFallbackAt) {
+    monitor.restartFallbackAt = addMinutes(
+      deployedAt,
+      getShopResetFallbackMinutes(),
+    ).toISOString();
+  }
+}
+
+function isPastIsoDate(value: string | null | undefined, now: Date) {
+  if (!value) return false;
+  const time = new Date(value).getTime();
+  return Number.isFinite(time) && now.getTime() >= time;
+}
+
 export type ShopRuntimeStatus = {
   state: "READY" | "FROZEN" | "WAITING_RESET" | "WAITING_CLEAR";
   canAcceptPurchase: boolean;
@@ -366,6 +422,8 @@ export async function deployPendingShopOrders(state: AppState) {
     order.includedAt = now;
   }
 
+  const deployedAt = new Date(now);
+
   state.shopResetMonitor = {
     batchId,
     deployedAt: now,
@@ -374,6 +432,16 @@ export async function deployPendingShopOrders(state: AppState) {
     lastStatus: null,
     lastCheckedAt: now,
     clearedAt: undefined,
+    expectedRestartAt: addMinutes(
+      deployedAt,
+      getShopResetExpectedDelayMinutes(),
+    ).toISOString(),
+    restartFallbackAt: addMinutes(
+      deployedAt,
+      getShopResetFallbackMinutes(),
+    ).toISOString(),
+    autoConfirmedAt: undefined,
+    confirmationReason: undefined,
   };
 
   return {
@@ -456,6 +524,7 @@ export async function pollShopResetStatusAndAutoClear(state: AppState) {
     } as NonNullable<AppState["shopResetMonitor"]>);
 
   state.shopResetMonitor = monitor;
+  ensureResetMonitorDeadlines(monitor, includedOrders);
 
   let status: string | null = null;
 
@@ -464,7 +533,6 @@ export async function pollShopResetStatusAndAutoClear(state: AppState) {
     status = response.status;
   } catch (err) {
     console.error("❌ shop auto-clear status poll failed:", err);
-    return null;
   }
 
   const now = new Date();
@@ -476,28 +544,50 @@ export async function pollShopResetStatusAndAutoClear(state: AppState) {
 
   if (!monitor.sawOfflineAt && isOfflineLikeStatus(normalized)) {
     monitor.sawOfflineAt = nowIso;
+    monitor.confirmationReason = `nitrado_status_offline:${normalized}`;
     console.log(`🛒 shop reset monitor: server went offline/restarting (${normalized})`);
     return null;
   }
 
   if (monitor.sawOfflineAt && !monitor.sawOnlineAt && isOnlineLikeStatus(normalized)) {
     monitor.sawOnlineAt = nowIso;
+    monitor.confirmationReason = `nitrado_status_online:${normalized}`;
     console.log(`🛒 shop reset monitor: server came back online (${normalized})`);
     return null;
   }
 
-  if (!monitor.sawOfflineAt) {
-    console.log(`🛒 shop auto-clear aguardando servidor desligar/reiniciar. status=${normalized}`);
+  const fallbackExpired = isPastIsoDate(monitor.restartFallbackAt, now);
+
+  if (!monitor.sawOnlineAt && fallbackExpired) {
+    monitor.sawOnlineAt = nowIso;
+    monitor.autoConfirmedAt = nowIso;
+    monitor.confirmationReason = monitor.sawOfflineAt
+      ? "fallback_timeout_after_offline"
+      : "fallback_timeout_no_status_transition";
+
+    console.warn(
+      `⚠️ shop reset monitor: auto-confirming restart by timeout. status=${normalized} deployedAt=${monitor.deployedAt || "unknown"} fallbackAt=${monitor.restartFallbackAt || "unknown"}`,
+    );
+  }
+
+  if (!monitor.sawOfflineAt && !monitor.sawOnlineAt) {
+    console.log(
+      `🛒 shop auto-clear aguardando reset. status=${normalized} fallbackAt=${monitor.restartFallbackAt || "unknown"}`,
+    );
     return null;
   }
 
-  if (!monitor.sawOnlineAt) {
-    console.log(`🛒 shop auto-clear aguardando servidor voltar online. status=${normalized}`);
+  if (monitor.sawOfflineAt && !monitor.sawOnlineAt) {
+    console.log(
+      `🛒 shop auto-clear aguardando servidor voltar online. status=${normalized} fallbackAt=${monitor.restartFallbackAt || "unknown"}`,
+    );
     return null;
   }
 
-  const clearDelayMinutes = numberEnv("SHOP_CLEAR_MINUTES_AFTER_RESET", 5);
-  const onlineAtMs = new Date(monitor.sawOnlineAt).getTime();
+  const clearDelayMinutes = monitor.autoConfirmedAt
+    ? 0
+    : numberEnv("SHOP_CLEAR_MINUTES_AFTER_RESET", 5);
+  const onlineAtMs = new Date(monitor.sawOnlineAt || nowIso).getTime();
   const elapsedMs = Date.now() - onlineAtMs;
   const requiredMs = clearDelayMinutes * 60 * 1000;
 
@@ -515,7 +605,7 @@ export async function pollShopResetStatusAndAutoClear(state: AppState) {
   });
 
   console.log(
-    `✅ SHOP_BOT auto-clear completed after Nitrado status reset: cleared=${result.cleared} cancelled=${result.cancelled}`,
+    `✅ SHOP_BOT auto-clear completed: cleared=${result.cleared} cancelled=${result.cancelled} reason=${monitor.confirmationReason || "status_transition"}`,
   );
 
   return result;

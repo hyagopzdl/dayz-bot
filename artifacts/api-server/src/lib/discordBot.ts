@@ -2898,9 +2898,16 @@ export async function startDiscordBot() {
             );
           }
 
+          const resetMonitorBefore = JSON.stringify(state.shopResetMonitor || null);
           const clearResult = await pollShopResetStatusAndAutoClear(state);
-          if (clearResult) {
+          const resetMonitorChanged =
+            JSON.stringify(state.shopResetMonitor || null) !== resetMonitorBefore;
+
+          if (clearResult || resetMonitorChanged) {
             await saveState(state);
+          }
+
+          if (clearResult) {
             console.log(
               `✅ SHOP_BOT auto-clear completed: cleared=${clearResult.cleared} cancelled=${clearResult.cancelled}`,
             );

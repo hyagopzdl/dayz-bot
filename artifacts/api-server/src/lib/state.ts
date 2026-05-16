@@ -84,6 +84,15 @@ export type ShopResetMonitor = {
   lastStatus?: string | null;
   lastCheckedAt?: string;
   clearedAt?: string;
+  /**
+   * Restart detection on DayZ console/Nitrado is not always exposed as a
+   * visible status transition. These fields keep the monitor recoverable and
+   * prevent WAITING_RESET from blocking checkout forever.
+   */
+  expectedRestartAt?: string;
+  restartFallbackAt?: string;
+  autoConfirmedAt?: string;
+  confirmationReason?: string;
 };
 
 export type ShopAutoDeployState = {
