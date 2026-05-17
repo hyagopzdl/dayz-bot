@@ -31,39 +31,39 @@ function formatNumber(value: number) {
   return Number(value.toFixed(2)).toString();
 }
 
-function getConfiguredVehicleEventName(order: ShopOrder) {
+function isVehicleOrder(order: ShopOrder) {
   const dayzItem = findDayzItem(order.itemClass || "");
   const configuredEventName = String(dayzItem?.spawnEventName || "").trim();
 
-  return configuredEventName.startsWith("Vehicle")
-    ? sanitizeEventPart(configuredEventName)
-    : "";
+  // spawnEventName is now used only as metadata to identify that this item must
+  // be spawned through a Vehicle* CE event. We do NOT inject into or edit the
+  // vanilla VehicleCivilianSedan/VehicleTruck01 event anymore.
+  return configuredEventName.startsWith("Vehicle");
 }
 
 function getOrderEventName(order: ShopOrder, index: number) {
-  const configuredVehicleEventName = getConfiguredVehicleEventName(order);
-
-  if (configuredVehicleEventName) {
-    return configuredVehicleEventName;
-  }
-
   const item = sanitizeEventPart(order.itemClass || order.itemName || "Item");
   const id = sanitizeEventPart(order.id || String(index)).slice(-16);
 
-  // Regular shop items use a custom Static_* event. Vehicles are the only
-  // exception: they must use the vanilla Vehicle* event that already exists in
-  // DayZ's Central Economy files.
+  if (isVehicleOrder(order)) {
+    // Custom vehicle events must start with Vehicle, but should not reuse the
+    // vanilla event name. This keeps bought vehicles isolated from natural CE
+    // vehicle counts/positions.
+    return `VehicleShop_${item}_${id || index}`;
+  }
+
   return `Static_${item}_${id || index}`;
 }
 
 function resolveShopOrders(orders: ShopOrder[]): ResolvedShopOrder[] {
   return orders.map((order, index) => {
+    const isVehicle = isVehicleOrder(order);
     const eventName = getOrderEventName(order, index);
 
     return {
       order,
       eventName,
-      isVehicle: eventName.startsWith("Vehicle"),
+      isVehicle,
     };
   });
 }
@@ -90,6 +90,34 @@ function buildStaticEventXml(order: ShopOrder, eventName: string) {
   ].join("\n");
 }
 
+function buildVehicleEventXml(order: ShopOrder, eventName: string) {
+  return [
+    `    <event name="${eventName}">`,
+    "        <nominal>1</nominal>",
+    "        <min>0</min>",
+    "        <max>0</max>",
+    "        <lifetime>3888000</lifetime>",
+    "        <restock>0</restock>",
+    "        <saferadius>3</saferadius>",
+    "        <distanceradius>3</distanceradius>",
+    "        <cleanupradius>0</cleanupradius>",
+    '        <flags deletable="0" init_random="0" remove_damaged="1"/>',
+    "        <position>fixed</position>",
+    "        <limit>mixed</limit>",
+    "        <active>1</active>",
+    "        <children>",
+    `            <child lootmax="0" lootmin="0" max="1" min="1" type="${order.itemClass}"/>`,
+    "        </children>",
+    "    </event>",
+  ].join("\n");
+}
+
+function buildEventXml(entry: ResolvedShopOrder) {
+  return entry.isVehicle
+    ? buildVehicleEventXml(entry.order, entry.eventName)
+    : buildStaticEventXml(entry.order, entry.eventName);
+}
+
 function buildStaticEventSpawnXml(order: ShopOrder, eventName: string) {
   return [
     `    <event name="${eventName}">`,
@@ -98,29 +126,29 @@ function buildStaticEventSpawnXml(order: ShopOrder, eventName: string) {
   ].join("\n");
 }
 
-function buildVehiclePosXml(order: ShopOrder) {
-  // Vanilla vehicle spawn positions do not use a y attribute in cfgeventspawns.
-  return `        <pos x="${formatNumber(order.x)}" z="${formatNumber(order.z)}" a="0.0"/>`;
+function buildVehicleEventSpawnXml(order: ShopOrder, eventName: string) {
+  // Vehicle positions should not include y in cfgeventspawns.xml.
+  return [
+    `    <event name="${eventName}">`,
+    `        <pos x="${formatNumber(order.x)}" z="${formatNumber(order.z)}" a="0.0"/>`,
+    "    </event>",
+  ].join("\n");
+}
+
+function buildEventSpawnXml(entry: ResolvedShopOrder) {
+  return entry.isVehicle
+    ? buildVehicleEventSpawnXml(entry.order, entry.eventName)
+    : buildStaticEventSpawnXml(entry.order, entry.eventName);
 }
 
 export function buildShopXmlBlock(orders: ShopOrder[]): ShopXmlBlock {
   const resolvedOrders = resolveShopOrders(orders);
-  const staticOrders = resolvedOrders.filter((entry) => !entry.isVehicle);
   const eventNames = resolvedOrders.map((entry) => entry.eventName);
-
-  const events = staticOrders.map((entry) =>
-    buildStaticEventXml(entry.order, entry.eventName),
-  );
-
-  const spawns = staticOrders.map((entry) =>
-    buildStaticEventSpawnXml(entry.order, entry.eventName),
-  );
+  const events = resolvedOrders.map((entry) => buildEventXml(entry));
+  const spawns = resolvedOrders.map((entry) => buildEventSpawnXml(entry));
 
   return {
     eventNames,
-    // Keep SHOP_BOT markers even when the batch has only vehicles. deployPendingShopOrders
-    // validates that both uploaded XML files still contain the marker; an empty block is
-    // harmless inside <events> and lets the verified deploy flow stay generic.
     eventsBlock: [SHOP_BOT_START, ...events, SHOP_BOT_END].join("\n"),
     eventSpawnsBlock: [SHOP_BOT_START, ...spawns, SHOP_BOT_END].join("\n"),
   };
@@ -152,47 +180,6 @@ export function injectBeforeClosingTag(
   return `${before}\n\n${block}\n${after}`;
 }
 
-function injectVehiclePositionsIntoExistingEvents(xml: string, orders: ShopOrder[]) {
-  const resolvedOrders = resolveShopOrders(orders).filter((entry) => entry.isVehicle);
-  if (!resolvedOrders.length) return removeShopBotBlock(xml);
-
-  let nextXml = removeShopBotBlock(xml);
-  const grouped = new Map<string, ShopOrder[]>();
-
-  for (const entry of resolvedOrders) {
-    const existing = grouped.get(entry.eventName) || [];
-    existing.push(entry.order);
-    grouped.set(entry.eventName, existing);
-  }
-
-  for (const [eventName, eventOrders] of grouped.entries()) {
-    const eventPattern = new RegExp(
-      `(<event\\s+name=["']${eventName}["'][^>]*>[\\s\\S]*?)(\\s*</event>)`,
-      "m",
-    );
-    const match = nextXml.match(eventPattern);
-
-    if (!match) {
-      throw new Error(
-        `Vehicle event ${eventName} not found in cfgeventspawns.xml. Add the vanilla vehicle event block before selling this vehicle.`,
-      );
-    }
-
-    const vehiclePosBlock = [
-      `        ${SHOP_BOT_START}`,
-      ...eventOrders.map((order) => buildVehiclePosXml(order)),
-      `        ${SHOP_BOT_END}`,
-    ].join("\n");
-
-    nextXml = nextXml.replace(
-      eventPattern,
-      `$1\n${vehiclePosBlock}$2`,
-    );
-  }
-
-  return nextXml;
-}
-
 export function injectShopEventsXml(xml: string, orders: ShopOrder[]) {
   const block = buildShopXmlBlock(orders);
   return {
@@ -202,17 +189,6 @@ export function injectShopEventsXml(xml: string, orders: ShopOrder[]) {
 }
 
 export function injectShopEventSpawnsXml(xml: string, orders: ShopOrder[]) {
-  const resolvedOrders = resolveShopOrders(orders);
-  const staticOrders = resolvedOrders
-    .filter((entry) => !entry.isVehicle)
-    .map((entry) => entry.order);
-
-  let nextXml = injectVehiclePositionsIntoExistingEvents(xml, orders);
-
-  if (!staticOrders.length) {
-    return nextXml;
-  }
-
-  const block = buildShopXmlBlock(staticOrders);
-  return injectBeforeClosingTag(nextXml, "</eventposdef>", block.eventSpawnsBlock);
+  const block = buildShopXmlBlock(orders);
+  return injectBeforeClosingTag(xml, "</eventposdef>", block.eventSpawnsBlock);
 }
