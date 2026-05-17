@@ -1045,7 +1045,7 @@
   },
   {
     "className": "BookDonQuichotte",
-    "popularName": "L’Ingénieux Hidalgo Don Quichotte de la Manche"
+    "popularName": "L\u2019Ing\u00e9nieux Hidalgo Don Quichotte de la Manche"
   },
   {
     "className": "BookDonQuixote",
@@ -1069,7 +1069,7 @@
   },
   {
     "className": "BookFaustErsterTeil",
-    "popularName": "Faust: Der Tragödie erster Teil"
+    "popularName": "Faust: Der Trag\u00f6die erster Teil"
   },
   {
     "className": "BookFlyingURanch",
@@ -1137,11 +1137,11 @@
   },
   {
     "className": "BookLaComdieHumaine",
-    "popularName": "La Comédie humaine volume I"
+    "popularName": "La Com\u00e9die humaine volume I"
   },
   {
     "className": "BookLaDbcle",
-    "popularName": "La Débâcle"
+    "popularName": "La D\u00e9b\u00e2cle"
   },
   {
     "className": "BookLeRougeEtLeNoir",
@@ -1161,7 +1161,7 @@
   },
   {
     "className": "BookLleMystrieuse",
-    "popularName": "L'Île mystérieuse"
+    "popularName": "L'\u00cele myst\u00e9rieuse"
   },
   {
     "className": "BookLonesomeLand",
@@ -1185,7 +1185,7 @@
   },
   {
     "className": "BookMrchenFrKinder",
-    "popularName": "Märchen für Kinder"
+    "popularName": "M\u00e4rchen f\u00fcr Kinder"
   },
   {
     "className": "BookNaturalSelection",
@@ -1981,7 +1981,8 @@
   },
   {
     "className": "CivilianSedan",
-    "popularName": "Olga 24"
+    "popularName": "Olga 24",
+    "spawnEventName": "VehicleCivilianSedan"
   },
   {
     "className": "CivilianSedan_Black",
@@ -2961,7 +2962,8 @@
   },
   {
     "className": "Hatchback_02",
-    "popularName": "Gunter 2"
+    "popularName": "Gunter 2",
+    "spawnEventName": "VehicleHatchback02"
   },
   {
     "className": "Hatchback_02_Black",
@@ -4681,7 +4683,8 @@
   },
   {
     "className": "OffroadHatchback",
-    "popularName": "Ada 4x4"
+    "popularName": "Ada 4x4",
+    "spawnEventName": "VehicleOffroadHatchback"
   },
   {
     "className": "OffroadHatchback_Blue",

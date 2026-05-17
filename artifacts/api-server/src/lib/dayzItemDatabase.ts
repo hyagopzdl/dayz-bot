@@ -5,6 +5,7 @@ export type DayzItemDefinition = {
   className: string;
   popularName: string;
   imageUrl?: string;
+  spawnEventName?: string;
 };
 
 const DEFAULT_DAYZ_ITEMS: DayzItemDefinition[] = [

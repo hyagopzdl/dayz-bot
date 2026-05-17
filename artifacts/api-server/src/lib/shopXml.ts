@@ -1,4 +1,5 @@
 import type { ShopOrder } from "./state";
+import { findDayzItem } from "./dayzItemDatabase";
 
 export const SHOP_BOT_START = "<!-- SHOP_BOT_START -->";
 export const SHOP_BOT_END = "<!-- SHOP_BOT_END -->";
@@ -25,9 +26,20 @@ function formatNumber(value: number) {
 }
 
 function getOrderEventName(order: ShopOrder, index: number) {
+  const dayzItem = findDayzItem(order.itemClass || "");
+  const vehicleEventName = dayzItem?.spawnEventName;
+
+  if (
+    vehicleEventName &&
+    String(vehicleEventName).startsWith("Vehicle")
+  ) {
+    return vehicleEventName;
+  }
+
   const item = sanitizeEventPart(order.itemClass || order.itemName || "Item");
   const id = sanitizeEventPart(order.id || String(index)).slice(-16);
-  return `StaticShop_${item}_${id || index}`;
+
+  return `Shop_${item}_${id || index}`;
 }
 
 function buildEventXml(order: ShopOrder, eventName: string) {
@@ -41,7 +53,7 @@ function buildEventXml(order: ShopOrder, eventName: string) {
     "        <saferadius>0</saferadius>",
     "        <distanceradius>0</distanceradius>",
     "        <cleanupradius>0</cleanupradius>",
-    '        <flags deletable="0" init_random="0" remove_damaged="0"/>',
+    '        <flags deletable="1" init_random="0" remove_damaged="0"/>',
     "        <position>fixed</position>",
     "        <limit>child</limit>",
     "        <active>1</active>",
