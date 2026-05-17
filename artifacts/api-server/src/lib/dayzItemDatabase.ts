@@ -143,6 +143,42 @@ function saveDayzItems(items: DayzItemDefinition[]) {
   fs.writeFileSync(file, `${JSON.stringify(safeDayzItems(items), null, 2)}\n`, "utf8");
 }
 
+
+function inferVehicleSpawnEventName(className: string) {
+  const normalized = String(className || "").trim();
+
+  const vehicleEventByClassName: Record<string, string> = {
+    CivilianSedan: "VehicleCivilianSedan",
+    CivilianSedan_Black: "VehicleCivilianSedan",
+    CivilianSedan_Wine: "VehicleCivilianSedan",
+
+    OffroadHatchback: "VehicleOffroadHatchback",
+    OffroadHatchback_Blue: "VehicleOffroadHatchback",
+    OffroadHatchback_White: "VehicleOffroadHatchback",
+
+    Hatchback_02: "VehicleHatchback02",
+    Hatchback_02_Black: "VehicleHatchback02",
+    Hatchback_02_Blue: "VehicleHatchback02",
+
+    Sedan_02: "VehicleSedan02",
+    Sedan_02_Grey: "VehicleSedan02",
+    Sedan_02_Red: "VehicleSedan02",
+
+    Truck_01_Cargo: "VehicleTruck01",
+    Truck_01_Cargo_Blue: "VehicleTruck01",
+    Truck_01_Cargo_Grey: "VehicleTruck01",
+    Truck_01_Cargo_Orange: "VehicleTruck01",
+    Truck_01_Chassis: "VehicleTruck01",
+    Truck_01_Chassis_Blue: "VehicleTruck01",
+    Truck_01_Chassis_Grey: "VehicleTruck01",
+    Truck_01_Chassis_Orange: "VehicleTruck01",
+
+    Truck_02: "VehicleTruck02",
+  };
+
+  return vehicleEventByClassName[normalized] || "";
+}
+
 function safeDayzItems(input: unknown): DayzItemDefinition[] {
   if (!Array.isArray(input)) return DEFAULT_DAYZ_ITEMS;
 
@@ -156,10 +192,19 @@ function safeDayzItems(input: unknown): DayzItemDefinition[] {
       String((item as any)?.popularName || className).trim(),
     );
     const imageUrl = (item as any)?.imageUrl ? String((item as any).imageUrl).trim() : undefined;
+    const rawSpawnEventName = (item as any)?.spawnEventName
+      ? String((item as any).spawnEventName).trim()
+      : "";
+    const spawnEventName = rawSpawnEventName || inferVehicleSpawnEventName(className);
 
     if (!className || seen.has(className)) continue;
     seen.add(className);
-    items.push({ className, popularName, ...(imageUrl ? { imageUrl } : {}) });
+    items.push({
+      className,
+      popularName,
+      ...(imageUrl ? { imageUrl } : {}),
+      ...(spawnEventName ? { spawnEventName } : {}),
+    });
   }
 
   return items.length ? items : DEFAULT_DAYZ_ITEMS;

@@ -1045,7 +1045,7 @@
   },
   {
     "className": "BookDonQuichotte",
-    "popularName": "L\u2019Ing\u00e9nieux Hidalgo Don Quichotte de la Manche"
+    "popularName": "L’Ingénieux Hidalgo Don Quichotte de la Manche"
   },
   {
     "className": "BookDonQuixote",
@@ -1069,7 +1069,7 @@
   },
   {
     "className": "BookFaustErsterTeil",
-    "popularName": "Faust: Der Trag\u00f6die erster Teil"
+    "popularName": "Faust: Der Tragödie erster Teil"
   },
   {
     "className": "BookFlyingURanch",
@@ -1137,11 +1137,11 @@
   },
   {
     "className": "BookLaComdieHumaine",
-    "popularName": "La Com\u00e9die humaine volume I"
+    "popularName": "La Comédie humaine volume I"
   },
   {
     "className": "BookLaDbcle",
-    "popularName": "La D\u00e9b\u00e2cle"
+    "popularName": "La Débâcle"
   },
   {
     "className": "BookLeRougeEtLeNoir",
@@ -1161,7 +1161,7 @@
   },
   {
     "className": "BookLleMystrieuse",
-    "popularName": "L'\u00cele myst\u00e9rieuse"
+    "popularName": "L'Île mystérieuse"
   },
   {
     "className": "BookLonesomeLand",
@@ -1185,7 +1185,7 @@
   },
   {
     "className": "BookMrchenFrKinder",
-    "popularName": "M\u00e4rchen f\u00fcr Kinder"
+    "popularName": "Märchen für Kinder"
   },
   {
     "className": "BookNaturalSelection",
@@ -1986,11 +1986,13 @@
   },
   {
     "className": "CivilianSedan_Black",
-    "popularName": "Olga 24 Black"
+    "popularName": "Olga 24 Black",
+    "spawnEventName": "VehicleCivilianSedan"
   },
   {
     "className": "CivilianSedan_Wine",
-    "popularName": "Olga 24"
+    "popularName": "Olga 24",
+    "spawnEventName": "VehicleCivilianSedan"
   },
   {
     "className": "ClearSyringe",
@@ -2967,11 +2969,13 @@
   },
   {
     "className": "Hatchback_02_Black",
-    "popularName": "Gunter 2 Black"
+    "popularName": "Gunter 2 Black",
+    "spawnEventName": "VehicleHatchback02"
   },
   {
     "className": "Hatchback_02_Blue",
-    "popularName": "Gunter 2 Blue"
+    "popularName": "Gunter 2 Blue",
+    "spawnEventName": "VehicleHatchback02"
   },
   {
     "className": "Hatchback_02_Door_1_1",
@@ -4688,11 +4692,13 @@
   },
   {
     "className": "OffroadHatchback_Blue",
-    "popularName": "Ada 4x4 Blue"
+    "popularName": "Ada 4x4 Blue",
+    "spawnEventName": "VehicleOffroadHatchback"
   },
   {
     "className": "OffroadHatchback_White",
-    "popularName": "Ada 4x4 White"
+    "popularName": "Ada 4x4 White",
+    "spawnEventName": "VehicleOffroadHatchback"
   },
   {
     "className": "OrienteeringCompass",
@@ -5216,7 +5222,8 @@
   },
   {
     "className": "Sedan_02",
-    "popularName": "Sarka 120"
+    "popularName": "Sarka 120",
+    "spawnEventName": "VehicleSedan02"
   },
   {
     "className": "Sedan_02_Door_1_1",
@@ -5316,7 +5323,8 @@
   },
   {
     "className": "Sedan_02_Grey",
-    "popularName": "Sarka 120 Grey"
+    "popularName": "Sarka 120 Grey",
+    "spawnEventName": "VehicleSedan02"
   },
   {
     "className": "Sedan_02_Hood",
@@ -5344,7 +5352,8 @@
   },
   {
     "className": "Sedan_02_Red",
-    "popularName": "Sarka 120 Red"
+    "popularName": "Sarka 120 Red",
+    "spawnEventName": "VehicleSedan02"
   },
   {
     "className": "Sedan_02_Trunk",
@@ -6024,35 +6033,43 @@
   },
   {
     "className": "Truck_01_Cargo",
-    "popularName": "M3S Cargo Chassis"
+    "popularName": "M3S Cargo Chassis",
+    "spawnEventName": "VehicleTruck01"
   },
   {
     "className": "Truck_01_Cargo_Blue",
-    "popularName": "M3S Cargo Chassis Blue"
+    "popularName": "M3S Cargo Chassis Blue",
+    "spawnEventName": "VehicleTruck01"
   },
   {
     "className": "Truck_01_Cargo_Grey",
-    "popularName": "M3S Cargo Chassis Grey"
+    "popularName": "M3S Cargo Chassis Grey",
+    "spawnEventName": "VehicleTruck01"
   },
   {
     "className": "Truck_01_Cargo_Orange",
-    "popularName": "M3S Cargo Chassis Orange"
+    "popularName": "M3S Cargo Chassis Orange",
+    "spawnEventName": "VehicleTruck01"
   },
   {
     "className": "Truck_01_Chassis",
-    "popularName": "M3S Chassis"
+    "popularName": "M3S Chassis",
+    "spawnEventName": "VehicleTruck01"
   },
   {
     "className": "Truck_01_Chassis_Blue",
-    "popularName": "M3S Chassis Blue"
+    "popularName": "M3S Chassis Blue",
+    "spawnEventName": "VehicleTruck01"
   },
   {
     "className": "Truck_01_Chassis_Grey",
-    "popularName": "M3S Chassis Grey"
+    "popularName": "M3S Chassis Grey",
+    "spawnEventName": "VehicleTruck01"
   },
   {
     "className": "Truck_01_Chassis_Orange",
-    "popularName": "M3S Chassis Orange"
+    "popularName": "M3S Chassis Orange",
+    "spawnEventName": "VehicleTruck01"
   },
   {
     "className": "Truck_01_Door_1_1",
@@ -6120,7 +6137,8 @@
   },
   {
     "className": "Truck_02",
-    "popularName": "Utility Vehicle"
+    "popularName": "Utility Vehicle",
+    "spawnEventName": "VehicleTruck02"
   },
   {
     "className": "Truck_02_Door_1_1",

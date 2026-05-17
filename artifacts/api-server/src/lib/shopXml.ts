@@ -27,22 +27,30 @@ function formatNumber(value: number) {
 
 function getOrderEventName(order: ShopOrder, index: number) {
   const dayzItem = findDayzItem(order.itemClass || "");
-  const vehicleEventName = dayzItem?.spawnEventName;
-
-  if (
-    vehicleEventName &&
-    String(vehicleEventName).startsWith("Vehicle")
-  ) {
-    return vehicleEventName;
-  }
-
+  const configuredEventName = String(dayzItem?.spawnEventName || "").trim();
   const item = sanitizeEventPart(order.itemClass || order.itemName || "Item");
   const id = sanitizeEventPart(order.id || String(index)).slice(-16);
+
+  // Vehicles must start with Vehicle*. Keep each shop order unique to avoid
+  // duplicate event definitions while preserving the DayZ vehicle prefix.
+  if (configuredEventName.startsWith("Vehicle")) {
+    return `${sanitizeEventPart(configuredEventName)}_${item}_${id || index}`;
+  }
 
   return `Shop_${item}_${id || index}`;
 }
 
+function isVehicleEventName(eventName: string) {
+  return String(eventName || "").startsWith("Vehicle");
+}
+
 function buildEventXml(order: ShopOrder, eventName: string) {
+  const isVehicle = isVehicleEventName(eventName);
+  const flags = isVehicle
+    ? '        <flags deletable="0" init_random="0" remove_damaged="1"/>'
+    : '        <flags deletable="1" init_random="0" remove_damaged="0"/>';
+  const limit = isVehicle ? "mixed" : "child";
+
   return [
     `    <event name="${eventName}">`,
     "        <nominal>1</nominal>",
@@ -53,9 +61,9 @@ function buildEventXml(order: ShopOrder, eventName: string) {
     "        <saferadius>0</saferadius>",
     "        <distanceradius>0</distanceradius>",
     "        <cleanupradius>0</cleanupradius>",
-    '        <flags deletable="1" init_random="0" remove_damaged="0"/>',
+    flags,
     "        <position>fixed</position>",
-    "        <limit>child</limit>",
+    `        <limit>${limit}</limit>`,
     "        <active>1</active>",
     "        <children>",
     `            <child lootmax="0" lootmin="0" max="1" min="1" type="${order.itemClass}"/>`,
