@@ -282,6 +282,7 @@ export type ShopRuntimeStatus = {
 export function ensureShopState(state: AppState) {
   state.shopOrders = state.shopOrders || [];
   state.shopSavedLocations = state.shopSavedLocations || [];
+  state.shopPendingCheckouts = state.shopPendingCheckouts || [];
   state.shopResetMonitor = state.shopResetMonitor || null;
   return state;
 }

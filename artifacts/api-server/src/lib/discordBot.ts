@@ -14,6 +14,7 @@ import {
   ModalBuilder,
   TextInputBuilder,
   TextInputStyle,
+  AttachmentBuilder,
 } from "discord.js";
 import fs from "fs";
 import path from "path";
@@ -36,6 +37,7 @@ import {
   saveShopLocation,
   getShopResetMonitorPersistenceKey,
 } from "./shop";
+import { generateShopMapPreview } from "./shopMapPreview";
 
 const client = new Client({
   intents: [GatewayIntentBits.Guilds],
@@ -357,6 +359,170 @@ function buildShopItemPayload(
     embeds: [embed],
     components,
   };
+}
+
+
+function formatShopMoney(value: unknown) {
+  const amount = Number(value || 0);
+  return amount.toLocaleString("pt-BR");
+}
+
+function getUserShopBalanceLabel(_state: any, _discordUserId: string) {
+  // Balance/economy is not wired in this bot yet. Keep this centralized so it
+  // can be connected to the real wallet later without touching the checkout UI.
+  return "não integrado";
+}
+
+function ensurePendingShopCheckouts(state: any) {
+  const now = Date.now();
+  const checkouts = Array.isArray(state.shopPendingCheckouts)
+    ? state.shopPendingCheckouts
+    : [];
+
+  state.shopPendingCheckouts = checkouts.filter((checkout: any) => {
+    const expiresAt = new Date(checkout.expiresAt || 0).getTime();
+    return Number.isFinite(expiresAt) && expiresAt > now;
+  });
+
+  return state.shopPendingCheckouts;
+}
+
+function createPendingShopCheckout(options: {
+  state: any;
+  discordUserId: string;
+  itemId: string;
+  x: number;
+  y: number;
+  z: number;
+  saveLocationName?: string;
+}) {
+  const item = getShopItems().find((candidate) => candidate.id === options.itemId);
+  if (!item) throw new Error("Item not found.");
+
+  const checkouts = ensurePendingShopCheckouts(options.state);
+  const now = new Date();
+  const checkout = {
+    id: `checkout_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    discordUserId: options.discordUserId,
+    itemId: item.id,
+    itemClass: item.className,
+    itemName: item.name,
+    price: item.price,
+    x: Number(options.x.toFixed(2)),
+    y: Number(options.y.toFixed(2)),
+    z: Number(options.z.toFixed(2)),
+    saveLocationName: String(options.saveLocationName || "").trim().slice(0, 40) || undefined,
+    createdAt: now.toISOString(),
+    expiresAt: new Date(now.getTime() + 10 * 60 * 1000).toISOString(),
+  };
+
+  options.state.shopPendingCheckouts = checkouts.filter(
+    (candidate: any) => candidate.discordUserId !== options.discordUserId,
+  );
+  options.state.shopPendingCheckouts.push(checkout);
+
+  return checkout;
+}
+
+function findPendingShopCheckout(state: any, checkoutId: string, discordUserId: string) {
+  const checkouts = ensurePendingShopCheckouts(state);
+  return (
+    checkouts.find(
+      (checkout: any) =>
+        checkout.id === checkoutId && checkout.discordUserId === discordUserId,
+    ) || null
+  );
+}
+
+function removePendingShopCheckout(state: any, checkoutId: string) {
+  state.shopPendingCheckouts = ensurePendingShopCheckouts(state).filter(
+    (checkout: any) => checkout.id !== checkoutId,
+  );
+}
+
+async function buildShopCheckoutPayload(state: any, checkout: any) {
+  const runtime = getShopRuntimeStatus(state);
+  const item = getShopItems().find((candidate) => candidate.id === checkout.itemId);
+  const balanceLabel = getUserShopBalanceLabel(state, checkout.discordUserId);
+
+  const embed = new EmbedBuilder()
+    .setTitle("🧭 Confirmar entrega da shop")
+    .setDescription(
+      [
+        "Confira o item, o valor e o local marcado no mapa antes de confirmar.",
+        "",
+        `Item: **${checkout.itemName || item?.name || checkout.itemClass}**`,
+        `Class: \`${checkout.itemClass}\``,
+        `Valor: **${formatShopMoney(checkout.price)}**`,
+        `Saldo: **${balanceLabel}**`,
+        `Coordenada: \`${checkout.x}, ${checkout.y}, ${checkout.z}\``,
+        checkout.saveLocationName ? `Salvar como: **${checkout.saveLocationName}**` : null,
+        runtime.canAcceptPurchase ? null : `\n⚠️ ${runtime.reason}`,
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    )
+    .setColor(runtime.canAcceptPurchase ? "Green" : "Orange")
+    .setFooter({ text: "A compra só será criada ao clicar em Confirmar compra." });
+
+  if (item?.imageUrl) embed.setThumbnail(item.imageUrl);
+
+  const confirmButton = new ButtonBuilder()
+    .setCustomId(`shop-confirm:${checkout.id}`)
+    .setLabel(runtime.canAcceptPurchase ? "Confirmar compra" : "Checkout fechado")
+    .setStyle(runtime.canAcceptPurchase ? ButtonStyle.Success : ButtonStyle.Secondary)
+    .setDisabled(!runtime.canAcceptPurchase);
+
+  const cancelButton = new ButtonBuilder()
+    .setCustomId(`shop-confirm-cancel:${checkout.id}`)
+    .setLabel("Cancelar")
+    .setStyle(ButtonStyle.Danger);
+
+  const payload: any = {
+    content: "",
+    embeds: [embed],
+    components: [
+      new ActionRowBuilder<ButtonBuilder>().addComponents(confirmButton, cancelButton),
+    ],
+  };
+
+  try {
+    const preview = await generateShopMapPreview({
+      x: Number(checkout.x),
+      z: Number(checkout.z),
+    });
+    const attachment = new AttachmentBuilder(preview.buffer, {
+      name: preview.filename,
+    });
+    embed.setImage(`attachment://${preview.filename}`);
+    payload.files = [attachment];
+  } catch (err) {
+    console.error("❌ erro gerando preview do mapa da shop:", err);
+    embed.addFields({
+      name: "Mapa",
+      value: "Não foi possível gerar o preview do mapa, mas a confirmação continua disponível.",
+    });
+  }
+
+  return payload;
+}
+
+async function showShopCheckoutConfirmation(interaction: any, state: any, checkout: any) {
+  const payload = await buildShopCheckoutPayload(state, checkout);
+
+  try {
+    if (typeof interaction.update === "function") {
+      await interaction.update(payload);
+      return;
+    }
+  } catch (err) {
+    console.error("❌ erro atualizando confirmação da shop:", (err as any)?.message || err);
+  }
+
+  await interaction.reply({
+    ...payload,
+    ephemeral: true,
+  });
 }
 
 async function respondShopOrderConfirmation(interaction: any, lines: Array<string | null | undefined>) {
@@ -2343,6 +2509,83 @@ export async function startDiscordBot() {
             return;
           }
 
+          if (interaction.customId.startsWith("shop-confirm-cancel:")) {
+            const checkoutId = interaction.customId.split(":")[1];
+            removePendingShopCheckout(state, checkoutId);
+            await saveState(state);
+            await interaction.update({
+              content: "🛒 Compra cancelada.",
+              embeds: [],
+              components: [],
+              files: [],
+            });
+            return;
+          }
+
+          if (interaction.customId.startsWith("shop-confirm:")) {
+            const checkoutId = interaction.customId.split(":")[1];
+            const checkout = findPendingShopCheckout(
+              state,
+              checkoutId,
+              interaction.user.id,
+            );
+
+            if (!checkout) {
+              await interaction.reply({
+                content: "❌ Esta confirmação expirou. Abra a shop e tente novamente.",
+                ephemeral: true,
+              });
+              return;
+            }
+
+            const closedMessage = formatShopClosedMessage(state);
+            if (closedMessage) {
+              await interaction.reply({ content: closedMessage, ephemeral: true });
+              return;
+            }
+
+            try {
+              if (checkout.saveLocationName) {
+                saveShopLocation({
+                  state,
+                  discordUserId: interaction.user.id,
+                  name: checkout.saveLocationName,
+                  x: checkout.x,
+                  y: checkout.y,
+                  z: checkout.z,
+                });
+              }
+
+              const order = createShopOrder({
+                state,
+                discordUserId: interaction.user.id,
+                itemInput: checkout.itemId,
+                x: checkout.x,
+                y: checkout.y,
+                z: checkout.z,
+              });
+
+              removePendingShopCheckout(state, checkoutId);
+              await saveState(state);
+
+              await respondShopOrderConfirmation(interaction, [
+                "✅ Shop order created for the next restart.",
+                "",
+                `Order: \`${order.id}\``,
+                `Item: \`${order.itemClass}\``,
+                `Position: \`${order.x}, ${order.y}, ${order.z}\``,
+                checkout.saveLocationName ? `Saved coordinate: **${checkout.saveLocationName}**` : null,
+                `Status: \`${order.status}\``,
+              ]);
+            } catch (err: any) {
+              await interaction.reply({
+                ephemeral: true,
+                content: `❌ ${err?.message || err}`,
+              });
+            }
+            return;
+          }
+
           if (interaction.customId.startsWith("shop-buy-ui:")) {
             const closedMessage = formatShopClosedMessage(state);
             if (closedMessage) {
@@ -2368,27 +2611,18 @@ export async function startDiscordBot() {
               }
 
               try {
-                markShopLocationUsed(location);
-                const order = createShopOrder({
+                const checkout = createPendingShopCheckout({
                   state,
                   discordUserId: interaction.user.id,
-                  itemInput: itemId,
+                  itemId,
                   x: location.x,
                   y: location.y,
                   z: location.z,
+                  saveLocationName: location.name,
                 });
 
                 await saveState(state);
-
-                await respondShopOrderConfirmation(interaction, [
-                  "✅ Shop order created for the next restart.",
-                  "",
-                  `Order: \`${order.id}\``,
-                  `Item: \`${order.itemClass}\``,
-                  `Delivery: **${location.name}**`,
-                  `Position: \`${order.x}, ${order.y}, ${order.z}\``,
-                  `Status: \`${order.status}\``,
-                ]);
+                await showShopCheckoutConfirmation(interaction, state, checkout);
               } catch (err: any) {
                 await interaction.reply({
                   ephemeral: true,
@@ -2435,34 +2669,18 @@ export async function startDiscordBot() {
 
             try {
               const { x, y, z } = parseShopCoordinates(coordsInput, 0);
-              const savedLocation = saveShopLocation({
+              const checkout = createPendingShopCheckout({
                 state,
                 discordUserId: interaction.user.id,
-                name: saveLocationName,
+                itemId,
                 x,
                 y,
                 z,
-              });
-              const order = createShopOrder({
-                state,
-                discordUserId: interaction.user.id,
-                itemInput: itemId,
-                x,
-                y,
-                z,
+                saveLocationName,
               });
 
               await saveState(state);
-
-              await respondShopOrderConfirmation(interaction, [
-                "✅ Shop order created for the next restart.",
-                "",
-                `Order: \`${order.id}\``,
-                `Item: \`${order.itemClass}\``,
-                `Position: \`${order.x}, ${order.y}, ${order.z}\``,
-                savedLocation ? `Saved coordinate: **${savedLocation.name}**` : null,
-                `Status: \`${order.status}\``,
-              ]);
+              await showShopCheckoutConfirmation(interaction, state, checkout);
             } catch (err: any) {
               await interaction.reply({
                 ephemeral: true,

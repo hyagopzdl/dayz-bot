@@ -128,6 +128,21 @@ export type ShopSavedLocation = {
   lastUsedAt?: string;
 };
 
+export type ShopPendingCheckout = {
+  id: string;
+  discordUserId: string;
+  itemId: string;
+  itemClass: string;
+  itemName?: string;
+  price?: number;
+  x: number;
+  y: number;
+  z: number;
+  saveLocationName?: string;
+  createdAt: string;
+  expiresAt: string;
+};
+
 export type ShopOrder = {
   id: string;
   discordUserId: string;
@@ -165,6 +180,7 @@ export type AppState = {
 
   shopOrders: ShopOrder[];
   shopSavedLocations?: ShopSavedLocation[];
+  shopPendingCheckouts?: ShopPendingCheckout[];
   shopCatalog?: ShopCatalog;
   dayzItems?: DayzItemDefinition[];
   shopResetMonitor?: ShopResetMonitor | null;
@@ -203,6 +219,7 @@ function defaultState(): AppState {
     onlineSessions: {},
     shopOrders: [],
     shopSavedLocations: [],
+    shopPendingCheckouts: [],
     shopCatalog: undefined,
     dayzItems: undefined,
     shopResetMonitor: null,
@@ -286,6 +303,7 @@ function migrateLegacyState(data: any): AppState {
   state.onlineSessions = data.onlineSessions || {};
   state.shopOrders = Array.isArray(data.shopOrders) ? data.shopOrders : [];
   state.shopSavedLocations = Array.isArray(data.shopSavedLocations) ? data.shopSavedLocations : [];
+  state.shopPendingCheckouts = Array.isArray(data.shopPendingCheckouts) ? data.shopPendingCheckouts : [];
   state.shopCatalog = data.shopCatalog;
   state.dayzItems = Array.isArray(data.dayzItems) ? data.dayzItems : undefined;
   state.shopResetMonitor = data.shopResetMonitor || null;
@@ -504,6 +522,7 @@ export async function saveStateAsync(data: AppState) {
     onlineSessions: data.onlineSessions || {},
     shopOrders: Array.isArray(data.shopOrders) ? data.shopOrders : [],
     shopSavedLocations: Array.isArray(data.shopSavedLocations) ? data.shopSavedLocations : [],
+    shopPendingCheckouts: Array.isArray(data.shopPendingCheckouts) ? data.shopPendingCheckouts : [],
     shopCatalog: data.shopCatalog,
     dayzItems: Array.isArray(data.dayzItems) ? data.dayzItems : undefined,
     shopResetMonitor: data.shopResetMonitor || null,
