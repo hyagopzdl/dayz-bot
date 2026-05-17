@@ -31,13 +31,15 @@ function getOrderEventName(order: ShopOrder, index: number) {
   const item = sanitizeEventPart(order.itemClass || order.itemName || "Item");
   const id = sanitizeEventPart(order.id || String(index)).slice(-16);
 
-  // Vehicles must start with Vehicle*. Keep each shop order unique to avoid
-  // duplicate event definitions while preserving the DayZ vehicle prefix.
+  // Vehicles must use the real DayZ Central Economy event name, exactly as
+  // configured in dayz-items.json, e.g. VehicleCivilianSedan or VehicleTruck01.
+  // Do not add Shop/Static prefixes or custom suffixes to vehicle events.
   if (configuredEventName.startsWith("Vehicle")) {
-    return `${sanitizeEventPart(configuredEventName)}_${item}_${id || index}`;
+    return sanitizeEventPart(configuredEventName);
   }
 
-  return `Shop_${item}_${id || index}`;
+  // Regular shop items keep the original static-style custom event name.
+  return `Static_${item}_${id || index}`;
 }
 
 function isVehicleEventName(eventName: string) {
