@@ -3,17 +3,30 @@ import path from "path";
 import sharp from "sharp";
 
 const DEFAULT_MAP_PATH = "assets/maps/chernarus-map-pz-bot.png";
+const DEFAULT_PIN_PATH = "assets/ui/map-pin.png";
+
 const MAP_WORLD_SIZE = Number(process.env.SHOP_MAP_WORLD_SIZE || 15360);
 const MAP_SOURCE_SIZE = Number(process.env.SHOP_MAP_IMAGE_SIZE || 2048);
 const PREVIEW_SIZE = Number(process.env.SHOP_MAP_PREVIEW_SIZE || 768);
-const CROP_SIZE = Number(process.env.SHOP_MAP_CROP_SIZE || 520);
+const CROP_SIZE = Number(process.env.SHOP_MAP_CROP_SIZE || 300);
+const PIN_SIZE = Number(process.env.SHOP_MAP_PIN_SIZE || 76);
 
 function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
 }
 
 function getMapPath() {
-  return path.resolve(process.cwd(), process.env.SHOP_MAP_IMAGE_PATH || DEFAULT_MAP_PATH);
+  return path.resolve(
+    process.cwd(),
+    process.env.SHOP_MAP_IMAGE_PATH || DEFAULT_MAP_PATH,
+  );
+}
+
+function getPinPath() {
+  return path.resolve(
+    process.cwd(),
+    process.env.SHOP_MAP_PIN_PATH || DEFAULT_PIN_PATH,
+  );
 }
 
 function coordinateToPixel(x: number, z: number) {
@@ -26,28 +39,23 @@ function coordinateToPixel(x: number, z: number) {
   };
 }
 
-function buildPinSvg(size = 76) {
-  const cx = size / 2;
-  const cy = size * 0.34;
-  const radius = size * 0.2;
+async function loadPinBuffer() {
+  const pinPath = getPinPath();
 
-  return Buffer.from(`
-<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" xmlns="http://www.w3.org/2000/svg">
-  <defs>
-    <filter id="shadow" x="-40%" y="-40%" width="180%" height="180%">
-      <feDropShadow dx="0" dy="3" stdDeviation="3" flood-color="#000000" flood-opacity="0.45"/>
-    </filter>
-  </defs>
-  <path filter="url(#shadow)" d="M ${cx} ${size * 0.93} C ${cx - size * 0.23} ${size * 0.62}, ${cx - size * 0.32} ${size * 0.47}, ${cx - size * 0.32} ${cy} C ${cx - size * 0.32} ${size * 0.16}, ${cx - size * 0.16} ${size * 0.04}, ${cx} ${size * 0.04} C ${cx + size * 0.16} ${size * 0.04}, ${cx + size * 0.32} ${size * 0.16}, ${cx + size * 0.32} ${cy} C ${cx + size * 0.32} ${size * 0.47}, ${cx + size * 0.23} ${size * 0.62}, ${cx} ${size * 0.93} Z" fill="#e11d48"/>
-  <circle cx="${cx}" cy="${cy}" r="${radius}" fill="#ffffff"/>
-  <circle cx="${cx}" cy="${cy}" r="${radius * 0.55}" fill="#e11d48"/>
-</svg>`);
+  if (!fs.existsSync(pinPath)) {
+    throw new Error(`Shop map pin image not found: ${pinPath}`);
+  }
+
+  return sharp(pinPath)
+    .resize(PIN_SIZE, PIN_SIZE, {
+      fit: "contain",
+      withoutEnlargement: false,
+    })
+    .png()
+    .toBuffer();
 }
 
-export async function generateShopMapPreview(params: {
-  x: number;
-  z: number;
-}) {
+export async function generateShopMapPreview(params: { x: number; z: number }) {
   const mapPath = getMapPath();
 
   if (!fs.existsSync(mapPath)) {
@@ -62,8 +70,12 @@ export async function generateShopMapPreview(params: {
   const localX = Math.round(px - left);
   const localY = Math.round(py - top);
 
-  const pinSize = 76;
-  const pin = await sharp(buildPinSvg(pinSize)).png().toBuffer();
+  const pin = await loadPinBuffer();
+
+  const pinLeft = Math.round((localX / cropSize) * PREVIEW_SIZE - PIN_SIZE / 2);
+  const pinTop = Math.round(
+    (localY / cropSize) * PREVIEW_SIZE - PIN_SIZE * 0.92,
+  );
 
   const buffer = await sharp(mapPath)
     .extract({
@@ -76,8 +88,8 @@ export async function generateShopMapPreview(params: {
     .composite([
       {
         input: pin,
-        left: Math.round((localX / cropSize) * PREVIEW_SIZE - pinSize / 2),
-        top: Math.round((localY / cropSize) * PREVIEW_SIZE - pinSize * 0.92),
+        left: pinLeft,
+        top: pinTop,
       },
     ])
     .jpeg({ quality: 86, mozjpeg: true })

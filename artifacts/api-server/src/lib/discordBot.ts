@@ -364,13 +364,48 @@ function buildShopItemPayload(
 
 function formatShopMoney(value: unknown) {
   const amount = Number(value || 0);
-  return amount.toLocaleString("pt-BR");
+  return amount.toLocaleString("en-US");
 }
 
 function getUserShopBalanceLabel(_state: any, _discordUserId: string) {
   // Balance/economy is not wired in this bot yet. Keep this centralized so it
   // can be connected to the real wallet later without touching the checkout UI.
-  return "não integrado";
+  return "Not connected";
+}
+
+function formatShopFooterTime(date = new Date()) {
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: process.env.SHOP_RESTART_TIMEZONE || "America/Sao_Paulo",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(date);
+}
+
+function buildShopEmbedBase(color: ColorResolvable = "Green") {
+  return new EmbedBuilder()
+    .setColor(color)
+    .setAuthor({
+      name: BOT_NAME,
+      iconURL: BOT_ICON,
+    })
+    .setFooter({
+      text: `PZ DayZ Bot • ${formatShopFooterTime()}`,
+    });
+}
+
+function formatShopCoordinateLabel(checkout: any) {
+  return `${Number(checkout.x).toFixed(2)}, ${Number(checkout.y).toFixed(2)}, ${Number(checkout.z).toFixed(2)}`;
+}
+
+function formatShopDeliveryResetLabel(state: any) {
+  const runtime = getShopRuntimeStatus(state);
+
+  if (runtime.nextRestartLabel) {
+    return `Next scheduled restart (${runtime.nextRestartLabel})`;
+  }
+
+  return "Next server restart";
 }
 
 function ensurePendingShopCheckouts(state: any) {
@@ -443,39 +478,59 @@ function removePendingShopCheckout(state: any, checkoutId: string) {
 async function buildShopCheckoutPayload(state: any, checkout: any) {
   const runtime = getShopRuntimeStatus(state);
   const item = getShopItems().find((candidate) => candidate.id === checkout.itemId);
+  const itemName = checkout.itemName || item?.name || checkout.itemClass;
   const balanceLabel = getUserShopBalanceLabel(state, checkout.discordUserId);
+  const deliveryLabel = formatShopDeliveryResetLabel(state);
 
-  const embed = new EmbedBuilder()
-    .setTitle("🧭 Confirmar entrega da shop")
+  const embed = buildShopEmbedBase(runtime.canAcceptPurchase ? "Green" : "Orange")
+    .setTitle(`Buy ${itemName}`)
     .setDescription(
-      [
-        "Confira o item, o valor e o local marcado no mapa antes de confirmar.",
-        "",
-        `Item: **${checkout.itemName || item?.name || checkout.itemClass}**`,
-        `Class: \`${checkout.itemClass}\``,
-        `Valor: **${formatShopMoney(checkout.price)}**`,
-        `Saldo: **${balanceLabel}**`,
-        `Coordenada: \`${checkout.x}, ${checkout.y}, ${checkout.z}\``,
-        checkout.saveLocationName ? `Salvar como: **${checkout.saveLocationName}**` : null,
-        runtime.canAcceptPurchase ? null : `\n⚠️ ${runtime.reason}`,
-      ]
-        .filter(Boolean)
-        .join("\n"),
+      runtime.canAcceptPurchase
+        ? "Review your purchase details and delivery location before confirming."
+        : `Checkout is currently closed. ${runtime.reason}`,
     )
-    .setColor(runtime.canAcceptPurchase ? "Green" : "Orange")
-    .setFooter({ text: "A compra só será criada ao clicar em Confirmar compra." });
+    .addFields(
+      {
+        name: "Price",
+        value: formatShopMoney(checkout.price),
+        inline: true,
+      },
+      {
+        name: "Available balance",
+        value: balanceLabel,
+        inline: true,
+      },
+      {
+        name: "Delivery location",
+        value: `\`${formatShopCoordinateLabel(checkout)}\``,
+        inline: false,
+      },
+      {
+        name: "Delivery reset",
+        value: deliveryLabel,
+        inline: false,
+      },
+    );
+
+  if (checkout.saveLocationName) {
+    embed.addFields({
+      name: "Saved location",
+      value: checkout.saveLocationName,
+      inline: false,
+    });
+  }
 
   if (item?.imageUrl) embed.setThumbnail(item.imageUrl);
 
   const confirmButton = new ButtonBuilder()
     .setCustomId(`shop-confirm:${checkout.id}`)
-    .setLabel(runtime.canAcceptPurchase ? "Confirmar compra" : "Checkout fechado")
+    .setLabel(runtime.canAcceptPurchase ? "Confirm purchase" : "Checkout closed")
     .setStyle(runtime.canAcceptPurchase ? ButtonStyle.Success : ButtonStyle.Secondary)
     .setDisabled(!runtime.canAcceptPurchase);
 
   const cancelButton = new ButtonBuilder()
     .setCustomId(`shop-confirm-cancel:${checkout.id}`)
-    .setLabel("Cancelar")
+    .setLabel("Cancel")
     .setStyle(ButtonStyle.Danger);
 
   const payload: any = {
@@ -499,8 +554,8 @@ async function buildShopCheckoutPayload(state: any, checkout: any) {
   } catch (err) {
     console.error("❌ erro gerando preview do mapa da shop:", err);
     embed.addFields({
-      name: "Mapa",
-      value: "Não foi possível gerar o preview do mapa, mas a confirmação continua disponível.",
+      name: "Map preview",
+      value: "The delivery map preview could not be generated, but you can still confirm the purchase.",
     });
   }
 
@@ -525,13 +580,54 @@ async function showShopCheckoutConfirmation(interaction: any, state: any, checko
   });
 }
 
-async function respondShopOrderConfirmation(interaction: any, lines: Array<string | null | undefined>) {
-  const payload = {
-    content: lines.filter(Boolean).join("\n"),
-    embeds: [],
-    components: [],
-  };
+function buildShopOrderCreatedPayload(options: {
+  state: any;
+  checkout: any;
+  order: any;
+}) {
+  const item = getShopItems().find(
+    (candidate) => candidate.id === options.checkout.itemId,
+  );
+  const itemName =
+    options.checkout.itemName ||
+    item?.name ||
+    options.order.itemName ||
+    options.order.itemClass;
 
+  const embed = buildShopEmbedBase("Green")
+    .setTitle("Purchase confirmed")
+    .setDescription(
+      "Your shop order was created successfully. It will be included in the next delivery cycle.",
+    )
+    .addFields(
+      {
+        name: "Item",
+        value: itemName,
+        inline: true,
+      },
+      {
+        name: "Order",
+        value: `\`${options.order.id}\``,
+        inline: true,
+      },
+      {
+        name: "Status",
+        value: `\`${options.order.status}\``,
+        inline: false,
+      },
+    );
+
+  if (item?.imageUrl) embed.setThumbnail(item.imageUrl);
+
+  return {
+    content: "",
+    embeds: [embed],
+    components: [],
+    files: [],
+  };
+}
+
+async function respondShopOrderConfirmation(interaction: any, payload: any) {
   try {
     if (typeof interaction.update === "function") {
       await interaction.update(payload);
@@ -553,7 +649,7 @@ async function respondShopOrderConfirmation(interaction: any, lines: Array<strin
     console.error("❌ erro editando mensagem original da shop:", (err as any)?.message || err);
   }
 
-  await interaction.reply({ ephemeral: true, content: payload.content });
+  await interaction.reply({ ephemeral: true, ...payload });
 }
 
 function getKillStreakMeta(streak: number) {
@@ -2514,7 +2610,7 @@ export async function startDiscordBot() {
             removePendingShopCheckout(state, checkoutId);
             await saveState(state);
             await interaction.update({
-              content: "🛒 Compra cancelada.",
+              content: "🛒 Purchase cancelled.",
               embeds: [],
               components: [],
               files: [],
@@ -2532,7 +2628,7 @@ export async function startDiscordBot() {
 
             if (!checkout) {
               await interaction.reply({
-                content: "❌ Esta confirmação expirou. Abra a shop e tente novamente.",
+                content: "❌ This confirmation expired. Open the shop and try again.",
                 ephemeral: true,
               });
               return;
@@ -2568,15 +2664,14 @@ export async function startDiscordBot() {
               removePendingShopCheckout(state, checkoutId);
               await saveState(state);
 
-              await respondShopOrderConfirmation(interaction, [
-                "✅ Shop order created for the next restart.",
-                "",
-                `Order: \`${order.id}\``,
-                `Item: \`${order.itemClass}\``,
-                `Position: \`${order.x}, ${order.y}, ${order.z}\``,
-                checkout.saveLocationName ? `Saved coordinate: **${checkout.saveLocationName}**` : null,
-                `Status: \`${order.status}\``,
-              ]);
+              await respondShopOrderConfirmation(
+                interaction,
+                buildShopOrderCreatedPayload({
+                  state,
+                  checkout,
+                  order,
+                }),
+              );
             } catch (err: any) {
               await interaction.reply({
                 ephemeral: true,
