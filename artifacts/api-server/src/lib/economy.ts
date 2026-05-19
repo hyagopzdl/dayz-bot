@@ -174,6 +174,64 @@ export function setCoins(params: {
   return { wallet, transaction };
 }
 
+export function debitCoins(params: {
+  state: AppState;
+  link: PlayerLink;
+  amount: number;
+  type: Extract<EconomyTransactionType, "ADMIN_REMOVE" | "SHOP_PURCHASE">;
+  reason?: string;
+  createdBy?: string;
+}) {
+  const amount = normalizeAmount(params.amount);
+  const { wallet } = getOrCreateWalletForLink(params.state, params.link);
+  const balanceBefore = wallet.balance;
+
+  if (amount <= 0) {
+    throw new Error("Amount must be greater than zero.");
+  }
+
+  if (balanceBefore < amount) {
+    throw new Error("Insufficient balance.");
+  }
+
+  wallet.balance = balanceBefore - amount;
+  wallet.totalSpent = Math.max(0, Math.floor(Number(wallet.totalSpent || 0))) + amount;
+  wallet.updatedAt = nowIso();
+
+  const transaction = recordEconomyTransaction({
+    state: params.state,
+    discordId: params.link.discordId,
+    gamertag: params.link.gamertag,
+    type: params.type,
+    amount,
+    balanceBefore,
+    balanceAfter: wallet.balance,
+    reason: params.reason,
+    createdBy: params.createdBy,
+  });
+
+  return { wallet, transaction };
+}
+
+export function purchaseWithWallet(params: {
+  state: AppState;
+  link: PlayerLink;
+  amount: number;
+  itemName: string;
+  orderId?: string;
+}) {
+  return debitCoins({
+    state: params.state,
+    link: params.link,
+    amount: params.amount,
+    type: "SHOP_PURCHASE",
+    reason: params.orderId
+      ? `Shop purchase: ${params.itemName} (${params.orderId})`
+      : `Shop purchase: ${params.itemName}`,
+    createdBy: params.link.discordId,
+  });
+}
+
 export function hasEnoughCoins(state: AppState, link: PlayerLink, amount: number) {
   const { wallet } = getOrCreateWalletForLink(state, link);
   return wallet.balance >= normalizeAmount(amount);

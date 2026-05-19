@@ -397,7 +397,17 @@ export async function buildShopCheckoutPayload(state: any, checkout: any) {
   const runtime = getShopRuntimeStatus(state);
   const item = getShopItems().find((candidate) => candidate.id === checkout.itemId);
   const itemName = checkout.itemName || item?.name || checkout.itemClass;
-  const balanceLabel = getUserShopBalanceLabel(state, checkout.discordUserId);
+  const link = getPlayerLinkByDiscordId(state, checkout.discordUserId);
+  const locale = normalizeLocale(link?.locale);
+  const wallet = link ? getOrCreateWalletForLink(state, link).wallet : null;
+  const price = Number(checkout.price || 0);
+  const balanceAfter = wallet ? Math.max(0, Number(wallet.balance || 0) - price) : 0;
+  const balanceLabel = wallet
+    ? `${formatCoins(wallet.balance)} ${t(locale, "economy.coins")}`
+    : t(locale, "shop.linkRequiredTitle");
+  const balanceAfterLabel = wallet
+    ? `${formatCoins(balanceAfter)} ${t(locale, "economy.coins")}`
+    : t(locale, "shop.linkRequiredTitle");
   const deliveryLabel = formatShopDeliveryResetLabel(state);
 
   const embed = buildShopEmbedBase(runtime.canAcceptPurchase ? "Green" : "Orange")
@@ -409,13 +419,18 @@ export async function buildShopCheckoutPayload(state: any, checkout: any) {
     )
     .addFields(
       {
-        name: "Price",
-        value: formatShopMoney(checkout.price),
+        name: t(locale, "shop.priceLabel"),
+        value: `${formatShopMoney(checkout.price)} ${t(locale, "economy.coins")}`,
         inline: true,
       },
       {
-        name: "Available balance",
+        name: t(locale, "shop.balanceLabel"),
         value: balanceLabel,
+        inline: true,
+      },
+      {
+        name: t(locale, "shop.balanceAfterLabel"),
+        value: balanceAfterLabel,
         inline: true,
       },
       {
@@ -501,6 +516,50 @@ export async function showShopCheckoutConfirmation(interaction: any, state: any,
     ...payload,
     ephemeral: true,
   });
+}
+
+export function buildShopInsufficientBalancePayload(options: {
+  state: any;
+  discordUserId: string;
+  checkout: any;
+}) {
+  const link = getPlayerLinkByDiscordId(options.state, options.discordUserId);
+  const locale = normalizeLocale(link?.locale);
+  const wallet = link ? getOrCreateWalletForLink(options.state, link).wallet : null;
+  const required = Number(options.checkout?.price || 0);
+  const current = Number(wallet?.balance || 0);
+
+  const embed = buildShopEmbedBase("Red")
+    .setTitle(t(locale, "shop.insufficientBalanceTitle"))
+    .setDescription([
+      t(locale, "shop.insufficientBalanceDescription"),
+      "",
+      `**${t(locale, "shop.requiredLabel")}:** ${formatCoins(required)} ${t(locale, "economy.coins")}`,
+      `**${t(locale, "shop.currentLabel")}:** ${formatCoins(current)} ${t(locale, "economy.coins")}`,
+    ].join("\n"));
+
+  return {
+    content: "",
+    embeds: [embed],
+    components: [],
+    files: [],
+  };
+}
+
+export function buildShopProcessingPayload(state: any, discordUserId: string) {
+  const link = getPlayerLinkByDiscordId(state, discordUserId);
+  const locale = normalizeLocale(link?.locale);
+
+  const embed = buildShopEmbedBase("Orange")
+    .setTitle(t(locale, "shop.processingTitle"))
+    .setDescription(t(locale, "shop.processingDescription"));
+
+  return {
+    content: "",
+    embeds: [embed],
+    components: [],
+    files: [],
+  };
 }
 
 export function buildShopOrderCreatedPayload(options: {

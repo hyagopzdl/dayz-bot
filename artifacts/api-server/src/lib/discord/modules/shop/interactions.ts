@@ -18,7 +18,9 @@ import {
   buildShopHomePayload,
   buildShopItemPayload,
   buildShopOrderCreatedPayload,
+  buildShopInsufficientBalancePayload,
   buildShopLinkRequiredPayload,
+  buildShopProcessingPayload,
   createPendingShopCheckout,
   findPendingShopCheckout,
   formatShopClosedMessage,
@@ -27,6 +29,7 @@ import {
   showShopCheckoutConfirmation,
 } from "./ui";
 import { getPlayerLinkByDiscordId } from "../../../playerLinks";
+import { hasEnoughCoins, purchaseWithWallet } from "../../../economy";
 
 export type ShopInteractionContext = {
   getState: () => Promise<any>;
@@ -48,6 +51,8 @@ async function safeDeferUpdate(interaction: any) {
 function hasLinkedGamertag(state: any, discordUserId: string) {
   return Boolean(getPlayerLinkByDiscordId(state, discordUserId));
 }
+
+const activeShopConfirmations = new Set<string>();
 
 export async function handleShopInteraction(interaction: any, ctx: ShopInteractionContext) {
   if (interaction.isStringSelectMenu()) {
@@ -140,7 +145,8 @@ export async function handleShopInteraction(interaction: any, ctx: ShopInteracti
         return true;
       }
 
-      if (!hasLinkedGamertag(state, interaction.user.id)) {
+      const link = getPlayerLinkByDiscordId(state, interaction.user.id);
+      if (!link) {
         await interaction.editReply(buildShopLinkRequiredPayload(state, interaction.user.id));
         return true;
       }
@@ -151,7 +157,25 @@ export async function handleShopInteraction(interaction: any, ctx: ShopInteracti
         return true;
       }
 
+      if (activeShopConfirmations.has(checkoutId)) {
+        await interaction.editReply(buildShopProcessingPayload(state, interaction.user.id));
+        return true;
+      }
+
+      activeShopConfirmations.add(checkoutId);
+
       try {
+        const price = Number(checkout.price || 0);
+
+        if (!hasEnoughCoins(state, link, price)) {
+          await interaction.editReply(buildShopInsufficientBalancePayload({
+            state,
+            discordUserId: interaction.user.id,
+            checkout,
+          }));
+          return true;
+        }
+
         if (checkout.saveLocationName) {
           saveShopLocation({
             state,
@@ -172,6 +196,16 @@ export async function handleShopInteraction(interaction: any, ctx: ShopInteracti
           z: checkout.z,
         });
 
+        if (price > 0) {
+          purchaseWithWallet({
+            state,
+            link,
+            amount: price,
+            itemName: checkout.itemName || order.itemName || checkout.itemClass || checkout.itemId,
+            orderId: order.id,
+          });
+        }
+
         removePendingShopCheckout(state, checkoutId);
         await ctx.saveState(state);
 
@@ -190,6 +224,8 @@ export async function handleShopInteraction(interaction: any, ctx: ShopInteracti
           components: [],
           files: [],
         });
+      } finally {
+        activeShopConfirmations.delete(checkoutId);
       }
       return true;
     }
