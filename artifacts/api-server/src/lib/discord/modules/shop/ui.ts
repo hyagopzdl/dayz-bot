@@ -16,6 +16,9 @@ import {
 } from "../../../shop";
 import { generateShopMapPreview } from "../../../shopMapPreview";
 import { BOT_ICON, BOT_NAME } from "../../constants";
+import { getOrCreateWalletForLink, formatCoins } from "../../../economy";
+import { normalizeLocale, t } from "../../../i18n";
+import { getPlayerLinkByDiscordId } from "../../../playerLinks";
 
 export function formatShopClosedMessage(state: any) {
   const runtime = getShopRuntimeStatus(state);
@@ -260,10 +263,32 @@ export function formatShopMoney(value: unknown) {
   return amount.toLocaleString("en-US");
 }
 
-export function getUserShopBalanceLabel(_state: any, _discordUserId: string) {
-  // Balance/economy is not wired in this bot yet. Keep this centralized so it
-  // can be connected to the real wallet later without touching the checkout UI.
-  return "Not connected";
+export function getUserShopBalanceLabel(state: any, discordUserId: string) {
+  const link = getPlayerLinkByDiscordId(state, discordUserId);
+  if (!link) return "Not linked";
+
+  const { wallet } = getOrCreateWalletForLink(state, link);
+  const locale = normalizeLocale(link.locale);
+  return `${formatCoins(wallet.balance)} ${t(locale, "economy.coins")}`;
+}
+
+export function buildShopLinkRequiredPayload(state: any, discordUserId: string) {
+  const link = getPlayerLinkByDiscordId(state, discordUserId);
+  const locale = normalizeLocale(link?.locale);
+
+  const embed = buildShopEmbedBase("Orange")
+    .setTitle(t(locale, "shop.linkRequiredTitle"))
+    .setDescription([
+      t(locale, "shop.linkRequiredDescription"),
+      "",
+      t(locale, "shop.linkRequiredHint"),
+    ].join("\n"));
+
+  return {
+    embeds: [embed],
+    components: [],
+    files: [],
+  };
 }
 
 export function formatShopFooterTime(date = new Date()) {

@@ -13,6 +13,7 @@ import { assertAdmin } from "./permissions";
 import { handleShopInteraction } from "./modules/shop/interactions";
 import { handleLinkAutocomplete, handleLinkCommand, handleLinkComponentInteraction } from "./modules/link/interactions";
 import { handleEconomyCommand } from "./modules/economy/interactions";
+import { handleEconomyAdminAutocomplete, handleEconomyAdminCommand } from "./modules/economy-admin/interactions";
 import {
   KILLFEED_MESSAGE_PREFIX,
   KILLSTREAK_MESSAGE_PREFIX,
@@ -72,12 +73,14 @@ export function registerInteractionHandlers(ctx: RegisterInteractionHandlersCont
   client.on("interactionCreate", async (interaction) => {
   try {
     if (await handleLinkAutocomplete(interaction, { getState, saveState })) return;
+    if (await handleEconomyAdminAutocomplete(interaction, { getState, saveState })) return;
     if (await handleLinkComponentInteraction(interaction, { getState, saveState })) return;
     if (await handleShopInteraction(interaction, { getState, saveState })) return;
 
     if (!interaction.isChatInputCommand()) return;
     if (await handleLinkCommand(interaction, { getState, saveState })) return;
     if (await handleEconomyCommand(interaction, { getState, saveState })) return;
+    if (await handleEconomyAdminCommand(interaction, { getState, saveState })) return;
     if (interaction.commandName === "player-stats") {
       const player = interaction.options.getString("player", true);
       const state = await getState();

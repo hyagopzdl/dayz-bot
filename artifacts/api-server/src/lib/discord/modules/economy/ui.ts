@@ -2,6 +2,7 @@ import { EmbedBuilder } from "discord.js";
 import type { PlayerLink, Wallet } from "../../../state";
 import { formatCoins } from "../../../economy";
 import { normalizeLocale, t } from "../../../i18n";
+import { BOT_ICON, BOT_NAME } from "../../constants";
 
 const COLORS = {
   primary: 0xf2c94c,
@@ -19,6 +20,7 @@ export function buildBankPayload(params: {
 
   const embed = new EmbedBuilder()
     .setColor(COLORS.primary)
+    .setAuthor({ name: BOT_NAME, iconURL: BOT_ICON })
     .setTitle(t(locale, "economy.bankTitle"));
 
   if (description) {
@@ -47,7 +49,7 @@ export function buildBankPayload(params: {
         inline: true,
       },
     )
-    .setFooter({ text: "PZ DayZ Bot" })
+    .setFooter({ text: BOT_NAME })
     .setTimestamp(new Date());
 
   return { embeds: [embed], components: [] };

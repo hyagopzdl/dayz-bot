@@ -18,6 +18,7 @@ import {
   buildShopHomePayload,
   buildShopItemPayload,
   buildShopOrderCreatedPayload,
+  buildShopLinkRequiredPayload,
   createPendingShopCheckout,
   findPendingShopCheckout,
   formatShopClosedMessage,
@@ -25,6 +26,7 @@ import {
   respondShopOrderConfirmation,
   showShopCheckoutConfirmation,
 } from "./ui";
+import { getPlayerLinkByDiscordId } from "../../../playerLinks";
 
 export type ShopInteractionContext = {
   getState: () => Promise<any>;
@@ -41,6 +43,10 @@ async function safeDeferUpdate(interaction: any) {
   if (interaction.deferred || interaction.replied) return true;
   await interaction.deferUpdate();
   return true;
+}
+
+function hasLinkedGamertag(state: any, discordUserId: string) {
+  return Boolean(getPlayerLinkByDiscordId(state, discordUserId));
 }
 
 export async function handleShopInteraction(interaction: any, ctx: ShopInteractionContext) {
@@ -134,6 +140,11 @@ export async function handleShopInteraction(interaction: any, ctx: ShopInteracti
         return true;
       }
 
+      if (!hasLinkedGamertag(state, interaction.user.id)) {
+        await interaction.editReply(buildShopLinkRequiredPayload(state, interaction.user.id));
+        return true;
+      }
+
       const closedMessage = formatShopClosedMessage(state);
       if (closedMessage) {
         await interaction.editReply({ content: closedMessage, embeds: [], components: [], files: [] });
@@ -184,6 +195,11 @@ export async function handleShopInteraction(interaction: any, ctx: ShopInteracti
     }
 
     if (interaction.customId.startsWith("shop-buy-ui:")) {
+      if (!hasLinkedGamertag(state, interaction.user.id)) {
+        await interaction.reply({ ...buildShopLinkRequiredPayload(state, interaction.user.id), ephemeral: true });
+        return true;
+      }
+
       const closedMessage = formatShopClosedMessage(state);
       if (closedMessage) {
         await interaction.reply({ content: closedMessage, ephemeral: true });
@@ -270,6 +286,11 @@ export async function handleShopInteraction(interaction: any, ctx: ShopInteracti
       const saveLocationName = interaction.fields.getTextInputValue("save_location_name") || "";
       const state = await ctx.getState();
 
+      if (!hasLinkedGamertag(state, interaction.user.id)) {
+        await interaction.editReply(buildShopLinkRequiredPayload(state, interaction.user.id));
+        return true;
+      }
+
       try {
         const { x, y, z } = parseShopCoordinates(coordsInput, 0);
         const checkout = createPendingShopCheckout({
@@ -301,6 +322,12 @@ export async function handleShopInteraction(interaction: any, ctx: ShopInteracti
   if (interaction.isChatInputCommand() && interaction.commandName === "shop") {
     await safeDeferReply(interaction);
     const state = await ctx.getState();
+
+    if (!hasLinkedGamertag(state, interaction.user.id)) {
+      await interaction.editReply(buildShopLinkRequiredPayload(state, interaction.user.id));
+      return true;
+    }
+
     await interaction.editReply(buildShopHomePayload(state));
     return true;
   }

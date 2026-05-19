@@ -80,6 +80,105 @@ export function recordEconomyTransaction(params: {
   return transaction;
 }
 
+export function addCoins(params: {
+  state: AppState;
+  link: PlayerLink;
+  amount: number;
+  reason?: string;
+  createdBy?: string;
+}) {
+  const amount = normalizeAmount(params.amount);
+  const { wallet } = getOrCreateWalletForLink(params.state, params.link);
+  const balanceBefore = wallet.balance;
+  wallet.balance = balanceBefore + amount;
+  wallet.totalEarned = Math.max(0, Math.floor(Number(wallet.totalEarned || 0))) + amount;
+  wallet.updatedAt = nowIso();
+
+  const transaction = recordEconomyTransaction({
+    state: params.state,
+    discordId: params.link.discordId,
+    gamertag: params.link.gamertag,
+    type: "ADMIN_ADD",
+    amount,
+    balanceBefore,
+    balanceAfter: wallet.balance,
+    reason: params.reason,
+    createdBy: params.createdBy,
+  });
+
+  return { wallet, transaction };
+}
+
+export function removeCoins(params: {
+  state: AppState;
+  link: PlayerLink;
+  amount: number;
+  reason?: string;
+  createdBy?: string;
+}) {
+  const amount = normalizeAmount(params.amount);
+  const { wallet } = getOrCreateWalletForLink(params.state, params.link);
+  const balanceBefore = wallet.balance;
+  const appliedAmount = Math.min(balanceBefore, amount);
+  wallet.balance = Math.max(0, balanceBefore - amount);
+  wallet.totalSpent = Math.max(0, Math.floor(Number(wallet.totalSpent || 0))) + appliedAmount;
+  wallet.updatedAt = nowIso();
+
+  const transaction = recordEconomyTransaction({
+    state: params.state,
+    discordId: params.link.discordId,
+    gamertag: params.link.gamertag,
+    type: "ADMIN_REMOVE",
+    amount: appliedAmount,
+    balanceBefore,
+    balanceAfter: wallet.balance,
+    reason: params.reason,
+    createdBy: params.createdBy,
+  });
+
+  return { wallet, transaction, requestedAmount: amount, appliedAmount };
+}
+
+export function setCoins(params: {
+  state: AppState;
+  link: PlayerLink;
+  amount: number;
+  reason?: string;
+  createdBy?: string;
+}) {
+  const amount = normalizeAmount(params.amount);
+  const { wallet } = getOrCreateWalletForLink(params.state, params.link);
+  const balanceBefore = wallet.balance;
+  wallet.balance = amount;
+
+  if (amount > balanceBefore) {
+    wallet.totalEarned = Math.max(0, Math.floor(Number(wallet.totalEarned || 0))) + (amount - balanceBefore);
+  } else if (amount < balanceBefore) {
+    wallet.totalSpent = Math.max(0, Math.floor(Number(wallet.totalSpent || 0))) + (balanceBefore - amount);
+  }
+
+  wallet.updatedAt = nowIso();
+
+  const transaction = recordEconomyTransaction({
+    state: params.state,
+    discordId: params.link.discordId,
+    gamertag: params.link.gamertag,
+    type: "ADMIN_SET",
+    amount,
+    balanceBefore,
+    balanceAfter: wallet.balance,
+    reason: params.reason,
+    createdBy: params.createdBy,
+  });
+
+  return { wallet, transaction };
+}
+
+export function hasEnoughCoins(state: AppState, link: PlayerLink, amount: number) {
+  const { wallet } = getOrCreateWalletForLink(state, link);
+  return wallet.balance >= normalizeAmount(amount);
+}
+
 export function formatCoins(amount: number): string {
   return new Intl.NumberFormat("en-US").format(Math.floor(Number(amount || 0)));
 }
