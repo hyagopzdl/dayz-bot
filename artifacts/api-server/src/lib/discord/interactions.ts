@@ -11,6 +11,7 @@ import {
 import { deferEphemeral, respondEphemeral } from "./responses";
 import { assertAdmin } from "./permissions";
 import { handleShopInteraction } from "./modules/shop/interactions";
+import { handleLinkCommand, handleLinkComponentInteraction } from "./modules/link/interactions";
 import {
   KILLFEED_MESSAGE_PREFIX,
   KILLSTREAK_MESSAGE_PREFIX,
@@ -69,9 +70,11 @@ export function registerInteractionHandlers(ctx: RegisterInteractionHandlersCont
 
   client.on("interactionCreate", async (interaction) => {
   try {
+    if (await handleLinkComponentInteraction(interaction, { getState, saveState })) return;
     if (await handleShopInteraction(interaction, { getState, saveState })) return;
 
     if (!interaction.isChatInputCommand()) return;
+    if (await handleLinkCommand(interaction, { getState, saveState })) return;
     if (interaction.commandName === "player-stats") {
       const player = interaction.options.getString("player", true);
       const state = await getState();

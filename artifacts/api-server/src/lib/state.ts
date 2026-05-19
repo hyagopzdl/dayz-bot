@@ -4,6 +4,7 @@ import crypto from "crypto";
 import postgres from "postgres";
 import type { ShopCatalog } from "./shopCatalog";
 import type { DayzItemDefinition } from "./dayzItemDatabase";
+import type { Locale } from "./i18n";
 
 const FILE = path.resolve(process.cwd(), "state.json");
 const STATE_ID = "main";
@@ -160,6 +161,15 @@ export type ShopOrder = {
   failReason?: string;
 };
 
+export type PlayerLink = {
+  discordId: string;
+  gamertag: string;
+  gamertagNormalized: string;
+  locale: Locale;
+  linkedAt: string;
+  updatedAt: string;
+};
+
 export type ActiveMatch = {
   id: string;
   name: string;
@@ -177,6 +187,9 @@ export type AppState = {
   weeklyPlayers: Record<string, PlayerStats>;
   onlinePlayers: Record<string, OnlinePlayer>;
   onlineSessions: Record<string, OnlineSession>;
+
+  playerLinks: Record<string, PlayerLink>;
+  playerLinksByGamertag: Record<string, string>;
 
   shopOrders: ShopOrder[];
   shopSavedLocations?: ShopSavedLocation[];
@@ -217,6 +230,8 @@ function defaultState(): AppState {
     weeklyPlayers: {},
     onlinePlayers: {},
     onlineSessions: {},
+    playerLinks: {},
+    playerLinksByGamertag: {},
     shopOrders: [],
     shopSavedLocations: [],
     shopPendingCheckouts: [],
@@ -301,6 +316,29 @@ function migrateLegacyState(data: any): AppState {
   state.lastFileName = data.lastFileName;
 
   state.onlineSessions = data.onlineSessions || {};
+  state.playerLinks = data.playerLinks || {};
+  state.playerLinksByGamertag = {};
+
+  for (const [discordId, link] of Object.entries(state.playerLinks)) {
+    const existing = link as any;
+    const gamertag = String(existing.gamertag || "").trim();
+    if (!gamertag) {
+      delete state.playerLinks[discordId];
+      continue;
+    }
+
+    const normalized = String(existing.gamertagNormalized || gamertag.toLowerCase()).trim().toLowerCase();
+    state.playerLinks[discordId] = {
+      discordId: String(existing.discordId || discordId),
+      gamertag,
+      gamertagNormalized: normalized,
+      locale: existing.locale === "pt" ? "pt" : "en",
+      linkedAt: existing.linkedAt || existing.createdAt || new Date().toISOString(),
+      updatedAt: existing.updatedAt || existing.linkedAt || new Date().toISOString(),
+    };
+    state.playerLinksByGamertag[normalized] = discordId;
+  }
+
   state.shopOrders = Array.isArray(data.shopOrders) ? data.shopOrders : [];
   state.shopSavedLocations = Array.isArray(data.shopSavedLocations) ? data.shopSavedLocations : [];
   state.shopPendingCheckouts = Array.isArray(data.shopPendingCheckouts) ? data.shopPendingCheckouts : [];
@@ -520,6 +558,8 @@ export async function saveStateAsync(data: AppState) {
     weeklyPlayers: data.weeklyPlayers || {},
     onlinePlayers: data.onlinePlayers || {},
     onlineSessions: data.onlineSessions || {},
+    playerLinks: data.playerLinks || {},
+    playerLinksByGamertag: data.playerLinksByGamertag || {},
     shopOrders: Array.isArray(data.shopOrders) ? data.shopOrders : [],
     shopSavedLocations: Array.isArray(data.shopSavedLocations) ? data.shopSavedLocations : [],
     shopPendingCheckouts: Array.isArray(data.shopPendingCheckouts) ? data.shopPendingCheckouts : [],

@@ -117,6 +117,24 @@ export function buildDiscordCommands() {
       dmPermission: false,
     },
     {
+      name: "link",
+      description: "Link your Discord account to your DayZ gamertag.",
+      dmPermission: false,
+      options: [
+        {
+          name: "gamertag",
+          description: "Your DayZ / console gamertag.",
+          type: 3,
+          required: true,
+        },
+      ],
+    },
+    {
+      name: "unlink",
+      description: "Unlink your Discord account from your DayZ gamertag.",
+      dmPermission: false,
+    },
+    {
       name: "shop",
       description: "Open interactive DayZ shop UI.",
       dmPermission: false,
