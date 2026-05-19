@@ -458,6 +458,11 @@ export async function buildShopCheckoutPayload(state: any, checkout: any) {
 export async function showShopCheckoutConfirmation(interaction: any, state: any, checkout: any) {
   const payload = await buildShopCheckoutPayload(state, checkout);
 
+  if (interaction.deferred || interaction.replied) {
+    await interaction.editReply(payload);
+    return;
+  }
+
   try {
     if (typeof interaction.update === "function") {
       await interaction.update(payload);
@@ -521,6 +526,11 @@ export function buildShopOrderCreatedPayload(options: {
 }
 
 export async function respondShopOrderConfirmation(interaction: any, payload: any) {
+  if (interaction.deferred || interaction.replied) {
+    await interaction.editReply(payload);
+    return;
+  }
+
   try {
     if (typeof interaction.update === "function") {
       await interaction.update(payload);

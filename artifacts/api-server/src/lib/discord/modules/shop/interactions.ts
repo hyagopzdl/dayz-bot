@@ -31,6 +31,18 @@ export type ShopInteractionContext = {
   saveState: (state: any) => Promise<void>;
 };
 
+async function safeDeferReply(interaction: any) {
+  if (interaction.deferred || interaction.replied) return true;
+  await interaction.deferReply({ ephemeral: true });
+  return true;
+}
+
+async function safeDeferUpdate(interaction: any) {
+  if (interaction.deferred || interaction.replied) return true;
+  await interaction.deferUpdate();
+  return true;
+}
+
 export async function handleShopInteraction(interaction: any, ctx: ShopInteractionContext) {
   if (interaction.isStringSelectMenu()) {
     const state = await ctx.getState();
@@ -90,10 +102,11 @@ export async function handleShopInteraction(interaction: any, ctx: ShopInteracti
     }
 
     if (interaction.customId.startsWith("shop-confirm-cancel:")) {
+      await safeDeferUpdate(interaction);
       const checkoutId = interaction.customId.split(":")[1];
       removePendingShopCheckout(state, checkoutId);
       await ctx.saveState(state);
-      await interaction.update({
+      await interaction.editReply({
         content: "🛒 Purchase cancelled.",
         embeds: [],
         components: [],
@@ -103,6 +116,7 @@ export async function handleShopInteraction(interaction: any, ctx: ShopInteracti
     }
 
     if (interaction.customId.startsWith("shop-confirm:")) {
+      await safeDeferUpdate(interaction);
       const checkoutId = interaction.customId.split(":")[1];
       const checkout = findPendingShopCheckout(
         state,
@@ -111,16 +125,18 @@ export async function handleShopInteraction(interaction: any, ctx: ShopInteracti
       );
 
       if (!checkout) {
-        await interaction.reply({
+        await interaction.editReply({
           content: "❌ This confirmation expired. Open the shop and try again.",
-          ephemeral: true,
+          embeds: [],
+          components: [],
+          files: [],
         });
         return true;
       }
 
       const closedMessage = formatShopClosedMessage(state);
       if (closedMessage) {
-        await interaction.reply({ content: closedMessage, ephemeral: true });
+        await interaction.editReply({ content: closedMessage, embeds: [], components: [], files: [] });
         return true;
       }
 
@@ -157,9 +173,11 @@ export async function handleShopInteraction(interaction: any, ctx: ShopInteracti
           }),
         );
       } catch (err: any) {
-        await interaction.reply({
-          ephemeral: true,
+        await interaction.editReply({
           content: `❌ ${err?.message || err}`,
+          embeds: [],
+          components: [],
+          files: [],
         });
       }
       return true;
@@ -190,6 +208,7 @@ export async function handleShopInteraction(interaction: any, ctx: ShopInteracti
         }
 
         try {
+          await safeDeferUpdate(interaction);
           const checkout = createPendingShopCheckout({
             state,
             discordUserId: interaction.user.id,
@@ -203,10 +222,14 @@ export async function handleShopInteraction(interaction: any, ctx: ShopInteracti
           await ctx.saveState(state);
           await showShopCheckoutConfirmation(interaction, state, checkout);
         } catch (err: any) {
-          await interaction.reply({
-            ephemeral: true,
-            content: `❌ ${err?.message || err}`,
-          });
+          if (interaction.deferred || interaction.replied) {
+            await interaction.editReply({ content: `❌ ${err?.message || err}`, embeds: [], components: [], files: [] });
+          } else {
+            await interaction.reply({
+              ephemeral: true,
+              content: `❌ ${err?.message || err}`,
+            });
+          }
         }
         return true;
       }
@@ -241,6 +264,7 @@ export async function handleShopInteraction(interaction: any, ctx: ShopInteracti
 
   if (interaction.isModalSubmit()) {
     if (interaction.customId.startsWith("shop-modal:")) {
+      await safeDeferReply(interaction);
       const itemId = interaction.customId.split(":")[1];
       const coordsInput = interaction.fields.getTextInputValue("coords");
       const saveLocationName = interaction.fields.getTextInputValue("save_location_name") || "";
@@ -261,21 +285,23 @@ export async function handleShopInteraction(interaction: any, ctx: ShopInteracti
         await ctx.saveState(state);
         await showShopCheckoutConfirmation(interaction, state, checkout);
       } catch (err: any) {
-        await interaction.reply({
-          ephemeral: true,
-          content: `❌ ${err?.message || err}`,
-        });
+        if (interaction.deferred || interaction.replied) {
+          await interaction.editReply({ content: `❌ ${err?.message || err}`, embeds: [], components: [], files: [] });
+        } else {
+          await interaction.reply({
+            ephemeral: true,
+            content: `❌ ${err?.message || err}`,
+          });
+        }
       }
       return true;
     }
   }
 
   if (interaction.isChatInputCommand() && interaction.commandName === "shop") {
+    await safeDeferReply(interaction);
     const state = await ctx.getState();
-    await interaction.reply({
-      ...buildShopHomePayload(state),
-      ephemeral: true,
-    });
+    await interaction.editReply(buildShopHomePayload(state));
     return true;
   }
 
