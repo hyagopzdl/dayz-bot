@@ -29,7 +29,10 @@ const messages = {
       noLinkFound: "You do not have a linked gamertag yet. Use /link first.",
       alreadyUsedGamertag: "This gamertag is already linked to another Discord account.",
       invalidGamertag: "Invalid gamertag. Use 2 to 32 visible characters.",
+      unknownGamertag: "Gamertag not found in the server records. Join the server at least once, then try again.",
       unlinked: "Your gamertag has been unlinked.",
+      unlinkedTitle: "Account unlinked",
+      errorTitle: "Link unavailable",
     },
     economy: {
       bankDescription: "View your coin balance.",
@@ -69,7 +72,10 @@ const messages = {
       noLinkFound: "Você ainda não vinculou uma gamertag. Use /link primeiro.",
       alreadyUsedGamertag: "Esta gamertag já está vinculada a outra conta do Discord.",
       invalidGamertag: "Gamertag inválida. Use de 2 a 32 caracteres visíveis.",
+      unknownGamertag: "Gamertag não encontrada nos registros do servidor. Entre no servidor pelo menos uma vez e tente novamente.",
       unlinked: "Sua gamertag foi desvinculada.",
+      unlinkedTitle: "Conta desvinculada",
+      errorTitle: "Vínculo indisponível",
     },
     economy: {
       bankDescription: "Veja seu saldo de moedas.",

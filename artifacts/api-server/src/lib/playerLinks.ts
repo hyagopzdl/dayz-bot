@@ -95,3 +95,41 @@ export function unlinkPlayer(state: AppState, discordId: string): PlayerLink | n
 
   return link;
 }
+
+export function findKnownGamertag(state: AppState, gamertag: string): string | null {
+  const normalized = normalizeGamertag(gamertag);
+  if (!normalized) return null;
+
+  const players = state.players || {};
+  for (const playerName of Object.keys(players)) {
+    if (normalizeGamertag(playerName) === normalized) {
+      return playerName;
+    }
+  }
+
+  return null;
+}
+
+export function searchKnownGamertags(state: AppState, query: string, limit = 25): string[] {
+  const normalizedQuery = normalizeGamertag(query);
+  const players = Object.keys(state.players || {});
+
+  const exact: string[] = [];
+  const startsWith: string[] = [];
+  const includes: string[] = [];
+
+  for (const playerName of players) {
+    const normalizedPlayer = normalizeGamertag(playerName);
+    if (!normalizedQuery) {
+      includes.push(playerName);
+    } else if (normalizedPlayer === normalizedQuery) {
+      exact.push(playerName);
+    } else if (normalizedPlayer.startsWith(normalizedQuery)) {
+      startsWith.push(playerName);
+    } else if (normalizedPlayer.includes(normalizedQuery)) {
+      includes.push(playerName);
+    }
+  }
+
+  return [...exact, ...startsWith, ...includes].slice(0, limit);
+}

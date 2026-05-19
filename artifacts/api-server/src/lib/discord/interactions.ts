@@ -11,7 +11,7 @@ import {
 import { deferEphemeral, respondEphemeral } from "./responses";
 import { assertAdmin } from "./permissions";
 import { handleShopInteraction } from "./modules/shop/interactions";
-import { handleLinkCommand, handleLinkComponentInteraction } from "./modules/link/interactions";
+import { handleLinkAutocomplete, handleLinkCommand, handleLinkComponentInteraction } from "./modules/link/interactions";
 import { handleEconomyCommand } from "./modules/economy/interactions";
 import {
   KILLFEED_MESSAGE_PREFIX,
@@ -71,6 +71,7 @@ export function registerInteractionHandlers(ctx: RegisterInteractionHandlersCont
 
   client.on("interactionCreate", async (interaction) => {
   try {
+    if (await handleLinkAutocomplete(interaction, { getState, saveState })) return;
     if (await handleLinkComponentInteraction(interaction, { getState, saveState })) return;
     if (await handleShopInteraction(interaction, { getState, saveState })) return;
 

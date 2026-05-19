@@ -126,6 +126,7 @@ export function buildDiscordCommands() {
           description: "Your DayZ / console gamertag.",
           type: 3,
           required: true,
+          autocomplete: true,
         },
       ],
     },
