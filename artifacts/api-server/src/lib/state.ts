@@ -170,6 +170,38 @@ export type PlayerLink = {
   updatedAt: string;
 };
 
+export type Wallet = {
+  discordId: string;
+  gamertag: string;
+  balance: number;
+  totalEarned: number;
+  totalSpent: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type EconomyTransactionType =
+  | "ADMIN_ADD"
+  | "ADMIN_REMOVE"
+  | "ADMIN_SET"
+  | "SHOP_PURCHASE"
+  | "PLAYTIME_REWARD"
+  | "EVENT_REWARD"
+  | "DONATION_REWARD";
+
+export type EconomyTransaction = {
+  id: string;
+  discordId: string;
+  gamertag: string;
+  type: EconomyTransactionType;
+  amount: number;
+  balanceBefore: number;
+  balanceAfter: number;
+  reason?: string;
+  createdAt: string;
+  createdBy?: string;
+};
+
 export type ActiveMatch = {
   id: string;
   name: string;
@@ -190,6 +222,9 @@ export type AppState = {
 
   playerLinks: Record<string, PlayerLink>;
   playerLinksByGamertag: Record<string, string>;
+
+  wallets: Record<string, Wallet>;
+  economyTransactions: EconomyTransaction[];
 
   shopOrders: ShopOrder[];
   shopSavedLocations?: ShopSavedLocation[];
@@ -232,6 +267,8 @@ function defaultState(): AppState {
     onlineSessions: {},
     playerLinks: {},
     playerLinksByGamertag: {},
+    wallets: {},
+    economyTransactions: [],
     shopOrders: [],
     shopSavedLocations: [],
     shopPendingCheckouts: [],
@@ -338,6 +375,31 @@ function migrateLegacyState(data: any): AppState {
     };
     state.playerLinksByGamertag[normalized] = discordId;
   }
+
+  state.wallets = {};
+  for (const [discordId, wallet] of Object.entries(data.wallets || {})) {
+    const existing = wallet as any;
+    const balance = Math.max(0, Math.floor(Number(existing.balance || 0)));
+    const totalEarned = Math.max(0, Math.floor(Number(existing.totalEarned || 0)));
+    const totalSpent = Math.max(0, Math.floor(Number(existing.totalSpent || 0)));
+    const linkedGamertag = state.playerLinks[discordId]?.gamertag;
+    const gamertag = String(existing.gamertag || linkedGamertag || "Unknown").trim();
+    const now = new Date().toISOString();
+
+    state.wallets[discordId] = {
+      discordId: String(existing.discordId || discordId),
+      gamertag,
+      balance,
+      totalEarned,
+      totalSpent,
+      createdAt: existing.createdAt || existing.linkedAt || now,
+      updatedAt: existing.updatedAt || now,
+    };
+  }
+
+  state.economyTransactions = Array.isArray(data.economyTransactions)
+    ? data.economyTransactions.slice(-1000)
+    : [];
 
   state.shopOrders = Array.isArray(data.shopOrders) ? data.shopOrders : [];
   state.shopSavedLocations = Array.isArray(data.shopSavedLocations) ? data.shopSavedLocations : [];
@@ -560,6 +622,8 @@ export async function saveStateAsync(data: AppState) {
     onlineSessions: data.onlineSessions || {},
     playerLinks: data.playerLinks || {},
     playerLinksByGamertag: data.playerLinksByGamertag || {},
+    wallets: data.wallets || {},
+    economyTransactions: Array.isArray(data.economyTransactions) ? data.economyTransactions.slice(-1000) : [],
     shopOrders: Array.isArray(data.shopOrders) ? data.shopOrders : [],
     shopSavedLocations: Array.isArray(data.shopSavedLocations) ? data.shopSavedLocations : [],
     shopPendingCheckouts: Array.isArray(data.shopPendingCheckouts) ? data.shopPendingCheckouts : [],

@@ -12,6 +12,7 @@ import { deferEphemeral, respondEphemeral } from "./responses";
 import { assertAdmin } from "./permissions";
 import { handleShopInteraction } from "./modules/shop/interactions";
 import { handleLinkCommand, handleLinkComponentInteraction } from "./modules/link/interactions";
+import { handleEconomyCommand } from "./modules/economy/interactions";
 import {
   KILLFEED_MESSAGE_PREFIX,
   KILLSTREAK_MESSAGE_PREFIX,
@@ -75,6 +76,7 @@ export function registerInteractionHandlers(ctx: RegisterInteractionHandlersCont
 
     if (!interaction.isChatInputCommand()) return;
     if (await handleLinkCommand(interaction, { getState, saveState })) return;
+    if (await handleEconomyCommand(interaction, { getState, saveState })) return;
     if (interaction.commandName === "player-stats") {
       const player = interaction.options.getString("player", true);
       const state = await getState();

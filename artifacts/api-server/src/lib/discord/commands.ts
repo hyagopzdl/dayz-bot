@@ -135,6 +135,11 @@ export function buildDiscordCommands() {
       dmPermission: false,
     },
     {
+      name: "bank",
+      description: "View your coin balance.",
+      dmPermission: false,
+    },
+    {
       name: "shop",
       description: "Open interactive DayZ shop UI.",
       dmPermission: false,
