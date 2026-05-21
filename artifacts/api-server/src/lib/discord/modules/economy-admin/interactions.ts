@@ -15,11 +15,10 @@ function userLocaleFromInteraction(interaction: any) {
   return interaction.locale === "pt-BR" || interaction.guildLocale === "pt-BR" ? "pt" : "en";
 }
 
-function authorOptions(interaction: any) {
-  return {
-    authorName: interaction.client?.user?.username || undefined,
-    authorIconURL: interaction.client?.user?.displayAvatarURL?.() || undefined,
-  };
+function authorOptions(_interaction: any) {
+  // Branding is centralized in discord/ui. This compatibility object is kept so
+  // existing handler calls do not need to know how embeds are branded.
+  return {};
 }
 
 async function safeDeferReply(interaction: any) {

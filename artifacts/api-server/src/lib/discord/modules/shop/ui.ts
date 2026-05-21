@@ -15,7 +15,7 @@ import {
   getSavedShopLocations,
 } from "../../../shop";
 import { generateShopMapPreview } from "../../../shopMapPreview";
-import { BOT_ICON, BOT_NAME } from "../../constants";
+import { buildBrandedEmbed } from "../../ui/embeds";
 import { getOrCreateWalletForLink, formatCoins } from "../../../economy";
 import { normalizeLocale, t } from "../../../i18n";
 import { getPlayerLinkByDiscordId } from "../../../playerLinks";
@@ -301,15 +301,11 @@ export function formatShopFooterTime(date = new Date()) {
 }
 
 export function buildShopEmbedBase(color: ColorResolvable = "Green") {
-  return new EmbedBuilder()
-    .setColor(color)
-    .setAuthor({
-      name: BOT_NAME,
-      iconURL: BOT_ICON,
-    })
-    .setFooter({
-      text: `PZ DayZ Bot • ${formatShopFooterTime()}`,
-    });
+  return buildBrandedEmbed({
+    color,
+    footerSuffix: formatShopFooterTime(),
+    timestamp: false,
+  });
 }
 
 export function formatShopCoordinateLabel(checkout: any) {

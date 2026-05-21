@@ -1,12 +1,7 @@
-import { EmbedBuilder } from "discord.js";
 import type { PlayerLink, Wallet } from "../../../state";
 import { formatCoins } from "../../../economy";
 import { normalizeLocale, t } from "../../../i18n";
-import { BOT_ICON, BOT_NAME } from "../../constants";
-
-const COLORS = {
-  primary: 0xf2c94c,
-};
+import { buildEconomyEmbed, buildErrorEmbed } from "../../ui/embeds";
 
 export function buildBankPayload(params: {
   link: PlayerLink;
@@ -16,18 +11,11 @@ export function buildBankPayload(params: {
   const locale = normalizeLocale(params.link.locale);
   const { link, wallet } = params;
 
-  const description = params.walletCreated ? t(locale, "economy.walletCreated") : undefined;
-
-  const embed = new EmbedBuilder()
-    .setColor(COLORS.primary)
-    .setAuthor({ name: BOT_NAME, iconURL: BOT_ICON })
-    .setTitle(t(locale, "economy.bankTitle"));
-
-  if (description) {
-    embed.setDescription(description);
-  }
-
-  embed.addFields(
+  const embed = buildEconomyEmbed({
+    title: t(locale, "economy.bankTitle"),
+    description: params.walletCreated ? t(locale, "economy.walletCreated") : undefined,
+  })
+    .addFields(
       {
         name: t(locale, "economy.gamertagLabel"),
         value: `\`${link.gamertag}\``,
@@ -48,9 +36,17 @@ export function buildBankPayload(params: {
         value: `${formatCoins(wallet.totalSpent)} ${t(locale, "economy.coins")}`,
         inline: true,
       },
-    )
-    .setFooter({ text: BOT_NAME })
-    .setTimestamp(new Date());
+    );
+
+  return { embeds: [embed], components: [] };
+}
+
+export function buildBankLinkRequiredPayload(locale: string | null | undefined) {
+  const normalized = normalizeLocale(locale);
+  const embed = buildErrorEmbed({
+    title: t(normalized, "link.errorTitle"),
+    description: t(normalized, "economy.linkRequired"),
+  });
 
   return { embeds: [embed], components: [] };
 }

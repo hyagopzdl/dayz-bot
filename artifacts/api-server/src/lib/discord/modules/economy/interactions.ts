@@ -1,7 +1,7 @@
 import { getOrCreateWalletForLink } from "../../../economy";
-import { normalizeLocale, t } from "../../../i18n";
+import { normalizeLocale } from "../../../i18n";
 import { getPlayerLinkByDiscordId } from "../../../playerLinks";
-import { buildBankPayload } from "./ui";
+import { buildBankLinkRequiredPayload, buildBankPayload } from "./ui";
 
 export type EconomyInteractionContext = {
   getState: () => Promise<any>;
@@ -29,11 +29,7 @@ export async function handleEconomyCommand(interaction: any, ctx: EconomyInterac
   const locale = normalizeLocale(link?.locale);
 
   if (!link) {
-    await editInteractionReply(interaction, {
-      content: `❌ ${t(locale, "economy.linkRequired")}`,
-      embeds: [],
-      components: [],
-    });
+    await editInteractionReply(interaction, buildBankLinkRequiredPayload(locale));
     return true;
   }
 

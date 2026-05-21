@@ -24,12 +24,10 @@ function extractUserId(customId: string): string | null {
   return customId.split(":")[1] || null;
 }
 
-function getBotAuthorOptions(interaction: any): LinkPayloadOptions {
-  const botUser = interaction.client?.user;
-  return {
-    authorName: botUser?.username ? `${botUser.username}` : "PZ DayZ Bot",
-    authorIconURL: botUser?.displayAvatarURL?.({ size: 128 }) || botUser?.avatarURL?.() || null,
-  };
+function getBotAuthorOptions(_interaction: any): LinkPayloadOptions {
+  // Branding is centralized in discord/ui. This compatibility object is kept so
+  // existing handler calls do not need to know how embeds are branded.
+  return {};
 }
 
 async function rejectForeignInteraction(interaction: any, ownerId: string) {
