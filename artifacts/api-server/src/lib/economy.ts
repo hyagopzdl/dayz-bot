@@ -40,6 +40,7 @@ export function getOrCreateWalletForLink(state: AppState, link: PlayerLink): { w
     balance: 0,
     totalEarned: 0,
     totalSpent: 0,
+    onlineRewardMinutes: 0,
     createdAt,
     updatedAt: createdAt,
   };
@@ -235,6 +236,55 @@ export function purchaseWithWallet(params: {
 export function hasEnoughCoins(state: AppState, link: PlayerLink, amount: number) {
   const { wallet } = getOrCreateWalletForLink(state, link);
   return wallet.balance >= normalizeAmount(amount);
+}
+
+
+export function addPlaytimeRewardMinutes(params: {
+  state: AppState;
+  link: PlayerLink;
+  minutes: number;
+  rewardMinutes: number;
+  rewardCoins: number;
+  reason?: string;
+}) {
+  ensureEconomyState(params.state);
+
+  const minutes = Math.max(0, Math.floor(Number(params.minutes || 0)));
+  const rewardMinutes = Math.max(1, Math.floor(Number(params.rewardMinutes || 60)));
+  const rewardCoins = Math.max(0, Math.floor(Number(params.rewardCoins || 0)));
+  const { wallet } = getOrCreateWalletForLink(params.state, params.link);
+
+  wallet.onlineRewardMinutes = Math.max(0, Math.floor(Number(wallet.onlineRewardMinutes || 0))) + minutes;
+  wallet.updatedAt = nowIso();
+
+  const rewardsToPay = rewardCoins > 0 ? Math.floor(wallet.onlineRewardMinutes / rewardMinutes) : 0;
+  if (rewardsToPay <= 0) {
+    return { wallet, transaction: null, paid: false, paidAmount: 0, remainingMinutes: wallet.onlineRewardMinutes };
+  }
+
+  const paidAmount = rewardsToPay * rewardCoins;
+  const consumedMinutes = rewardsToPay * rewardMinutes;
+  const balanceBefore = wallet.balance;
+
+  wallet.balance = balanceBefore + paidAmount;
+  wallet.totalEarned = Math.max(0, Math.floor(Number(wallet.totalEarned || 0))) + paidAmount;
+  wallet.onlineRewardMinutes = Math.max(0, wallet.onlineRewardMinutes - consumedMinutes);
+  wallet.lastPlaytimeRewardAt = nowIso();
+  wallet.updatedAt = wallet.lastPlaytimeRewardAt;
+
+  const transaction = recordEconomyTransaction({
+    state: params.state,
+    discordId: params.link.discordId,
+    gamertag: params.link.gamertag,
+    type: "PLAYTIME_REWARD",
+    amount: paidAmount,
+    balanceBefore,
+    balanceAfter: wallet.balance,
+    reason: params.reason || `Online time reward (${consumedMinutes} minutes)`,
+    createdBy: "system:playtime",
+  });
+
+  return { wallet, transaction, paid: true, paidAmount, remainingMinutes: wallet.onlineRewardMinutes };
 }
 
 export function formatCoins(amount: number): string {

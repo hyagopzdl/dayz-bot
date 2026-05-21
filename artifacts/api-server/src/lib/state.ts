@@ -176,6 +176,13 @@ export type Wallet = {
   balance: number;
   totalEarned: number;
   totalSpent: number;
+  /**
+   * Accumulated online minutes that have not been converted into coins yet.
+   * This persists across bot/server restarts so a player at 58/60 minutes
+   * keeps that progress and receives the reward after the remaining time.
+   */
+  onlineRewardMinutes?: number;
+  lastPlaytimeRewardAt?: string;
   createdAt: string;
   updatedAt: string;
 };
@@ -392,6 +399,8 @@ function migrateLegacyState(data: any): AppState {
       balance,
       totalEarned,
       totalSpent,
+      onlineRewardMinutes: Math.max(0, Math.floor(Number(existing.onlineRewardMinutes || 0))),
+      lastPlaytimeRewardAt: existing.lastPlaytimeRewardAt,
       createdAt: existing.createdAt || existing.linkedAt || now,
       updatedAt: existing.updatedAt || now,
     };

@@ -5,6 +5,7 @@ import { registerDiscordCommands } from "./discord/commands";
 import { createDiscordFeedRuntime } from "./discord/modules/feeds/runtime";
 import { registerInteractionHandlers } from "./discord/interactions";
 import { startShopStatusMonitor } from "./discord/shopStatusMonitor";
+import { startEconomyRewardsLoop } from "./discord/modules/economy/rewardsLoop";
 
 const client = createDiscordClient();
 
@@ -67,6 +68,7 @@ export async function startDiscordBot() {
     await feeds.updateLeaderboard();
 
     startShopStatusMonitor(stateAccess);
+    startEconomyRewardsLoop(stateAccess);
     setInterval(() => feeds.updateLeaderboard(), 5 * 60 * 1000);
   });
 
