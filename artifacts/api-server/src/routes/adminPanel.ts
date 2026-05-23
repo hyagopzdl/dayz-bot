@@ -160,7 +160,7 @@ function buildMemberRows(state: AdminState): MemberRow[] {
         totalEarned: numbers.totalEarned,
         totalSpent: numbers.totalSpent,
         onlineRewardMinutes: numbers.onlineRewardMinutes,
-        status: isOnline ? "online" : "offline",
+        status: (isOnline ? "online" : "offline") as "online" | "offline",
         linkedAt: formatIso(link.linkedAt),
         updatedAt: formatIso(link.updatedAt),
         lastSeenAt: getLastSeenAt(state, link.gamertag),
