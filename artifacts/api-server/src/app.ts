@@ -3,6 +3,7 @@ import cors from "cors";
 import pinoHttp from "pino-http";
 import router from "./routes";
 import adminRoutes from "./routes/admin";
+import adminPanelRoutes from "./routes/adminPanel";
 import { logger } from "./lib/logger";
 
 const app: Express = express();
@@ -39,6 +40,7 @@ app.get("/", (_req, res) => {
 
 // 🔐 ADMIN PANEL
 app.use("/admin", adminRoutes);
+app.use("/admin-panel", adminPanelRoutes);
 
 // API
 app.use("/api", router);
