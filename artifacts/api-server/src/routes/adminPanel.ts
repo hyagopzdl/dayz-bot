@@ -1,6 +1,15 @@
 import { Router, type Request, type Response } from "express";
 import { getShopRuntimeStatus } from "../lib/shop";
-import { getShopCatalog, type ShopCatalog, type ShopItem } from "../lib/shopCatalog";
+import {
+  deleteShopCatalogItem,
+  ensureShopCatalogLoaded,
+  getShopCatalog,
+  normalizeShopCatalogId,
+  toggleShopCatalogItem,
+  upsertShopCatalogItem,
+  type ShopCatalog,
+  type ShopItem,
+} from "../lib/shopCatalog";
 import { addCoins, removeCoins, setCoins, getOrCreateWalletForLink } from "../lib/economy";
 import { getStateAsync, saveStateAsync, type AppState, type PlayerLink, type Wallet } from "../lib/state";
 
@@ -358,6 +367,38 @@ function buildCatalogPayload() {
         : 0,
     },
     generatedAt: new Date().toISOString(),
+  };
+}
+
+function readCatalogItemPayload(body: unknown, fallbackId?: string): ShopItem {
+  const input = (body && typeof body === "object" ? body : {}) as Record<string, unknown>;
+  const id = normalizeShopCatalogId(String(input.id || fallbackId || input.name || input.className || ""));
+  const name = String(input.name || "").trim();
+  const className = String(input.className || input.class_name || "").trim();
+  const category = normalizeShopCatalogId(String(input.category || "misc")) || "misc";
+  const price = Math.floor(Number(input.price || 0));
+  const enabled = typeof input.enabled === "boolean" ? input.enabled : input.enabled !== false;
+  const maxPerRestartRaw = input.maxPerRestart ?? input.max_per_restart;
+  const maxPerRestart = maxPerRestartRaw === null || maxPerRestartRaw === "" || maxPerRestartRaw === undefined
+    ? undefined
+    : Math.max(0, Math.floor(Number(maxPerRestartRaw)));
+
+  if (!id) throw new Error("Item id is required.");
+  if (!name) throw new Error("Item name is required.");
+  if (!className) throw new Error("DayZ class name is required.");
+  if (!Number.isFinite(price) || price < 0) throw new Error("Item price must be a valid positive number.");
+
+  return {
+    id,
+    name,
+    className,
+    popularName: input.popularName ? String(input.popularName).trim() : undefined,
+    category,
+    price,
+    description: input.description ? String(input.description).trim() : undefined,
+    imageUrl: input.imageUrl ? String(input.imageUrl).trim() : undefined,
+    enabled,
+    maxPerRestart: Number.isFinite(Number(maxPerRestart)) ? maxPerRestart : undefined,
   };
 }
 
@@ -733,6 +774,11 @@ function renderAdminPanelHtml(token: string) {
     .catalog-price { font-size: 14px; font-weight: 680; color: var(--text); white-space: nowrap; }
     .catalog-description { min-height: 38px; color: var(--text-2); font-size: 12px; line-height: 1.45; }
     .catalog-meta { display: flex; flex-wrap: wrap; gap: 6px; }
+    .catalog-actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; padding-top: 2px; }
+    .form-grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .form-grid .full { grid-column: 1 / -1; }
+    .toggle-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px; border-radius: 14px; background: #25262A; border: 1px solid var(--border); }
+    .toggle-row input { width: auto; }
     .catalog-empty { padding: 42px; text-align: center; color: var(--text-3); border: 1px dashed var(--border-strong); border-radius: 18px; background: #2B2D31; }
     .modal-backdrop {
       position: fixed;
@@ -983,7 +1029,7 @@ function renderAdminPanelHtml(token: string) {
             <div class="card">
               <div class="section-title">
                 <h2>Catálogo do shop</h2>
-                <span class="chip">read-only</span>
+                <div style="display:flex;align-items:center;gap:8px"><span class="chip">Neon</span><button id="catalogCreate" class="primary-btn">Novo item</button></div>
               </div>
               <div class="catalog-toolbar">
                 <div class="search"><input id="catalogSearch" placeholder="Buscar por item, classe ou categoria" /></div>
@@ -1027,18 +1073,37 @@ function renderAdminPanelHtml(token: string) {
       <div class="modal-actions"><button class="ghost-btn" id="modalCancel">Cancelar</button><button class="primary-btn" id="modalConfirm">Confirmar</button></div>
     </div>
   </div>
+  <div id="catalogModalBackdrop" class="modal-backdrop">
+    <div class="modal">
+      <h2 id="catalogModalTitle">Item do catálogo</h2>
+      <p id="catalogModalSubtitle">Gerencie o item diretamente no Neon.</p>
+      <div class="form-grid two">
+        <label>ID<input id="catalogItemId" placeholder="ex: vehicle-civ-sedan" /></label>
+        <label>Categoria<input id="catalogItemCategory" placeholder="vehicles" /></label>
+        <label class="full">Nome<input id="catalogItemName" placeholder="Civilian Sedan" /></label>
+        <label class="full">Class name DayZ<input id="catalogItemClassName" placeholder="CivilianSedan" /></label>
+        <label>Preço<input id="catalogItemPrice" type="number" min="0" step="1" /></label>
+        <label>Max/restart<input id="catalogItemMax" type="number" min="0" step="1" placeholder="opcional" /></label>
+        <label class="full">Imagem URL<input id="catalogItemImage" placeholder="https://..." /></label>
+        <label class="full">Descrição<textarea id="catalogItemDescription" placeholder="Descrição exibida no painel/shop..."></textarea></label>
+        <label class="toggle-row full"><span><b>Disponível no shop</b><small style="display:block;color:var(--text-3);margin-top:4px">Itens desativados ficam ocultos no /shop.</small></span><input id="catalogItemEnabled" type="checkbox" checked /></label>
+      </div>
+      <div class="modal-actions"><button class="ghost-btn" id="catalogModalCancel">Cancelar</button><button class="primary-btn" id="catalogModalConfirm">Salvar item</button></div>
+    </div>
+  </div>
   <div id="toast" class="toast"></div>
   <script>
     const adminToken = ${tokenJson};
     if (adminToken) document.cookie = "${TOKEN_COOKIE}=" + encodeURIComponent(adminToken) + "; path=/admin-panel; SameSite=Lax";
-    const state = { view: "general", cursor: 0, hasMore: true, loadingMembers: false, search: "", filter: "", modal: null, selectedDiscordId: null, catalog: null, catalogSearch: "", catalogCategory: "" };
+    const state = { view: "general", cursor: 0, hasMore: true, loadingMembers: false, search: "", filter: "", modal: null, catalogModal: null, selectedDiscordId: null, catalog: null, catalogSearch: "", catalogCategory: "" };
     const els = {
       pageTitle: document.getElementById("pageTitle"), serverName: document.getElementById("serverName"),
       memberList: document.getElementById("memberList"), memberLoading: document.getElementById("memberLoading"), memberEmpty: document.getElementById("memberEmpty"),
       modalBackdrop: document.getElementById("modalBackdrop"), modalTitle: document.getElementById("modalTitle"), modalSubtitle: document.getElementById("modalSubtitle"),
       coinAmount: document.getElementById("coinAmount"), coinReason: document.getElementById("coinReason"), toast: document.getElementById("toast"),
       detailDrawer: document.getElementById("detailDrawer"), drawerBody: document.getElementById("drawerBody"), drawerAvatar: document.getElementById("drawerAvatar"), drawerName: document.getElementById("drawerName"), drawerMeta: document.getElementById("drawerMeta"),
-      catalogGrid: document.getElementById("catalogGrid"), catalogLoading: document.getElementById("catalogLoading"), catalogEmpty: document.getElementById("catalogEmpty"), catalogSearch: document.getElementById("catalogSearch"), catalogCategory: document.getElementById("catalogCategory")
+      catalogGrid: document.getElementById("catalogGrid"), catalogLoading: document.getElementById("catalogLoading"), catalogEmpty: document.getElementById("catalogEmpty"), catalogSearch: document.getElementById("catalogSearch"), catalogCategory: document.getElementById("catalogCategory"),
+      catalogModalBackdrop: document.getElementById("catalogModalBackdrop"), catalogModalTitle: document.getElementById("catalogModalTitle"), catalogModalSubtitle: document.getElementById("catalogModalSubtitle"), catalogItemId: document.getElementById("catalogItemId"), catalogItemCategory: document.getElementById("catalogItemCategory"), catalogItemName: document.getElementById("catalogItemName"), catalogItemClassName: document.getElementById("catalogItemClassName"), catalogItemPrice: document.getElementById("catalogItemPrice"), catalogItemMax: document.getElementById("catalogItemMax"), catalogItemImage: document.getElementById("catalogItemImage"), catalogItemDescription: document.getElementById("catalogItemDescription"), catalogItemEnabled: document.getElementById("catalogItemEnabled")
     };
     function apiUrl(path) { const separator = path.includes("?") ? "&" : "?"; return adminToken ? path + separator + "token=" + encodeURIComponent(adminToken) : path; }
     async function apiFetch(path, options) { const headers = Object.assign({ "Content-Type": "application/json" }, (options && options.headers) || {}); if (adminToken) headers["x-admin-token"] = adminToken; return fetch(apiUrl(path), Object.assign({}, options || {}, { headers, credentials: "same-origin" })); }
@@ -1158,12 +1223,14 @@ function renderAdminPanelHtml(token: string) {
       const maxChip = item.maxPerRestart === null || item.maxPerRestart === undefined
         ? ''
         : '<span class="chip">Max ' + escapeHtml(String(item.maxPerRestart)) + '/restart</span>';
-      return '<article class="catalog-item">' +
+      const toggleLabel = item.enabled ? 'Desativar' : 'Ativar';
+      return '<article class="catalog-item" data-item-id="' + escapeHtml(item.id) + '">' +
         '<div class="catalog-item-top"><div class="catalog-thumb">' + thumb + '</div>' +
         '<div><div class="catalog-name">' + escapeHtml(item.name) + '</div><div class="catalog-class">' + escapeHtml(item.className) + '</div></div>' +
         '<div class="catalog-price">' + formatCoins(item.price) + '</div></div>' +
         '<div class="catalog-description">' + escapeHtml(item.description || item.popularName || 'Sem descrição cadastrada.') + '</div>' +
         '<div class="catalog-meta"><span class="chip">' + escapeHtml(item.categoryLabel || item.category) + '</span>' + enabledChip + maxChip + '</div>' +
+        '<div class="catalog-actions"><button class="mini-btn" data-catalog-action="edit">Editar</button><button class="mini-btn" data-catalog-action="toggle">' + toggleLabel + '</button><button class="mini-btn danger" data-catalog-action="delete">Excluir</button></div>' +
       '</article>';
     }
     function renderCatalog() {
@@ -1203,6 +1270,74 @@ function renderAdminPanelHtml(token: string) {
       renderCatalogCategoryOptions(state.catalog);
       renderCatalog();
     }
+    function findCatalogItem(itemId) {
+      return (state.catalog?.items || []).find((item) => item.id === itemId) || null;
+    }
+    function openCatalogModal(mode, item) {
+      state.catalogModal = { mode, itemId: item?.id || null };
+      els.catalogModalTitle.textContent = mode === "create" ? "Novo item" : "Editar item";
+      els.catalogModalSubtitle.textContent = mode === "create" ? "Crie um item no catálogo do Neon." : "Atualize os dados exibidos no shop.";
+      els.catalogItemId.disabled = mode !== "create";
+      els.catalogItemId.value = item?.id || "";
+      els.catalogItemCategory.value = item?.category || state.catalogCategory || "misc";
+      els.catalogItemName.value = item?.name || "";
+      els.catalogItemClassName.value = item?.className || "";
+      els.catalogItemPrice.value = item?.price ?? 0;
+      els.catalogItemMax.value = item?.maxPerRestart === null || item?.maxPerRestart === undefined ? "" : item.maxPerRestart;
+      els.catalogItemImage.value = item?.imageUrl || "";
+      els.catalogItemDescription.value = item?.description || item?.popularName || "";
+      els.catalogItemEnabled.checked = item?.enabled !== false;
+      els.catalogModalBackdrop.classList.add("open");
+      setTimeout(() => (mode === "create" ? els.catalogItemId : els.catalogItemName).focus(), 80);
+    }
+    function closeCatalogModal() {
+      state.catalogModal = null;
+      els.catalogModalBackdrop.classList.remove("open");
+    }
+    function readCatalogForm() {
+      return {
+        id: els.catalogItemId.value,
+        category: els.catalogItemCategory.value || "misc",
+        name: els.catalogItemName.value,
+        className: els.catalogItemClassName.value,
+        price: Number(els.catalogItemPrice.value || 0),
+        maxPerRestart: els.catalogItemMax.value === "" ? null : Number(els.catalogItemMax.value),
+        imageUrl: els.catalogItemImage.value,
+        description: els.catalogItemDescription.value,
+        enabled: Boolean(els.catalogItemEnabled.checked),
+      };
+    }
+    async function saveCatalogItem() {
+      if (!state.catalogModal) return;
+      const payload = readCatalogForm();
+      const isCreate = state.catalogModal.mode === "create";
+      const path = isCreate
+        ? "/admin-panel/api/catalog/items"
+        : "/admin-panel/api/catalog/items/" + encodeURIComponent(state.catalogModal.itemId);
+      const response = await apiFetch(path, { method: isCreate ? "POST" : "PATCH", body: JSON.stringify(payload) });
+      if (!response.ok) { showToast(await response.text()); return; }
+      closeCatalogModal();
+      showToast(isCreate ? "Item criado com sucesso." : "Item atualizado com sucesso.");
+      await loadCatalog();
+    }
+    async function toggleCatalogItem(itemId) {
+      const item = findCatalogItem(itemId);
+      if (!item) return;
+      const response = await apiFetch("/admin-panel/api/catalog/items/" + encodeURIComponent(itemId) + "/toggle", { method: "PATCH", body: JSON.stringify({ enabled: !item.enabled }) });
+      if (!response.ok) { showToast(await response.text()); return; }
+      showToast(item.enabled ? "Item desativado." : "Item ativado.");
+      await loadCatalog();
+    }
+    async function deleteCatalogItemAction(itemId) {
+      const item = findCatalogItem(itemId);
+      if (!item) return;
+      if (!confirm("Excluir definitivamente o item " + item.name + "?")) return;
+      const response = await apiFetch("/admin-panel/api/catalog/items/" + encodeURIComponent(itemId), { method: "DELETE" });
+      if (!response.ok) { showToast(await response.text()); return; }
+      showToast("Item excluído do catálogo.");
+      await loadCatalog();
+    }
+
     function switchView(view) {
       state.view = view; document.querySelectorAll(".view").forEach((el) => el.classList.toggle("active", el.id === "view-" + view));
       document.querySelectorAll(".nav button").forEach((el) => el.classList.toggle("active", el.dataset.view === view));
@@ -1238,6 +1373,20 @@ function renderAdminPanelHtml(token: string) {
     document.getElementById("catalogSearch").addEventListener("input", (event) => { state.catalogSearch = event.target.value; renderCatalog(); });
     document.getElementById("catalogCategory").addEventListener("change", (event) => { state.catalogCategory = event.target.value; renderCatalog(); });
     document.getElementById("catalogRefresh").addEventListener("click", loadCatalog);
+    document.getElementById("catalogCreate").addEventListener("click", () => openCatalogModal("create", null));
+    document.getElementById("catalogModalCancel").addEventListener("click", closeCatalogModal);
+    document.getElementById("catalogModalConfirm").addEventListener("click", saveCatalogItem);
+    els.catalogGrid.addEventListener("click", (event) => {
+      const button = event.target.closest("button[data-catalog-action]");
+      if (!button) return;
+      const card = button.closest(".catalog-item");
+      const itemId = card?.getAttribute("data-item-id");
+      if (!itemId) return;
+      const action = button.dataset.catalogAction;
+      if (action === "edit") openCatalogModal("edit", findCatalogItem(itemId));
+      if (action === "toggle") toggleCatalogItem(itemId);
+      if (action === "delete") deleteCatalogItemAction(itemId);
+    });
     els.memberList.addEventListener("click", (event) => {
       const card = event.target.closest(".member-card");
       if (!card) return;
@@ -1368,9 +1517,65 @@ router.get("/api/catalog", async (req, res) => {
   if (!requireAdmin(req, res)) return;
 
   try {
+    await ensureShopCatalogLoaded();
     res.json(buildCatalogPayload());
   } catch (err) {
     res.status(500).json({ error: String(err) });
+  }
+});
+
+router.post("/api/catalog/items", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+
+  try {
+    const item = readCatalogItemPayload(req.body);
+    const saved = await upsertShopCatalogItem(item);
+    res.json({ ok: true, item: saved, catalog: buildCatalogPayload() });
+  } catch (err) {
+    res.status(400).send(String(err));
+  }
+});
+
+router.patch("/api/catalog/items/:id", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+
+  try {
+    const item = readCatalogItemPayload(req.body, req.params.id);
+    const saved = await upsertShopCatalogItem(item);
+    res.json({ ok: true, item: saved, catalog: buildCatalogPayload() });
+  } catch (err) {
+    res.status(400).send(String(err));
+  }
+});
+
+router.patch("/api/catalog/items/:id/toggle", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+
+  try {
+    const body = (req.body && typeof req.body === "object" ? req.body : {}) as { enabled?: boolean };
+    const item = await toggleShopCatalogItem(req.params.id, body.enabled);
+    if (!item) {
+      res.status(404).send("Catalog item not found");
+      return;
+    }
+    res.json({ ok: true, item, catalog: buildCatalogPayload() });
+  } catch (err) {
+    res.status(400).send(String(err));
+  }
+});
+
+router.delete("/api/catalog/items/:id", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+
+  try {
+    const deleted = await deleteShopCatalogItem(req.params.id);
+    if (!deleted) {
+      res.status(404).send("Catalog item not found");
+      return;
+    }
+    res.json({ ok: true, deleted: true, catalog: buildCatalogPayload() });
+  } catch (err) {
+    res.status(400).send(String(err));
   }
 });
 
