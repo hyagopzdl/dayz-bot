@@ -12,6 +12,7 @@ import {
   parseShopCoordinates,
   saveShopLocation,
 } from "../../../shop";
+import { ensureShopCatalogLoaded } from "../../../shopCatalog";
 import {
   buildShopCategoryPayload,
   buildShopCheckoutPayload,
@@ -56,10 +57,20 @@ const activeShopConfirmations = new Set<string>();
 
 export async function handleShopInteraction(interaction: any, ctx: ShopInteractionContext) {
   if (interaction.isStringSelectMenu()) {
+    const isShopMenu =
+      interaction.customId === "shop-category" ||
+      interaction.customId.startsWith("shop-item:") ||
+      interaction.customId.startsWith("shop-location:");
+
+    if (isShopMenu) {
+      await safeDeferUpdate(interaction);
+      await ensureShopCatalogLoaded();
+    }
+
     const state = await ctx.getState();
 
     if (interaction.customId === "shop-category") {
-      await interaction.update(
+      await interaction.editReply(
         buildShopCategoryPayload(state, interaction.values[0]),
       );
       return true;
@@ -67,7 +78,7 @@ export async function handleShopInteraction(interaction: any, ctx: ShopInteracti
 
     if (interaction.customId.startsWith("shop-item:")) {
       const categoryId = interaction.customId.split(":")[1];
-      await interaction.update(
+      await interaction.editReply(
         buildShopItemPayload(state, interaction.values[0], categoryId, interaction.user.id),
       );
       return true;
@@ -76,7 +87,7 @@ export async function handleShopInteraction(interaction: any, ctx: ShopInteracti
     if (interaction.customId.startsWith("shop-location:")) {
       const [, itemId, categoryId] = interaction.customId.split(":");
       const selectedLocationId = interaction.values[0] === "custom" ? undefined : interaction.values[0];
-      await interaction.update(
+      await interaction.editReply(
         buildShopItemPayload(
           state,
           itemId,
@@ -93,13 +104,17 @@ export async function handleShopInteraction(interaction: any, ctx: ShopInteracti
     const state = await ctx.getState();
 
     if (interaction.customId === "shop-back-home") {
-      await interaction.update(buildShopHomePayload(state));
+      await safeDeferUpdate(interaction);
+      await ensureShopCatalogLoaded();
+      await interaction.editReply(buildShopHomePayload(state));
       return true;
     }
 
     if (interaction.customId.startsWith("shop-back-category:")) {
+      await safeDeferUpdate(interaction);
+      await ensureShopCatalogLoaded();
       const categoryId = interaction.customId.split(":")[1];
-      await interaction.update(buildShopCategoryPayload(state, categoryId));
+      await interaction.editReply(buildShopCategoryPayload(state, categoryId));
       return true;
     }
 
@@ -243,6 +258,7 @@ export async function handleShopInteraction(interaction: any, ctx: ShopInteracti
       }
 
       const [, itemId, locationId = "custom"] = interaction.customId.split(":");
+      await ensureShopCatalogLoaded();
       const item = getShopItems().find((candidate) => candidate.id === itemId);
       if (!item) {
         await interaction.reply({ content: "❌ Item not found.", ephemeral: true });
@@ -321,6 +337,7 @@ export async function handleShopInteraction(interaction: any, ctx: ShopInteracti
       const coordsInput = interaction.fields.getTextInputValue("coords");
       const saveLocationName = interaction.fields.getTextInputValue("save_location_name") || "";
       const state = await ctx.getState();
+      await ensureShopCatalogLoaded();
 
       if (!hasLinkedGamertag(state, interaction.user.id)) {
         await interaction.editReply(buildShopLinkRequiredPayload(state, interaction.user.id));
@@ -357,6 +374,7 @@ export async function handleShopInteraction(interaction: any, ctx: ShopInteracti
 
   if (interaction.isChatInputCommand() && interaction.commandName === "shop") {
     await safeDeferReply(interaction);
+    await ensureShopCatalogLoaded();
     const state = await ctx.getState();
 
     if (!hasLinkedGamertag(state, interaction.user.id)) {

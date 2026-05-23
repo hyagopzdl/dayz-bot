@@ -1,5 +1,6 @@
 import {
   getCachedShopCatalog,
+  isShopCatalogLoaded,
   initializeShopCatalogCache,
   refreshShopCatalogCache,
   deleteShopCatalogItemFromDatabase,
@@ -50,6 +51,13 @@ export async function initializeShopCatalog() {
 export async function refreshShopCatalog() {
   return refreshShopCatalogCache();
 }
+
+export async function ensureShopCatalogLoaded() {
+  if (!isShopCatalogLoaded()) {
+    await initializeShopCatalogCache();
+  }
+}
+
 
 export function getShopCatalog(): ShopCatalog {
   return getCachedShopCatalog();
