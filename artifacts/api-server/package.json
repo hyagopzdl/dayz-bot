@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "tsx src/index.ts",
     "start": "tsx src/index.ts",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "seed:shop-catalog": "tsx src/scripts/seedShopCatalogToNeon.ts"
   },
   "dependencies": {
     "@workspace/api-zod": "workspace:*",

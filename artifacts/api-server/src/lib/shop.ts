@@ -26,7 +26,9 @@ export {
   getShopItemsByCategory,
 } from "./shopCatalog";
 
-export const SHOP_ITEMS: ShopItem[] = getShopItems(true);
+export function getShopItemsSnapshot(): ShopItem[] {
+  return getShopItems(true);
+}
 
 const DEFAULT_DAYZ_MISSION_DIR =
   process.env.DAYZ_MISSION_DIR || "dayzps_missions/dayzOffline.chernarusplus";

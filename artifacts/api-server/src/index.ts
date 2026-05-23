@@ -4,6 +4,7 @@ import { downloadADM } from "./lib/nitradoDownloader";
 import { getLeaderboard } from "./lib/parser";
 import { startDiscordBot } from "./lib/discordBot";
 import { flushStateAsync } from "./lib/state";
+import { initializeShopCatalog } from "./lib/shopCatalog";
 
 function installStateFlushHooks() {
   let flushing = false;
@@ -72,6 +73,13 @@ function startServer(port: number) {
     console.log(`🚀 Running on http://${HOST}:${port}`);
 
     logger.info({ port }, "Server listening");
+
+    try {
+      await initializeShopCatalog();
+      console.log("🛒 shop catalog loaded from Neon");
+    } catch (err) {
+      console.error("❌ shop catalog unavailable:", err);
+    }
 
     await runCycle();
 

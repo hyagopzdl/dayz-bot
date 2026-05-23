@@ -39,7 +39,7 @@ function parseForm(body: string) {
   return Object.fromEntries(params.entries());
 }
 
-export function renderShopAdminPanel(message = "") {
+export async function renderShopAdminPanel(message = "") {
   const catalog = getShopCatalog();
   const catalogFile = ensureShopCatalogFile();
   const rows = catalog.items
@@ -135,7 +135,7 @@ export async function handleShopAdminRequest(req: IncomingMessage, res: ServerRe
 
   if (req.method === "GET" && url.pathname === "/admin/shop") {
     res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-    res.end(renderShopAdminPanel());
+    res.end(await renderShopAdminPanel());
     return true;
   }
 
@@ -147,7 +147,7 @@ export async function handleShopAdminRequest(req: IncomingMessage, res: ServerRe
 
   if (req.method === "POST" && url.pathname === "/admin/shop/catalog/item") {
     const form = parseForm(await readBody(req));
-    const item = upsertShopCatalogItem({
+    const item = await upsertShopCatalogItem({
       id: form.id,
       name: form.name,
       className: form.className,
@@ -159,24 +159,24 @@ export async function handleShopAdminRequest(req: IncomingMessage, res: ServerRe
     } as ShopItem);
 
     res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-    res.end(renderShopAdminPanel(`Saved ${item.name}.`));
+    res.end(await renderShopAdminPanel(`Saved ${item.name}.`));
     return true;
   }
 
   if (req.method === "POST" && url.pathname === "/admin/shop/catalog/raw") {
     const form = parseForm(await readBody(req));
     const catalog = JSON.parse(String(form.catalog || "{}"));
-    saveShopCatalog(catalog);
+    throw new Error("Raw local catalog editing is disabled after Neon catalog migration.");
     res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-    res.end(renderShopAdminPanel("Raw catalog saved."));
+    res.end(await renderShopAdminPanel("Raw catalog saved."));
     return true;
   }
 
   if (req.method === "POST" && url.pathname === "/admin/shop/catalog/delete") {
     const form = parseForm(await readBody(req));
-    const deleted = deleteShopCatalogItem(String(form.id || ""));
+    const deleted = await deleteShopCatalogItem(String(form.id || ""));
     res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-    res.end(renderShopAdminPanel(deleted ? "Item deleted." : "Item not found."));
+    res.end(await renderShopAdminPanel(deleted ? "Item deleted." : "Item not found."));
     return true;
   }
 

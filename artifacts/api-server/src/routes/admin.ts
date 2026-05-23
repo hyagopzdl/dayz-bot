@@ -767,13 +767,6 @@ router.get("/api/catalog", (req, res) => {
   res.json(getShopCatalog());
 });
 
-async function persistCatalogToState() {
-  const state = await getStateAsync();
-  state.shopCatalog = getShopCatalog();
-  state.dayzItems = getDayzItems();
-  await saveStateAsync(state);
-}
-
 router.post("/api/catalog", async (req, res) => {
   if (!requireAdmin(req, res)) return;
 
@@ -810,8 +803,7 @@ router.post("/api/catalog", async (req, res) => {
       enabled: req.body?.enabled !== false,
     };
 
-    const savedItem = upsertShopCatalogItem(item);
-    await persistCatalogToState();
+    const savedItem = await upsertShopCatalogItem(item);
     res.json({ item: savedItem, catalog: getShopCatalog() });
   } catch (err) {
     res.status(500).send(String(err));
@@ -822,26 +814,24 @@ router.post("/api/catalog/:id/toggle", async (req, res) => {
   if (!requireAdmin(req, res)) return;
 
   const enabled = typeof req.body?.enabled === "boolean" ? req.body.enabled : undefined;
-  const item = toggleShopCatalogItem(req.params.id, enabled);
+  const item = await toggleShopCatalogItem(req.params.id, enabled);
   if (!item) {
     res.status(404).send("Catalog item not found");
     return;
   }
 
-  await persistCatalogToState();
   res.json({ item, catalog: getShopCatalog() });
 });
 
 router.delete("/api/catalog/:id", async (req, res) => {
   if (!requireAdmin(req, res)) return;
 
-  const deleted = deleteShopCatalogItem(req.params.id);
+  const deleted = await deleteShopCatalogItem(req.params.id);
   if (!deleted) {
     res.status(404).send("Catalog item not found");
     return;
   }
 
-  await persistCatalogToState();
   res.json({ ok: true, catalog: getShopCatalog() });
 });
 
