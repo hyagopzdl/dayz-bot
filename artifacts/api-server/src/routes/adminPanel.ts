@@ -185,6 +185,53 @@ function filterMembers(rows: MemberRow[], params: { search: string; filter: stri
   });
 }
 
+function buildMemberTransactions(state: AdminState, discordId: string, limit = 20) {
+  const transactions = Array.isArray(state.economyTransactions) ? state.economyTransactions : [];
+
+  return transactions
+    .filter((transaction) => String((transaction as { discordId?: string }).discordId || "") === discordId)
+    .slice()
+    .reverse()
+    .slice(0, limit)
+    .map((transaction) => {
+      const item = transaction as {
+        id?: string;
+        discordId?: string;
+        gamertag?: string;
+        type?: string;
+        amount?: number;
+        balanceBefore?: number;
+        balanceAfter?: number;
+        reason?: string;
+        createdAt?: string;
+        createdBy?: string;
+      };
+
+      return {
+        id: item.id || "",
+        discordId: item.discordId || "",
+        gamertag: item.gamertag || "",
+        type: item.type || "UNKNOWN",
+        amount: Math.floor(Number(item.amount || 0)),
+        balanceBefore: Math.floor(Number(item.balanceBefore || 0)),
+        balanceAfter: Math.floor(Number(item.balanceAfter || 0)),
+        reason: item.reason || "",
+        createdAt: formatIso(item.createdAt),
+        createdBy: item.createdBy || "system",
+      };
+    });
+}
+
+function buildMemberDetails(state: AdminState, discordId: string) {
+  const member = buildMemberRows(state).find((row) => row.discordId === discordId);
+  if (!member) return null;
+
+  return {
+    member,
+    transactions: buildMemberTransactions(state, discordId, 24),
+  };
+}
+
 function getEconomyConfig() {
   const rewardCoins = Number(process.env.ECONOMY_PLAYTIME_REWARD_COINS || 60);
   const rewardMinutes = Number(process.env.ECONOMY_PLAYTIME_REWARD_MINUTES || 60);
@@ -629,6 +676,122 @@ function renderAdminPanelHtml(token: string) {
       z-index: 120;
     }
     .toast.show { display: block; animation: fadeIn .18s ease both; }
+
+    .member-card.selected {
+      border-color: rgba(88,101,242,.55);
+      background: #33353B;
+    }
+    .member-card { cursor: pointer; }
+    .detail-drawer {
+      position: fixed;
+      top: 0;
+      right: 0;
+      width: min(440px, 100vw);
+      height: 100vh;
+      background: #2B2D31;
+      border-left: 1px solid var(--border-strong);
+      box-shadow: -24px 0 64px rgba(0,0,0,.28);
+      z-index: 80;
+      transform: translateX(104%);
+      transition: transform .22s ease;
+      display: flex;
+      flex-direction: column;
+    }
+    .detail-drawer.open { transform: translateX(0); }
+    .drawer-header {
+      padding: 20px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .drawer-profile {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      min-width: 0;
+    }
+    .drawer-title {
+      font-size: 16px;
+      font-weight: 670;
+      letter-spacing: -.03em;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .drawer-subtitle { color: var(--text-3); font-size: 12px; margin-top: 4px; }
+    .drawer-body {
+      padding: 18px;
+      overflow: auto;
+      display: grid;
+      gap: 14px;
+    }
+    .drawer-card {
+      background: #25262A;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 14px;
+    }
+    .drawer-stats {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+    }
+    .drawer-stat {
+      background: #2F3137;
+      border: 1px solid var(--border);
+      border-radius: 13px;
+      padding: 11px;
+      min-width: 0;
+    }
+    .drawer-stat span { display:block; color: var(--text-3); font-size: 11px; font-weight: 620; text-transform: uppercase; letter-spacing: .05em; }
+    .drawer-stat b { display:block; margin-top: 7px; font-size: 14px; font-weight: 680; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .transaction-list { display: grid; gap: 8px; }
+    .transaction-item {
+      display: grid;
+      grid-template-columns: 28px minmax(0, 1fr) auto;
+      gap: 10px;
+      align-items: start;
+      padding: 11px;
+      border-radius: 13px;
+      background: #2F3137;
+      border: 1px solid var(--border);
+    }
+    .tx-icon {
+      width: 28px;
+      height: 28px;
+      border-radius: 9px;
+      display: grid;
+      place-items: center;
+      font-size: 13px;
+      background: rgba(88,101,242,.14);
+      color: #C8CEFF;
+    }
+    .tx-icon.positive { background: rgba(35,165,90,.12); color: #B9F6CC; }
+    .tx-icon.negative { background: rgba(242,63,67,.10); color: #FFB4B6; }
+    .tx-title { font-weight: 650; font-size: 13px; letter-spacing: -.02em; }
+    .tx-meta { color: var(--text-3); font-size: 12px; margin-top: 4px; line-height: 1.35; }
+    .tx-amount { font-weight: 680; font-size: 13px; white-space: nowrap; }
+    .tx-amount.positive { color: #B9F6CC; }
+    .tx-amount.negative { color: #FFB4B6; }
+    .drawer-empty {
+      padding: 24px;
+      text-align: center;
+      color: var(--text-3);
+      background: #2F3137;
+      border: 1px dashed var(--border-strong);
+      border-radius: 14px;
+    }
+    .drawer-skeleton {
+      height: 74px;
+      border-radius: 14px;
+      background: linear-gradient(90deg, #2F3137, #383A41, #2F3137);
+      background-size: 220% 100%;
+      animation: shimmer 1.25s linear infinite;
+      border: 1px solid var(--border);
+    }
+
     @media (max-width: 1120px) {
       .metric-grid { grid-template-columns: repeat(2, minmax(0,1fr)); }
       .dashboard-grid { grid-template-columns: 1fr; }
@@ -720,6 +883,23 @@ function renderAdminPanelHtml(token: string) {
       </main>
     </section>
   </div>
+
+  <aside id="detailDrawer" class="detail-drawer" aria-live="polite">
+    <div class="drawer-header">
+      <div class="drawer-profile">
+        <div id="drawerAvatar" class="avatar">--</div>
+        <div style="min-width:0">
+          <div id="drawerName" class="drawer-title">Selecione um membro</div>
+          <div id="drawerMeta" class="drawer-subtitle">Histórico e carteira</div>
+        </div>
+      </div>
+      <button id="drawerClose" class="icon-btn" style="height:34px;padding:0 10px">Close</button>
+    </div>
+    <div id="drawerBody" class="drawer-body">
+      <div class="drawer-empty">Clique em um membro para ver os detalhes.</div>
+    </div>
+  </aside>
+
   <div id="modalBackdrop" class="modal-backdrop">
     <div class="modal">
       <h2 id="modalTitle">Ajustar moedas</h2>
@@ -735,12 +915,13 @@ function renderAdminPanelHtml(token: string) {
   <script>
     const adminToken = ${tokenJson};
     if (adminToken) document.cookie = "${TOKEN_COOKIE}=" + encodeURIComponent(adminToken) + "; path=/admin-panel; SameSite=Lax";
-    const state = { view: "general", cursor: 0, hasMore: true, loadingMembers: false, search: "", filter: "", modal: null };
+    const state = { view: "general", cursor: 0, hasMore: true, loadingMembers: false, search: "", filter: "", modal: null, selectedDiscordId: null };
     const els = {
       pageTitle: document.getElementById("pageTitle"), serverName: document.getElementById("serverName"),
       memberList: document.getElementById("memberList"), memberLoading: document.getElementById("memberLoading"), memberEmpty: document.getElementById("memberEmpty"),
       modalBackdrop: document.getElementById("modalBackdrop"), modalTitle: document.getElementById("modalTitle"), modalSubtitle: document.getElementById("modalSubtitle"),
-      coinAmount: document.getElementById("coinAmount"), coinReason: document.getElementById("coinReason"), toast: document.getElementById("toast")
+      coinAmount: document.getElementById("coinAmount"), coinReason: document.getElementById("coinReason"), toast: document.getElementById("toast"),
+      detailDrawer: document.getElementById("detailDrawer"), drawerBody: document.getElementById("drawerBody"), drawerAvatar: document.getElementById("drawerAvatar"), drawerName: document.getElementById("drawerName"), drawerMeta: document.getElementById("drawerMeta")
     };
     function apiUrl(path) { const separator = path.includes("?") ? "&" : "?"; return adminToken ? path + separator + "token=" + encodeURIComponent(adminToken) : path; }
     async function apiFetch(path, options) { const headers = Object.assign({ "Content-Type": "application/json" }, (options && options.headers) || {}); if (adminToken) headers["x-admin-token"] = adminToken; return fetch(apiUrl(path), Object.assign({}, options || {}, { headers, credentials: "same-origin" })); }
@@ -777,6 +958,65 @@ function renderAdminPanelHtml(token: string) {
         '<div class="actions"><button class="mini-btn" data-action="add">Add</button><button class="mini-btn" data-action="remove">Remove</button><button class="mini-btn" data-action="set">Set</button><button class="mini-btn danger disabled" title="Próxima versão">Temp Ban</button><button class="mini-btn danger disabled" title="Próxima versão">Ban</button></div>' +
       '</article>';
     }
+
+    function transactionVisual(transaction) {
+      const type = String(transaction.type || "UNKNOWN");
+      const isPositive = ["ADMIN_ADD", "PLAYTIME_REWARD", "EVENT_REWARD", "DONATION_REWARD"].includes(type);
+      const isNegative = ["ADMIN_REMOVE", "SHOP_PURCHASE"].includes(type);
+      const icon = isPositive ? "+" : isNegative ? "−" : "=";
+      const label = type.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (char) => char.toUpperCase());
+      return { isPositive, isNegative, icon, label };
+    }
+    function transactionItem(transaction) {
+      const visual = transactionVisual(transaction);
+      const amountClass = visual.isPositive ? "positive" : visual.isNegative ? "negative" : "";
+      const sign = visual.isPositive ? "+" : visual.isNegative ? "−" : "";
+      const reason = transaction.reason ? escapeHtml(transaction.reason) : "Sem motivo informado";
+      return '<div class="transaction-item">' +
+        '<div class="tx-icon ' + amountClass + '">' + visual.icon + '</div>' +
+        '<div><div class="tx-title">' + escapeHtml(visual.label) + '</div><div class="tx-meta">' + reason + '</div><div class="tx-meta">' + escapeHtml(relativeDate(transaction.createdAt)) + ' · ' + escapeHtml(transaction.createdBy || "system") + '</div><div class="tx-meta">' + formatCoins(transaction.balanceBefore) + ' → ' + formatCoins(transaction.balanceAfter) + '</div></div>' +
+        '<div class="tx-amount ' + amountClass + '">' + sign + formatCoins(transaction.amount) + '</div>' +
+      '</div>';
+    }
+    function renderDrawer(payload) {
+      const member = payload.member;
+      els.drawerAvatar.textContent = (member.gamertag || "??").slice(0, 2).toUpperCase();
+      els.drawerName.textContent = member.discordName || member.gamertag;
+      els.drawerMeta.textContent = member.gamertag + " · " + member.discordId;
+      const transactions = payload.transactions || [];
+      els.drawerBody.innerHTML =
+        '<div class="drawer-card"><div class="drawer-stats">' +
+          '<div class="drawer-stat"><span>Balance</span><b>' + formatCoins(member.balance) + '</b></div>' +
+          '<div class="drawer-stat"><span>Earned</span><b>' + formatCoins(member.totalEarned) + '</b></div>' +
+          '<div class="drawer-stat"><span>Spent</span><b>' + formatCoins(member.totalSpent) + '</b></div>' +
+        '</div></div>' +
+        '<div class="drawer-card"><div class="section-title"><h2>Perfil</h2><span class="chip ' + (member.status === "online" ? "online" : "") + '">' + (member.status === "online" ? "● Online" : "○ Offline") + '</span></div>' +
+          '<div class="settings-list">' +
+            '<div class="setting-row"><div><b>Gamertag</b><span>' + escapeHtml(member.gamertag) + '</span></div></div>' +
+            '<div class="setting-row"><div><b>Idioma</b><span>' + escapeHtml(member.locale.toUpperCase()) + '</span></div></div>' +
+            '<div class="setting-row"><div><b>Reward progress</b><span>' + escapeHtml(String(member.onlineRewardMinutes || 0)) + ' minutos acumulados</span></div></div>' +
+            '<div class="setting-row"><div><b>Último acesso</b><span>' + escapeHtml(relativeDate(member.lastSeenAt)) + '</span></div></div>' +
+          '</div></div>' +
+        '<div class="drawer-card"><div class="section-title"><h2>Histórico de transações</h2><span class="chip">últimas ' + transactions.length + '</span></div>' +
+          (transactions.length ? '<div class="transaction-list">' + transactions.map(transactionItem).join("") + '</div>' : '<div class="drawer-empty">Nenhuma transação encontrada para este membro.</div>') +
+        '</div>';
+    }
+    async function openMemberDrawer(discordId) {
+      if (!discordId) return;
+      state.selectedDiscordId = discordId;
+      document.querySelectorAll(".member-card").forEach((card) => card.classList.toggle("selected", card.getAttribute("data-discord-id") === discordId));
+      els.detailDrawer.classList.add("open");
+      els.drawerBody.innerHTML = '<div class="drawer-skeleton"></div><div class="drawer-skeleton"></div><div class="drawer-skeleton"></div>';
+      const response = await apiFetch("/admin-panel/api/members/" + encodeURIComponent(discordId));
+      if (!response.ok) { showToast(await response.text()); return; }
+      renderDrawer(await response.json());
+    }
+    function closeMemberDrawer() {
+      state.selectedDiscordId = null;
+      els.detailDrawer.classList.remove("open");
+      document.querySelectorAll(".member-card").forEach((card) => card.classList.remove("selected"));
+    }
+
     async function loadMembers(reset) {
       if (state.loadingMembers || (!state.hasMore && !reset)) return;
       if (reset) { state.cursor = 0; state.hasMore = true; els.memberList.innerHTML = ""; els.memberEmpty.style.display = "none"; }
@@ -811,7 +1051,7 @@ function renderAdminPanelHtml(token: string) {
       if (amount < 0 || (state.modal.action !== "set" && amount <= 0)) { showToast("Informe uma quantidade válida."); return; }
       const response = await apiFetch("/admin-panel/api/members/" + encodeURIComponent(state.modal.discordId) + "/coins", { method: "POST", body: JSON.stringify({ action: state.modal.action, amount, reason: els.coinReason.value || "Admin panel" }) });
       if (!response.ok) { showToast(await response.text()); return; }
-      els.modalBackdrop.classList.remove("open"); showToast("Carteira atualizada com sucesso."); await loadOverview(); await loadMembers(true);
+      els.modalBackdrop.classList.remove("open"); showToast("Carteira atualizada com sucesso."); await loadOverview(); await loadMembers(true); if (state.selectedDiscordId) await openMemberDrawer(state.selectedDiscordId);
     }
     document.querySelectorAll(".nav button").forEach((button) => button.addEventListener("click", () => switchView(button.dataset.view)));
     document.getElementById("refreshButton").addEventListener("click", async () => { await loadOverview(); if (state.view === "members") await loadMembers(true); showToast("Dados atualizados."); });
@@ -821,8 +1061,19 @@ function renderAdminPanelHtml(token: string) {
     document.getElementById("memberSearch").addEventListener("input", (event) => updateSearch(event.target.value));
     document.getElementById("globalSearch").addEventListener("input", (event) => { document.getElementById("memberSearch").value = event.target.value; updateSearch(event.target.value); if (state.view !== "members") switchView("members"); });
     document.getElementById("memberFilter").addEventListener("change", (event) => { state.filter = event.target.value; loadMembers(true); });
-    els.memberList.addEventListener("click", (event) => { const button = event.target.closest("button[data-action]"); if (!button) return; openCoinModal(button.dataset.action, button.closest(".member-card")); });
+    els.memberList.addEventListener("click", (event) => {
+      const card = event.target.closest(".member-card");
+      if (!card) return;
+      const button = event.target.closest("button[data-action]");
+      if (button) {
+        event.stopPropagation();
+        openCoinModal(button.dataset.action, card);
+        return;
+      }
+      openMemberDrawer(card.getAttribute("data-discord-id"));
+    });
     document.getElementById("modalCancel").addEventListener("click", () => els.modalBackdrop.classList.remove("open"));
+    document.getElementById("drawerClose").addEventListener("click", closeMemberDrawer);
     document.getElementById("modalConfirm").addEventListener("click", confirmCoinAction);
     const observer = new IntersectionObserver((entries) => { if (entries.some((entry) => entry.isIntersecting) && state.view === "members") loadMembers(false); }, { rootMargin: "420px" });
     observer.observe(document.getElementById("memberSentinel"));
@@ -867,6 +1118,26 @@ router.get("/api/members", async (req, res) => {
       nextCursor: cursor + members.length,
       hasMore: cursor + members.length < rows.length,
     });
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
+  }
+});
+
+
+router.get("/api/members/:discordId", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+
+  try {
+    const state = (await getStateAsync()) as AdminState;
+    const discordId = String(req.params.discordId || "");
+    const details = buildMemberDetails(state, discordId);
+
+    if (!details) {
+      res.status(404).send("Linked member not found");
+      return;
+    }
+
+    res.json(details);
   } catch (err) {
     res.status(500).json({ error: String(err) });
   }
