@@ -1711,7 +1711,7 @@ function renderAdminPanelHtml(token: string) {
 
     function dayzItemImageHtml(item) {
       const imageUrl = item?.imageUrl || item?.urlImg || "";
-      return imageUrl ? '<img src="' + escapeHtml(imageUrl) + '" alt="" loading="lazy" onerror="this.parentElement.textContent=\'🎒\'" />' : '🎒';
+      return imageUrl ? '<img src="' + escapeHtml(imageUrl) + '" alt="" loading="lazy" />' : '🎒';
     }
     function dayzItemRow(item) {
       const checked = item.enabled !== false ? "checked" : "";
