@@ -11,6 +11,7 @@ import {
   type ShopItem,
 } from "../lib/shopCatalog";
 import { addCoins, removeCoins, setCoins, getOrCreateWalletForLink } from "../lib/economy";
+import { findDayzItem, searchDayzItems } from "../lib/dayzItemDatabase";
 import { getStateAsync, saveStateAsync, type AppState, type PlayerLink, type Wallet } from "../lib/state";
 
 const router = Router();
@@ -372,33 +373,35 @@ function buildCatalogPayload() {
 
 function readCatalogItemPayload(body: unknown, fallbackId?: string): ShopItem {
   const input = (body && typeof body === "object" ? body : {}) as Record<string, unknown>;
-  const id = normalizeShopCatalogId(String(input.id || fallbackId || input.name || input.className || ""));
-  const name = String(input.name || "").trim();
-  const className = String(input.className || input.class_name || "").trim();
+  const requestedClassName = String(input.className || input.class_name || input.id || fallbackId || "").trim();
+  const definition = findDayzItem(requestedClassName);
+
+  if (!definition) {
+    throw new Error("Select a valid DayZ item from the database before saving.");
+  }
+
+  const className = definition.className;
+  const id = normalizeShopCatalogId(String(input.id || className));
+  const name = String(input.name || definition.popularName || definition.className).trim();
   const category = normalizeShopCatalogId(String(input.category || "misc")) || "misc";
   const price = Math.floor(Number(input.price || 0));
   const enabled = typeof input.enabled === "boolean" ? input.enabled : input.enabled !== false;
-  const maxPerRestartRaw = input.maxPerRestart ?? input.max_per_restart;
-  const maxPerRestart = maxPerRestartRaw === null || maxPerRestartRaw === "" || maxPerRestartRaw === undefined
-    ? undefined
-    : Math.max(0, Math.floor(Number(maxPerRestartRaw)));
+  const imageUrl = String(input.imageUrl || definition.imageUrl || "").trim();
 
   if (!id) throw new Error("Item id is required.");
-  if (!name) throw new Error("Item name is required.");
-  if (!className) throw new Error("DayZ class name is required.");
+  if (!name) throw new Error("Store item name is required.");
   if (!Number.isFinite(price) || price < 0) throw new Error("Item price must be a valid positive number.");
 
   return {
     id,
     name,
     className,
-    popularName: input.popularName ? String(input.popularName).trim() : undefined,
+    popularName: definition.popularName || name,
     category,
     price,
     description: input.description ? String(input.description).trim() : undefined,
-    imageUrl: input.imageUrl ? String(input.imageUrl).trim() : undefined,
+    imageUrl: imageUrl || undefined,
     enabled,
-    maxPerRestart: Number.isFinite(Number(maxPerRestart)) ? maxPerRestart : undefined,
   };
 }
 
@@ -775,6 +778,53 @@ function renderAdminPanelHtml(token: string) {
     .catalog-description { min-height: 38px; color: var(--text-2); font-size: 12px; line-height: 1.45; }
     .catalog-meta { display: flex; flex-wrap: wrap; gap: 6px; }
     .catalog-actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; padding-top: 2px; }
+    .autocomplete-wrap { position: relative; }
+    .autocomplete-menu {
+      position: absolute;
+      z-index: 20;
+      left: 0;
+      right: 0;
+      top: calc(100% + 8px);
+      max-height: 280px;
+      overflow: auto;
+      border: 1px solid var(--border-strong);
+      background: #25262b;
+      border-radius: 14px;
+      box-shadow: var(--shadow-md);
+      padding: 6px;
+      display: none;
+    }
+    .autocomplete-menu.open { display: grid; gap: 4px; }
+    .autocomplete-option {
+      width: 100%;
+      border: 0;
+      background: transparent;
+      color: var(--text);
+      display: grid;
+      grid-template-columns: 42px minmax(0, 1fr);
+      gap: 10px;
+      align-items: center;
+      padding: 8px;
+      border-radius: 12px;
+      cursor: pointer;
+      text-align: left;
+      transition: background .16s ease;
+    }
+    .autocomplete-option:hover { background: #313338; }
+    .autocomplete-option img, .autocomplete-fallback {
+      width: 42px;
+      height: 42px;
+      border-radius: 10px;
+      background: #1E1F22;
+      border: 1px solid var(--border);
+      object-fit: cover;
+      display: grid;
+      place-items: center;
+      color: var(--text-3);
+      font-size: 16px;
+    }
+    .autocomplete-title { font-size: 13px; font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .autocomplete-subtitle { margin-top: 3px; font-size: 11px; color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .form-grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .form-grid .full { grid-column: 1 / -1; }
     .toggle-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px; border-radius: 14px; background: #25262A; border: 1px solid var(--border); }
@@ -1078,13 +1128,14 @@ function renderAdminPanelHtml(token: string) {
       <h2 id="catalogModalTitle">Item do catálogo</h2>
       <p id="catalogModalSubtitle">Gerencie o item diretamente no Neon.</p>
       <div class="form-grid two">
-        <label>ID<input id="catalogItemId" placeholder="ex: vehicle-civ-sedan" /></label>
+        <label class="full autocomplete-wrap">ID / Item base
+          <input id="catalogItemId" autocomplete="off" placeholder="Digite para buscar na base DayZ" />
+          <div id="catalogItemAutocomplete" class="autocomplete-menu"></div>
+        </label>
+        <label class="full">Nome na loja<input id="catalogItemName" placeholder="Nome exibido no shop" /></label>
         <label>Categoria<input id="catalogItemCategory" placeholder="vehicles" /></label>
-        <label class="full">Nome<input id="catalogItemName" placeholder="Civilian Sedan" /></label>
-        <label class="full">Class name DayZ<input id="catalogItemClassName" placeholder="CivilianSedan" /></label>
         <label>Preço<input id="catalogItemPrice" type="number" min="0" step="1" /></label>
-        <label>Max/restart<input id="catalogItemMax" type="number" min="0" step="1" placeholder="opcional" /></label>
-        <label class="full">Imagem URL<input id="catalogItemImage" placeholder="https://..." /></label>
+        <label class="full">URL da imagem<input id="catalogItemImage" placeholder="https://..." /></label>
         <label class="full">Descrição<textarea id="catalogItemDescription" placeholder="Descrição exibida no painel/shop..."></textarea></label>
         <label class="toggle-row full"><span><b>Disponível no shop</b><small style="display:block;color:var(--text-3);margin-top:4px">Itens desativados ficam ocultos no /shop.</small></span><input id="catalogItemEnabled" type="checkbox" checked /></label>
       </div>
@@ -1103,7 +1154,7 @@ function renderAdminPanelHtml(token: string) {
       coinAmount: document.getElementById("coinAmount"), coinReason: document.getElementById("coinReason"), toast: document.getElementById("toast"),
       detailDrawer: document.getElementById("detailDrawer"), drawerBody: document.getElementById("drawerBody"), drawerAvatar: document.getElementById("drawerAvatar"), drawerName: document.getElementById("drawerName"), drawerMeta: document.getElementById("drawerMeta"),
       catalogGrid: document.getElementById("catalogGrid"), catalogLoading: document.getElementById("catalogLoading"), catalogEmpty: document.getElementById("catalogEmpty"), catalogSearch: document.getElementById("catalogSearch"), catalogCategory: document.getElementById("catalogCategory"),
-      catalogModalBackdrop: document.getElementById("catalogModalBackdrop"), catalogModalTitle: document.getElementById("catalogModalTitle"), catalogModalSubtitle: document.getElementById("catalogModalSubtitle"), catalogItemId: document.getElementById("catalogItemId"), catalogItemCategory: document.getElementById("catalogItemCategory"), catalogItemName: document.getElementById("catalogItemName"), catalogItemClassName: document.getElementById("catalogItemClassName"), catalogItemPrice: document.getElementById("catalogItemPrice"), catalogItemMax: document.getElementById("catalogItemMax"), catalogItemImage: document.getElementById("catalogItemImage"), catalogItemDescription: document.getElementById("catalogItemDescription"), catalogItemEnabled: document.getElementById("catalogItemEnabled")
+      catalogModalBackdrop: document.getElementById("catalogModalBackdrop"), catalogModalTitle: document.getElementById("catalogModalTitle"), catalogModalSubtitle: document.getElementById("catalogModalSubtitle"), catalogItemId: document.getElementById("catalogItemId"), catalogItemAutocomplete: document.getElementById("catalogItemAutocomplete"), catalogItemCategory: document.getElementById("catalogItemCategory"), catalogItemName: document.getElementById("catalogItemName"), catalogItemPrice: document.getElementById("catalogItemPrice"), catalogItemImage: document.getElementById("catalogItemImage"), catalogItemDescription: document.getElementById("catalogItemDescription"), catalogItemEnabled: document.getElementById("catalogItemEnabled")
     };
     function apiUrl(path) { const separator = path.includes("?") ? "&" : "?"; return adminToken ? path + separator + "token=" + encodeURIComponent(adminToken) : path; }
     async function apiFetch(path, options) { const headers = Object.assign({ "Content-Type": "application/json" }, (options && options.headers) || {}); if (adminToken) headers["x-admin-token"] = adminToken; return fetch(apiUrl(path), Object.assign({}, options || {}, { headers, credentials: "same-origin" })); }
@@ -1273,35 +1324,73 @@ function renderAdminPanelHtml(token: string) {
     function findCatalogItem(itemId) {
       return (state.catalog?.items || []).find((item) => item.id === itemId) || null;
     }
+    function setCatalogAutocompleteOpen(open) {
+      if (!els.catalogItemAutocomplete) return;
+      els.catalogItemAutocomplete.classList.toggle("open", Boolean(open));
+    }
+    function renderCatalogAutocomplete(items) {
+      if (!els.catalogItemAutocomplete) return;
+      if (!items.length) {
+        els.catalogItemAutocomplete.innerHTML = '<div class="autocomplete-subtitle" style="padding:12px">Nenhum item encontrado na base DayZ.</div>';
+        setCatalogAutocompleteOpen(true);
+        return;
+      }
+      els.catalogItemAutocomplete.innerHTML = items.map((item) => {
+        const thumb = item.imageUrl
+          ? '<img src="' + escapeHtml(item.imageUrl) + '" alt="" loading="lazy" />'
+          : '<div class="autocomplete-fallback">🎒</div>';
+        return '<button type="button" class="autocomplete-option" data-class-name="' + escapeHtml(item.className) + '" data-popular-name="' + escapeHtml(item.popularName || item.className) + '" data-image-url="' + escapeHtml(item.imageUrl || '') + '">' +
+          thumb + '<span><div class="autocomplete-title">' + escapeHtml(item.popularName || item.className) + '</div><div class="autocomplete-subtitle">' + escapeHtml(item.className) + '</div></span></button>';
+      }).join("");
+      setCatalogAutocompleteOpen(true);
+    }
+    let catalogAutocompleteTimer = null;
+    async function searchCatalogBaseItems(query) {
+      clearTimeout(catalogAutocompleteTimer);
+      catalogAutocompleteTimer = setTimeout(async () => {
+        const response = await apiFetch("/admin-panel/api/dayz-items?query=" + encodeURIComponent(query || "") + "&limit=12");
+        if (!response.ok) return;
+        const payload = await response.json();
+        renderCatalogAutocomplete(payload.items || []);
+      }, 180);
+    }
+    function applyCatalogBaseItem(item) {
+      if (!item) return;
+      els.catalogItemId.value = item.className || "";
+      if (!els.catalogItemName.value.trim()) els.catalogItemName.value = item.popularName || item.className || "";
+      if (!els.catalogItemImage.value.trim() && item.imageUrl) els.catalogItemImage.value = item.imageUrl;
+      setCatalogAutocompleteOpen(false);
+    }
     function openCatalogModal(mode, item) {
       state.catalogModal = { mode, itemId: item?.id || null };
       els.catalogModalTitle.textContent = mode === "create" ? "Novo item" : "Editar item";
-      els.catalogModalSubtitle.textContent = mode === "create" ? "Crie um item no catálogo do Neon." : "Atualize os dados exibidos no shop.";
+      els.catalogModalSubtitle.textContent = mode === "create" ? "Escolha um item da base DayZ e publique no catálogo do Neon." : "Atualize os dados exibidos no shop.";
       els.catalogItemId.disabled = mode !== "create";
-      els.catalogItemId.value = item?.id || "";
+      els.catalogItemId.value = item?.className || item?.id || "";
       els.catalogItemCategory.value = item?.category || state.catalogCategory || "misc";
       els.catalogItemName.value = item?.name || "";
-      els.catalogItemClassName.value = item?.className || "";
       els.catalogItemPrice.value = item?.price ?? 0;
-      els.catalogItemMax.value = item?.maxPerRestart === null || item?.maxPerRestart === undefined ? "" : item.maxPerRestart;
       els.catalogItemImage.value = item?.imageUrl || "";
       els.catalogItemDescription.value = item?.description || item?.popularName || "";
       els.catalogItemEnabled.checked = item?.enabled !== false;
+      els.catalogItemAutocomplete.innerHTML = "";
+      setCatalogAutocompleteOpen(false);
       els.catalogModalBackdrop.classList.add("open");
       setTimeout(() => (mode === "create" ? els.catalogItemId : els.catalogItemName).focus(), 80);
     }
     function closeCatalogModal() {
       state.catalogModal = null;
+      setCatalogAutocompleteOpen(false);
       els.catalogModalBackdrop.classList.remove("open");
     }
     function readCatalogForm() {
+      const selectedClassName = els.catalogItemId.value;
       return {
-        id: els.catalogItemId.value,
+        id: state.catalogModal?.mode === "edit" ? state.catalogModal.itemId : selectedClassName,
         category: els.catalogItemCategory.value || "misc",
         name: els.catalogItemName.value,
-        className: els.catalogItemClassName.value,
+        className: selectedClassName,
         price: Number(els.catalogItemPrice.value || 0),
-        maxPerRestart: els.catalogItemMax.value === "" ? null : Number(els.catalogItemMax.value),
         imageUrl: els.catalogItemImage.value,
         description: els.catalogItemDescription.value,
         enabled: Boolean(els.catalogItemEnabled.checked),
@@ -1376,6 +1465,16 @@ function renderAdminPanelHtml(token: string) {
     document.getElementById("catalogCreate").addEventListener("click", () => openCatalogModal("create", null));
     document.getElementById("catalogModalCancel").addEventListener("click", closeCatalogModal);
     document.getElementById("catalogModalConfirm").addEventListener("click", saveCatalogItem);
+    els.catalogItemId.addEventListener("input", (event) => { if (state.catalogModal?.mode === "create") searchCatalogBaseItems(event.target.value); });
+    els.catalogItemId.addEventListener("focus", (event) => { if (state.catalogModal?.mode === "create") searchCatalogBaseItems(event.target.value); });
+    els.catalogItemAutocomplete.addEventListener("click", (event) => {
+      const option = event.target.closest(".autocomplete-option");
+      if (!option) return;
+      applyCatalogBaseItem({ className: option.dataset.className, popularName: option.dataset.popularName, imageUrl: option.dataset.imageUrl });
+    });
+    document.addEventListener("click", (event) => {
+      if (!els.catalogItemAutocomplete?.contains(event.target) && event.target !== els.catalogItemId) setCatalogAutocompleteOpen(false);
+    });
     els.catalogGrid.addEventListener("click", (event) => {
       const button = event.target.closest("button[data-catalog-action]");
       if (!button) return;
@@ -1512,6 +1611,25 @@ router.post("/api/members/:discordId/coins", async (req, res) => {
   }
 });
 
+
+router.get("/api/dayz-items", (req, res) => {
+  if (!requireAdmin(req, res)) return;
+
+  try {
+    const query = typeof req.query.query === "string" ? req.query.query : "";
+    const limit = Math.min(25, Math.max(1, Math.floor(Number(req.query.limit || 12))));
+    const items = searchDayzItems(query, limit).map((item) => ({
+      className: item.className,
+      popularName: item.popularName,
+      imageUrl: item.imageUrl || "",
+      spawnEventName: item.spawnEventName || "",
+    }));
+
+    res.json({ items });
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
+  }
+});
 
 router.get("/api/catalog", async (req, res) => {
   if (!requireAdmin(req, res)) return;
