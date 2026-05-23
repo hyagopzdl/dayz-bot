@@ -4,7 +4,9 @@ import {
   initializeShopCatalogCache,
   refreshShopCatalogCache,
   deleteShopCatalogItemFromDatabase,
+  deleteShopCatalogCategoryFromDatabase,
   toggleShopCatalogItemInDatabase,
+  upsertShopCatalogCategory,
   upsertShopCatalogItemInDatabase,
   seedShopCatalogInDatabase,
 } from "./catalogService";
@@ -108,6 +110,15 @@ export function findShopItem(input: string) {
         normalizeShopCatalogId(item.popularName || "") === normalized,
     ) || null
   );
+}
+
+export async function upsertShopCatalogCategoryItem(category: ShopCategory) {
+  await upsertShopCatalogCategory(category);
+  return refreshShopCatalogCache();
+}
+
+export async function deleteShopCatalogCategory(categoryId: string) {
+  return deleteShopCatalogCategoryFromDatabase(categoryId);
 }
 
 export async function upsertShopCatalogItem(item: ShopItem) {

@@ -191,7 +191,11 @@ function safeDayzItems(input: unknown): DayzItemDefinition[] {
       className,
       String((item as any)?.popularName || className).trim(),
     );
-    const imageUrl = (item as any)?.imageUrl ? String((item as any).imageUrl).trim() : undefined;
+    const imageUrl = (item as any)?.imageUrl
+      ? String((item as any).imageUrl).trim()
+      : (item as any)?.urlImg
+        ? String((item as any).urlImg).trim()
+        : undefined;
     const rawSpawnEventName = (item as any)?.spawnEventName
       ? String((item as any).spawnEventName).trim()
       : "";

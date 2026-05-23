@@ -268,6 +268,35 @@ export async function upsertShopCatalogCategory(category: ShopCategory) {
   `;
 }
 
+
+export async function deleteShopCatalogCategoryFromDatabase(categoryId: string) {
+  const db = requireSql();
+  await ensureShopCatalogSchema();
+
+  const normalized = normalizeShopCatalogId(categoryId);
+  if (!normalized) return false;
+
+  const itemRows = await db`
+    SELECT id
+    FROM shop_catalog_items
+    WHERE category = ${normalized}
+    LIMIT 1
+  `;
+
+  if (itemRows.length) {
+    throw new Error("Category still has items. Move or delete the items before deleting the category.");
+  }
+
+  const result = await db`
+    DELETE FROM shop_catalog_categories
+    WHERE id = ${normalized}
+    RETURNING id
+  `;
+
+  await refreshShopCatalogCache();
+  return result.length > 0;
+}
+
 export async function upsertShopCatalogItemInDatabase(item: ShopItem) {
   const db = requireSql();
   await ensureShopCatalogSchema();

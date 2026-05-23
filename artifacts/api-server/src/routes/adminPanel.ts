@@ -1,17 +1,25 @@
 import { Router, type Request, type Response } from "express";
 import { getShopRuntimeStatus } from "../lib/shop";
 import {
+  deleteShopCatalogCategory,
   deleteShopCatalogItem,
   ensureShopCatalogLoaded,
   getShopCatalog,
   normalizeShopCatalogId,
   toggleShopCatalogItem,
+  upsertShopCatalogCategoryItem,
   upsertShopCatalogItem,
   type ShopCatalog,
   type ShopItem,
 } from "../lib/shopCatalog";
 import { addCoins, removeCoins, setCoins, getOrCreateWalletForLink } from "../lib/economy";
-import { findDayzItem, searchDayzItems } from "../lib/dayzItemDatabase";
+import {
+  getDayzItemByClassName,
+  getDayzItemsPage,
+  searchDayzItemsFromDatabase,
+  toggleDayzItemInDatabase,
+  updateDayzItemInDatabase,
+} from "../lib/dayzItemsService";
 import { getStateAsync, saveStateAsync, type AppState, type PlayerLink, type Wallet } from "../lib/state";
 
 const router = Router();
@@ -371,13 +379,13 @@ function buildCatalogPayload() {
   };
 }
 
-function readCatalogItemPayload(body: unknown, fallbackId?: string): ShopItem {
+async function readCatalogItemPayload(body: unknown, fallbackId?: string): Promise<ShopItem> {
   const input = (body && typeof body === "object" ? body : {}) as Record<string, unknown>;
   const requestedClassName = String(input.className || input.class_name || input.id || fallbackId || "").trim();
-  const definition = findDayzItem(requestedClassName);
+  const definition = await getDayzItemByClassName(requestedClassName);
 
-  if (!definition) {
-    throw new Error("Select a valid DayZ item from the database before saving.");
+  if (!definition || definition.enabled === false) {
+    throw new Error("Select a valid enabled DayZ item from the database before saving.");
   }
 
   const className = definition.className;
@@ -401,6 +409,28 @@ function readCatalogItemPayload(body: unknown, fallbackId?: string): ShopItem {
     price,
     description: input.description ? String(input.description).trim() : undefined,
     imageUrl: imageUrl || undefined,
+    enabled,
+  };
+}
+
+
+function readCatalogCategoryPayload(body: unknown) {
+  const input = (body && typeof body === "object" ? body : {}) as Record<string, unknown>;
+  const label = String(input.label || input.name || "").trim();
+  const requestedId = String(input.id || label).trim();
+  const id = normalizeShopCatalogId(requestedId);
+  const description = String(input.description || "").trim();
+  const emoji = String(input.emoji || "").trim();
+  const enabled = typeof input.enabled === "boolean" ? input.enabled : input.enabled !== false;
+
+  if (!id) throw new Error("Category id is required.");
+  if (!label) throw new Error("Category name is required.");
+
+  return {
+    id,
+    label,
+    emoji: emoji || undefined,
+    description: description || undefined,
     enabled,
   };
 }
@@ -742,8 +772,30 @@ function renderAdminPanelHtml(token: string) {
     @keyframes shimmer { to { background-position: -220% 0; } }
     .sentinel { height: 36px; }
     .catalog-shell { display: grid; gap: 14px; }
-    .catalog-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) 220px auto; gap: 10px; align-items: center; }
+    .catalog-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; }
     .catalog-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+    .catalog-breadcrumb { display: flex; align-items: center; gap: 10px; color: var(--text-3); font-size: 13px; }
+    .catalog-category-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
+    .catalog-category-card {
+      min-height: 156px;
+      background: #2B2D31;
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 18px;
+      display: grid;
+      align-content: center;
+      justify-items: center;
+      gap: 10px;
+      cursor: pointer;
+      position: relative;
+      transition: background .16s ease, border-color .16s ease, transform .16s ease;
+    }
+    .catalog-category-card:hover { background: #303238; border-color: var(--border-strong); transform: translateY(-1px); }
+    .catalog-category-card.new { border-style: dashed; color: var(--text-3); }
+    .category-icon { width: 44px; height: 44px; border-radius: 14px; display: grid; place-items: center; border: 1px solid var(--border); background: #25262A; font-size: 22px; }
+    .category-title { font-size: 14px; font-weight: 650; letter-spacing: -.025em; color: var(--text); text-align: center; }
+    .category-subtitle { color: var(--text-3); font-size: 12px; text-align: center; }
+    .category-delete { position: absolute; top: 10px; right: 10px; opacity: .72; }
     .catalog-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
     .catalog-item {
       min-width: 0;
@@ -830,6 +882,72 @@ function renderAdminPanelHtml(token: string) {
     .toggle-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px; border-radius: 14px; background: #25262A; border: 1px solid var(--border); }
     .toggle-row input { width: auto; }
     .catalog-empty { padding: 42px; text-align: center; color: var(--text-3); border: 1px dashed var(--border-strong); border-radius: 18px; background: #2B2D31; }
+
+    .items-shell { display: grid; gap: 14px; }
+    .items-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) 180px auto; gap: 10px; align-items: center; }
+    .items-list { display: grid; gap: 8px; }
+    .dayz-item-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      min-width: 0;
+      padding: 12px 14px;
+      border-radius: 16px;
+      background: #2B2D31;
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow-sm);
+      cursor: pointer;
+      transition: background .16s ease, border-color .16s ease, transform .16s ease;
+    }
+    .dayz-item-row:hover { background: #303238; border-color: var(--border-strong); transform: translateY(-1px); }
+    .dayz-item-main { display: flex; align-items: center; gap: 12px; min-width: 0; flex: 1 1 auto; }
+    .dayz-item-image {
+      width: 44px;
+      height: 44px;
+      border-radius: 13px;
+      background: #25262A;
+      border: 1px solid var(--border);
+      overflow: hidden;
+      display: grid;
+      place-items: center;
+      color: var(--text-3);
+      flex: 0 0 auto;
+      font-size: 17px;
+    }
+    .dayz-item-image img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .dayz-item-copy { min-width: 0; display: grid; gap: 4px; }
+    .dayz-item-title { color: var(--text); font-size: 14px; font-weight: 650; letter-spacing: -.02em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .dayz-item-subtitle { color: var(--text-3); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .switch { position: relative; width: 42px; height: 24px; flex: 0 0 auto; }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .switch-slider {
+      position: absolute;
+      cursor: pointer;
+      inset: 0;
+      background: #4A4D55;
+      border: 1px solid var(--border-strong);
+      border-radius: 999px;
+      transition: background .18s ease, border-color .18s ease;
+    }
+    .switch-slider::before {
+      content: "";
+      position: absolute;
+      width: 18px;
+      height: 18px;
+      left: 2px;
+      top: 2px;
+      border-radius: 50%;
+      background: #F2F3F5;
+      transition: transform .18s ease;
+      box-shadow: 0 2px 8px rgba(0,0,0,.25);
+    }
+    .switch input:checked + .switch-slider { background: var(--primary); border-color: rgba(88,101,242,.65); }
+    .switch input:checked + .switch-slider::before { transform: translateX(18px); }
+    .item-preview-card { display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: 14px; background: #25262A; border: 1px solid var(--border); }
+    .item-preview-card .dayz-item-image { width: 52px; height: 52px; border-radius: 15px; }
+    .items-empty { padding: 42px; text-align: center; color: var(--text-3); border: 1px dashed var(--border-strong); border-radius: 18px; background: #2B2D31; }
+
     .modal-backdrop {
       position: fixed;
       inset: 0;
@@ -1020,6 +1138,7 @@ function renderAdminPanelHtml(token: string) {
         <button class="active" data-view="general">🏠 Geral</button>
         <button data-view="members">👥 Membros</button>
         <button data-view="catalog">🛒 Catálogo</button>
+        <button data-view="items">📦 Itens</button>
       </nav>
       <div class="sidebar-footer"><div class="avatar">A</div><div><b>Admin</b><div class="member-meta">Painel seguro</div></div></div>
     </aside>
@@ -1076,20 +1195,60 @@ function renderAdminPanelHtml(token: string) {
               <div class="card"><div class="metric-label">Categorias</div><div id="catalogCategories" class="metric-value">—</div><div class="metric-hint">grupos encontrados</div></div>
               <div class="card"><div class="metric-label">Preço médio</div><div id="catalogAverage" class="metric-value">—</div><div class="metric-hint">coins por item</div></div>
             </div>
+            <div id="catalogCategoryView" class="catalog-shell">
+              <div class="card">
+                <div class="section-title">
+                  <h2>Categorias</h2>
+                  <div style="display:flex;align-items:center;gap:8px"><span class="chip">Neon</span><button id="catalogCategoryCreate" class="primary-btn">Nova categoria</button><button id="catalogRefresh" class="ghost-btn">Refresh</button></div>
+                </div>
+                <div class="catalog-breadcrumb">Escolha uma categoria para gerenciar os itens dentro dela.</div>
+              </div>
+              <div id="catalogCategoryGrid" class="catalog-category-grid"></div>
+            </div>
+            <div id="catalogItemsView" class="catalog-shell" style="display:none">
+              <div class="card">
+                <div class="section-title">
+                  <h2 id="catalogCurrentCategoryTitle">Itens</h2>
+                  <div style="display:flex;align-items:center;gap:8px"><button id="catalogBack" class="ghost-btn">← Categorias</button><button id="catalogCreate" class="primary-btn">Novo item</button></div>
+                </div>
+                <div class="catalog-breadcrumb"><span>Catálogo</span><span>›</span><b id="catalogCurrentCategoryLabel">Categoria</b></div>
+                <div class="catalog-toolbar" style="margin-top:12px">
+                  <div class="search"><input id="catalogSearch" placeholder="Buscar por item ou classe" /></div>
+                  <button id="catalogItemsRefresh" class="ghost-btn">Refresh</button>
+                </div>
+              </div>
+              <div id="catalogLoading" class="catalog-grid" style="display:none"><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div></div>
+              <div id="catalogGrid" class="catalog-grid"></div>
+              <div id="catalogEmpty" class="catalog-empty" style="display:none">Nenhum item encontrado nessa categoria.</div>
+            </div>
+          </div>
+        </section>
+        <section id="view-items" class="view">
+          <div class="items-shell">
+            <div class="catalog-stats">
+              <div class="card"><div class="metric-label">Itens</div><div id="itemsTotal" class="metric-value">—</div><div class="metric-hint">base mestre DayZ</div></div>
+              <div class="card"><div class="metric-label">Habilitados</div><div id="itemsEnabled" class="metric-value">—</div><div class="metric-hint">disponíveis para catálogo</div></div>
+              <div class="card"><div class="metric-label">Desabilitados</div><div id="itemsDisabled" class="metric-value">—</div><div class="metric-hint">ocultos no autocomplete</div></div>
+              <div class="card"><div class="metric-label">Sem imagem</div><div id="itemsMissingImage" class="metric-value">—</div><div class="metric-hint">precisam revisão</div></div>
+            </div>
             <div class="card">
               <div class="section-title">
-                <h2>Catálogo do shop</h2>
-                <div style="display:flex;align-items:center;gap:8px"><span class="chip">Neon</span><button id="catalogCreate" class="primary-btn">Novo item</button></div>
+                <div>
+                  <h2>Base de itens</h2>
+                  <div class="member-meta">Gerencie nomes, imagens e disponibilidade dos itens que podem entrar no catálogo.</div>
+                </div>
+                <button id="itemsRefresh" class="ghost-btn">Refresh</button>
               </div>
-              <div class="catalog-toolbar">
-                <div class="search"><input id="catalogSearch" placeholder="Buscar por item, classe ou categoria" /></div>
-                <select id="catalogCategory"><option value="">Todas categorias</option></select>
-                <button id="catalogRefresh" class="ghost-btn">Refresh</button>
+              <div class="items-toolbar">
+                <div class="search"><input id="itemsSearch" placeholder="Buscar por nome popular ou className..." /></div>
+                <select id="itemsFilter"><option value="all">Todos</option><option value="enabled">Habilitados</option><option value="disabled">Desabilitados</option><option value="missing_image">Sem imagem</option></select>
+                <span class="chip">Neon</span>
               </div>
             </div>
-            <div id="catalogLoading" class="catalog-grid" style="display:none"><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div></div>
-            <div id="catalogGrid" class="catalog-grid"></div>
-            <div id="catalogEmpty" class="catalog-empty" style="display:none">Nenhum item encontrado para os filtros atuais.</div>
+            <div id="itemsList" class="items-list"></div>
+            <div id="itemsLoading" class="member-list" style="display:none"><div class="skeleton"></div><div class="skeleton"></div></div>
+            <div id="itemsEmpty" class="items-empty" style="display:none">Nenhum item encontrado.</div>
+            <div id="itemsSentinel" class="sentinel"></div>
           </div>
         </section>
       </main>
@@ -1133,7 +1292,7 @@ function renderAdminPanelHtml(token: string) {
           <div id="catalogItemAutocomplete" class="autocomplete-menu"></div>
         </label>
         <label class="full">Nome na loja<input id="catalogItemName" placeholder="Nome exibido no shop" /></label>
-        <label>Categoria<input id="catalogItemCategory" placeholder="vehicles" /></label>
+        <label>Categoria<select id="catalogItemCategory"></select></label>
         <label>Preço<input id="catalogItemPrice" type="number" min="0" step="1" /></label>
         <label class="full">URL da imagem<input id="catalogItemImage" placeholder="https://..." /></label>
         <label class="full">Descrição<textarea id="catalogItemDescription" placeholder="Descrição exibida no painel/shop..."></textarea></label>
@@ -1142,23 +1301,60 @@ function renderAdminPanelHtml(token: string) {
       <div class="modal-actions"><button class="ghost-btn" id="catalogModalCancel">Cancelar</button><button class="primary-btn" id="catalogModalConfirm">Salvar item</button></div>
     </div>
   </div>
+  <div id="itemModalBackdrop" class="modal-backdrop">
+    <div class="modal">
+      <h2 id="itemModalTitle">Item DayZ</h2>
+      <p id="itemModalSubtitle">Atualize a base mestre usada pelo autocomplete do catálogo.</p>
+      <div class="item-preview-card">
+        <div id="itemModalPreviewImage" class="dayz-item-image">🎒</div>
+        <div class="dayz-item-copy">
+          <div id="itemModalPreviewName" class="dayz-item-title">Item</div>
+          <div id="itemModalPreviewClass" class="dayz-item-subtitle">ClassName</div>
+        </div>
+      </div>
+      <div class="form-grid" style="margin-top:14px">
+        <label>Nome popular<input id="itemModalPopularName" placeholder="Nome exibido na base" /></label>
+        <label>URL da imagem<input id="itemModalImageUrl" placeholder="https://..." /></label>
+        <label>Spawn event name<input id="itemModalSpawnEventName" placeholder="Opcional" /></label>
+        <label class="toggle-row"><span><b>Habilitado</b><small style="display:block;color:var(--text-3);margin-top:4px">Itens desabilitados não aparecem no autocomplete do catálogo.</small></span><input id="itemModalEnabled" type="checkbox" checked /></label>
+      </div>
+      <div class="modal-actions"><button class="ghost-btn" id="itemModalRemoveImage">Remover imagem</button><button class="ghost-btn" id="itemModalCancel">Cancelar</button><button class="primary-btn" id="itemModalConfirm">Salvar item</button></div>
+    </div>
+  </div>
+
+  <div id="catalogCategoryModalBackdrop" class="modal-backdrop">
+    <div class="modal">
+      <h2>Nova categoria</h2>
+      <p>Crie uma pasta para organizar os itens do catálogo.</p>
+      <div class="form-grid">
+        <label>Nome da categoria<input id="catalogCategoryName" placeholder="Ex: Weapons" /></label>
+        <label>ID opcional<input id="catalogCategoryId" placeholder="Gerado automaticamente se vazio" /></label>
+        <label>Descrição<textarea id="catalogCategoryDescription" placeholder="Descrição interna opcional..."></textarea></label>
+        <label class="toggle-row"><span><b>Categoria ativa</b><small style="display:block;color:var(--text-3);margin-top:4px">Categorias inativas ficam ocultas no /shop.</small></span><input id="catalogCategoryEnabled" type="checkbox" checked /></label>
+      </div>
+      <div class="modal-actions"><button class="ghost-btn" id="catalogCategoryModalCancel">Cancelar</button><button class="primary-btn" id="catalogCategoryModalConfirm">Criar categoria</button></div>
+    </div>
+  </div>
   <div id="toast" class="toast"></div>
   <script>
     const adminToken = ${tokenJson};
     if (adminToken) document.cookie = "${TOKEN_COOKIE}=" + encodeURIComponent(adminToken) + "; path=/admin-panel; SameSite=Lax";
-    const state = { view: "general", cursor: 0, hasMore: true, loadingMembers: false, search: "", filter: "", modal: null, catalogModal: null, selectedDiscordId: null, catalog: null, catalogSearch: "", catalogCategory: "" };
+    const state = { view: "general", cursor: 0, hasMore: true, loadingMembers: false, search: "", filter: "", modal: null, catalogModal: null, selectedDiscordId: null, catalog: null, catalogSearch: "", catalogCategory: "", catalogMode: "categories", itemsCursor: 0, itemsHasMore: true, itemsLoading: false, itemsSearch: "", itemsFilter: "all", dayzItems: [], itemsStats: null, itemModal: null };
     const els = {
       pageTitle: document.getElementById("pageTitle"), serverName: document.getElementById("serverName"),
       memberList: document.getElementById("memberList"), memberLoading: document.getElementById("memberLoading"), memberEmpty: document.getElementById("memberEmpty"),
       modalBackdrop: document.getElementById("modalBackdrop"), modalTitle: document.getElementById("modalTitle"), modalSubtitle: document.getElementById("modalSubtitle"),
       coinAmount: document.getElementById("coinAmount"), coinReason: document.getElementById("coinReason"), toast: document.getElementById("toast"),
       detailDrawer: document.getElementById("detailDrawer"), drawerBody: document.getElementById("drawerBody"), drawerAvatar: document.getElementById("drawerAvatar"), drawerName: document.getElementById("drawerName"), drawerMeta: document.getElementById("drawerMeta"),
-      catalogGrid: document.getElementById("catalogGrid"), catalogLoading: document.getElementById("catalogLoading"), catalogEmpty: document.getElementById("catalogEmpty"), catalogSearch: document.getElementById("catalogSearch"), catalogCategory: document.getElementById("catalogCategory"),
-      catalogModalBackdrop: document.getElementById("catalogModalBackdrop"), catalogModalTitle: document.getElementById("catalogModalTitle"), catalogModalSubtitle: document.getElementById("catalogModalSubtitle"), catalogItemId: document.getElementById("catalogItemId"), catalogItemAutocomplete: document.getElementById("catalogItemAutocomplete"), catalogItemCategory: document.getElementById("catalogItemCategory"), catalogItemName: document.getElementById("catalogItemName"), catalogItemPrice: document.getElementById("catalogItemPrice"), catalogItemImage: document.getElementById("catalogItemImage"), catalogItemDescription: document.getElementById("catalogItemDescription"), catalogItemEnabled: document.getElementById("catalogItemEnabled")
+      catalogGrid: document.getElementById("catalogGrid"), catalogLoading: document.getElementById("catalogLoading"), catalogEmpty: document.getElementById("catalogEmpty"), catalogSearch: document.getElementById("catalogSearch"), catalogCategoryView: document.getElementById("catalogCategoryView"), catalogItemsView: document.getElementById("catalogItemsView"), catalogCategoryGrid: document.getElementById("catalogCategoryGrid"), catalogCurrentCategoryTitle: document.getElementById("catalogCurrentCategoryTitle"), catalogCurrentCategoryLabel: document.getElementById("catalogCurrentCategoryLabel"),
+      catalogModalBackdrop: document.getElementById("catalogModalBackdrop"), catalogModalTitle: document.getElementById("catalogModalTitle"), catalogModalSubtitle: document.getElementById("catalogModalSubtitle"), catalogItemId: document.getElementById("catalogItemId"), catalogItemAutocomplete: document.getElementById("catalogItemAutocomplete"), catalogItemCategory: document.getElementById("catalogItemCategory"), catalogItemName: document.getElementById("catalogItemName"), catalogItemPrice: document.getElementById("catalogItemPrice"), catalogItemImage: document.getElementById("catalogItemImage"), catalogItemDescription: document.getElementById("catalogItemDescription"), catalogItemEnabled: document.getElementById("catalogItemEnabled"), catalogCategoryModalBackdrop: document.getElementById("catalogCategoryModalBackdrop"), catalogCategoryName: document.getElementById("catalogCategoryName"), catalogCategoryId: document.getElementById("catalogCategoryId"), catalogCategoryDescription: document.getElementById("catalogCategoryDescription"), catalogCategoryEnabled: document.getElementById("catalogCategoryEnabled"),
+      itemsList: document.getElementById("itemsList"), itemsLoading: document.getElementById("itemsLoading"), itemsEmpty: document.getElementById("itemsEmpty"), itemsSearch: document.getElementById("itemsSearch"), itemsFilter: document.getElementById("itemsFilter"), itemsRefresh: document.getElementById("itemsRefresh"), itemsSentinel: document.getElementById("itemsSentinel"), itemsTotal: document.getElementById("itemsTotal"), itemsEnabled: document.getElementById("itemsEnabled"), itemsDisabled: document.getElementById("itemsDisabled"), itemsMissingImage: document.getElementById("itemsMissingImage"),
+      itemModalBackdrop: document.getElementById("itemModalBackdrop"), itemModalTitle: document.getElementById("itemModalTitle"), itemModalSubtitle: document.getElementById("itemModalSubtitle"), itemModalPreviewImage: document.getElementById("itemModalPreviewImage"), itemModalPreviewName: document.getElementById("itemModalPreviewName"), itemModalPreviewClass: document.getElementById("itemModalPreviewClass"), itemModalPopularName: document.getElementById("itemModalPopularName"), itemModalImageUrl: document.getElementById("itemModalImageUrl"), itemModalSpawnEventName: document.getElementById("itemModalSpawnEventName"), itemModalEnabled: document.getElementById("itemModalEnabled")
     };
     function apiUrl(path) { const separator = path.includes("?") ? "&" : "?"; return adminToken ? path + separator + "token=" + encodeURIComponent(adminToken) : path; }
     async function apiFetch(path, options) { const headers = Object.assign({ "Content-Type": "application/json" }, (options && options.headers) || {}); if (adminToken) headers["x-admin-token"] = adminToken; return fetch(apiUrl(path), Object.assign({}, options || {}, { headers, credentials: "same-origin" })); }
     function escapeHtml(value) { return String(value ?? "").replace(/[&<>\"]/g, (char) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'\"':"&quot;"}[char] || char)); }
+    function formatNumber(value) { return new Intl.NumberFormat("pt-BR").format(Number(value || 0)); }
     function formatCoins(value) { return new Intl.NumberFormat("pt-BR").format(Number(value || 0)); }
     function relativeDate(value) { if (!value) return "Nunca"; const date = new Date(value); if (Number.isNaN(date.getTime())) return String(value); return date.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }); }
     function showToast(message) { els.toast.textContent = message; els.toast.classList.add("show"); setTimeout(() => els.toast.classList.remove("show"), 3200); }
@@ -1264,6 +1460,47 @@ function renderAdminPanelHtml(token: string) {
       els.memberEmpty.style.display = els.memberList.children.length ? "none" : "block";
     }
 
+    function findCatalogCategory(categoryId) {
+      return (state.catalog?.categories || []).find((category) => category.id === categoryId) || null;
+    }
+    function categoryIcon(category) {
+      return category.emoji || "📁";
+    }
+    function catalogCategoryCard(category) {
+      const countLabel = formatCoins(category.itemCount || 0) + " item" + (Number(category.itemCount || 0) === 1 ? "" : "s");
+      const deleteButton = Number(category.itemCount || 0) > 0
+        ? ""
+        : '<button class="mini-btn danger category-delete" data-category-action="delete" title="Excluir categoria">🗑</button>';
+      return '<article class="catalog-category-card" data-category-id="' + escapeHtml(category.id) + '">' +
+        deleteButton +
+        '<div class="category-icon">' + escapeHtml(categoryIcon(category)) + '</div>' +
+        '<div class="category-title">' + escapeHtml(category.label) + '</div>' +
+        '<div class="category-subtitle">' + countLabel + '</div>' +
+      '</article>';
+    }
+    function catalogNewCategoryCard() {
+      return '<article class="catalog-category-card new" id="catalogNewCategoryCard"><div class="category-icon">＋</div><div class="category-title">Nova categoria</div><div class="category-subtitle">Criar uma nova pasta</div></article>';
+    }
+    function renderCatalogCategoryOptions(catalog) {
+      const options = (catalog.categories || []).map((category) => '<option value="' + escapeHtml(category.id) + '">' + escapeHtml((category.emoji ? category.emoji + ' ' : '') + category.label) + '</option>');
+      els.catalogItemCategory.innerHTML = options.join("");
+    }
+    function enterCatalogCategory(categoryId) {
+      const category = findCatalogCategory(categoryId);
+      if (!category) return;
+      state.catalogCategory = category.id;
+      state.catalogMode = "items";
+      state.catalogSearch = "";
+      if (els.catalogSearch) els.catalogSearch.value = "";
+      renderCatalog();
+    }
+    function leaveCatalogCategory() {
+      state.catalogCategory = "";
+      state.catalogMode = "categories";
+      state.catalogSearch = "";
+      if (els.catalogSearch) els.catalogSearch.value = "";
+      renderCatalog();
+    }
     function catalogItemCard(item) {
       const thumb = item.imageUrl
         ? '<img src="' + escapeHtml(item.imageUrl) + '" alt="" loading="lazy" />'
@@ -1291,8 +1528,22 @@ function renderAdminPanelHtml(token: string) {
       setText("catalogEnabled", formatCoins(stats.enabledItems || 0));
       setText("catalogCategories", formatCoins(stats.categories || 0));
       setText("catalogAverage", formatCoins(stats.averagePrice || 0));
+      renderCatalogCategoryOptions(state.catalog);
+
+      const isItems = state.catalogMode === "items" && state.catalogCategory;
+      els.catalogCategoryView.style.display = isItems ? "none" : "grid";
+      els.catalogItemsView.style.display = isItems ? "grid" : "none";
+
+      if (!isItems) {
+        els.catalogCategoryGrid.innerHTML = (state.catalog.categories || []).map(catalogCategoryCard).join("") + catalogNewCategoryCard();
+        els.catalogEmpty.style.display = "none";
+        return;
+      }
 
       const selectedCategory = state.catalogCategory;
+      const category = findCatalogCategory(selectedCategory);
+      els.catalogCurrentCategoryTitle.textContent = category ? category.label : "Itens";
+      els.catalogCurrentCategoryLabel.textContent = category ? category.label : selectedCategory;
       const search = String(state.catalogSearch || "").trim().toLowerCase();
       const filtered = (state.catalog.items || []).filter((item) => {
         if (selectedCategory && item.category !== selectedCategory) return false;
@@ -1304,21 +1555,13 @@ function renderAdminPanelHtml(token: string) {
       els.catalogGrid.innerHTML = filtered.map(catalogItemCard).join("");
       els.catalogEmpty.style.display = filtered.length ? "none" : "block";
     }
-    function renderCatalogCategoryOptions(catalog) {
-      const current = state.catalogCategory;
-      const options = ['<option value="">Todas categorias</option>'].concat(
-        (catalog.categories || []).map((category) => '<option value="' + escapeHtml(category.id) + '">' + escapeHtml((category.emoji ? category.emoji + ' ' : '') + category.label) + ' (' + escapeHtml(String(category.itemCount || 0)) + ')</option>')
-      );
-      els.catalogCategory.innerHTML = options.join("");
-      els.catalogCategory.value = current;
-    }
     async function loadCatalog() {
-      els.catalogLoading.style.display = "grid";
+      els.catalogLoading.style.display = state.catalogMode === "items" ? "grid" : "none";
       const response = await apiFetch("/admin-panel/api/catalog");
       els.catalogLoading.style.display = "none";
       if (!response.ok) { showToast(await response.text()); return; }
       state.catalog = await response.json();
-      renderCatalogCategoryOptions(state.catalog);
+      if (state.catalogCategory && !findCatalogCategory(state.catalogCategory)) state.catalogCategory = "";
       renderCatalog();
     }
     function findCatalogItem(itemId) {
@@ -1362,12 +1605,14 @@ function renderAdminPanelHtml(token: string) {
       setCatalogAutocompleteOpen(false);
     }
     function openCatalogModal(mode, item) {
+      const activeCategory = state.catalogCategory || (state.catalog?.categories?.[0]?.id || "misc");
       state.catalogModal = { mode, itemId: item?.id || null };
       els.catalogModalTitle.textContent = mode === "create" ? "Novo item" : "Editar item";
       els.catalogModalSubtitle.textContent = mode === "create" ? "Escolha um item da base DayZ e publique no catálogo do Neon." : "Atualize os dados exibidos no shop.";
       els.catalogItemId.disabled = mode !== "create";
       els.catalogItemId.value = item?.className || item?.id || "";
-      els.catalogItemCategory.value = item?.category || state.catalogCategory || "misc";
+      renderCatalogCategoryOptions(state.catalog || { categories: [] });
+      els.catalogItemCategory.value = item?.category || activeCategory;
       els.catalogItemName.value = item?.name || "";
       els.catalogItemPrice.value = item?.price ?? 0;
       els.catalogItemImage.value = item?.imageUrl || "";
@@ -1387,7 +1632,7 @@ function renderAdminPanelHtml(token: string) {
       const selectedClassName = els.catalogItemId.value;
       return {
         id: state.catalogModal?.mode === "edit" ? state.catalogModal.itemId : selectedClassName,
-        category: els.catalogItemCategory.value || "misc",
+        category: els.catalogItemCategory.value || state.catalogCategory || "misc",
         name: els.catalogItemName.value,
         className: selectedClassName,
         price: Number(els.catalogItemPrice.value || 0),
@@ -1426,13 +1671,155 @@ function renderAdminPanelHtml(token: string) {
       showToast("Item excluído do catálogo.");
       await loadCatalog();
     }
+    function openCatalogCategoryModal() {
+      els.catalogCategoryName.value = "";
+      els.catalogCategoryId.value = "";
+      els.catalogCategoryDescription.value = "";
+      els.catalogCategoryEnabled.checked = true;
+      els.catalogCategoryModalBackdrop.classList.add("open");
+      setTimeout(() => els.catalogCategoryName.focus(), 80);
+    }
+    function closeCatalogCategoryModal() {
+      els.catalogCategoryModalBackdrop.classList.remove("open");
+    }
+    async function saveCatalogCategory() {
+      const payload = {
+        label: els.catalogCategoryName.value,
+        id: els.catalogCategoryId.value,
+        description: els.catalogCategoryDescription.value,
+        enabled: Boolean(els.catalogCategoryEnabled.checked),
+      };
+      const response = await apiFetch("/admin-panel/api/catalog/categories", { method: "POST", body: JSON.stringify(payload) });
+      if (!response.ok) { showToast(await response.text()); return; }
+      const result = await response.json();
+      closeCatalogCategoryModal();
+      showToast("Categoria criada com sucesso.");
+      await loadCatalog();
+      if (result.category?.id) enterCatalogCategory(result.category.id);
+    }
+    async function deleteCatalogCategory(categoryId) {
+      const category = findCatalogCategory(categoryId);
+      if (!category) return;
+      if (!confirm("Excluir a categoria " + category.label + "?")) return;
+      const response = await apiFetch("/admin-panel/api/catalog/categories/" + encodeURIComponent(categoryId), { method: "DELETE" });
+      if (!response.ok) { showToast(await response.text()); return; }
+      showToast("Categoria excluída.");
+      if (state.catalogCategory === categoryId) leaveCatalogCategory();
+      await loadCatalog();
+    }
+
+
+    function dayzItemImageHtml(item) {
+      const imageUrl = item?.imageUrl || item?.urlImg || "";
+      return imageUrl ? '<img src="' + escapeHtml(imageUrl) + '" alt="" loading="lazy" onerror="this.parentElement.textContent=\'🎒\'" />' : '🎒';
+    }
+    function dayzItemRow(item) {
+      const checked = item.enabled !== false ? "checked" : "";
+      return '<article class="dayz-item-row" data-class-name="' + escapeHtml(item.className) + '">' +
+        '<div class="dayz-item-main">' +
+          '<div class="dayz-item-image">' + dayzItemImageHtml(item) + '</div>' +
+          '<div class="dayz-item-copy"><div class="dayz-item-title">' + escapeHtml(item.popularName || item.className) + '</div><div class="dayz-item-subtitle">' + escapeHtml(item.className) + '</div></div>' +
+        '</div>' +
+        '<label class="switch" title="Habilitar/desabilitar item"><input data-item-switch="true" type="checkbox" ' + checked + ' /><span class="switch-slider"></span></label>' +
+      '</article>';
+    }
+    function renderDayzItems(append) {
+      if (els.itemsTotal && state.itemsStats) {
+        els.itemsTotal.textContent = formatNumber(state.itemsStats.total || 0);
+        els.itemsEnabled.textContent = formatNumber(state.itemsStats.enabled || 0);
+        els.itemsDisabled.textContent = formatNumber(state.itemsStats.disabled || 0);
+        els.itemsMissingImage.textContent = formatNumber(state.itemsStats.missingImage || 0);
+      }
+      const html = state.dayzItems.map(dayzItemRow).join("");
+      els.itemsList.innerHTML = html;
+      els.itemsEmpty.style.display = state.dayzItems.length ? "none" : "block";
+    }
+    async function loadDayzItems(reset) {
+      if (state.itemsLoading) return;
+      if (reset) {
+        state.itemsCursor = 0;
+        state.itemsHasMore = true;
+        state.dayzItems = [];
+        els.itemsList.innerHTML = "";
+      }
+      if (!state.itemsHasMore) return;
+      state.itemsLoading = true;
+      els.itemsLoading.style.display = "grid";
+      const params = new URLSearchParams({ query: state.itemsSearch || "", filter: state.itemsFilter || "all", cursor: String(state.itemsCursor), limit: "30" });
+      const response = await apiFetch("/admin-panel/api/items?" + params.toString());
+      els.itemsLoading.style.display = "none";
+      state.itemsLoading = false;
+      if (!response.ok) { showToast(await response.text()); return; }
+      const payload = await response.json();
+      state.itemsStats = payload.stats || state.itemsStats;
+      const incoming = payload.items || [];
+      state.dayzItems = reset ? incoming : state.dayzItems.concat(incoming);
+      state.itemsCursor = payload.nextCursor ?? (state.itemsCursor + incoming.length);
+      state.itemsHasMore = Boolean(payload.hasMore);
+      renderDayzItems(Boolean(!reset));
+    }
+    function findDayzItem(className) {
+      return state.dayzItems.find((item) => item.className === className) || null;
+    }
+    function updateItemModalPreview() {
+      const item = state.itemModal?.item;
+      if (!item) return;
+      const previewItem = { ...item, popularName: els.itemModalPopularName.value || item.popularName, imageUrl: els.itemModalImageUrl.value || "" };
+      els.itemModalPreviewImage.innerHTML = dayzItemImageHtml(previewItem);
+      els.itemModalPreviewName.textContent = previewItem.popularName || item.className;
+      els.itemModalPreviewClass.textContent = item.className;
+    }
+    function openDayzItemModal(item) {
+      if (!item) return;
+      state.itemModal = { className: item.className, item };
+      els.itemModalPreviewName.textContent = item.popularName || item.className;
+      els.itemModalPreviewClass.textContent = item.className;
+      els.itemModalPreviewImage.innerHTML = dayzItemImageHtml(item);
+      els.itemModalPopularName.value = item.popularName || item.className;
+      els.itemModalImageUrl.value = item.imageUrl || "";
+      els.itemModalSpawnEventName.value = item.spawnEventName || "";
+      els.itemModalEnabled.checked = item.enabled !== false;
+      els.itemModalBackdrop.classList.add("open");
+      setTimeout(() => els.itemModalPopularName.focus(), 80);
+    }
+    function closeDayzItemModal() {
+      state.itemModal = null;
+      els.itemModalBackdrop.classList.remove("open");
+    }
+    async function saveDayzItem() {
+      if (!state.itemModal) return;
+      const className = state.itemModal.className;
+      const response = await apiFetch("/admin-panel/api/items/" + encodeURIComponent(className), {
+        method: "PATCH",
+        body: JSON.stringify({
+          popularName: els.itemModalPopularName.value,
+          imageUrl: els.itemModalImageUrl.value,
+          spawnEventName: els.itemModalSpawnEventName.value,
+          enabled: Boolean(els.itemModalEnabled.checked),
+        }),
+      });
+      if (!response.ok) { showToast(await response.text()); return; }
+      closeDayzItemModal();
+      showToast("Item atualizado.");
+      await loadDayzItems(true);
+    }
+    async function toggleDayzItem(className, enabled) {
+      const response = await apiFetch("/admin-panel/api/items/" + encodeURIComponent(className) + "/toggle", { method: "PATCH", body: JSON.stringify({ enabled }) });
+      if (!response.ok) { showToast(await response.text()); await loadDayzItems(true); return; }
+      const payload = await response.json();
+      const index = state.dayzItems.findIndex((item) => item.className === className);
+      if (index >= 0 && payload.item) state.dayzItems[index] = payload.item;
+      showToast(enabled ? "Item habilitado." : "Item desabilitado.");
+      renderDayzItems(true);
+    }
 
     function switchView(view) {
       state.view = view; document.querySelectorAll(".view").forEach((el) => el.classList.toggle("active", el.id === "view-" + view));
       document.querySelectorAll(".nav button").forEach((el) => el.classList.toggle("active", el.dataset.view === view));
-      els.pageTitle.textContent = view === "general" ? "Geral" : view === "members" ? "Membros" : "Catálogo";
+      els.pageTitle.textContent = view === "general" ? "Geral" : view === "members" ? "Membros" : view === "catalog" ? "Catálogo" : "Itens";
       if (view === "members" && !els.memberList.children.length) loadMembers(true);
       if (view === "catalog" && !state.catalog) loadCatalog();
+      if (view === "items" && !state.dayzItems.length) loadDayzItems(true);
     }
     function openCoinModal(action, memberCardEl) {
       const discordId = memberCardEl.getAttribute("data-discord-id");
@@ -1452,7 +1839,7 @@ function renderAdminPanelHtml(token: string) {
       els.modalBackdrop.classList.remove("open"); showToast("Carteira atualizada com sucesso."); await loadOverview(); await loadMembers(true); if (state.selectedDiscordId) await openMemberDrawer(state.selectedDiscordId);
     }
     document.querySelectorAll(".nav button").forEach((button) => button.addEventListener("click", () => switchView(button.dataset.view)));
-    document.getElementById("refreshButton").addEventListener("click", async () => { await loadOverview(); if (state.view === "members") await loadMembers(true); if (state.view === "catalog") await loadCatalog(); showToast("Dados atualizados."); });
+    document.getElementById("refreshButton").addEventListener("click", async () => { await loadOverview(); if (state.view === "members") await loadMembers(true); if (state.view === "catalog") await loadCatalog(); if (state.view === "items") await loadDayzItems(true); showToast("Dados atualizados."); });
     document.getElementById("membersRefresh").addEventListener("click", () => loadMembers(true));
     let searchTimer = null;
     function updateSearch(value) { state.search = value; clearTimeout(searchTimer); searchTimer = setTimeout(() => loadMembers(true), 240); }
@@ -1460,11 +1847,15 @@ function renderAdminPanelHtml(token: string) {
     document.getElementById("globalSearch").addEventListener("input", (event) => { document.getElementById("memberSearch").value = event.target.value; updateSearch(event.target.value); if (state.view !== "members") switchView("members"); });
     document.getElementById("memberFilter").addEventListener("change", (event) => { state.filter = event.target.value; loadMembers(true); });
     document.getElementById("catalogSearch").addEventListener("input", (event) => { state.catalogSearch = event.target.value; renderCatalog(); });
-    document.getElementById("catalogCategory").addEventListener("change", (event) => { state.catalogCategory = event.target.value; renderCatalog(); });
     document.getElementById("catalogRefresh").addEventListener("click", loadCatalog);
+    document.getElementById("catalogItemsRefresh").addEventListener("click", loadCatalog);
+    document.getElementById("catalogBack").addEventListener("click", leaveCatalogCategory);
+    document.getElementById("catalogCategoryCreate").addEventListener("click", openCatalogCategoryModal);
     document.getElementById("catalogCreate").addEventListener("click", () => openCatalogModal("create", null));
     document.getElementById("catalogModalCancel").addEventListener("click", closeCatalogModal);
     document.getElementById("catalogModalConfirm").addEventListener("click", saveCatalogItem);
+    document.getElementById("catalogCategoryModalCancel").addEventListener("click", closeCatalogCategoryModal);
+    document.getElementById("catalogCategoryModalConfirm").addEventListener("click", saveCatalogCategory);
     els.catalogItemId.addEventListener("input", (event) => { if (state.catalogModal?.mode === "create") searchCatalogBaseItems(event.target.value); });
     els.catalogItemId.addEventListener("focus", (event) => { if (state.catalogModal?.mode === "create") searchCatalogBaseItems(event.target.value); });
     els.catalogItemAutocomplete.addEventListener("click", (event) => {
@@ -1474,6 +1865,20 @@ function renderAdminPanelHtml(token: string) {
     });
     document.addEventListener("click", (event) => {
       if (!els.catalogItemAutocomplete?.contains(event.target) && event.target !== els.catalogItemId) setCatalogAutocompleteOpen(false);
+    });
+    els.catalogCategoryGrid.addEventListener("click", (event) => {
+      const deleteButton = event.target.closest("button[data-category-action]");
+      const card = event.target.closest(".catalog-category-card");
+      if (!card) return;
+      if (card.id === "catalogNewCategoryCard") { openCatalogCategoryModal(); return; }
+      const categoryId = card.getAttribute("data-category-id");
+      if (!categoryId) return;
+      if (deleteButton?.dataset.categoryAction === "delete") {
+        event.stopPropagation();
+        deleteCatalogCategory(categoryId);
+        return;
+      }
+      enterCatalogCategory(categoryId);
     });
     els.catalogGrid.addEventListener("click", (event) => {
       const button = event.target.closest("button[data-catalog-action]");
@@ -1486,6 +1891,32 @@ function renderAdminPanelHtml(token: string) {
       if (action === "toggle") toggleCatalogItem(itemId);
       if (action === "delete") deleteCatalogItemAction(itemId);
     });
+    let itemsSearchTimer = null;
+    els.itemsSearch.addEventListener("input", (event) => {
+      state.itemsSearch = event.target.value;
+      clearTimeout(itemsSearchTimer);
+      itemsSearchTimer = setTimeout(() => loadDayzItems(true), 240);
+    });
+    els.itemsFilter.addEventListener("change", (event) => { state.itemsFilter = event.target.value; loadDayzItems(true); });
+    els.itemsRefresh.addEventListener("click", () => loadDayzItems(true));
+    els.itemsList.addEventListener("click", (event) => {
+      const row = event.target.closest(".dayz-item-row");
+      if (!row) return;
+      const className = row.getAttribute("data-class-name");
+      const switchInput = event.target.closest("input[data-item-switch]");
+      if (switchInput) {
+        event.stopPropagation();
+        toggleDayzItem(className, Boolean(switchInput.checked));
+        return;
+      }
+      openDayzItemModal(findDayzItem(className));
+    });
+    document.getElementById("itemModalCancel").addEventListener("click", closeDayzItemModal);
+    document.getElementById("itemModalConfirm").addEventListener("click", saveDayzItem);
+    document.getElementById("itemModalRemoveImage").addEventListener("click", () => { els.itemModalImageUrl.value = ""; updateItemModalPreview(); });
+    els.itemModalPopularName.addEventListener("input", updateItemModalPreview);
+    els.itemModalImageUrl.addEventListener("input", updateItemModalPreview);
+
     els.memberList.addEventListener("click", (event) => {
       const card = event.target.closest(".member-card");
       if (!card) return;
@@ -1502,6 +1933,8 @@ function renderAdminPanelHtml(token: string) {
     document.getElementById("modalConfirm").addEventListener("click", confirmCoinAction);
     const observer = new IntersectionObserver((entries) => { if (entries.some((entry) => entry.isIntersecting) && state.view === "members") loadMembers(false); }, { rootMargin: "420px" });
     observer.observe(document.getElementById("memberSentinel"));
+    const itemsObserver = new IntersectionObserver((entries) => { if (entries.some((entry) => entry.isIntersecting) && state.view === "items") loadDayzItems(false); }, { rootMargin: "520px" });
+    itemsObserver.observe(document.getElementById("itemsSentinel"));
     loadOverview();
   </script>
 </body>
@@ -1612,22 +2045,89 @@ router.post("/api/members/:discordId/coins", async (req, res) => {
 });
 
 
-router.get("/api/dayz-items", (req, res) => {
+router.get("/api/dayz-items", async (req, res) => {
   if (!requireAdmin(req, res)) return;
 
   try {
     const query = typeof req.query.query === "string" ? req.query.query : "";
     const limit = Math.min(25, Math.max(1, Math.floor(Number(req.query.limit || 12))));
-    const items = searchDayzItems(query, limit).map((item) => ({
+    const includeDisabled = req.query.includeDisabled === "true";
+    const items = (await searchDayzItemsFromDatabase({
+      query,
+      limit,
+      enabledOnly: !includeDisabled,
+    })).map((item) => ({
       className: item.className,
       popularName: item.popularName,
       imageUrl: item.imageUrl || "",
       spawnEventName: item.spawnEventName || "",
+      enabled: item.enabled !== false,
     }));
 
     res.json({ items });
   } catch (err) {
     res.status(500).json({ error: String(err) });
+  }
+});
+
+router.get("/api/items", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+
+  try {
+    const query = typeof req.query.query === "string" ? req.query.query : "";
+    const cursor = Math.max(0, Math.floor(Number(req.query.cursor || 0)));
+    const limit = Math.min(100, Math.max(1, Math.floor(Number(req.query.limit || 30))));
+    const filter =
+      req.query.filter === "enabled" ||
+      req.query.filter === "disabled" ||
+      req.query.filter === "missing_image"
+        ? req.query.filter
+        : "all";
+
+    res.json(await getDayzItemsPage({ query, cursor, limit, filter }));
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
+  }
+});
+
+router.patch("/api/items/:className", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+
+  try {
+    const input = (req.body && typeof req.body === "object" ? req.body : {}) as Record<string, unknown>;
+    const item = await updateDayzItemInDatabase(req.params.className, {
+      popularName: input.popularName === undefined ? undefined : String(input.popularName || "").trim(),
+      imageUrl: input.imageUrl === undefined ? undefined : String(input.imageUrl || "").trim(),
+      spawnEventName: input.spawnEventName === undefined ? undefined : String(input.spawnEventName || "").trim(),
+      enabled: typeof input.enabled === "boolean" ? input.enabled : undefined,
+    });
+
+    if (!item) {
+      res.status(404).send("DayZ item not found");
+      return;
+    }
+
+    res.json({ ok: true, item });
+  } catch (err) {
+    res.status(400).send(String(err));
+  }
+});
+
+router.patch("/api/items/:className/toggle", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+
+  try {
+    const body = (req.body && typeof req.body === "object" ? req.body : {}) as { enabled?: boolean };
+    const item = await toggleDayzItemInDatabase(req.params.className, body.enabled);
+
+    if (!item) {
+      res.status(404).send("DayZ item not found");
+      return;
+    }
+
+    res.json({ ok: true, item });
+  } catch (err) {
+    res.status(400).send(String(err));
   }
 });
 
@@ -1642,11 +2142,39 @@ router.get("/api/catalog", async (req, res) => {
   }
 });
 
+router.post("/api/catalog/categories", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+
+  try {
+    const category = readCatalogCategoryPayload(req.body);
+    await upsertShopCatalogCategoryItem(category);
+    await ensureShopCatalogLoaded();
+    res.json({ ok: true, category, catalog: buildCatalogPayload() });
+  } catch (err) {
+    res.status(400).send(String(err));
+  }
+});
+
+router.delete("/api/catalog/categories/:id", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+
+  try {
+    const deleted = await deleteShopCatalogCategory(req.params.id);
+    if (!deleted) {
+      res.status(404).send("Catalog category not found");
+      return;
+    }
+    res.json({ ok: true, deleted: true, catalog: buildCatalogPayload() });
+  } catch (err) {
+    res.status(400).send(String(err));
+  }
+});
+
 router.post("/api/catalog/items", async (req, res) => {
   if (!requireAdmin(req, res)) return;
 
   try {
-    const item = readCatalogItemPayload(req.body);
+    const item = await readCatalogItemPayload(req.body);
     const saved = await upsertShopCatalogItem(item);
     res.json({ ok: true, item: saved, catalog: buildCatalogPayload() });
   } catch (err) {
@@ -1658,7 +2186,7 @@ router.patch("/api/catalog/items/:id", async (req, res) => {
   if (!requireAdmin(req, res)) return;
 
   try {
-    const item = readCatalogItemPayload(req.body, req.params.id);
+    const item = await readCatalogItemPayload(req.body, req.params.id);
     const saved = await upsertShopCatalogItem(item);
     res.json({ ok: true, item: saved, catalog: buildCatalogPayload() });
   } catch (err) {
