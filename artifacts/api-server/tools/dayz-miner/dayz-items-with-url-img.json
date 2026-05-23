@@ -1373,5 +1373,755 @@
     "className": "BookHeartOfDarkness",
     "popularName": "Heart of Darkness",
     "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/5/5f/Heart_Of_Darkness.png/revision/latest?cb=20161113162559"
+  },
+  {
+    "className": "BookHerland",
+    "popularName": "Herland",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/5/5b/Herland.png/revision/latest?cb=20170310180647"
+  },
+  {
+    "className": "BookHinduLiterature",
+    "popularName": "Hindu Literature",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/2/27/Hindu_Literature.png/revision/latest?cb=20161119132556"
+  },
+  {
+    "className": "BookHunger",
+    "popularName": "Hunger",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/5/5a/Hunger.png/revision/latest?cb=20161221192513"
+  },
+  {
+    "className": "BookIvanhoe",
+    "popularName": "Ivanhoe",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/4/44/Ivanhoe.png/revision/latest?cb=20161113172811"
+  },
+  {
+    "className": "BookJapaneseLiterature",
+    "popularName": "Japanese Literature",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/8/80/Japanese_Literature.png/revision/latest?cb=20170202202920"
+  },
+  {
+    "className": "BookKidnapped",
+    "popularName": "Kidnapped",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/8/87/Kidnapped.png/revision/latest?cb=20180114141856"
+  },
+  {
+    "className": "BookKingLear",
+    "popularName": "King Lear",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/0/06/King_Lear.png/revision/latest?cb=20170819000930"
+  },
+  {
+    "className": "BookKingSolomonsMines",
+    "popularName": "King Solomon's Mines",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/e/e6/King_Solomon%27s_Mines.png/revision/latest?cb=20161113161139"
+  },
+  {
+    "className": "BookLaChartreuseDeParme",
+    "popularName": "La Chartreuse de Parme",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/4/4e/La_Chartreuse_de_Parme.png/revision/latest?cb=20170207203223"
+  },
+  {
+    "className": "BookLaComdieHumaine",
+    "popularName": "La Comédie humaine volume I",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/8/8c/La_Com%C3%A9die_humaine_Volume_I_.png/revision/latest?cb=20170523223342"
+  },
+  {
+    "className": "BookLaDbcle",
+    "popularName": "La Débâcle",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/6/6f/La_D%C3%A9b%C3%A2cle.png/revision/latest?cb=20170219181801"
+  },
+  {
+    "className": "BookLeRougeEtLeNoir",
+    "popularName": "Le Rouge et le noir",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/4/45/Le_Rouge_et_le_Noir.png/revision/latest?cb=20170424181145"
+  },
+  {
+    "className": "BookLenfer1Of2",
+    "popularName": "L'enfer (1 of 2)",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/0/09/L%27enfer_%281_of_2%29.png/revision/latest?cb=20170326164754"
+  },
+  {
+    "className": "BookLesCorneilles",
+    "popularName": "Les Corneilles",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/1/1b/Les_Corneilles.png/revision/latest?cb=20170506140700"
+  },
+  {
+    "className": "BookLesTroisMousquetaires",
+    "popularName": "Les trois mousquetaires",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/0/0a/Fresh_Banana.png/revision/latest?cb=20150315194704"
+  },
+  {
+    "className": "BookLleMystrieuse",
+    "popularName": "L'Île mystérieuse",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/6/63/L%27%C3%AEle_myst%C3%A9rieuse.png/revision/latest?cb=20170127230603"
+  },
+  {
+    "className": "BookLonesomeLand",
+    "popularName": "Lonesome Land",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/2/2b/Lonesome_Land.png/revision/latest?cb=20170823181439"
+  },
+  {
+    "className": "BookLordJim",
+    "popularName": "Lord Jim",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/d/d3/Lord_Jim.png/revision/latest?cb=20161204150718"
+  },
+  {
+    "className": "BookMadameBovary",
+    "popularName": "Madame Bovary",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/8/83/Madame_Bovary.png/revision/latest?cb=20170321215824"
+  },
+  {
+    "className": "BookMiddlemarch",
+    "popularName": "Middlemarch",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/e/ef/Middlemarch.png/revision/latest?cb=20170613190630"
+  },
+  {
+    "className": "BookMobyDick",
+    "popularName": "Moby Dick",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/f/fa/Moby_Dick.png/revision/latest?cb=20170320201410"
+  },
+  {
+    "className": "BookMrchenFrKinder",
+    "popularName": "Märchen für Kinder",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/1/1d/M%C3%A4rchen_f%C3%BCr_Kinder.png/revision/latest?cb=20170104160845"
+  },
+  {
+    "className": "BookNaturalSelection",
+    "popularName": "On the Origin of Species by Means of Natural Selection",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/a/a2/On_The_Origin_Of_Species.png/revision/latest?cb=20161113165644"
+  },
+  {
+    "className": "BookNjalsSaga",
+    "popularName": "Njal's Saga",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/2/2c/Njal%27s_Saga.png/revision/latest?cb=20170607185122"
+  },
+  {
+    "className": "BookNostromo",
+    "popularName": "Nostromo: A Tale of the Seaboard",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/b/b9/Nostromo_-_A_Tale_of_the_Seaboard.png/revision/latest?cb=20170131195656"
+  },
+  {
+    "className": "BookPhilosophiaeNaturalis",
+    "popularName": "Philosophiae Naturalis Principia Mathematica",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/9/9a/Philosophiae_Naturalis_Principia_Mathematica.png/revision/latest?cb=20161113175152"
+  },
+  {
+    "className": "BookPrideAndPrejudice",
+    "popularName": "Pride and Prejudice",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/9/9c/Pride_and_Prejudice.png/revision/latest?cb=20161226213012"
+  },
+  {
+    "className": "BookRasselas",
+    "popularName": "Rasselas",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/6/6a/Rasselas.png/revision/latest?cb=20170212012617"
+  },
+  {
+    "className": "BookRobinsonCrusoe",
+    "popularName": "Robinson Crusoe",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/0/01/Robinson_Crusoe.png/revision/latest?cb=20170212183447"
+  },
+  {
+    "className": "BookRobinsonCrusoeAdventures",
+    "popularName": "The Further Adventures of Robinson Crusoe",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/4/44/The_Further_Adventures_of_Robinson_Crusoe.png/revision/latest?cb=20170221192642"
+  },
+  {
+    "className": "BookRomeoUndJulia",
+    "popularName": "Romeo und Julia",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/d/d3/Romeo_und_Julia.png/revision/latest?cb=20170226174436"
+  },
+  {
+    "className": "BookRonickyDoone",
+    "popularName": "Ronicky Doone",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/9/9b/Ronicky_Doone.png/revision/latest?cb=20161113162803"
+  },
+  {
+    "className": "BookRussian",
+    "popularName": "Russian learning book",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/3/3a/Learning_Russian.png/revision/latest?cb=20161113164210"
+  },
+  {
+    "className": "BookRussianCheatSheet",
+    "popularName": "Russian cheat sheet",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/3/3a/Learning_Russian.png/revision/latest?cb=20161113164210"
+  },
+  {
+    "className": "BookScaramouche",
+    "popularName": "Scaramouche",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/7/79/Scaramouche.png/revision/latest?cb=20170324203752"
+  },
+  {
+    "className": "BookSelectedStories",
+    "popularName": "Selected Stories",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/5/51/Selected_Stories.png/revision/latest?cb=20170523214135"
+  },
+  {
+    "className": "BookShe",
+    "popularName": "She",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/2/2a/She.png/revision/latest?cb=20170329194918"
+  },
+  {
+    "className": "BookSkyrider",
+    "popularName": "Skyrider",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/6/6f/Skyrider.png/revision/latest?cb=20170226174638"
+  },
+  {
+    "className": "BookSonsAndLovers",
+    "popularName": "Sons and Lovers",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/3/32/Sons_and_Lovers.png/revision/latest?cb=20161113175342"
+  },
+  {
+    "className": "BookSpinifexAndSand",
+    "popularName": "Spinifex and Sand",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/8/80/Spinifex_and_Sand.png/revision/latest?cb=20161128222052"
+  },
+  {
+    "className": "BookSunsetPass",
+    "popularName": "Sunset Pass",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/f/fc/Sunset_Pass.png/revision/latest?cb=20170227212814"
+  },
+  {
+    "className": "BookTheAeneid",
+    "popularName": "The Aeneid",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/b/b4/The_Aeneid.png/revision/latest?cb=20170127230904"
+  },
+  {
+    "className": "BookTheArtOfWar",
+    "popularName": "The Art Of War",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/3/3c/The_Art_Of_War.png/revision/latest?cb=20161230142022"
+  },
+  {
+    "className": "BookTheBarrier",
+    "popularName": "The Barrier",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/f/f2/The_Barrier.png/revision/latest?cb=20170310180258"
+  },
+  {
+    "className": "BookTheBrothersKaramazov",
+    "popularName": "The Brothers Karamazov",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/1/1a/The_Brothers_Karamazov.png/revision/latest?cb=20161127195724"
+  },
+  {
+    "className": "BookTheCallOfCthulhu",
+    "popularName": "The Call of Cthulhu",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/7/78/The_Call_of_Cthulhu.png/revision/latest?cb=20170417163654"
+  },
+  {
+    "className": "BookTheCallOfTheWild",
+    "popularName": "The Call of the Wild",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/4/42/The_Call_Of_The_Wild.png/revision/latest?cb=20161113165813"
+  },
+  {
+    "className": "BookTheCanterburyTales",
+    "popularName": "The Canterbury Tales and Other Poems",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/1/14/The_Canterbury_Tales_and_Other_Poems.png/revision/latest?cb=20170921194625"
+  },
+  {
+    "className": "BookTheCaveOfGold",
+    "popularName": "The Cave of Gold",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/4/41/The_Cave_of_Gold.png/revision/latest?cb=20170212013715"
+  },
+  {
+    "className": "BookTheComingRace",
+    "popularName": "The Coming Race",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/2/25/The_Coming_Race.png/revision/latest?cb=20170101193647"
+  },
+  {
+    "className": "BookTheCosmicComputer",
+    "popularName": "The Cosmic Computer",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/7/74/The_Cosmic_Conputer.png/revision/latest?cb=20161128222848"
+  },
+  {
+    "className": "BookTheCountryOfTheBlind",
+    "popularName": "The Country of the Blind",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/7/77/The_Country_of_the_Blind.png/revision/latest?cb=20170127231045"
+  },
+  {
+    "className": "BookTheDayOfTheBeast",
+    "popularName": "The Day of the Beast",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/7/7e/The_Day_Of_The_Beast.png/revision/latest?cb=20161113164340"
+  },
+  {
+    "className": "BookTheDecameron",
+    "popularName": "The Decameron of Giovanni Boccaccio",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/b/bd/The_Decameron_of_Giovanni_Boccaccio.png/revision/latest?cb=20170122204113"
+  },
+  {
+    "className": "BookTheDesertOfWheat",
+    "popularName": "The Desert of Wheat",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/c/c5/The_Desert_of_Wheat.png/revision/latest?cb=20161119133059"
+  },
+  {
+    "className": "BookTheGiacomoLeopardi",
+    "popularName": "The Poems of Giacomo Leopardi",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/b/bc/The_Poems_of_Giacomo_Leopardi.png/revision/latest?cb=20170319181957"
+  },
+  {
+    "className": "BookTheHeritageOfTheSioux",
+    "popularName": "The Heritage of the Sioux",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/e/e2/The_Heritage_of_the_Sioux.png/revision/latest?cb=20170621194240"
+  },
+  {
+    "className": "BookTheHiddenChildren",
+    "popularName": "The Hidden Children",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/a/a6/The_Hidden_Children.png/revision/latest?cb=20161119133350"
+  },
+  {
+    "className": "BookTheHoundOfTheBaskervilles",
+    "popularName": "The Hound of the Baskervilles",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/1/17/The_Hound_of_the_Baskervilles.png/revision/latest?cb=20180119165240"
+  },
+  {
+    "className": "BookTheHouseOfTheSevenGables",
+    "popularName": "The House of the Seven Gables",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/b/b8/The_House_Of_Seven_Gables.png/revision/latest?cb=20161113164700"
+  },
+  {
+    "className": "BookTheIslandOfDoctorMoreau",
+    "popularName": "The Island of Doctor Moreau",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/8/8d/The_Island_of_Doctor_Moreau.png/revision/latest?cb=20161204151027"
+  },
+  {
+    "className": "BookTheJungleBook",
+    "popularName": "The Jungle Book",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/c/cb/The_Jungle_Book.png/revision/latest?cb=20161113164821"
+  },
+  {
+    "className": "BookTheJustifiedSinner",
+    "popularName": "The Private Memoirs and Confessions of a Justified Sinner",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/e/ec/The_Private_Memoirs_and_Confessions_of_a_Justified_Sinner.png/revision/latest?cb=20161113175703"
+  },
+  {
+    "className": "BookTheLastMan",
+    "popularName": "The Last Man",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/f/f5/The_Last_Man.png/revision/latest?cb=20161113173011"
+  },
+  {
+    "className": "BookTheLastOfThePlainsmen",
+    "popularName": "The Last of the Plainsmen",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/a/a8/The_Last_of_the_Plainsmen.png/revision/latest?cb=20170503192301"
+  },
+  {
+    "className": "BookTheLastTrail",
+    "popularName": "The Last Trail",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/8/82/The_Last_Trail.png/revision/latest?cb=20161113165938"
+  },
+  {
+    "className": "BookTheMahabharataOfKrishna",
+    "popularName": "The Mahabharata of Krishna-Dwaipayana Vyasa Bk. 4",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/0/00/The_Mahabharata_of_Krishna-Dwaipayana_Vyasa_Bk._4.png/revision/latest?cb=20170323200555"
+  },
+  {
+    "className": "BookTheManWhoWasThursday",
+    "popularName": "The Man Who Was Thursday",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/d/da/The_Man_Who_Was_Thursday.png/revision/latest?cb=20161113175437"
+  },
+  {
+    "className": "BookTheMetamorphosesOfOvid",
+    "popularName": "The Metamorphoses of Ovid",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/c/cd/The_Metamorphoses_of_Ovid.png/revision/latest?cb=20170329200825"
+  },
+  {
+    "className": "BookTheMetamorphosis",
+    "popularName": "The Metamorphosis",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/b/b6/The_Metamorphosis.png/revision/latest?cb=20170513195538"
+  },
+  {
+    "className": "BookTheMonkARomance",
+    "popularName": "The Monk - A romance",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/e/e0/The_Monk_-_A_romance.png/revision/latest?cb=20170423185637"
+  },
+  {
+    "className": "BookTheOutlet",
+    "popularName": "The Outlet",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/7/76/The_Outlet.png/revision/latest?cb=20180114142054"
+  },
+  {
+    "className": "BookThePictureOfDorianGray",
+    "popularName": "The Picture Of Dorian Gray",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/3/3a/The_Picture_of_Dorian_Gray.png/revision/latest?cb=20170303225100"
+  },
+  {
+    "className": "BookThePitAndThePendulum",
+    "popularName": "The Pit and the Pendulum",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/2/29/The_Pit_and_the_Pendulum.png/revision/latest?cb=20170524180313"
+  },
+  {
+    "className": "BookThePossessed",
+    "popularName": "The Possessed",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/5/5c/The_Possessed.png/revision/latest?cb=20170420172654"
+  },
+  {
+    "className": "BookThePrisonerOfZenda",
+    "popularName": "The Prisoner of Zenda",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/4/40/The_Prisoner_of_Zenda.png/revision/latest?cb=20161113175545"
+  },
+  {
+    "className": "BookTheQuirt",
+    "popularName": "The Quirt",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/4/4f/The_Quirt.png/revision/latest?cb=20170118202341"
+  },
+  {
+    "className": "BookTheRaven",
+    "popularName": "The Raven",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/a/a3/The_Raven.png/revision/latest?cb=20161113173040"
+  },
+  {
+    "className": "BookTheRedBadgeOfCourage",
+    "popularName": "The Red Badge of Courage",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/f/f1/The_Red_Badge_of_Courage.png/revision/latest?cb=20161216194107"
+  },
+  {
+    "className": "BookTheRightsOfWoman",
+    "popularName": "A Vindication of the Rights of Women",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/3/3d/A_Vindication_of_the_Rights_of_Woman.png/revision/latest?cb=20161221191728"
+  },
+  {
+    "className": "BookTheScarletPimpernel",
+    "popularName": "The Scarlet Pimpernel",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/1/1b/The_Scarlet_Pimpernel.png/revision/latest?cb=20161113170309"
+  },
+  {
+    "className": "BookTheShunnedHouse",
+    "popularName": "The Shunned House",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/2/24/The_Shunned_House.png/revision/latest?cb=20170320201644"
+  },
+  {
+    "className": "BookTheThreeMusketeers",
+    "popularName": "The Three Musketeers",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/a/ab/The_Three_Musketeers.png/revision/latest?cb=20170409191517"
+  },
+  {
+    "className": "BookTheThunderBird",
+    "popularName": "The Thunder Bird",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/b/b2/The_Thunder_Bird.png/revision/latest?cb=20170611152451"
+  },
+  {
+    "className": "BookTheTimeMachine",
+    "popularName": "The Time Machine",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/a/ab/The_Time_Machine.png/revision/latest?cb=20170109204005"
+  },
+  {
+    "className": "BookTheTrial",
+    "popularName": "The Trial",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/6/64/The_Trial.png/revision/latest?cb=20170415191618"
+  },
+  {
+    "className": "BookTheTurnOfTheScrew",
+    "popularName": "The Turn of the Screw",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/0/00/The_Turn_of_the_Screw.png/revision/latest?cb=20170511193201"
+  },
+  {
+    "className": "BookTheVariableMan",
+    "popularName": "The Variable Man",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/e/e2/The_Variable_Man.png/revision/latest?cb=20170313195416"
+  },
+  {
+    "className": "BookTheWarOfTheWorlds",
+    "popularName": "The War of the Worlds",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/f/fe/The_War_of_the_Worlds.png/revision/latest?cb=20170614203610"
+  },
+  {
+    "className": "BookThreeMenInABoat",
+    "popularName": "Three Men in a Boat",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/f/f3/Three_Men_in_a_Boat.png/revision/latest?cb=20170502181228"
+  },
+  {
+    "className": "BookToTheInteriorOfTheEarth",
+    "popularName": "A Journey to the Interior of the Earth",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/c/ce/A_Journey_to_the_Interior_of_the_Earth.png/revision/latest?cb=20170117180507"
+  },
+  {
+    "className": "BookTonyAndTheBeetles",
+    "popularName": "Tony and the Beetles",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/e/e1/Tony_and_the_Beetles.png/revision/latest?cb=20170108164409"
+  },
+  {
+    "className": "BookTrailin",
+    "popularName": "Trailin'!",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/3/3b/Trailin.png/revision/latest?cb=20170124195706"
+  },
+  {
+    "className": "BookTranslationsOfShakuntala",
+    "popularName": "Translations of Shakuntala and Other Works",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/7/73/Translations_of_Shakuntala_and_Other_Works.png/revision/latest?cb=20161113175828"
+  },
+  {
+    "className": "BookTreasureIsland",
+    "popularName": "Treasure Island",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/1/15/Treasure_Island.png/revision/latest?cb=20170209190044"
+  },
+  {
+    "className": "BookUlysses",
+    "popularName": "Ulysses",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/7/7e/Ulysses.png/revision/latest?cb=20161113165008"
+  },
+  {
+    "className": "BookUncleSilas",
+    "popularName": "Uncle Silas",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/4/45/My_Uncle_Silas.png/revision/latest?cb=20180114142016"
+  },
+  {
+    "className": "BookVerwandlung",
+    "popularName": "Die Verwandlung",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/7/70/Die_Verwandlung.png/revision/latest?cb=20161113162248"
+  },
+  {
+    "className": "BookVoyageAuCentreDeLaTerre",
+    "popularName": "Voyage au Centre de la Terre",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/6/6b/Voyage_au_Centre_de_la_Terre.png/revision/latest?cb=20170108165039"
+  },
+  {
+    "className": "BookWarAndPeace",
+    "popularName": "War and Peace",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/6/63/War_and_Peace.png/revision/latest?cb=20170525211148"
+  },
+  {
+    "className": "BookWealthOfNations",
+    "popularName": "An Inquiry into the Nature and Causes of the Wealth of Nations",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/9/97/An_Inquiry_into_the_Nature_and_Causes_of_the_Wealth_of_Nations.png/revision/latest?cb=20161113174803"
+  },
+  {
+    "className": "BookWielandOrTheTransformation",
+    "popularName": "Wieland or The Transformation",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/5/57/Wieland_or_The_Transformation.png/revision/latest?cb=20170417163109"
+  },
+  {
+    "className": "BookWutheringHeights",
+    "popularName": "Wuthering Heights",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/9/98/Wuthering_Heights.png/revision/latest?cb=20161113165144"
+  },
+  {
+    "className": "BookYouth",
+    "popularName": "Youth",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/c/ce/Youth.png/revision/latest?cb=20170416205656"
+  },
+  {
+    "className": "BoonieHat_Black",
+    "popularName": "Boonie Hat Black",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/b/b8/Boonie_Hat_Black.png/revision/latest?cb=20150315204422"
+  },
+  {
+    "className": "BoonieHat_Blue",
+    "popularName": "Boonie Hat Blue",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/f/fd/Boonie_Hat_Blue.png/revision/latest?cb=20150315204527"
+  },
+  {
+    "className": "BoonieHat_DPM",
+    "popularName": "Boonie Hat",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/b/b8/Boonie_Hat_Black.png/revision/latest?cb=20150315204422"
+  },
+  {
+    "className": "BoonieHat_Dubok",
+    "popularName": "Boonie Hat Dubok",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/b/b8/Boonie_Hat_Black.png/revision/latest?cb=20150315204422"
+  },
+  {
+    "className": "BoonieHat_Flecktran",
+    "popularName": "Boonie Hat",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/b/b8/Boonie_Hat_Black.png/revision/latest?cb=20150315204422"
+  },
+  {
+    "className": "BoonieHat_NavyBlue",
+    "popularName": "Boonie Hat",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/f/fd/Boonie_Hat_Blue.png/revision/latest?cb=20150315204527"
+  },
+  {
+    "className": "BoonieHat_Olive",
+    "popularName": "Boonie Hat Olive",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/3/3f/Boonie_Hat_Olive.png/revision/latest?cb=20150315204809"
+  },
+  {
+    "className": "BoonieHat_Orange",
+    "popularName": "Boonie Hat Orange",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/e/eb/Boonie_Hat_Orange.png/revision/latest?cb=20150315204704"
+  },
+  {
+    "className": "BoonieHat_Red",
+    "popularName": "Boonie Hat Red",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/9/9f/Boonie_Hat_Red.png/revision/latest?cb=20150315204633"
+  },
+  {
+    "className": "BoonieHat_Tan",
+    "popularName": "Boonie Hat Tan",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/b/b8/Boonie_Hat_Black.png/revision/latest?cb=20150315204422"
+  },
+  {
+    "className": "BoxCerealCrunchin",
+    "popularName": "Cereals",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/9/99/Crunchin_Crisps_Cereal.png/revision/latest?cb=20160911152554"
+  },
+  {
+    "className": "BrakeFluid",
+    "popularName": "Brake Fluid",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/6/68/BrakeFluid.png/revision/latest?cb=20150622143106"
+  },
+  {
+    "className": "BrassKnuckles_Dull",
+    "popularName": "Brass Knuckles",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/0/08/Brass_Knuckles_%28Dull%29.png/revision/latest?cb=20220523161841"
+  },
+  {
+    "className": "BrassKnuckles_Shiny",
+    "popularName": "Brass Knuckles",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/5/51/Brass_Knuckles_%28Shiny%29.png/revision/latest?cb=20220523162029"
+  },
+  {
+    "className": "Breeches_Beetcheck",
+    "popularName": "Capri Pants",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/0/08/Breeches_Beetcheck.png/revision/latest?cb=20240818095751"
+  },
+  {
+    "className": "Breeches_Beige",
+    "popularName": "Capri Pants Beige",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/7/7b/Breeches_Beige.png/revision/latest?cb=20240818095756"
+  },
+  {
+    "className": "Breeches_Black",
+    "popularName": "Capri Pants Black",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/f/f2/Breeches_Black.png/revision/latest?cb=20240818095757"
+  },
+  {
+    "className": "Breeches_Blackcheck",
+    "popularName": "Capri Pants",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/e/e5/Breeches_Blackcheck.png/revision/latest?cb=20240818095759"
+  },
+  {
+    "className": "Breeches_Blue",
+    "popularName": "Capri Pants Blue",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/a/ae/Breeches_Blue.png/revision/latest?cb=20240818095804"
+  },
+  {
+    "className": "Breeches_Browncheck",
+    "popularName": "Capri Pants",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/0/0f/Breeches_Browncheck.png/revision/latest?cb=20240818095802"
+  },
+  {
+    "className": "Breeches_Green",
+    "popularName": "Capri Pants Green",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/5/5f/Breeches_Green.png/revision/latest?cb=20240818095806"
+  },
+  {
+    "className": "Breeches_Pink",
+    "popularName": "Capri Pants Pink",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/8/80/Breeches_Pink.png/revision/latest?cb=20240818095804"
+  },
+  {
+    "className": "Breeches_Red",
+    "popularName": "Capri Pants Red",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/8/8e/Breeches_Red.png/revision/latest?cb=20240818095805"
+  },
+  {
+    "className": "Breeches_White",
+    "popularName": "Capri Pants White",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/9/90/Breeches_White.png/revision/latest?cb=20240818095806"
+  },
+  {
+    "className": "Building",
+    "popularName": "Building",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/b/ba/Base_Building_Concept_1b.jpeg/revision/latest?cb=20180824201927"
+  },
+  {
+    "className": "BurlapSack",
+    "popularName": "Burlap Sack",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/a/a9/Kitchen_Knife.png/revision/latest?cb=20220523162538"
+  },
+  {
+    "className": "BurlapSackCover",
+    "popularName": "Burlap Sack",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/a/a9/Kitchen_Knife.png/revision/latest?cb=20220523162538"
+  },
+  {
+    "className": "BurlapStrip",
+    "popularName": "Burlap Strips",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/a/a9/Kitchen_Knife.png/revision/latest?cb=20220523162538"
+  },
+  {
+    "className": "Broom",
+    "popularName": "Broom",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/2/26/Broom.png/revision/latest?cb=20210502205305"
+  },
+  {
+    "className": "CZ527",
+    "popularName": "CR-527",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/f/fe/Mag_CZ527_5rnd.png/revision/latest?cb=20220518213943"
+  },
+  {
+    "className": "CZ527_Black",
+    "popularName": "CR-527 Black",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/0/0c/CR527_Carbine_Black.png/revision/latest?cb=20160914185342"
+  },
+  {
+    "className": "CZ527_Camo",
+    "popularName": "CR-527 Camo",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/4/4a/CR527_Carbine_Camo.png/revision/latest?cb=20160914185412"
+  },
+  {
+    "className": "CZ527_Green",
+    "popularName": "CR-527 Green",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/3/3d/CR527_Carbine_Green.png/revision/latest?cb=20160914185301"
+  },
+  {
+    "className": "CZ61",
+    "popularName": "CR-61 Skorpion",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/d/d4/Mag_CZ61_20Rnd.png/revision/latest?cb=20220518213810"
+  },
+  {
+    "className": "CZ75",
+    "popularName": "CR-75",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/4/40/CZ75.png/revision/latest?cb=20210505021307"
+  },
+  {
+    "className": "CableReel",
+    "popularName": "Cable Reel",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/c/c5/ExtensionCord.png/revision/latest?cb=20160517112451"
+  },
+  {
+    "className": "CamoNet",
+    "popularName": "Camo Net",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/f/fc/Camo_Net.png/revision/latest?cb=20181214010911"
+  },
+  {
+    "className": "CanOpener",
+    "popularName": "Can Opener",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/4/49/Item_Can_-_opener.png/revision/latest?cb=20140829162629"
+  },
+  {
+    "className": "CaninaBerry",
+    "popularName": "Rose Hips",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/9/9e/Canina_Berries.png/revision/latest?cb=20150103050149"
+  },
+  {
+    "className": "CanisterGasoline",
+    "popularName": "Jerrycan",
+    "urlImg": "/artifacts/api-server/assets/ui/img-placeholder.png"
+  },
+  {
+    "className": "Canteen",
+    "popularName": "Canteen",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/5/5e/Canteen.png/revision/latest?cb=20180610230549"
+  },
+  {
+    "className": "CanvasPantsMidi_Beige",
+    "popularName": "Crop Hiking Pants Beige",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/b/b6/Hammer2.png/revision/latest?cb=20190502161833"
+  },
+  {
+    "className": "CanvasPantsMidi_Blue",
+    "popularName": "Crop Hiking Pants Blue",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/b/bd/CanvasPantsShort_Beige.png/revision/latest?cb=20170513142508"
+  },
+  {
+    "className": "CanvasPantsMidi_Grey",
+    "popularName": "Crop Hiking Pants Grey",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/b/b6/Hammer2.png/revision/latest?cb=20190502161833"
+  },
+  {
+    "className": "CanvasPantsMidi_Red",
+    "popularName": "Crop Hiking Pants Red",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/b/b6/Hammer2.png/revision/latest?cb=20190502161833"
+  },
+  {
+    "className": "CanvasPantsMidi_Violet",
+    "popularName": "Crop Hiking Pants",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/7/7b/CanvasPantsShort_Violet.png/revision/latest?cb=20170513142521"
   }
 ]
