@@ -1,5 +1,6 @@
 import { Router, type Request, type Response } from "express";
 import { getShopRuntimeStatus } from "../lib/shop";
+import { getShopCatalog, type ShopCatalog, type ShopItem } from "../lib/shopCatalog";
 import { addCoins, removeCoins, setCoins, getOrCreateWalletForLink } from "../lib/economy";
 import { getStateAsync, saveStateAsync, type AppState, type PlayerLink, type Wallet } from "../lib/state";
 
@@ -284,6 +285,78 @@ function buildOverviewPayload(state: AdminState) {
       reason: runtime.reason,
     },
     activity: buildActivitySeries(state),
+    generatedAt: new Date().toISOString(),
+  };
+}
+
+
+function labelForCategory(catalog: ShopCatalog, categoryId: string) {
+  const category = catalog.categories.find((entry) => entry.id === categoryId);
+  return category?.label || categoryId || "Misc";
+}
+
+function buildCatalogPayload() {
+  const catalog = getShopCatalog();
+  const categoryCounts = new Map<string, number>();
+
+  for (const item of catalog.items) {
+    const categoryId = item.category || "misc";
+    categoryCounts.set(categoryId, (categoryCounts.get(categoryId) || 0) + 1);
+  }
+
+  const categories = catalog.categories
+    .map((category) => ({
+      id: category.id,
+      label: category.label,
+      emoji: category.emoji || "",
+      description: category.description || "",
+      enabled: category.enabled !== false,
+      itemCount: categoryCounts.get(category.id) || 0,
+    }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+
+  const knownCategoryIds = new Set(categories.map((category) => category.id));
+  for (const [categoryId, itemCount] of categoryCounts.entries()) {
+    if (knownCategoryIds.has(categoryId)) continue;
+    categories.push({
+      id: categoryId,
+      label: categoryId,
+      emoji: "",
+      description: "",
+      enabled: true,
+      itemCount,
+    });
+  }
+
+  const items = catalog.items
+    .map((item: ShopItem) => ({
+      id: item.id,
+      name: item.name,
+      className: item.className,
+      popularName: item.popularName || "",
+      category: item.category || "misc",
+      categoryLabel: labelForCategory(catalog, item.category || "misc"),
+      price: Math.floor(Number(item.price || 0)),
+      description: item.description || "",
+      imageUrl: item.imageUrl || "",
+      enabled: item.enabled !== false,
+      maxPerRestart: Number.isFinite(Number(item.maxPerRestart)) ? Number(item.maxPerRestart) : null,
+    }))
+    .sort((a, b) => a.categoryLabel.localeCompare(b.categoryLabel) || a.name.localeCompare(b.name));
+
+  return {
+    version: catalog.version,
+    categories,
+    items,
+    stats: {
+      totalItems: items.length,
+      enabledItems: items.filter((item) => item.enabled).length,
+      disabledItems: items.filter((item) => !item.enabled).length,
+      categories: categories.length,
+      averagePrice: items.length
+        ? Math.round(items.reduce((sum, item) => sum + item.price, 0) / items.length)
+        : 0,
+    },
     generatedAt: new Date().toISOString(),
   };
 }
@@ -624,15 +697,43 @@ function renderAdminPanelHtml(token: string) {
     }
     @keyframes shimmer { to { background-position: -220% 0; } }
     .sentinel { height: 36px; }
-    .catalog-placeholder {
-      min-height: 460px;
+    .catalog-shell { display: grid; gap: 14px; }
+    .catalog-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) 220px auto; gap: 10px; align-items: center; }
+    .catalog-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+    .catalog-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+    .catalog-item {
+      min-width: 0;
+      background: #2B2D31;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 14px;
+      box-shadow: var(--shadow-sm);
+      display: grid;
+      gap: 12px;
+      transition: background .16s ease, border-color .16s ease, transform .16s ease;
+    }
+    .catalog-item:hover { background: #303238; border-color: var(--border-strong); transform: translateY(-1px); }
+    .catalog-item-top { display: grid; grid-template-columns: 46px minmax(0, 1fr) auto; gap: 12px; align-items: center; }
+    .catalog-thumb {
+      width: 46px;
+      height: 46px;
+      border-radius: 14px;
+      background: #25262A;
+      border: 1px solid var(--border);
       display: grid;
       place-items: center;
-      text-align: center;
-      color: var(--text-2);
+      overflow: hidden;
+      color: var(--text-3);
+      font-size: 18px;
+      flex: 0 0 auto;
     }
-    .catalog-placeholder h2 { margin: 0 0 8px; color: var(--text); font-size: 20px; font-weight: 650; }
-    .catalog-placeholder p { margin: 0 0 20px; color: var(--text-3); }
+    .catalog-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .catalog-name { font-size: 14px; font-weight: 650; letter-spacing: -.025em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .catalog-class { color: var(--text-3); font-size: 12px; margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .catalog-price { font-size: 14px; font-weight: 680; color: var(--text); white-space: nowrap; }
+    .catalog-description { min-height: 38px; color: var(--text-2); font-size: 12px; line-height: 1.45; }
+    .catalog-meta { display: flex; flex-wrap: wrap; gap: 6px; }
+    .catalog-empty { padding: 42px; text-align: center; color: var(--text-3); border: 1px dashed var(--border-strong); border-radius: 18px; background: #2B2D31; }
     .modal-backdrop {
       position: fixed;
       inset: 0;
@@ -872,12 +973,27 @@ function renderAdminPanelHtml(token: string) {
           <div id="memberSentinel" class="sentinel"></div>
         </section>
         <section id="view-catalog" class="view">
-          <div class="card catalog-placeholder">
-            <div>
-              <h2>Catálogo</h2>
-              <p>O funcionamento atual do catálogo foi preservado nesta V1.</p>
-              <button class="primary-btn" onclick="location.href='/admin/catalog' + (adminToken ? '?token=' + encodeURIComponent(adminToken) : '')">Abrir catálogo atual</button>
+          <div class="catalog-shell">
+            <div class="catalog-stats">
+              <div class="card"><div class="metric-label">Itens</div><div id="catalogTotal" class="metric-value">—</div><div class="metric-hint">total no catálogo</div></div>
+              <div class="card"><div class="metric-label">Ativos</div><div id="catalogEnabled" class="metric-value">—</div><div class="metric-hint">disponíveis no shop</div></div>
+              <div class="card"><div class="metric-label">Categorias</div><div id="catalogCategories" class="metric-value">—</div><div class="metric-hint">grupos encontrados</div></div>
+              <div class="card"><div class="metric-label">Preço médio</div><div id="catalogAverage" class="metric-value">—</div><div class="metric-hint">coins por item</div></div>
             </div>
+            <div class="card">
+              <div class="section-title">
+                <h2>Catálogo do shop</h2>
+                <span class="chip">read-only</span>
+              </div>
+              <div class="catalog-toolbar">
+                <div class="search"><input id="catalogSearch" placeholder="Buscar por item, classe ou categoria" /></div>
+                <select id="catalogCategory"><option value="">Todas categorias</option></select>
+                <button id="catalogRefresh" class="ghost-btn">Refresh</button>
+              </div>
+            </div>
+            <div id="catalogLoading" class="catalog-grid" style="display:none"><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div></div>
+            <div id="catalogGrid" class="catalog-grid"></div>
+            <div id="catalogEmpty" class="catalog-empty" style="display:none">Nenhum item encontrado para os filtros atuais.</div>
           </div>
         </section>
       </main>
@@ -915,13 +1031,14 @@ function renderAdminPanelHtml(token: string) {
   <script>
     const adminToken = ${tokenJson};
     if (adminToken) document.cookie = "${TOKEN_COOKIE}=" + encodeURIComponent(adminToken) + "; path=/admin-panel; SameSite=Lax";
-    const state = { view: "general", cursor: 0, hasMore: true, loadingMembers: false, search: "", filter: "", modal: null, selectedDiscordId: null };
+    const state = { view: "general", cursor: 0, hasMore: true, loadingMembers: false, search: "", filter: "", modal: null, selectedDiscordId: null, catalog: null, catalogSearch: "", catalogCategory: "" };
     const els = {
       pageTitle: document.getElementById("pageTitle"), serverName: document.getElementById("serverName"),
       memberList: document.getElementById("memberList"), memberLoading: document.getElementById("memberLoading"), memberEmpty: document.getElementById("memberEmpty"),
       modalBackdrop: document.getElementById("modalBackdrop"), modalTitle: document.getElementById("modalTitle"), modalSubtitle: document.getElementById("modalSubtitle"),
       coinAmount: document.getElementById("coinAmount"), coinReason: document.getElementById("coinReason"), toast: document.getElementById("toast"),
-      detailDrawer: document.getElementById("detailDrawer"), drawerBody: document.getElementById("drawerBody"), drawerAvatar: document.getElementById("drawerAvatar"), drawerName: document.getElementById("drawerName"), drawerMeta: document.getElementById("drawerMeta")
+      detailDrawer: document.getElementById("detailDrawer"), drawerBody: document.getElementById("drawerBody"), drawerAvatar: document.getElementById("drawerAvatar"), drawerName: document.getElementById("drawerName"), drawerMeta: document.getElementById("drawerMeta"),
+      catalogGrid: document.getElementById("catalogGrid"), catalogLoading: document.getElementById("catalogLoading"), catalogEmpty: document.getElementById("catalogEmpty"), catalogSearch: document.getElementById("catalogSearch"), catalogCategory: document.getElementById("catalogCategory")
     };
     function apiUrl(path) { const separator = path.includes("?") ? "&" : "?"; return adminToken ? path + separator + "token=" + encodeURIComponent(adminToken) : path; }
     async function apiFetch(path, options) { const headers = Object.assign({ "Content-Type": "application/json" }, (options && options.headers) || {}); if (adminToken) headers["x-admin-token"] = adminToken; return fetch(apiUrl(path), Object.assign({}, options || {}, { headers, credentials: "same-origin" })); }
@@ -1030,11 +1147,68 @@ function renderAdminPanelHtml(token: string) {
       els.memberList.insertAdjacentHTML("beforeend", payload.members.map(memberCard).join(""));
       els.memberEmpty.style.display = els.memberList.children.length ? "none" : "block";
     }
+
+    function catalogItemCard(item) {
+      const thumb = item.imageUrl
+        ? '<img src="' + escapeHtml(item.imageUrl) + '" alt="" loading="lazy" />'
+        : '🛒';
+      const enabledChip = item.enabled
+        ? '<span class="chip online">● Active</span>'
+        : '<span class="chip">○ Disabled</span>';
+      const maxChip = item.maxPerRestart === null || item.maxPerRestart === undefined
+        ? ''
+        : '<span class="chip">Max ' + escapeHtml(String(item.maxPerRestart)) + '/restart</span>';
+      return '<article class="catalog-item">' +
+        '<div class="catalog-item-top"><div class="catalog-thumb">' + thumb + '</div>' +
+        '<div><div class="catalog-name">' + escapeHtml(item.name) + '</div><div class="catalog-class">' + escapeHtml(item.className) + '</div></div>' +
+        '<div class="catalog-price">' + formatCoins(item.price) + '</div></div>' +
+        '<div class="catalog-description">' + escapeHtml(item.description || item.popularName || 'Sem descrição cadastrada.') + '</div>' +
+        '<div class="catalog-meta"><span class="chip">' + escapeHtml(item.categoryLabel || item.category) + '</span>' + enabledChip + maxChip + '</div>' +
+      '</article>';
+    }
+    function renderCatalog() {
+      if (!state.catalog) return;
+      const stats = state.catalog.stats || {};
+      setText("catalogTotal", formatCoins(stats.totalItems || 0));
+      setText("catalogEnabled", formatCoins(stats.enabledItems || 0));
+      setText("catalogCategories", formatCoins(stats.categories || 0));
+      setText("catalogAverage", formatCoins(stats.averagePrice || 0));
+
+      const selectedCategory = state.catalogCategory;
+      const search = String(state.catalogSearch || "").trim().toLowerCase();
+      const filtered = (state.catalog.items || []).filter((item) => {
+        if (selectedCategory && item.category !== selectedCategory) return false;
+        if (!search) return true;
+        return [item.name, item.className, item.popularName, item.categoryLabel, item.category]
+          .some((value) => String(value || "").toLowerCase().includes(search));
+      });
+
+      els.catalogGrid.innerHTML = filtered.map(catalogItemCard).join("");
+      els.catalogEmpty.style.display = filtered.length ? "none" : "block";
+    }
+    function renderCatalogCategoryOptions(catalog) {
+      const current = state.catalogCategory;
+      const options = ['<option value="">Todas categorias</option>'].concat(
+        (catalog.categories || []).map((category) => '<option value="' + escapeHtml(category.id) + '">' + escapeHtml((category.emoji ? category.emoji + ' ' : '') + category.label) + ' (' + escapeHtml(String(category.itemCount || 0)) + ')</option>')
+      );
+      els.catalogCategory.innerHTML = options.join("");
+      els.catalogCategory.value = current;
+    }
+    async function loadCatalog() {
+      els.catalogLoading.style.display = "grid";
+      const response = await apiFetch("/admin-panel/api/catalog");
+      els.catalogLoading.style.display = "none";
+      if (!response.ok) { showToast(await response.text()); return; }
+      state.catalog = await response.json();
+      renderCatalogCategoryOptions(state.catalog);
+      renderCatalog();
+    }
     function switchView(view) {
       state.view = view; document.querySelectorAll(".view").forEach((el) => el.classList.toggle("active", el.id === "view-" + view));
       document.querySelectorAll(".nav button").forEach((el) => el.classList.toggle("active", el.dataset.view === view));
       els.pageTitle.textContent = view === "general" ? "Geral" : view === "members" ? "Membros" : "Catálogo";
       if (view === "members" && !els.memberList.children.length) loadMembers(true);
+      if (view === "catalog" && !state.catalog) loadCatalog();
     }
     function openCoinModal(action, memberCardEl) {
       const discordId = memberCardEl.getAttribute("data-discord-id");
@@ -1054,13 +1228,16 @@ function renderAdminPanelHtml(token: string) {
       els.modalBackdrop.classList.remove("open"); showToast("Carteira atualizada com sucesso."); await loadOverview(); await loadMembers(true); if (state.selectedDiscordId) await openMemberDrawer(state.selectedDiscordId);
     }
     document.querySelectorAll(".nav button").forEach((button) => button.addEventListener("click", () => switchView(button.dataset.view)));
-    document.getElementById("refreshButton").addEventListener("click", async () => { await loadOverview(); if (state.view === "members") await loadMembers(true); showToast("Dados atualizados."); });
+    document.getElementById("refreshButton").addEventListener("click", async () => { await loadOverview(); if (state.view === "members") await loadMembers(true); if (state.view === "catalog") await loadCatalog(); showToast("Dados atualizados."); });
     document.getElementById("membersRefresh").addEventListener("click", () => loadMembers(true));
     let searchTimer = null;
     function updateSearch(value) { state.search = value; clearTimeout(searchTimer); searchTimer = setTimeout(() => loadMembers(true), 240); }
     document.getElementById("memberSearch").addEventListener("input", (event) => updateSearch(event.target.value));
     document.getElementById("globalSearch").addEventListener("input", (event) => { document.getElementById("memberSearch").value = event.target.value; updateSearch(event.target.value); if (state.view !== "members") switchView("members"); });
     document.getElementById("memberFilter").addEventListener("change", (event) => { state.filter = event.target.value; loadMembers(true); });
+    document.getElementById("catalogSearch").addEventListener("input", (event) => { state.catalogSearch = event.target.value; renderCatalog(); });
+    document.getElementById("catalogCategory").addEventListener("change", (event) => { state.catalogCategory = event.target.value; renderCatalog(); });
+    document.getElementById("catalogRefresh").addEventListener("click", loadCatalog);
     els.memberList.addEventListener("click", (event) => {
       const card = event.target.closest(".member-card");
       if (!card) return;
@@ -1183,6 +1360,17 @@ router.post("/api/members/:discordId/coins", async (req, res) => {
     res.json({ ok: true, wallet, transaction: result.transaction });
   } catch (err) {
     res.status(500).send(String(err));
+  }
+});
+
+
+router.get("/api/catalog", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+
+  try {
+    res.json(buildCatalogPayload());
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
   }
 });
 
