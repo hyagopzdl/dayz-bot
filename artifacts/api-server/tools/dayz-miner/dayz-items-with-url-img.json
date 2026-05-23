@@ -1,0 +1,1377 @@
+[
+  {
+    "className": "ACOGOptic",
+    "popularName": "ATOG Scope",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/5/5e/Optic_-_ATOG_Scope_4x32_%28Backup_Sight%29.jpg/revision/latest?cb=20220304145551"
+  },
+  {
+    "className": "AK101",
+    "popularName": "KA-101",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/e/ed/KA_Bayonet.png/revision/latest?cb=20220523170201"
+  },
+  {
+    "className": "AK101_Black",
+    "popularName": "KA-101 Black",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/4/4a/AK101_Black.png/revision/latest?cb=20210207041419"
+  },
+  {
+    "className": "AK101_Green",
+    "popularName": "KA-101 Green",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/2/27/AK101_Green.png/revision/latest?cb=20210207041336"
+  },
+  {
+    "className": "AK74",
+    "popularName": "KA-74",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/e/ed/KA_Bayonet.png/revision/latest?cb=20220523170201"
+  },
+  {
+    "className": "AK74_Black",
+    "popularName": "KA-74 Black",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/e/ed/KA_Bayonet.png/revision/latest?cb=20220523170201"
+  },
+  {
+    "className": "AK74_Green",
+    "popularName": "KA-74 Green",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/e/ed/KA_Bayonet.png/revision/latest?cb=20220523170201"
+  },
+  {
+    "className": "AK74_Hndgrd",
+    "popularName": "KA Wooden Handguard",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/a/ab/AK_WoodHndgrd.png/revision/latest?cb=20240505185044"
+  },
+  {
+    "className": "AK74_Hndgrd_Black",
+    "popularName": "KA Wooden Handguard Black",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/a/ab/AK_WoodHndgrd.png/revision/latest?cb=20240505185044"
+  },
+  {
+    "className": "AK74_Hndgrd_Camo",
+    "popularName": "KA Wooden Handguard Camo",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/a/ab/AK_WoodHndgrd.png/revision/latest?cb=20240505185044"
+  },
+  {
+    "className": "AK74_WoodBttstck",
+    "popularName": "KA Wooden Buttstock",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/c/cd/AK74_WoodBttstck.png/revision/latest?cb=20210428014910"
+  },
+  {
+    "className": "AK74_WoodBttstck_Black",
+    "popularName": "KA Wooden Buttstock Black",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/c/cd/AK74_WoodBttstck.png/revision/latest?cb=20210428014910"
+  },
+  {
+    "className": "AK74_WoodBttstck_Camo",
+    "popularName": "KA Wooden Buttstock Camo",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/c/cd/AK74_WoodBttstck.png/revision/latest?cb=20210428014910"
+  },
+  {
+    "className": "AKM",
+    "popularName": "KA-M",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/e/ed/KA_Bayonet.png/revision/latest?cb=20220523170201"
+  },
+  {
+    "className": "AKM_TESTBED",
+    "popularName": "testing AKM",
+    "urlImg": "/artifacts/api-server/assets/ui/img-placeholder.png"
+  },
+  {
+    "className": "AKS74U",
+    "popularName": "KAS-74U",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/0/0b/AKS74U.png/revision/latest?cb=20210505014222"
+  },
+  {
+    "className": "AKS74U_Black",
+    "popularName": "KAS-74U Black",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/0/0b/AKS74U.png/revision/latest?cb=20210505014222"
+  },
+  {
+    "className": "AKS74U_Bttstck",
+    "popularName": "KAS-74U Folding Buttstock",
+    "urlImg": "/artifacts/api-server/assets/ui/img-placeholder.png"
+  },
+  {
+    "className": "AKS74U_Bttstck_Black",
+    "popularName": "KAS-74U Folding Buttstock Black",
+    "urlImg": "/artifacts/api-server/assets/ui/img-placeholder.png"
+  },
+  {
+    "className": "AKS74U_Bttstck_Green",
+    "popularName": "KAS-74U Folding Buttstock Green",
+    "urlImg": "/artifacts/api-server/assets/ui/img-placeholder.png"
+  },
+  {
+    "className": "AKS74U_Green",
+    "popularName": "KAS-74U Green",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/0/0b/AKS74U.png/revision/latest?cb=20210505014222"
+  },
+  {
+    "className": "AK_Bayonet",
+    "popularName": "KA Bayonet",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/e/ed/KA_Bayonet.png/revision/latest?cb=20220523170201"
+  },
+  {
+    "className": "AK_FoldingBttstck",
+    "popularName": "KA Folding Buttstock",
+    "urlImg": "/artifacts/api-server/assets/ui/img-placeholder.png"
+  },
+  {
+    "className": "AK_FoldingBttstck_Black",
+    "popularName": "KA Folding Buttstock Black",
+    "urlImg": "/artifacts/api-server/assets/ui/img-placeholder.png"
+  },
+  {
+    "className": "AK_FoldingBttstck_Green",
+    "popularName": "KA Folding Buttstock Green",
+    "urlImg": "/artifacts/api-server/assets/ui/img-placeholder.png"
+  },
+  {
+    "className": "AK_PlasticBttstck",
+    "popularName": "KA Polymer Buttstock",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/1/10/AK-PolymerButtstockBlack.png/revision/latest?cb=20141228131705"
+  },
+  {
+    "className": "AK_PlasticBttstck_Black",
+    "popularName": "KA Polymer Buttstock Black",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/1/10/AK-PolymerButtstockBlack.png/revision/latest?cb=20141228131705"
+  },
+  {
+    "className": "AK_PlasticBttstck_Green",
+    "popularName": "KA Polymer Buttstock Green",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/1/10/AK-PolymerButtstockBlack.png/revision/latest?cb=20141228131705"
+  },
+  {
+    "className": "AK_PlasticHndgrd",
+    "popularName": "KA Polymer Handguard",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/9/96/AK_PlasticHndgrd.png/revision/latest?cb=20210428020438"
+  },
+  {
+    "className": "AK_RailHndgrd",
+    "popularName": "KA Rail Handguard",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/4/49/AK_RailHndgrd.png/revision/latest?cb=20210428020817"
+  },
+  {
+    "className": "AK_RailHndgrd_Black",
+    "popularName": "KA Rail Handguard Black",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/4/49/AK_RailHndgrd.png/revision/latest?cb=20210428020817"
+  },
+  {
+    "className": "AK_RailHndgrd_Green",
+    "popularName": "KA Rail Handguard Green",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/d/d4/AKHandguardRail_Green.png/revision/latest?cb=20150718141950"
+  },
+  {
+    "className": "AK_Suppressor",
+    "popularName": "Normalized Suppressor",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/d/de/Gui_bayonet.png/revision/latest?cb=20220222180710"
+  },
+  {
+    "className": "AK_WoodBttstck",
+    "popularName": "KA Wooden Buttstock",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/c/cd/AK74_WoodBttstck.png/revision/latest?cb=20210428014910"
+  },
+  {
+    "className": "AK_WoodBttstck_Black",
+    "popularName": "KA Wooden Buttstock Black",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/c/cd/AK74_WoodBttstck.png/revision/latest?cb=20210428014910"
+  },
+  {
+    "className": "AK_WoodBttstck_Camo",
+    "popularName": "KA Wooden Buttstock Camo",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/c/cd/AK74_WoodBttstck.png/revision/latest?cb=20210428014910"
+  },
+  {
+    "className": "AK_WoodHndgrd",
+    "popularName": "KA Wooden Handguard",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/a/ab/AK_WoodHndgrd.png/revision/latest?cb=20240505185044"
+  },
+  {
+    "className": "AK_WoodHndgrd_Black",
+    "popularName": "KA Wooden Handguard Black",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/a/ab/AK_WoodHndgrd.png/revision/latest?cb=20240505185044"
+  },
+  {
+    "className": "AK_WoodHndgrd_Camo",
+    "popularName": "KA Wooden Handguard Camo",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/a/ab/AK_WoodHndgrd.png/revision/latest?cb=20240505185044"
+  },
+  {
+    "className": "AgaricusMushroom",
+    "popularName": "Field Mushroom",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/4/4c/AgaricusMushroom_Baked.png/revision/latest?cb=20180831161252"
+  },
+  {
+    "className": "AliceBag_Black",
+    "popularName": "Field Backpack Black",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/4/4e/ALICE_Backpack_Black.png/revision/latest?cb=20161230145757"
+  },
+  {
+    "className": "AliceBag_Camo",
+    "popularName": "Field Backpack Camo",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/a/a9/AliceBackpack_Camo.png/revision/latest?cb=20170215191451"
+  },
+  {
+    "className": "AliceBag_Green",
+    "popularName": "Field Backpack Green",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/0/0d/AliceBackpack_Green.png/revision/latest?cb=20170215191441"
+  },
+  {
+    "className": "AmanitaMushroom",
+    "popularName": "Fly Amanita",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/f/f6/Amanita.png/revision/latest?cb=20150326120851"
+  },
+  {
+    "className": "AmmoBox",
+    "popularName": "Ammo Box",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/4/48/AmmoBox.png/revision/latest?cb=20180610092520"
+  },
+  {
+    "className": "AmmoBox_00buck_10rnd",
+    "popularName": "Boxed 12ga 00 Buckshots",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/e/e6/AmmoBox_00buck_10Rnd.png/revision/latest?cb=20190502225419"
+  },
+  {
+    "className": "AmmoBox_12gaSlug_10Rnd",
+    "popularName": "Boxed 12ga Rifled Slugs",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/c/cf/AmmoBox_12gaSlug_10Rnd.png/revision/latest?cb=20190522023511"
+  },
+  {
+    "className": "AmmoBox_22_50Rnd",
+    "popularName": "Boxed .22 LR Rounds",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/d/d6/AmmoBox_22_50Rnd.png/revision/latest?cb=20210428021523"
+  },
+  {
+    "className": "AmmoBox_308WinTracer_20Rnd",
+    "popularName": "Boxed .308 WIN Tracer Rounds",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/6/65/AmmoBox_308Win_20Rnd.png/revision/latest?cb=20190522010051"
+  },
+  {
+    "className": "AmmoBox_308Win_20Rnd",
+    "popularName": "Boxed .308 WIN Rounds",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/6/65/AmmoBox_308Win_20Rnd.png/revision/latest?cb=20190522010051"
+  },
+  {
+    "className": "AmmoBox_380_35rnd",
+    "popularName": "Boxed .380 ACP Rounds",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/9/91/AmmoBox_380_35Rnd.png/revision/latest?cb=20190502215246"
+  },
+  {
+    "className": "AmmoBox_45ACP_25rnd",
+    "popularName": "Boxed .45 ACP Rounds",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/5/53/AmmoBox_45ACP_25Rnd.png/revision/latest?cb=20190502212756"
+  },
+  {
+    "className": "AmmoBox_545x39Tracer_20Rnd",
+    "popularName": "Boxed 5.45x39mm Tracer Rounds",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/0/03/Ammo_545x39Tracer.png/revision/latest?cb=20190522000326"
+  },
+  {
+    "className": "AmmoBox_545x39_20Rnd",
+    "popularName": "Boxed 5.45x39mm Rounds",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/a/a1/AmmoBox_545x39_20Rnd.png/revision/latest?cb=20150519171654"
+  },
+  {
+    "className": "AmmoBox_556x45Tracer_20Rnd",
+    "popularName": "Boxed 5.56x45mm Tracer Rounds",
+    "urlImg": "/artifacts/api-server/assets/ui/img-placeholder.png"
+  },
+  {
+    "className": "AmmoBox_556x45_20Rnd",
+    "popularName": "Boxed 5.56x45mm Rounds",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/8/87/AmmoBox_556x45_20Rnd.png/revision/latest?cb=20190502235621"
+  },
+  {
+    "className": "AmmoBox_762x39Tracer_20Rnd",
+    "popularName": "Boxed 7.62x39mm Tracer Rounds",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/8/87/AmmoBox_556x45_20Rnd.png/revision/latest?cb=20190502235621"
+  },
+  {
+    "className": "AmmoBox_762x39_20Rnd",
+    "popularName": "Boxed 7.62x39mm Rounds",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/2/27/AmmoBox_762x39_20Rnd.png/revision/latest?cb=20190502210624"
+  },
+  {
+    "className": "AmmoBox_762x54Tracer_20Rnd",
+    "popularName": "Boxed 7.62x54mmR Tracer Rounds",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/f/f7/Ammo_762x54Tracer.png/revision/latest?cb=20190502200814"
+  },
+  {
+    "className": "AmmoBox_762x54_20Rnd",
+    "popularName": "Boxed 7.62x54mmR Rounds",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/f/f2/AmmoBox_762x54_20Rnd.png/revision/latest?cb=20190502183156"
+  },
+  {
+    "className": "AmmoBox_9x19_25rnd",
+    "popularName": "Boxed 9x19mm Rounds",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/4/46/AmmoBox_9x19_25Rnd.png/revision/latest?cb=20190522015654"
+  },
+  {
+    "className": "AmmoBox_9x39AP_20Rnd",
+    "popularName": "Boxed 9x39mm Armor-Piercing Rounds",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/5/58/AmmoBox_9x39AP_20Rnd.png/revision/latest?cb=20190521233517"
+  },
+  {
+    "className": "AmmoBox_9x39_20Rnd",
+    "popularName": "Boxed 9x39mm Rounds",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/8/85/AmmoBox_9x39_20Rnd.png/revision/latest?cb=20190521233448"
+  },
+  {
+    "className": "Ammo_12gaPellets",
+    "popularName": "12ga 00 Buckshots",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/8/8e/Ammo_12gaPellets.png/revision/latest?cb=20190522025049"
+  },
+  {
+    "className": "Ammo_12gaSlug",
+    "popularName": "12ga Rifled Slugs",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/9/9f/Ammo_12gaSlug.png/revision/latest?cb=20190522022818"
+  },
+  {
+    "className": "Ammo_22",
+    "popularName": ".22 LR Rounds",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/7/7d/Ammo_22.png/revision/latest?cb=20210501194559"
+  },
+  {
+    "className": "Ammo_308Win",
+    "popularName": ".308 WIN Rounds",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/d/d3/Ammo_308Win.png/revision/latest?cb=20190522004448"
+  },
+  {
+    "className": "Ammo_308WinTracer",
+    "popularName": ".308 WIN Tracer Rounds",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/d/d3/Ammo_308Win.png/revision/latest?cb=20190522004448"
+  },
+  {
+    "className": "Ammo_380",
+    "popularName": ".380 ACP Rounds",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/5/5e/Ammo_380.png/revision/latest?cb=20210505022752"
+  },
+  {
+    "className": "Ammo_45ACP",
+    "popularName": ".45 ACP Rounds",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/6/6b/Ammo_45ACP.png/revision/latest?cb=20190522021158"
+  },
+  {
+    "className": "Ammo_545x39",
+    "popularName": "5.45x39mm Rounds",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/b/b7/Ammo_545x39.png/revision/latest?cb=20190522000311"
+  },
+  {
+    "className": "Ammo_545x39Tracer",
+    "popularName": "5.45x39mm Tracer Rounds",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/0/03/Ammo_545x39Tracer.png/revision/latest?cb=20190522000326"
+  },
+  {
+    "className": "Ammo_556x45",
+    "popularName": "5.56x45mm Rounds",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/8/87/AmmoBox_556x45_20Rnd.png/revision/latest?cb=20190502235621"
+  },
+  {
+    "className": "Ammo_556x45Tracer",
+    "popularName": "5.56x45mm Tracer Rounds",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/9/9d/Ammo_556x45Tracer.png/revision/latest?cb=20190521035210"
+  },
+  {
+    "className": "Ammo_762x39",
+    "popularName": "7.62x39mm Rounds",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/4/4a/Ammo_762x39.png/revision/latest?cb=20190503003130"
+  },
+  {
+    "className": "Ammo_762x39Tracer",
+    "popularName": "7.62x39mm Tracer Rounds",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/0/01/Ammo_762x39Tracer.png/revision/latest?cb=20190503003157"
+  },
+  {
+    "className": "Ammo_762x54",
+    "popularName": "7.62x54mmR Rounds",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/b/be/Ammo_762x54.png/revision/latest?cb=20190502200755"
+  },
+  {
+    "className": "Ammo_762x54Tracer",
+    "popularName": "7.62x54mmR Tracer Rounds",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/f/f7/Ammo_762x54Tracer.png/revision/latest?cb=20190502200814"
+  },
+  {
+    "className": "Ammo_9x19",
+    "popularName": "9x19mm Rounds",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/1/17/Ammo_9x19.png/revision/latest?cb=20210505021913"
+  },
+  {
+    "className": "Ammo_9x39",
+    "popularName": "9x39mm Rounds",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/2/2a/Ammo_9x39.png/revision/latest?cb=20190521164445"
+  },
+  {
+    "className": "Ammo_9x39AP",
+    "popularName": "9x39mm Armor-Piercing Rounds",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/d/de/Ammo_9x39AP.png/revision/latest?cb=20190521165826"
+  },
+  {
+    "className": "Animal_BosTaurusF_Brown",
+    "popularName": "Cow Brown",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/a/ab/Cow_Brown.png/revision/latest?cb=20150621061828"
+  },
+  {
+    "className": "Animal_BosTaurusF_Spotted",
+    "popularName": "Cow",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/8/84/Cow.png/revision/latest?cb=20150621061722"
+  },
+  {
+    "className": "Animal_BosTaurusF_White",
+    "popularName": "Cow White",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/2/27/Cow_White.png/revision/latest?cb=20150621061856"
+  },
+  {
+    "className": "Animal_BosTaurus_Brown",
+    "popularName": "Bull Brown",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/e/ed/Bull_Brown.png/revision/latest?cb=20150621064441"
+  },
+  {
+    "className": "Animal_BosTaurus_Spotted",
+    "popularName": "Bull",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/d/df/Bull_Spotted.png/revision/latest?cb=20150621064352"
+  },
+  {
+    "className": "Animal_BosTaurus_White",
+    "popularName": "Bull White",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/a/a5/Bull_White.png/revision/latest?cb=20150621064418"
+  },
+  {
+    "className": "Animal_CanisLupus_Grey",
+    "popularName": "Wolf Grey",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/c/c8/Wolf.png/revision/latest?cb=20240710112718"
+  },
+  {
+    "className": "Animal_CanisLupus_White",
+    "popularName": "Wolf White",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/c/c8/Wolf.png/revision/latest?cb=20240710112718"
+  },
+  {
+    "className": "Animal_CapraHircusF",
+    "popularName": "Doe",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/5/52/Goat.png/revision/latest?cb=20240717173059"
+  },
+  {
+    "className": "Animal_CapraHircus_Black",
+    "popularName": "Buck Black",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/e/ec/Goat_Black.png/revision/latest?cb=20240717173247"
+  },
+  {
+    "className": "Animal_CapraHircus_Brown",
+    "popularName": "Buck Brown",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/9/99/Goat_brown.png/revision/latest?cb=20240717173923"
+  },
+  {
+    "className": "Animal_CapraHircus_White",
+    "popularName": "Buck White",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/d/df/Goat_White.png/revision/latest?cb=20240717173334"
+  },
+  {
+    "className": "Animal_CapreolusCapreolus",
+    "popularName": "Roebuck",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/d/d3/Roebuck.png/revision/latest?cb=20240714162656"
+  },
+  {
+    "className": "Animal_CapreolusCapreolusF",
+    "popularName": "Doe",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/3/3a/Doe.png/revision/latest?cb=20240714162228"
+  },
+  {
+    "className": "Animal_CervusElaphus",
+    "popularName": "Stag",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/1/10/Stag.png/revision/latest?cb=20240710201501"
+  },
+  {
+    "className": "Animal_CervusElaphusF",
+    "popularName": "Hind",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/6/6d/Hind.png/revision/latest?cb=20240710202430"
+  },
+  {
+    "className": "Animal_GallusGallusDomesticus",
+    "popularName": "Rooster",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/2/2c/Rooster.png/revision/latest?cb=20190128081116"
+  },
+  {
+    "className": "Animal_GallusGallusDomesticusF_Brown",
+    "popularName": "Hen Brown",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/a/a3/Chicken.png/revision/latest?cb=20140619150503"
+  },
+  {
+    "className": "Animal_GallusGallusDomesticusF_Spotted",
+    "popularName": "Hen",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/a/a3/Chicken.png/revision/latest?cb=20140619150503"
+  },
+  {
+    "className": "Animal_GallusGallusDomesticusF_White",
+    "popularName": "Hen White",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/a/a3/Chicken.png/revision/latest?cb=20140619150503"
+  },
+  {
+    "className": "Animal_OvisAries",
+    "popularName": "Ram",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/6/6a/Ram.png/revision/latest?cb=20240714163638"
+  },
+  {
+    "className": "Animal_OvisAriesF",
+    "popularName": "Ewe",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/d/da/Ewe.png/revision/latest?cb=20240714163703"
+  },
+  {
+    "className": "Animal_SusDomesticus",
+    "popularName": "Pig",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/2/21/Pig1.png/revision/latest?cb=20141117172351"
+  },
+  {
+    "className": "Animal_SusScrofa",
+    "popularName": "Wild Boar",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/6/6f/Boar.png/revision/latest?cb=20180617021051"
+  },
+  {
+    "className": "Animal_UrsusArctos",
+    "popularName": "Brown Bear",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/a/a4/Bear.png/revision/latest?cb=20240710111514"
+  },
+  {
+    "className": "AntiPestsSpray",
+    "popularName": "Insecticide Spray",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/2/25/Spray.png/revision/latest?cb=20180613173959"
+  },
+  {
+    "className": "Apple",
+    "popularName": "Apple",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/7/7d/Apple.png/revision/latest?cb=20210428013625"
+  },
+  {
+    "className": "Armband_Black",
+    "popularName": "Armband Black",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/1/14/Armband.png/revision/latest?cb=20161127174901"
+  },
+  {
+    "className": "Armband_Blue",
+    "popularName": "Armband Blue",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/1/14/Armband.png/revision/latest?cb=20161127174901"
+  },
+  {
+    "className": "Armband_Green",
+    "popularName": "Armband Green",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/7/71/Rain_Coat_Green.png/revision/latest?cb=20180620223839"
+  },
+  {
+    "className": "Armband_Orange",
+    "popularName": "Armband Orange",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/1/14/Armband.png/revision/latest?cb=20161127174901"
+  },
+  {
+    "className": "Armband_Pink",
+    "popularName": "Armband Pink",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/1/14/Armband.png/revision/latest?cb=20161127174901"
+  },
+  {
+    "className": "Armband_Red",
+    "popularName": "Armband Red",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/1/14/Armband.png/revision/latest?cb=20161127174901"
+  },
+  {
+    "className": "Armband_White",
+    "popularName": "Armband White",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/c/c7/Armband_White.png/revision/latest?cb=20161127174926"
+  },
+  {
+    "className": "Armband_Yellow",
+    "popularName": "Armband Yellow",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/1/14/Armband.png/revision/latest?cb=20161127174901"
+  },
+  {
+    "className": "AssaultBag_Black",
+    "popularName": "Assault Backpack Black",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/1/1a/AssaultBackpack_Black.png/revision/latest?cb=20161023161254"
+  },
+  {
+    "className": "AssaultBag_Green",
+    "popularName": "Assault Backpack Green",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/b/b8/AssaultBackpack_Green.png/revision/latest?cb=20161023161246"
+  },
+  {
+    "className": "AssaultBag_Ttsko",
+    "popularName": "Assault Backpack TTSKO",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/4/4f/M53_Boulder_Backpack_Camo.png/revision/latest?cb=20161230140226"
+  },
+  {
+    "className": "AthleticShoes_Black",
+    "popularName": "Athletic Shoes Black",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/1/15/Athletic_Shoes_Blue.png/revision/latest?cb=20210428022325"
+  },
+  {
+    "className": "AthleticShoes_Blue",
+    "popularName": "Athletic Shoes Blue",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/1/15/Athletic_Shoes_Blue.png/revision/latest?cb=20210428022325"
+  },
+  {
+    "className": "AthleticShoes_Brown",
+    "popularName": "Athletic Shoes Brown",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/1/15/Athletic_Shoes_Blue.png/revision/latest?cb=20210428022325"
+  },
+  {
+    "className": "AthleticShoes_Green",
+    "popularName": "Athletic Shoes Green",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/b/b9/Athletic_Shoes_Green.png/revision/latest?cb=20210428022418"
+  },
+  {
+    "className": "AthleticShoes_Grey",
+    "popularName": "Athletic Shoes Grey",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/1/15/Athletic_Shoes_Blue.png/revision/latest?cb=20210428022325"
+  },
+  {
+    "className": "AuriculariaMushroom",
+    "popularName": "Wood Ear",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/0/0e/AuriculariaMushroom.png/revision/latest?cb=20190117181735"
+  },
+  {
+    "className": "AviatorGlasses",
+    "popularName": "Aviator Sunglasses",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/2/2e/Gui_armband.png/revision/latest?cb=20220222180702"
+  },
+  {
+    "className": "B95",
+    "popularName": "Blaze",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/c/c8/Blaze_95_Double_Rifle_Black.png/revision/latest?cb=20161023125805"
+  },
+  {
+    "className": "B95_Black",
+    "popularName": "Blaze Black",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/c/c8/Blaze_95_Double_Rifle_Black.png/revision/latest?cb=20161023125805"
+  },
+  {
+    "className": "B95_Green",
+    "popularName": "Blaze Green",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/3/39/Blaze_95_Double_Rifle_Green.png/revision/latest?cb=20161023125856"
+  },
+  {
+    "className": "BDUJacket",
+    "popularName": "BDU Jacket",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/c/ca/BDUJacket.png/revision/latest?cb=20240218154105"
+  },
+  {
+    "className": "BDUPants",
+    "popularName": "BDU Pants",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/d/d5/BDU_Pants.png/revision/latest?cb=20161230141519"
+  },
+  {
+    "className": "BUISOptic",
+    "popularName": "Backup Iron Sights",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/0/08/BUISOptic.png/revision/latest?cb=20210428022842"
+  },
+  {
+    "className": "Bait",
+    "popularName": "Fishing Bait",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/f/ff/Bait.png/revision/latest?cb=20180610105600"
+  },
+  {
+    "className": "BakedBeansCan",
+    "popularName": "Canned Baked Beans",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/3/31/Canned_Baked_Beans.png/revision/latest?cb=20140306180011"
+  },
+  {
+    "className": "BakedBeansCan_Opened",
+    "popularName": "Canned Baked Beans",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/3/31/Canned_Baked_Beans.png/revision/latest?cb=20140306180011"
+  },
+  {
+    "className": "Balaclava3Holes_Beige",
+    "popularName": "Balaclava Beige",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/8/84/Balaclava_Beige.png/revision/latest?cb=20190120143141"
+  },
+  {
+    "className": "Balaclava3Holes_Black",
+    "popularName": "Balaclava Black",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/f/ff/Balaclava_Black.png/revision/latest?cb=20190120143151"
+  },
+  {
+    "className": "Balaclava3Holes_Blue",
+    "popularName": "Balaclava Blue",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/f/f1/Balaclava_Blue.png/revision/latest?cb=20190120143156"
+  },
+  {
+    "className": "Balaclava3Holes_Green",
+    "popularName": "Balaclava Green",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/f/f5/Balaclava_Green.png/revision/latest?cb=20190120143146"
+  },
+  {
+    "className": "BalaclavaMask_Beige",
+    "popularName": "Ski Mask Beige",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/7/70/Gui_mask.png/revision/latest?cb=20220222180819"
+  },
+  {
+    "className": "BalaclavaMask_Black",
+    "popularName": "Ski Mask Black",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/7/70/Gui_mask.png/revision/latest?cb=20220222180819"
+  },
+  {
+    "className": "BalaclavaMask_Blackskull",
+    "popularName": "Ski Mask Black Skull",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/7/70/Gui_mask.png/revision/latest?cb=20220222180819"
+  },
+  {
+    "className": "BalaclavaMask_Blue",
+    "popularName": "Ski Mask Blue",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/7/70/Gui_mask.png/revision/latest?cb=20220222180819"
+  },
+  {
+    "className": "BalaclavaMask_Green",
+    "popularName": "Ski Mask Green",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/7/70/Gui_mask.png/revision/latest?cb=20220222180819"
+  },
+  {
+    "className": "BalaclavaMask_Pink",
+    "popularName": "Ski Mask Pink",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/7/70/Gui_mask.png/revision/latest?cb=20220222180819"
+  },
+  {
+    "className": "BalaclavaMask_White",
+    "popularName": "Ski Mask White",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/7/70/Gui_mask.png/revision/latest?cb=20220222180819"
+  },
+  {
+    "className": "Ballerinas_Blue",
+    "popularName": "Flat Shoes Blue",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/7/74/Ballerina_Shoes_Blue.png/revision/latest?cb=20180610214805"
+  },
+  {
+    "className": "Ballerinas_Red",
+    "popularName": "Flat Shoes Red",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/c/c4/Ballerina_Shoes_Red.png/revision/latest?cb=20180610215123"
+  },
+  {
+    "className": "Ballerinas_White",
+    "popularName": "Flat Shoes White",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/2/26/Ballerina_Shoes_White.png/revision/latest?cb=20180610215144"
+  },
+  {
+    "className": "Ballerinas_Yellow",
+    "popularName": "Flat Shoes Yellow",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/f/fd/Ballerina_Shoes_Yellow.png/revision/latest?cb=20180610215210"
+  },
+  {
+    "className": "BallisticHelmet_Black",
+    "popularName": "Ballistic Helmet Black",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/7/7e/BallisticHelmet_Black.png/revision/latest?cb=20240226184519"
+  },
+  {
+    "className": "BallisticHelmet_Green",
+    "popularName": "Ballistic Helmet Green",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/7/76/BallisticHelmet_Green.png/revision/latest?cb=20240226185226"
+  },
+  {
+    "className": "BallisticHelmet_UN",
+    "popularName": "Ballistic Helmet",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/9/9a/BallisticHelmet_UN.png/revision/latest?cb=20240226184527"
+  },
+  {
+    "className": "BandageDressing",
+    "popularName": "Bandage",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/9/91/Bandage_new.png/revision/latest?cb=20180614033037"
+  },
+  {
+    "className": "BandanaHead_BlackPattern",
+    "popularName": "Bandana",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/d/d0/BandanaBlackPattern.png/revision/latest?cb=20150222124629"
+  },
+  {
+    "className": "BandanaHead_CamoPattern",
+    "popularName": "Bandana",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/d/d0/BandanaBlackPattern.png/revision/latest?cb=20150222124629"
+  },
+  {
+    "className": "BandanaHead_Greenpattern",
+    "popularName": "Bandana",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/b/ba/UntiedBandana_GreenPattern.png/revision/latest?cb=20150713184404"
+  },
+  {
+    "className": "BandanaHead_PolkaPattern",
+    "popularName": "Bandana",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/d/d0/BandanaBlackPattern.png/revision/latest?cb=20150222124629"
+  },
+  {
+    "className": "BandanaHead_RedPattern",
+    "popularName": "Bandana",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/d/d0/BandanaBlackPattern.png/revision/latest?cb=20150222124629"
+  },
+  {
+    "className": "BandanaMask_BlackPattern",
+    "popularName": "Bandana",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/7/70/Gui_mask.png/revision/latest?cb=20220222180819"
+  },
+  {
+    "className": "BandanaMask_CamoPattern",
+    "popularName": "Bandana",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/7/70/Gui_mask.png/revision/latest?cb=20220222180819"
+  },
+  {
+    "className": "BandanaMask_GreenPattern",
+    "popularName": "Bandana",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/7/70/Gui_mask.png/revision/latest?cb=20220222180819"
+  },
+  {
+    "className": "BandanaMask_PolkaPattern",
+    "popularName": "Bandana",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/7/70/Gui_mask.png/revision/latest?cb=20220222180819"
+  },
+  {
+    "className": "BandanaMask_RedPattern",
+    "popularName": "Bandana",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/7/70/Gui_mask.png/revision/latest?cb=20220222180819"
+  },
+  {
+    "className": "Bandana_BlackPattern",
+    "popularName": "Bandana",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/d/d0/BandanaBlackPattern.png/revision/latest?cb=20150222124629"
+  },
+  {
+    "className": "Bandana_Blue",
+    "popularName": "Bandana Blue",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/d/d0/BandanaBlackPattern.png/revision/latest?cb=20150222124629"
+  },
+  {
+    "className": "Bandana_CamoPattern",
+    "popularName": "Bandana",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/d/d0/BandanaBlackPattern.png/revision/latest?cb=20150222124629"
+  },
+  {
+    "className": "Bandana_Greenpattern",
+    "popularName": "Bandana",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/b/ba/UntiedBandana_GreenPattern.png/revision/latest?cb=20150713184404"
+  },
+  {
+    "className": "Bandana_Pink",
+    "popularName": "Bandana Pink",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/d/d0/BandanaBlackPattern.png/revision/latest?cb=20150222124629"
+  },
+  {
+    "className": "Bandana_PolkaPattern",
+    "popularName": "Bandana",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/d/d0/BandanaBlackPattern.png/revision/latest?cb=20150222124629"
+  },
+  {
+    "className": "Bandana_RedPattern",
+    "popularName": "Bandana",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/d/d0/BandanaBlackPattern.png/revision/latest?cb=20150222124629"
+  },
+  {
+    "className": "Bandana_Yellow",
+    "popularName": "Bandana Yellow",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/d/d0/BandanaBlackPattern.png/revision/latest?cb=20150222124629"
+  },
+  {
+    "className": "BarbedWire",
+    "popularName": "Barbed Wire",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/b/b4/Metal_wire.png/revision/latest?cb=20141109174349"
+  },
+  {
+    "className": "BarbedWireLocked",
+    "popularName": "Restrained by Barbed Wire",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/b/b4/Metal_wire.png/revision/latest?cb=20141109174349"
+  },
+  {
+    "className": "Bark_Birch",
+    "popularName": "Light Bark",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/5/5f/Changelog.jpg/revision/latest?cb=20170506134033"
+  },
+  {
+    "className": "Bark_Oak",
+    "popularName": "Dark Bark",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/0/08/HandDrillKit.png/revision/latest?cb=20150519063343"
+  },
+  {
+    "className": "BarrelHoles_Blue",
+    "popularName": "Fire Barrel Blue",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/2/2e/BarrelHoles_Blue.png/revision/latest?cb=20180609004438"
+  },
+  {
+    "className": "BarrelHoles_Green",
+    "popularName": "Fire Barrel Green",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/9/96/BarrelHoles_Green.png/revision/latest?cb=20180609004454"
+  },
+  {
+    "className": "BarrelHoles_Red",
+    "popularName": "Fire Barrel Red",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/4/4f/BarrelHoles_Red.png/revision/latest?cb=20180609004408"
+  },
+  {
+    "className": "BarrelHoles_Yellow",
+    "popularName": "Fire Barrel Yellow",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/0/08/BarrelHoles_Yellow.png/revision/latest?cb=20180609005516"
+  },
+  {
+    "className": "Barrel_Blue",
+    "popularName": "Barrel Blue",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/c/c4/OilBarrel_Blue.png/revision/latest?cb=20150718114340"
+  },
+  {
+    "className": "Barrel_Green",
+    "popularName": "Barrel Green",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/5/59/OilBarrel_Green.png/revision/latest?cb=20150718114347"
+  },
+  {
+    "className": "Barrel_Red",
+    "popularName": "Barrel Red",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/4/4f/BarrelHoles_Red.png/revision/latest?cb=20180609004408"
+  },
+  {
+    "className": "Barrel_Yellow",
+    "popularName": "Barrel Yellow",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/0/08/BarrelHoles_Yellow.png/revision/latest?cb=20180609005516"
+  },
+  {
+    "className": "Banana",
+    "popularName": "Food-Banana",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/0/0a/Fresh_Banana.png/revision/latest?cb=20150315194704"
+  },
+  {
+    "className": "BaseRadio",
+    "popularName": "Field Transceiver",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/2/2e/Gui_armband.png/revision/latest?cb=20220222180702"
+  },
+  {
+    "className": "BaseballBat",
+    "popularName": "Baseball Bat",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/6/6e/Barbed_Baseball_Bat.png/revision/latest?cb=20220523161142"
+  },
+  {
+    "className": "BaseballCap_Beige",
+    "popularName": "Baseball Cap Beige",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/1/1a/Baseball_Cap_Beige.png/revision/latest?cb=20180620190140"
+  },
+  {
+    "className": "BaseballCap_Black",
+    "popularName": "Baseball Cap Black",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/1/17/Baseball_Cap_Black_CMMG.png/revision/latest?cb=20180620221859"
+  },
+  {
+    "className": "BaseballCap_Blue",
+    "popularName": "Baseball Cap Blue",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/e/eb/Baseball_Cap_Blue_Blank.png/revision/latest?cb=20180620221551"
+  },
+  {
+    "className": "BaseballCap_CMMG_Black",
+    "popularName": "Baseball Cap Black",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/1/17/Baseball_Cap_Black_CMMG.png/revision/latest?cb=20180620221859"
+  },
+  {
+    "className": "BaseballCap_CMMG_Pink",
+    "popularName": "Baseball Cap Pink",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/b/bd/Baseball_Cap_Pink.png/revision/latest?cb=20180620221916"
+  },
+  {
+    "className": "BaseballCap_Camo",
+    "popularName": "Baseball Cap Camo",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/2/2b/Baseball_Cap_Camo.png/revision/latest?cb=20180620221606"
+  },
+  {
+    "className": "BaseballCap_Olive",
+    "popularName": "Baseball Cap Olive",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/1/1a/Baseball_Cap_Beige.png/revision/latest?cb=20180620190140"
+  },
+  {
+    "className": "BaseballCap_Pink",
+    "popularName": "Baseball Cap Pink",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/b/bd/Baseball_Cap_Pink.png/revision/latest?cb=20180620221916"
+  },
+  {
+    "className": "BaseballCap_Red",
+    "popularName": "Baseball Cap Red",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/c/c9/Baseball_Cap_Red.png/revision/latest?cb=20180620221845"
+  },
+  {
+    "className": "Battery9V",
+    "popularName": "9V Battery",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/0/0a/Alkaline_Battery_%289V%29.png/revision/latest?cb=20160821105114"
+  },
+  {
+    "className": "BatteryCharger",
+    "popularName": "Battery Charger",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/b/bc/BatteryCharger.png/revision/latest?cb=20180726013741"
+  },
+  {
+    "className": "BeanieHat_Beige",
+    "popularName": "Beanie Beige",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/a/a5/Item_Beanie_Hat_BEIGE.png/revision/latest?cb=20150104012135"
+  },
+  {
+    "className": "BeanieHat_Black",
+    "popularName": "Beanie Black",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/1/1b/Blue_Beanie_Hat.png/revision/latest?cb=20150104012654"
+  },
+  {
+    "className": "BeanieHat_Blue",
+    "popularName": "Beanie Blue",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/1/1b/Blue_Beanie_Hat.png/revision/latest?cb=20150104012654"
+  },
+  {
+    "className": "BeanieHat_Brown",
+    "popularName": "Beanie Brown",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/d/df/Brown_Beanie_Hat.png/revision/latest?cb=20150104012910"
+  },
+  {
+    "className": "BeanieHat_Green",
+    "popularName": "Beanie Green",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/1/1b/Blue_Beanie_Hat.png/revision/latest?cb=20150104012654"
+  },
+  {
+    "className": "BeanieHat_Grey",
+    "popularName": "Beanie Grey",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/1/1b/Blue_Beanie_Hat.png/revision/latest?cb=20150104012654"
+  },
+  {
+    "className": "BeanieHat_Pink",
+    "popularName": "Beanie Pink",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/a/aa/Pink_Beanie_Hat.png/revision/latest?cb=20140826171719"
+  },
+  {
+    "className": "BeanieHat_Red",
+    "popularName": "Beanie Red",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/0/09/Red_Beanie_Hat.png/revision/latest?cb=20150103043143"
+  },
+  {
+    "className": "BearPelt",
+    "popularName": "Bear Pelt",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/2/23/BearPelt.png/revision/latest?cb=20210502140744"
+  },
+  {
+    "className": "BearSteakMeat",
+    "popularName": "Bear Steak",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/6/66/Steak.png/revision/latest?cb=20170412181100"
+  },
+  {
+    "className": "BearTrap",
+    "popularName": "Bear Trap",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/1/19/BearTrap.png/revision/latest?cb=20150326114319"
+  },
+  {
+    "className": "Bear_Beige",
+    "popularName": "Teddy Bear Beige",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/b/b6/Hammer2.png/revision/latest?cb=20190502161833"
+  },
+  {
+    "className": "Bear_Dark",
+    "popularName": "Teddy Bear Dark",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/b/b6/Hammer2.png/revision/latest?cb=20190502161833"
+  },
+  {
+    "className": "Bear_Pink",
+    "popularName": "Teddy Bear Pink",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/b/b6/Hammer2.png/revision/latest?cb=20190502161833"
+  },
+  {
+    "className": "Bear_White",
+    "popularName": "Teddy Bear White",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/b/b6/Hammer2.png/revision/latest?cb=20190502161833"
+  },
+  {
+    "className": "Binoculars",
+    "popularName": "Binoculars",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/7/74/Binoculars.png/revision/latest?cb=20210428023621"
+  },
+  {
+    "className": "BloodBagEmpty",
+    "popularName": "Blood Collection Kit",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/5/55/Blood_Bag_Kit.png/revision/latest?cb=20140910184647"
+  },
+  {
+    "className": "BloodBagFull",
+    "popularName": "Blood Bag",
+    "urlImg": "/artifacts/api-server/assets/ui/img-placeholder.png"
+  },
+  {
+    "className": "BloodBagIV",
+    "popularName": "IV Blood Bag",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/c/c4/Blood_Bag_IV.png/revision/latest?cb=20180610221523"
+  },
+  {
+    "className": "BloodSyringe",
+    "popularName": "Syringe",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/1/17/Syringe.png/revision/latest?cb=20160828151801"
+  },
+  {
+    "className": "BloodTestKit",
+    "popularName": "Blood Test Kit",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/d/d0/Blood_Test_Kit.png/revision/latest?cb=20180610222500"
+  },
+  {
+    "className": "Blouse_Blue",
+    "popularName": "Blouse Blue",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/f/f7/Dayz-0-61-blouse-blue-3d-model-preview.png/revision/latest?cb=20161204174055"
+  },
+  {
+    "className": "Blouse_Green",
+    "popularName": "Blouse Green",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/a/a8/Dayz-0-61-blouse-green-3d-model-preview.png/revision/latest?cb=20161204174103"
+  },
+  {
+    "className": "Blouse_Violet",
+    "popularName": "Blouse",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/0/02/Dayz-0-61-blouse-violet-3d-model-preview.png/revision/latest?cb=20161204174119"
+  },
+  {
+    "className": "Blouse_White",
+    "popularName": "Blouse White",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/f/f7/Dayz-0-61-blouse-blue-3d-model-preview.png/revision/latest?cb=20161204174055"
+  },
+  {
+    "className": "BoarSteakMeat",
+    "popularName": "Boar Steak",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/6/66/Steak.png/revision/latest?cb=20170412181100"
+  },
+  {
+    "className": "BoletusMushroom",
+    "popularName": "Penny Bun",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/e/e4/BoletusMushroom.png/revision/latest?cb=20181215020255"
+  },
+  {
+    "className": "BomberJacket_Black",
+    "popularName": "Bomber Jacket Black",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/5/5f/BomberJacket_Black.png/revision/latest?cb=20170513131319"
+  },
+  {
+    "className": "BomberJacket_Blue",
+    "popularName": "Bomber Jacket Blue",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/2/2d/Item_Bomber_Jacket_BLUE.png/revision/latest?cb=20150203181428"
+  },
+  {
+    "className": "BomberJacket_Brown",
+    "popularName": "Bomber Jacket Brown",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/e/e2/BomberJacket_Brown.png/revision/latest?cb=20170513131336"
+  },
+  {
+    "className": "BomberJacket_Grey",
+    "popularName": "Bomber Jacket Grey",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/2/22/Bomber_Jacket_Grey.png/revision/latest?cb=20141227171455"
+  },
+  {
+    "className": "BomberJacket_Maroon",
+    "popularName": "Bomber Jacket",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/2/22/Bomber_Jacket_Grey.png/revision/latest?cb=20141227171455"
+  },
+  {
+    "className": "BomberJacket_Olive",
+    "popularName": "Bomber Jacket Olive",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/f/fe/BomberJacket_Olive.png/revision/latest?cb=20170513131311"
+  },
+  {
+    "className": "BomberJacket_SkyBlue",
+    "popularName": "Bomber Jacket",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/2/2d/Item_Bomber_Jacket_BLUE.png/revision/latest?cb=20150203181428"
+  },
+  {
+    "className": "Bone",
+    "popularName": "Bones",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/5/5e/Bones.png/revision/latest?cb=20150226075854"
+  },
+  {
+    "className": "BoneBait",
+    "popularName": "Bone Fishing Bait",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/3/3a/BoneFishingBait.png/revision/latest?cb=20150226175307"
+  },
+  {
+    "className": "BoneHook",
+    "popularName": "Bone Fishing Hook",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/a/a9/Kitchen_Knife.png/revision/latest?cb=20220523162538"
+  },
+  {
+    "className": "Book20000LieuesSousLesMers",
+    "popularName": "20000 Lieues sous les mers",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/f/fe/20000_Lieues_sous_les_mers_Parts_1_and_2.png/revision/latest?cb=20180113214247"
+  },
+  {
+    "className": "BookADollsHouse",
+    "popularName": "A Doll's House",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/a/ac/A_Doll%27s_House.png/revision/latest?cb=20161204204123"
+  },
+  {
+    "className": "BookAPrincessOfMars",
+    "popularName": "A Princess of Mars",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/8/8c/A_Princess_of_Mars.png/revision/latest?cb=20170101192812"
+  },
+  {
+    "className": "BookATexasMatchmaker",
+    "popularName": "A Texas Matchmaker",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/8/82/A_Texas_Matchmaker.png/revision/latest?cb=20180114141846"
+  },
+  {
+    "className": "BookATravelerInTime",
+    "popularName": "A Traveler In Time",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/5/57/A_Traveller_In_Time.png/revision/latest?cb=20161113174523"
+  },
+  {
+    "className": "BookAVoyageToArcturus",
+    "popularName": "A Voyage to Arcturus",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/d/d6/A_Voyage_to_Arcturus.png/revision/latest?cb=20170522191306"
+  },
+  {
+    "className": "BookAfterLondon",
+    "popularName": "After London",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/5/5b/After_London.png/revision/latest?cb=20170212013153"
+  },
+  {
+    "className": "BookAliceInWonderland",
+    "popularName": "Alice's Adventures in Wonderland",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/f/fe/Alice%27s_Adventures_in_Wonderland.png/revision/latest?cb=20170225230506"
+  },
+  {
+    "className": "BookAndersen",
+    "popularName": "Fairy Tales",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/a/a5/Andersen%27s_Fairy_Tales.png/revision/latest?cb=20170406200641"
+  },
+  {
+    "className": "BookAndersensFairyTales",
+    "popularName": "Andersen's Fairy Tales",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/a/a5/Andersen%27s_Fairy_Tales.png/revision/latest?cb=20170406200641"
+  },
+  {
+    "className": "BookAnnaKarenina",
+    "popularName": "Anna Karenina",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/1/1f/Anna_Karenina.png/revision/latest?cb=20170307210248"
+  },
+  {
+    "className": "BookAroundTheWorldIn80Days",
+    "popularName": "Around the World in 80 Days",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/1/10/Around_the_World_in_80_Days.png/revision/latest?cb=20170126200413"
+  },
+  {
+    "className": "BookBettyZane",
+    "popularName": "Betty Zane",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/2/24/Betty_Zane.png/revision/latest?cb=20161113171539"
+  },
+  {
+    "className": "BookBilaNemoc",
+    "popularName": "Bila nemoc",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/f/f1/Bila_Nemoc.png/revision/latest?cb=20170101192944"
+  },
+  {
+    "className": "BookBlackBeauty",
+    "popularName": "Black Beauty",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/2/26/Black_Beauty.png/revision/latest?cb=20161113174920"
+  },
+  {
+    "className": "BookBlackJack",
+    "popularName": "Black Jack",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/9/9d/Black_Jack.png/revision/latest?cb=20170225230638"
+  },
+  {
+    "className": "BookBuddenbrooks",
+    "popularName": "Buddenbrooks",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/e/ed/Buddenbrooks.png/revision/latest?cb=20161113161640"
+  },
+  {
+    "className": "BookCandide",
+    "popularName": "Candide",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/2/2e/Candide.png/revision/latest?cb=20170121231911"
+  },
+  {
+    "className": "BookCassidysRustlerRoundUp",
+    "popularName": "Hopalong Cassidy's Rustler Round-Up",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/a/a5/Hopalong_Cassidy%27s_Rustler_Round-Up.png/revision/latest?cb=20170313194753"
+  },
+  {
+    "className": "BookCinqSemainesEnBallon",
+    "popularName": "Cinq Semaines En Ballon",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/2/28/Cinq_Semaines_en_Ballon.png/revision/latest?cb=20170329200538"
+  },
+  {
+    "className": "BookCrimeAndPunishment",
+    "popularName": "Crime and Punishment",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/d/dd/Crime_And_Punishment.png/revision/latest?cb=20161113171742"
+  },
+  {
+    "className": "BookDasNibelungenlied",
+    "popularName": "Das Nibelungenlied",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/7/75/Das_Nibelungenlied.png/revision/latest?cb=20161113175035"
+  },
+  {
+    "className": "BookDeLaTerreLaLune",
+    "popularName": "De la terre a la lune",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/7/79/De_la_terre_a_la_lune.png/revision/latest?cb=20170105010630"
+  },
+  {
+    "className": "BookDeLorigineDesEspces",
+    "popularName": "De l'origine des especes",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/0/0a/Fresh_Banana.png/revision/latest?cb=20150315194704"
+  },
+  {
+    "className": "BookDeadSouls",
+    "popularName": "Dead Souls",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/2/2c/Dead_Souls.png/revision/latest?cb=20161113162043"
+  },
+  {
+    "className": "BookDesertGold",
+    "popularName": "Desert Gold",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/e/e5/Desert_Gold.png/revision/latest?cb=20170420172308"
+  },
+  {
+    "className": "BookDonQuichotte",
+    "popularName": "L’Ingénieux Hidalgo Don Quichotte de la Manche",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/3/37/L%27Ing%C3%A9nieux_Hidalgo_Don_Quichotte_de_la_Manche.png/revision/latest?cb=20161227233303"
+  },
+  {
+    "className": "BookDonQuixote",
+    "popularName": "Don Quixote",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/6/63/Don_Quixote.png/revision/latest?cb=20170114142050"
+  },
+  {
+    "className": "BookDracula",
+    "popularName": "Dracula",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/8/8f/Dracula.png/revision/latest?cb=20170505182431"
+  },
+  {
+    "className": "BookErewhon",
+    "popularName": "Erewhon",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/c/c4/Erewhon.png/revision/latest?cb=20161113162408"
+  },
+  {
+    "className": "BookFatherGoriot",
+    "popularName": "Father Goriot",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/9/92/Fathers_Goriot.png/revision/latest?cb=20170104160659"
+  },
+  {
+    "className": "BookFaust",
+    "popularName": "Faust",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/d/d0/Faust.png/revision/latest?cb=20161113172709"
+  },
+  {
+    "className": "BookFaustErsterTeil",
+    "popularName": "Faust: Der Tragödie erster Teil",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/d/dc/Faust_-_Der_Trag%C3%B6die_erster_Teil.png/revision/latest?cb=20170116205740"
+  },
+  {
+    "className": "BookFlyingURanch",
+    "popularName": "Flying U Ranch",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/4/4d/The_Flying_U_Ranch.png/revision/latest?cb=20170227213207"
+  },
+  {
+    "className": "BookFrankenstein",
+    "popularName": "Frankenstein",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/d/d9/Frankenstein.png/revision/latest?cb=20170108164020"
+  },
+  {
+    "className": "BookGilgameshEpic",
+    "popularName": "An Old Babylonian Version of the Gilgamesh Epic",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/b/b9/An_Old_Babylonian_Version_of_the_Gilgamesh_Epic.png/revision/latest?cb=20170329200132"
+  },
+  {
+    "className": "BookGreatExpectations",
+    "popularName": "Great Expectations",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/9/96/Great_Expectations.png/revision/latest?cb=20170502180829"
+  },
+  {
+    "className": "BookGulliversTravels",
+    "popularName": "Gulliver's Travels",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/4/46/Gulliver%27s_Travels.png/revision/latest?cb=20170221192749"
+  },
+  {
+    "className": "BookGunmansReckoning",
+    "popularName": "Gunman's Reckoning",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/d/d7/Gunman%27s_Reckoning.png/revision/latest?cb=20170420172346"
+  },
+  {
+    "className": "BookHeartOfDarkness",
+    "popularName": "Heart of Darkness",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/5/5f/Heart_Of_Darkness.png/revision/latest?cb=20161113162559"
+  }
+]
