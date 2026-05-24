@@ -9,6 +9,10 @@ import { startEconomyRewardsLoop } from "./discord/modules/economy/rewardsLoop";
 
 const client = createDiscordClient();
 
+export function getDiscordClient() {
+  return client;
+}
+
 export { registerKillStreakFromKill } from "./discord/modules/killstreak/service";
 
 export async function startDiscordBot() {

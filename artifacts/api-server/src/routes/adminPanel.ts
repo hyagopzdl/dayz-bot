@@ -21,6 +21,7 @@ import {
   updateDayzItemInDatabase,
 } from "../lib/dayzItemsService";
 import { getStateAsync, saveStateAsync, type AppState, type PlayerLink, type Wallet } from "../lib/state";
+import { getDiscordClient } from "../lib/discordBot";
 
 const router = Router();
 const TOKEN_COOKIE = "admin_panel_token";
@@ -34,6 +35,7 @@ type MemberRow = {
   discordName: string;
   gamertag: string;
   gamertagNormalized: string;
+  isLinked: boolean;
   locale: string;
   avatarUrl: string | null;
   balance: number;
@@ -41,6 +43,7 @@ type MemberRow = {
   totalSpent: number;
   onlineRewardMinutes: number;
   status: "online" | "offline";
+  isOnline: boolean;
   linkedAt: string | null;
   updatedAt: string | null;
   lastSeenAt: string | null;
@@ -157,35 +160,134 @@ function walletToNumbers(wallet?: Partial<Wallet> | null) {
   };
 }
 
-function buildMemberRows(state: AdminState): MemberRow[] {
-  const links = Object.values(state.playerLinks || {}) as PlayerLink[];
+type DiscordMemberSnapshot = {
+  discordId: string;
+  discordName: string;
+  avatarUrl: string | null;
+  isOnline: boolean;
+};
+
+type DiscordMembersCache = {
+  expiresAt: number;
+  members: DiscordMemberSnapshot[];
+  error: string | null;
+};
+
+const DISCORD_MEMBERS_CACHE_TTL_MS = 60_000;
+let discordMembersCache: DiscordMembersCache = { expiresAt: 0, members: [], error: null };
+
+async function fetchDiscordMemberSnapshots(forceRefresh = false): Promise<DiscordMembersCache> {
+  const now = Date.now();
+  if (!forceRefresh && discordMembersCache.expiresAt > now) return discordMembersCache;
+
+  try {
+    const client = getDiscordClient();
+    if (!client.isReady()) throw new Error("Discord client is not ready yet.");
+
+    const guildId = process.env.DISCORD_SERVER_ID || process.env.DISCORD_GUILD_ID || "";
+    const guild = guildId
+      ? await client.guilds.fetch(guildId)
+      : client.guilds.cache.first();
+
+    if (!guild) throw new Error("Discord guild not found. Set DISCORD_SERVER_ID.");
+
+    const fetchedMembers = await guild.members.fetch();
+    const members = fetchedMembers
+      .filter((member) => !member.user.bot)
+      .map((member) => {
+        const presence = guild.presences.cache.get(member.id);
+        const status = presence?.status || "offline";
+        return {
+          discordId: member.id,
+          discordName: member.displayName || member.user.globalName || member.user.username || `Discord User ${member.id.slice(-4)}`,
+          avatarUrl: member.displayAvatarURL({ extension: "png", size: 96 }),
+          isOnline: status !== "offline",
+        };
+      })
+      .sort((a, b) => a.discordName.localeCompare(b.discordName));
+
+    discordMembersCache = {
+      expiresAt: now + DISCORD_MEMBERS_CACHE_TTL_MS,
+      members,
+      error: null,
+    };
+  } catch (err) {
+    discordMembersCache = {
+      expiresAt: now + Math.min(DISCORD_MEMBERS_CACHE_TTL_MS, 15_000),
+      members: discordMembersCache.members,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+
+  return discordMembersCache;
+}
+
+function fallbackDiscordMembersFromLinks(state: AdminState): DiscordMemberSnapshot[] {
   const onlineNames = getOnlinePlayerNames(state);
+  const links = Object.values(state.playerLinks || {}) as PlayerLink[];
 
   return links
-    .filter((link) => link?.discordId && link?.gamertag)
-    .map((link) => {
-      const wallet = state.wallets?.[link.discordId] as Wallet | undefined;
-      const numbers = walletToNumbers(wallet);
-      const isOnline = onlineNames.has(normalizeText(link.gamertag));
+    .filter((link) => link?.discordId)
+    .map((link) => ({
+      discordId: link.discordId,
+      discordName: `Discord User ${link.discordId.slice(-4)}`,
+      avatarUrl: null,
+      isOnline: Boolean(link.gamertag && onlineNames.has(normalizeText(link.gamertag))),
+    }));
+}
 
-      return {
-        discordId: link.discordId,
-        discordName: `Discord User ${link.discordId.slice(-4)}`,
-        gamertag: link.gamertag,
-        gamertagNormalized: link.gamertagNormalized || normalizeText(link.gamertag),
-        locale: link.locale || "en",
-        avatarUrl: null,
-        balance: numbers.balance,
-        totalEarned: numbers.totalEarned,
-        totalSpent: numbers.totalSpent,
-        onlineRewardMinutes: numbers.onlineRewardMinutes,
-        status: (isOnline ? "online" : "offline") as "online" | "offline",
-        linkedAt: formatIso(link.linkedAt),
-        updatedAt: formatIso(link.updatedAt),
-        lastSeenAt: getLastSeenAt(state, link.gamertag),
-      };
-    })
-    .sort((a, b) => b.balance - a.balance || a.gamertag.localeCompare(b.gamertag));
+function buildMemberStats(rows: MemberRow[], discordError: string | null = null) {
+  const linked = rows.filter((member) => member.isLinked).length;
+  const online = rows.filter((member) => member.isOnline).length;
+
+  return {
+    totalMembers: rows.length,
+    linkedMembers: linked,
+    unlinkedMembers: Math.max(0, rows.length - linked),
+    onlineMembers: online,
+    discordError,
+  };
+}
+
+async function buildMemberRows(state: AdminState, options: { forceDiscordRefresh?: boolean } = {}): Promise<{ rows: MemberRow[]; stats: ReturnType<typeof buildMemberStats> }> {
+  const linksByDiscordId = new Map<string, PlayerLink>();
+  for (const link of Object.values(state.playerLinks || {}) as PlayerLink[]) {
+    if (link?.discordId) linksByDiscordId.set(link.discordId, link);
+  }
+
+  const discordCache = await fetchDiscordMemberSnapshots(Boolean(options.forceDiscordRefresh));
+  const discordMembers = discordCache.members.length ? discordCache.members : fallbackDiscordMembersFromLinks(state);
+  const onlineNames = getOnlinePlayerNames(state);
+
+  const rows = discordMembers.map((discordMember) => {
+    const link = linksByDiscordId.get(discordMember.discordId);
+    const gamertag = String(link?.gamertag || "").trim();
+    const wallet = state.wallets?.[discordMember.discordId] as Wallet | undefined;
+    const numbers = walletToNumbers(wallet);
+    const isDayzOnline = gamertag ? onlineNames.has(normalizeText(gamertag)) : false;
+    const isOnline = Boolean(discordMember.isOnline || isDayzOnline);
+
+    return {
+      discordId: discordMember.discordId,
+      discordName: discordMember.discordName,
+      gamertag,
+      gamertagNormalized: link?.gamertagNormalized || normalizeText(gamertag),
+      isLinked: Boolean(link && gamertag),
+      locale: link?.locale || "pt",
+      avatarUrl: discordMember.avatarUrl,
+      balance: numbers.balance,
+      totalEarned: numbers.totalEarned,
+      totalSpent: numbers.totalSpent,
+      onlineRewardMinutes: numbers.onlineRewardMinutes,
+      status: (isOnline ? "online" : "offline") as "online" | "offline",
+      isOnline,
+      linkedAt: formatIso(link?.linkedAt),
+      updatedAt: formatIso(link?.updatedAt),
+      lastSeenAt: gamertag ? getLastSeenAt(state, gamertag) : null,
+    };
+  }).sort((a, b) => Number(b.isOnline) - Number(a.isOnline) || Number(b.isLinked) - Number(a.isLinked) || a.discordName.localeCompare(b.discordName));
+
+  return { rows, stats: buildMemberStats(rows, discordCache.error) };
 }
 
 function filterMembers(rows: MemberRow[], params: { search: string; filter: string }) {
@@ -195,6 +297,8 @@ function filterMembers(rows: MemberRow[], params: { search: string; filter: stri
   return rows.filter((member) => {
     if (filter === "online" && member.status !== "online") return false;
     if (filter === "offline" && member.status !== "offline") return false;
+    if (filter === "linked" && !member.isLinked) return false;
+    if (filter === "unlinked" && member.isLinked) return false;
     if (filter === "pt" && member.locale !== "pt") return false;
     if (filter === "en" && member.locale !== "en") return false;
 
@@ -241,8 +345,9 @@ function buildMemberTransactions(state: AdminState, discordId: string, limit = 2
     });
 }
 
-function buildMemberDetails(state: AdminState, discordId: string) {
-  const member = buildMemberRows(state).find((row) => row.discordId === discordId);
+async function buildMemberDetails(state: AdminState, discordId: string) {
+  const { rows } = await buildMemberRows(state);
+  const member = rows.find((row) => row.discordId === discordId);
   if (!member) return null;
 
   return {
@@ -266,9 +371,9 @@ function getEconomyConfig() {
   };
 }
 
-function buildOverviewPayload(state: AdminState) {
+async function buildOverviewPayload(state: AdminState) {
   const runtime = getShopRuntimeStatus(state);
-  const members = buildMemberRows(state);
+  const { rows: members } = await buildMemberRows(state);
   const wallets = Object.values(state.wallets || {}) as Wallet[];
   const transactions = Array.isArray(state.economyTransactions) ? state.economyTransactions : [];
   const totalCoins = wallets.reduce((sum, wallet) => sum + Math.floor(Number(wallet.balance || 0)), 0);
@@ -710,10 +815,11 @@ function renderAdminPanelHtml(token: string) {
     .setting-row b { font-size: 13px; font-weight: 620; }
     .setting-row span { display:block; color: var(--text-3); font-size: 12px; margin-top: 4px; }
     .members-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) 180px auto; gap: 10px; margin-bottom: 14px; }
+    .members-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 14px; }
     .member-list { display: grid; gap: 10px; }
     .member-card {
       display: grid;
-      grid-template-columns: 48px minmax(220px, 1.15fr) minmax(170px,.8fr) auto;
+      grid-template-columns: 52px minmax(220px, 1fr) minmax(170px,.72fr) auto;
       gap: 16px;
       align-items: center;
       padding: 14px;
@@ -724,8 +830,14 @@ function renderAdminPanelHtml(token: string) {
       transition: background .16s ease, border-color .16s ease, transform .16s ease;
     }
     .member-card:hover { background: #303238; border-color: var(--border-strong); transform: translateY(-1px); }
-    .member-name { font-weight: 650; letter-spacing: -.02em; }
+    .member-avatar-wrap { position: relative; width: 48px; height: 48px; border-radius: 16px; flex: 0 0 auto; }
+    .member-avatar-img, .member-avatar-fallback { width: 48px; height: 48px; border-radius: 16px; display: grid; place-items: center; object-fit: cover; background: #25262A; border: 1px solid var(--border); color: var(--text-2); font-size: 13px; font-weight: 650; }
+    .presence-dot { position: absolute; right: -2px; bottom: -2px; width: 13px; height: 13px; border-radius: 999px; background: #6B7280; border: 3px solid #2B2D31; box-shadow: 0 0 0 1px rgba(255,255,255,.04); }
+    .presence-dot.online { background: #23A55A; }
+    .member-card:hover .presence-dot { border-color: #303238; }
+    .member-name { font-weight: 620; letter-spacing: -.018em; }
     .member-meta { color: var(--text-3); font-size: 12px; margin-top: 4px; line-height: 1.35; }
+    .member-gamertag { color: var(--text-3); font-size: 13px; margin-top: 4px; line-height: 1.35; }
     .chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
     .chip {
       color: var(--text-2);
@@ -1119,7 +1231,7 @@ function renderAdminPanelHtml(token: string) {
       .topbar { padding: 0 16px; }
       .global-search { display:none; }
       .content { padding: 18px; }
-      .metric-grid, .members-toolbar { grid-template-columns: 1fr; }
+      .metric-grid, .members-toolbar, .members-stats { grid-template-columns: 1fr; }
     }
   </style>
 </head>
@@ -1177,9 +1289,15 @@ function renderAdminPanelHtml(token: string) {
           </div>
         </section>
         <section id="view-members" class="view">
+          <div class="members-stats">
+            <div class="card"><div class="metric-label">Membros</div><div id="membersTotal" class="metric-value">—</div><div class="metric-hint">total no Discord</div></div>
+            <div class="card"><div class="metric-label">Vinculados</div><div id="membersLinked" class="metric-value">—</div><div class="metric-hint">com gamertag</div></div>
+            <div class="card"><div class="metric-label">Sem gamertag</div><div id="membersUnlinked" class="metric-value">—</div><div class="metric-hint">pendentes de vínculo</div></div>
+            <div class="card"><div class="metric-label">Online</div><div id="membersOnline" class="metric-value">—</div><div id="membersOnlineHint" class="metric-hint">agora</div></div>
+          </div>
           <div class="members-toolbar">
             <div class="search"><input id="memberSearch" placeholder="Buscar por Discord, ID ou gamertag..." /></div>
-            <select id="memberFilter"><option value="">Todos</option><option value="online">Online</option><option value="offline">Offline</option><option value="pt">Português</option><option value="en">English</option></select>
+            <select id="memberFilter"><option value="">Todos</option><option value="online">Online</option><option value="offline">Offline</option><option value="linked">Com gamertag</option><option value="unlinked">Sem gamertag</option></select>
             <button class="ghost-btn" id="membersRefresh">Refresh</button>
           </div>
           <div id="memberList" class="member-list"></div>
@@ -1189,12 +1307,6 @@ function renderAdminPanelHtml(token: string) {
         </section>
         <section id="view-catalog" class="view">
           <div class="catalog-shell">
-            <div class="catalog-stats">
-              <div class="card"><div class="metric-label">Itens</div><div id="catalogTotal" class="metric-value">—</div><div class="metric-hint">total no catálogo</div></div>
-              <div class="card"><div class="metric-label">Ativos</div><div id="catalogEnabled" class="metric-value">—</div><div class="metric-hint">disponíveis no shop</div></div>
-              <div class="card"><div class="metric-label">Categorias</div><div id="catalogCategories" class="metric-value">—</div><div class="metric-hint">grupos encontrados</div></div>
-              <div class="card"><div class="metric-label">Preço médio</div><div id="catalogAverage" class="metric-value">—</div><div class="metric-hint">coins por item</div></div>
-            </div>
             <div id="catalogCategoryView" class="catalog-shell">
               <div class="card">
                 <div class="section-title">
@@ -1225,12 +1337,6 @@ function renderAdminPanelHtml(token: string) {
         </section>
         <section id="view-items" class="view">
           <div class="items-shell">
-            <div class="catalog-stats">
-              <div class="card"><div class="metric-label">Itens</div><div id="itemsTotal" class="metric-value">—</div><div class="metric-hint">base mestre DayZ</div></div>
-              <div class="card"><div class="metric-label">Habilitados</div><div id="itemsEnabled" class="metric-value">—</div><div class="metric-hint">disponíveis para catálogo</div></div>
-              <div class="card"><div class="metric-label">Desabilitados</div><div id="itemsDisabled" class="metric-value">—</div><div class="metric-hint">ocultos no autocomplete</div></div>
-              <div class="card"><div class="metric-label">Sem imagem</div><div id="itemsMissingImage" class="metric-value">—</div><div class="metric-hint">precisam revisão</div></div>
-            </div>
             <div class="card">
               <div class="section-title">
                 <div>
@@ -1339,7 +1445,7 @@ function renderAdminPanelHtml(token: string) {
   <script>
     const adminToken = ${tokenJson};
     if (adminToken) document.cookie = "${TOKEN_COOKIE}=" + encodeURIComponent(adminToken) + "; path=/admin-panel; SameSite=Lax";
-    const state = { view: "general", cursor: 0, hasMore: true, loadingMembers: false, search: "", filter: "", modal: null, catalogModal: null, selectedDiscordId: null, catalog: null, catalogSearch: "", catalogCategory: "", catalogMode: "categories", itemsCursor: 0, itemsHasMore: true, itemsLoading: false, itemsSearch: "", itemsFilter: "all", dayzItems: [], itemsStats: null, itemModal: null };
+    const state = { view: "general", cursor: 0, hasMore: true, loadingMembers: false, memberForceRefresh: false, search: "", filter: "", modal: null, catalogModal: null, selectedDiscordId: null, catalog: null, catalogSearch: "", catalogCategory: "", catalogMode: "categories", itemsCursor: 0, itemsHasMore: true, itemsLoading: false, itemsSearch: "", itemsFilter: "all", dayzItems: [], itemsStats: null, itemModal: null };
     const els = {
       pageTitle: document.getElementById("pageTitle"), serverName: document.getElementById("serverName"),
       memberList: document.getElementById("memberList"), memberLoading: document.getElementById("memberLoading"), memberEmpty: document.getElementById("memberEmpty"),
@@ -1348,7 +1454,7 @@ function renderAdminPanelHtml(token: string) {
       detailDrawer: document.getElementById("detailDrawer"), drawerBody: document.getElementById("drawerBody"), drawerAvatar: document.getElementById("drawerAvatar"), drawerName: document.getElementById("drawerName"), drawerMeta: document.getElementById("drawerMeta"),
       catalogGrid: document.getElementById("catalogGrid"), catalogLoading: document.getElementById("catalogLoading"), catalogEmpty: document.getElementById("catalogEmpty"), catalogSearch: document.getElementById("catalogSearch"), catalogCategoryView: document.getElementById("catalogCategoryView"), catalogItemsView: document.getElementById("catalogItemsView"), catalogCategoryGrid: document.getElementById("catalogCategoryGrid"), catalogCurrentCategoryTitle: document.getElementById("catalogCurrentCategoryTitle"), catalogCurrentCategoryLabel: document.getElementById("catalogCurrentCategoryLabel"),
       catalogModalBackdrop: document.getElementById("catalogModalBackdrop"), catalogModalTitle: document.getElementById("catalogModalTitle"), catalogModalSubtitle: document.getElementById("catalogModalSubtitle"), catalogItemId: document.getElementById("catalogItemId"), catalogItemAutocomplete: document.getElementById("catalogItemAutocomplete"), catalogItemCategory: document.getElementById("catalogItemCategory"), catalogItemName: document.getElementById("catalogItemName"), catalogItemPrice: document.getElementById("catalogItemPrice"), catalogItemImage: document.getElementById("catalogItemImage"), catalogItemDescription: document.getElementById("catalogItemDescription"), catalogItemEnabled: document.getElementById("catalogItemEnabled"), catalogCategoryModalBackdrop: document.getElementById("catalogCategoryModalBackdrop"), catalogCategoryName: document.getElementById("catalogCategoryName"), catalogCategoryId: document.getElementById("catalogCategoryId"), catalogCategoryDescription: document.getElementById("catalogCategoryDescription"), catalogCategoryEnabled: document.getElementById("catalogCategoryEnabled"),
-      itemsList: document.getElementById("itemsList"), itemsLoading: document.getElementById("itemsLoading"), itemsEmpty: document.getElementById("itemsEmpty"), itemsSearch: document.getElementById("itemsSearch"), itemsFilter: document.getElementById("itemsFilter"), itemsRefresh: document.getElementById("itemsRefresh"), itemsSentinel: document.getElementById("itemsSentinel"), itemsTotal: document.getElementById("itemsTotal"), itemsEnabled: document.getElementById("itemsEnabled"), itemsDisabled: document.getElementById("itemsDisabled"), itemsMissingImage: document.getElementById("itemsMissingImage"),
+      itemsList: document.getElementById("itemsList"), itemsLoading: document.getElementById("itemsLoading"), itemsEmpty: document.getElementById("itemsEmpty"), itemsSearch: document.getElementById("itemsSearch"), itemsFilter: document.getElementById("itemsFilter"), itemsRefresh: document.getElementById("itemsRefresh"), itemsSentinel: document.getElementById("itemsSentinel"),
       itemModalBackdrop: document.getElementById("itemModalBackdrop"), itemModalTitle: document.getElementById("itemModalTitle"), itemModalSubtitle: document.getElementById("itemModalSubtitle"), itemModalPreviewImage: document.getElementById("itemModalPreviewImage"), itemModalPreviewName: document.getElementById("itemModalPreviewName"), itemModalPreviewClass: document.getElementById("itemModalPreviewClass"), itemModalPopularName: document.getElementById("itemModalPopularName"), itemModalImageUrl: document.getElementById("itemModalImageUrl"), itemModalSpawnEventName: document.getElementById("itemModalSpawnEventName"), itemModalEnabled: document.getElementById("itemModalEnabled")
     };
     function apiUrl(path) { const separator = path.includes("?") ? "&" : "?"; return adminToken ? path + separator + "token=" + encodeURIComponent(adminToken) : path; }
@@ -1378,13 +1484,21 @@ function renderAdminPanelHtml(token: string) {
       setText("quickShop", payload.shop.canAcceptPurchase ? "Checkout aberto" : "Checkout fechado");
       renderActivity(payload.activity || []);
     }
+    function memberAvatarHtml(member) {
+      const initials = (member.discordName || member.gamertag || "?").slice(0, 2).toUpperCase();
+      const image = member.avatarUrl
+        ? '<img class="member-avatar-img" src="' + escapeHtml(member.avatarUrl) + '" alt="" loading="lazy" />'
+        : '<div class="member-avatar-fallback">' + escapeHtml(initials) + '</div>';
+      return '<div class="member-avatar-wrap">' + image + '<span class="presence-dot ' + (member.isOnline ? "online" : "") + '"></span></div>';
+    }
     function memberCard(member) {
-      const statusChip = member.status === "online" ? '<span class="chip online">● Online</span>' : '<span class="chip">○ Offline</span>';
+      const gamertagLabel = member.gamertag ? member.gamertag : "Sem gamertag vinculada";
+      const economyDisabled = member.isLinked ? "" : " disabled";
       return '<article class="member-card" data-discord-id="' + escapeHtml(member.discordId) + '">' +
-        '<div class="avatar">' + escapeHtml((member.gamertag || "?").slice(0,2).toUpperCase()) + '</div>' +
-        '<div><div class="member-name">' + escapeHtml(member.discordName) + '</div><div class="member-meta">' + escapeHtml(member.discordId) + '</div><div class="chips"><span class="chip">🎮 ' + escapeHtml(member.gamertag) + '</span><span class="chip">' + escapeHtml(member.locale.toUpperCase()) + '</span>' + statusChip + '</div></div>' +
-        '<div class="member-economy"><div class="wallet-number">' + formatCoins(member.balance) + ' coins</div><div class="member-meta">Earned ' + formatCoins(member.totalEarned) + ' · Spent ' + formatCoins(member.totalSpent) + '</div><div class="member-meta">Último acesso: ' + escapeHtml(relativeDate(member.lastSeenAt)) + '</div></div>' +
-        '<div class="actions"><button class="mini-btn" data-action="add">Add</button><button class="mini-btn" data-action="remove">Remove</button><button class="mini-btn" data-action="set">Set</button><button class="mini-btn danger disabled" title="Próxima versão">Temp Ban</button><button class="mini-btn danger disabled" title="Próxima versão">Ban</button></div>' +
+        memberAvatarHtml(member) +
+        '<div><div class="member-name">' + escapeHtml(member.discordName) + '</div><div class="member-gamertag">' + escapeHtml(gamertagLabel) + '</div></div>' +
+        '<div class="member-economy"><div class="wallet-number">' + formatCoins(member.balance) + ' coins</div><div class="member-meta">Earned ' + formatCoins(member.totalEarned) + ' · Spent ' + formatCoins(member.totalSpent) + '</div><div class="member-meta">' + escapeHtml(member.discordId) + '</div></div>' +
+        '<div class="actions"><button class="mini-btn' + economyDisabled + '" data-action="add">Add</button><button class="mini-btn' + economyDisabled + '" data-action="remove">Remove</button><button class="mini-btn' + economyDisabled + '" data-action="set">Set</button></div>' +
       '</article>';
     }
 
@@ -1409,9 +1523,9 @@ function renderAdminPanelHtml(token: string) {
     }
     function renderDrawer(payload) {
       const member = payload.member;
-      els.drawerAvatar.textContent = (member.gamertag || "??").slice(0, 2).toUpperCase();
+      els.drawerAvatar.textContent = (member.discordName || member.gamertag || "??").slice(0, 2).toUpperCase();
       els.drawerName.textContent = member.discordName || member.gamertag;
-      els.drawerMeta.textContent = member.gamertag + " · " + member.discordId;
+      els.drawerMeta.textContent = (member.gamertag || "Sem gamertag vinculada") + " · " + member.discordId;
       const transactions = payload.transactions || [];
       els.drawerBody.innerHTML =
         '<div class="drawer-card"><div class="drawer-stats">' +
@@ -1421,7 +1535,7 @@ function renderAdminPanelHtml(token: string) {
         '</div></div>' +
         '<div class="drawer-card"><div class="section-title"><h2>Perfil</h2><span class="chip ' + (member.status === "online" ? "online" : "") + '">' + (member.status === "online" ? "● Online" : "○ Offline") + '</span></div>' +
           '<div class="settings-list">' +
-            '<div class="setting-row"><div><b>Gamertag</b><span>' + escapeHtml(member.gamertag) + '</span></div></div>' +
+            '<div class="setting-row"><div><b>Gamertag</b><span>' + escapeHtml(member.gamertag || "Sem gamertag vinculada") + '</span></div></div>' +
             '<div class="setting-row"><div><b>Idioma</b><span>' + escapeHtml(member.locale.toUpperCase()) + '</span></div></div>' +
             '<div class="setting-row"><div><b>Reward progress</b><span>' + escapeHtml(String(member.onlineRewardMinutes || 0)) + ' minutos acumulados</span></div></div>' +
             '<div class="setting-row"><div><b>Último acesso</b><span>' + escapeHtml(relativeDate(member.lastSeenAt)) + '</span></div></div>' +
@@ -1450,12 +1564,19 @@ function renderAdminPanelHtml(token: string) {
       if (state.loadingMembers || (!state.hasMore && !reset)) return;
       if (reset) { state.cursor = 0; state.hasMore = true; els.memberList.innerHTML = ""; els.memberEmpty.style.display = "none"; }
       state.loadingMembers = true; els.memberLoading.style.display = "grid";
-      const params = new URLSearchParams({ cursor: String(state.cursor), limit: "20", search: state.search, filter: state.filter });
+      const params = new URLSearchParams({ cursor: String(state.cursor), limit: "20", search: state.search, filter: state.filter, refresh: state.memberForceRefresh ? "true" : "false" });
       const response = await apiFetch("/admin-panel/api/members?" + params.toString());
       els.memberLoading.style.display = "none"; state.loadingMembers = false;
-      if (!response.ok) { showToast(await response.text()); return; }
+      if (!response.ok) { state.memberForceRefresh = false; showToast(await response.text()); return; }
       const payload = await response.json();
+      state.memberForceRefresh = false;
       state.cursor = payload.nextCursor || state.cursor; state.hasMore = Boolean(payload.hasMore);
+      const memberStats = payload.stats || {};
+      setText("membersTotal", formatNumber(memberStats.totalMembers || 0));
+      setText("membersLinked", formatNumber(memberStats.linkedMembers || 0));
+      setText("membersUnlinked", formatNumber(memberStats.unlinkedMembers || 0));
+      setText("membersOnline", formatNumber(memberStats.onlineMembers || 0));
+      setText("membersOnlineHint", memberStats.discordError ? "fallback ativo" : "agora");
       els.memberList.insertAdjacentHTML("beforeend", payload.members.map(memberCard).join(""));
       els.memberEmpty.style.display = els.memberList.children.length ? "none" : "block";
     }
@@ -1523,11 +1644,6 @@ function renderAdminPanelHtml(token: string) {
     }
     function renderCatalog() {
       if (!state.catalog) return;
-      const stats = state.catalog.stats || {};
-      setText("catalogTotal", formatCoins(stats.totalItems || 0));
-      setText("catalogEnabled", formatCoins(stats.enabledItems || 0));
-      setText("catalogCategories", formatCoins(stats.categories || 0));
-      setText("catalogAverage", formatCoins(stats.averagePrice || 0));
       renderCatalogCategoryOptions(state.catalog);
 
       const isItems = state.catalogMode === "items" && state.catalogCategory;
@@ -1724,12 +1840,6 @@ function renderAdminPanelHtml(token: string) {
       '</article>';
     }
     function renderDayzItems(append) {
-      if (els.itemsTotal && state.itemsStats) {
-        els.itemsTotal.textContent = formatNumber(state.itemsStats.total || 0);
-        els.itemsEnabled.textContent = formatNumber(state.itemsStats.enabled || 0);
-        els.itemsDisabled.textContent = formatNumber(state.itemsStats.disabled || 0);
-        els.itemsMissingImage.textContent = formatNumber(state.itemsStats.missingImage || 0);
-      }
       const html = state.dayzItems.map(dayzItemRow).join("");
       els.itemsList.innerHTML = html;
       els.itemsEmpty.style.display = state.dayzItems.length ? "none" : "block";
@@ -1840,7 +1950,7 @@ function renderAdminPanelHtml(token: string) {
     }
     document.querySelectorAll(".nav button").forEach((button) => button.addEventListener("click", () => switchView(button.dataset.view)));
     document.getElementById("refreshButton").addEventListener("click", async () => { await loadOverview(); if (state.view === "members") await loadMembers(true); if (state.view === "catalog") await loadCatalog(); if (state.view === "items") await loadDayzItems(true); showToast("Dados atualizados."); });
-    document.getElementById("membersRefresh").addEventListener("click", () => loadMembers(true));
+    document.getElementById("membersRefresh").addEventListener("click", () => { state.memberForceRefresh = true; loadMembers(true); });
     let searchTimer = null;
     function updateSearch(value) { state.search = value; clearTimeout(searchTimer); searchTimer = setTimeout(() => loadMembers(true), 240); }
     document.getElementById("memberSearch").addEventListener("input", (event) => updateSearch(event.target.value));
@@ -1952,7 +2062,7 @@ router.get("/api/overview", async (req, res) => {
 
   try {
     const state = await getStateAsync();
-    res.json(buildOverviewPayload(state as AdminState));
+    res.json(await buildOverviewPayload(state as AdminState));
   } catch (err) {
     res.status(500).json({ error: String(err) });
   }
@@ -1967,12 +2077,15 @@ router.get("/api/members", async (req, res) => {
     const limit = Math.min(MAX_PAGE_SIZE, Math.max(1, Math.floor(Number(req.query.limit || DEFAULT_PAGE_SIZE))));
     const search = typeof req.query.search === "string" ? req.query.search : "";
     const filter = typeof req.query.filter === "string" ? req.query.filter : "";
-    const rows = filterMembers(buildMemberRows(state), { search, filter });
+    const forceRefresh = req.query.refresh === "true" || req.query.refresh === "1";
+    const { rows: allRows, stats } = await buildMemberRows(state, { forceDiscordRefresh: forceRefresh });
+    const rows = filterMembers(allRows, { search, filter });
     const members = rows.slice(cursor, cursor + limit);
 
     res.json({
       members,
       total: rows.length,
+      stats,
       nextCursor: cursor + members.length,
       hasMore: cursor + members.length < rows.length,
     });
@@ -1988,10 +2101,10 @@ router.get("/api/members/:discordId", async (req, res) => {
   try {
     const state = (await getStateAsync()) as AdminState;
     const discordId = String(req.params.discordId || "");
-    const details = buildMemberDetails(state, discordId);
+    const details = await buildMemberDetails(state, discordId);
 
     if (!details) {
-      res.status(404).send("Linked member not found");
+      res.status(404).send("Member not found");
       return;
     }
 
@@ -2010,7 +2123,7 @@ router.post("/api/members/:discordId/coins", async (req, res) => {
     const link = state.playerLinks?.[discordId];
 
     if (!link) {
-      res.status(404).send("Linked member not found");
+      res.status(404).send("Member not found");
       return;
     }
 
