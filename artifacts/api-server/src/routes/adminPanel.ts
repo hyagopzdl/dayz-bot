@@ -199,7 +199,7 @@ async function fetchDiscordMembersViaRest(guildId: string): Promise<DiscordMembe
 
   for (let page = 0; page < 20; page += 1) {
     const query = new URLSearchParams({ limit: "1000", after });
-    const route = `${Routes.guildMembers(guildId)}?${query.toString()}`;
+    const route = `${Routes.guildMembers(guildId)}?${query.toString()}` as `/${string}`;
     const pageMembers = await client.rest.get(route) as DiscordRestMember[];
 
     if (!Array.isArray(pageMembers) || pageMembers.length === 0) break;
