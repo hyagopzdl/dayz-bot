@@ -1,4 +1,5 @@
 import { Router, type Request, type Response } from "express";
+import { Routes } from "discord.js";
 import { getShopRuntimeStatus } from "../lib/shop";
 import {
   deleteShopCatalogCategory,
@@ -173,6 +174,57 @@ type DiscordMembersCache = {
   error: string | null;
 };
 
+type DiscordRestMember = {
+  user?: {
+    id?: string;
+    username?: string;
+    global_name?: string | null;
+    avatar?: string | null;
+    bot?: boolean;
+  };
+  nick?: string | null;
+  avatar?: string | null;
+};
+
+function getDiscordAvatarUrl(userId: string, avatarHash?: string | null) {
+  if (!avatarHash) return null;
+  const extension = avatarHash.startsWith("a_") ? "gif" : "png";
+  return `https://cdn.discordapp.com/avatars/${userId}/${avatarHash}.${extension}?size=96`;
+}
+
+async function fetchDiscordMembersViaRest(guildId: string): Promise<DiscordMemberSnapshot[]> {
+  const client = getDiscordClient();
+  const members: DiscordMemberSnapshot[] = [];
+  let after = "0";
+
+  for (let page = 0; page < 20; page += 1) {
+    const query = new URLSearchParams({ limit: "1000", after });
+    const route = `${Routes.guildMembers(guildId)}?${query.toString()}`;
+    const pageMembers = await client.rest.get(route) as DiscordRestMember[];
+
+    if (!Array.isArray(pageMembers) || pageMembers.length === 0) break;
+
+    for (const member of pageMembers) {
+      const user = member.user;
+      const userId = String(user?.id || "");
+      if (!userId || user?.bot) continue;
+
+      members.push({
+        discordId: userId,
+        discordName: String(member.nick || user?.global_name || user?.username || `Discord User ${userId.slice(-4)}`),
+        avatarUrl: getDiscordAvatarUrl(userId, member.avatar || user?.avatar || null),
+        isOnline: false,
+      });
+    }
+
+    const lastUserId = pageMembers[pageMembers.length - 1]?.user?.id;
+    if (!lastUserId || pageMembers.length < 1000) break;
+    after = String(lastUserId);
+  }
+
+  return members.sort((a, b) => a.discordName.localeCompare(b.discordName));
+}
+
 const DISCORD_MEMBERS_CACHE_TTL_MS = 60_000;
 let discordMembersCache: DiscordMembersCache = { expiresAt: 0, members: [], error: null };
 
@@ -184,32 +236,52 @@ async function fetchDiscordMemberSnapshots(forceRefresh = false): Promise<Discor
     const client = getDiscordClient();
     if (!client.isReady()) throw new Error("Discord client is not ready yet.");
 
-    const guildId = process.env.DISCORD_SERVER_ID || process.env.DISCORD_GUILD_ID || "";
-    const guild = guildId
-      ? await client.guilds.fetch(guildId)
+    const configuredGuildId = process.env.DISCORD_SERVER_ID || process.env.DISCORD_GUILD_ID || "";
+    const guild = configuredGuildId
+      ? await client.guilds.fetch(configuredGuildId)
       : client.guilds.cache.first();
 
-    if (!guild) throw new Error("Discord guild not found. Set DISCORD_SERVER_ID.");
+    if (!guild) throw new Error("Discord guild not found. Set DISCORD_GUILD_ID or DISCORD_SERVER_ID.");
 
-    const fetchedMembers = await guild.members.fetch();
-    const members = fetchedMembers
-      .filter((member) => !member.user.bot)
-      .map((member) => {
-        const presence = guild.presences.cache.get(member.id);
-        const status = presence?.status || "offline";
-        return {
-          discordId: member.id,
-          discordName: member.displayName || member.user.globalName || member.user.username || `Discord User ${member.id.slice(-4)}`,
-          avatarUrl: member.displayAvatarURL({ extension: "png", size: 96 }),
-          isOnline: status !== "offline",
-        };
-      })
-      .sort((a, b) => a.discordName.localeCompare(b.discordName));
+    let members: DiscordMemberSnapshot[] = [];
+    let fetchError: string | null = null;
+
+    try {
+      const fetchedMembers = await guild.members.fetch({ withPresences: true });
+      members = fetchedMembers
+        .filter((member) => !member.user.bot)
+        .map((member) => {
+          const presence = guild.presences.cache.get(member.id);
+          const status = presence?.status || "offline";
+          return {
+            discordId: member.id,
+            discordName: member.displayName || member.user.globalName || member.user.username || `Discord User ${member.id.slice(-4)}`,
+            avatarUrl: member.displayAvatarURL({ extension: "png", size: 96 }),
+            isOnline: status !== "offline",
+          };
+        })
+        .sort((a, b) => a.discordName.localeCompare(b.discordName));
+    } catch (err) {
+      fetchError = err instanceof Error ? err.message : String(err);
+    }
+
+    if (!members.length) {
+      const restMembers = await fetchDiscordMembersViaRest(guild.id);
+      const presenceById = guild.presences.cache;
+      members = restMembers.map((member) => ({
+        ...member,
+        isOnline: (presenceById.get(member.discordId)?.status || "offline") !== "offline",
+      }));
+    }
+
+    if (!members.length) {
+      throw new Error(fetchError || "Discord member list returned empty.");
+    }
 
     discordMembersCache = {
       expiresAt: now + DISCORD_MEMBERS_CACHE_TTL_MS,
       members,
-      error: null,
+      error: fetchError,
     };
   } catch (err) {
     discordMembersCache = {
@@ -819,7 +891,7 @@ function renderAdminPanelHtml(token: string) {
     .member-list { display: grid; gap: 10px; }
     .member-card {
       display: grid;
-      grid-template-columns: 52px minmax(220px, 1fr) minmax(170px,.72fr) auto;
+      grid-template-columns: 52px minmax(260px, 1fr) minmax(160px,.62fr) auto;
       gap: 16px;
       align-items: center;
       padding: 14px;
@@ -1497,7 +1569,7 @@ function renderAdminPanelHtml(token: string) {
       return '<article class="member-card" data-discord-id="' + escapeHtml(member.discordId) + '">' +
         memberAvatarHtml(member) +
         '<div><div class="member-name">' + escapeHtml(member.discordName) + '</div><div class="member-gamertag">' + escapeHtml(gamertagLabel) + '</div></div>' +
-        '<div class="member-economy"><div class="wallet-number">' + formatCoins(member.balance) + ' coins</div><div class="member-meta">Earned ' + formatCoins(member.totalEarned) + ' · Spent ' + formatCoins(member.totalSpent) + '</div><div class="member-meta">' + escapeHtml(member.discordId) + '</div></div>' +
+        '<div class="member-economy"><div class="wallet-number">' + formatCoins(member.balance) + ' coins</div><div class="member-meta">Earned ' + formatCoins(member.totalEarned) + ' · Spent ' + formatCoins(member.totalSpent) + '</div></div>' +
         '<div class="actions"><button class="mini-btn' + economyDisabled + '" data-action="add">Add</button><button class="mini-btn' + economyDisabled + '" data-action="remove">Remove</button><button class="mini-btn' + economyDisabled + '" data-action="set">Set</button></div>' +
       '</article>';
     }
@@ -1523,9 +1595,13 @@ function renderAdminPanelHtml(token: string) {
     }
     function renderDrawer(payload) {
       const member = payload.member;
-      els.drawerAvatar.textContent = (member.discordName || member.gamertag || "??").slice(0, 2).toUpperCase();
+      const drawerInitials = (member.discordName || member.gamertag || "??").slice(0, 2).toUpperCase();
+      els.drawerAvatar.className = "member-avatar-wrap";
+      els.drawerAvatar.innerHTML = (member.avatarUrl
+        ? '<img class="member-avatar-img" src="' + escapeHtml(member.avatarUrl) + '" alt="" loading="lazy" />'
+        : '<div class="member-avatar-fallback">' + escapeHtml(drawerInitials) + '</div>') + '<span class="presence-dot ' + (member.isOnline ? "online" : "") + '"></span>';
       els.drawerName.textContent = member.discordName || member.gamertag;
-      els.drawerMeta.textContent = (member.gamertag || "Sem gamertag vinculada") + " · " + member.discordId;
+      els.drawerMeta.textContent = member.gamertag || "Sem gamertag vinculada";
       const transactions = payload.transactions || [];
       els.drawerBody.innerHTML =
         '<div class="drawer-card"><div class="drawer-stats">' +
@@ -1933,7 +2009,7 @@ function renderAdminPanelHtml(token: string) {
     }
     function openCoinModal(action, memberCardEl) {
       const discordId = memberCardEl.getAttribute("data-discord-id");
-      const gamertag = memberCardEl.querySelector(".chip")?.textContent?.replace("🎮", "").trim() || discordId;
+      const gamertag = memberCardEl.querySelector(".member-gamertag")?.textContent?.trim() || discordId;
       state.modal = { action, discordId, gamertag };
       const labels = { add: "Adicionar moedas", remove: "Remover moedas", set: "Definir saldo" };
       els.modalTitle.textContent = labels[action] || "Ajustar moedas";
