@@ -75,6 +75,34 @@ function extractBaseDateFromFilePath(filePath: string): string | null {
   return match ? match[1] : null;
 }
 
+function extractAdmFileStartMs(filePath: string): number {
+  const match = filePath.match(/_(\d{4}-\d{2}-\d{2})_(\d{2})-(\d{2})-(\d{2})\.ADM$/);
+
+  if (!match) return Number.MAX_SAFE_INTEGER;
+
+  const [, datePart, hours, minutes, seconds] = match;
+  const [year, month, day] = datePart.split("-").map(Number);
+
+  return new Date(
+    year,
+    month - 1,
+    day,
+    Number(hours),
+    Number(minutes),
+    Number(seconds),
+  ).getTime();
+}
+
+function sortAdmFilesChronologically(files: string[]): string[] {
+  return [...files].sort((a, b) => {
+    const diff = extractAdmFileStartMs(a) - extractAdmFileStartMs(b);
+
+    if (diff !== 0) return diff;
+
+    return a.localeCompare(b);
+  });
+}
+
 function extractLineSeconds(line: string): number | null {
   const match = line.match(/^(\d{2}):(\d{2}):(\d{2})\s*\|/);
   if (!match) return null;
@@ -493,6 +521,165 @@ function cleanupOnlinePlayers(state: AppState) {
   // Session stats are stored separately and cleared on disconnect.
 }
 
+function setOnlineRecord(
+  onlinePlayers: Record<string, any>,
+  onlineSessions: Record<string, any>,
+  player: string,
+  eventTime: AdmEventTime | null,
+) {
+  const existingKey = findRecordKeyByPlayerName(onlinePlayers, player);
+  const key = existingKey || player;
+  const at = eventTime?.date.toISOString() || new Date().toISOString();
+  const current = onlinePlayers[key] as any;
+  const currentSession = onlineSessions[key] as any;
+
+  if (existingKey && existingKey !== player) {
+    delete onlinePlayers[player];
+    delete onlineSessions[player];
+  }
+
+  onlinePlayers[key] = {
+    online: true,
+    connectedAt: current?.connectedAt || currentSession?.connectedAt || at,
+    lastSeenAt: at,
+  };
+
+  onlineSessions[key] = {
+    connectedAt: currentSession?.connectedAt || current?.connectedAt || at,
+    lastSeenAt: at,
+    kills: Number(currentSession?.kills || 0),
+    deaths: Number(currentSession?.deaths || 0),
+    streak: Number(currentSession?.streak || 0),
+  };
+}
+
+function deleteOnlineRecord(
+  onlinePlayers: Record<string, any>,
+  onlineSessions: Record<string, any>,
+  player: string,
+) {
+  const key = findRecordKeyByPlayerName(onlinePlayers, player) || player;
+  const sessionKey = findRecordKeyByPlayerName(onlineSessions, key) || key;
+
+  delete onlinePlayers[key];
+  delete onlineSessions[sessionKey];
+}
+
+function rebuildOnlinePresenceFromAdmFiles(
+  state: AppState,
+  files: string[],
+): boolean {
+  ensureOnlineState(state);
+
+  const previousOnlinePlayers = state.onlinePlayers || {};
+  const previousSessions = ((state as any).onlineSessions || {}) as Record<
+    string,
+    any
+  >;
+
+  let rebuiltOnlinePlayers: Record<string, any> = {};
+  let rebuiltOnlineSessions: Record<string, any> = {};
+
+  for (const filePath of sortAdmFilesChronologically(files)) {
+    if (!fs.existsSync(filePath)) continue;
+
+    const log = fs.readFileSync(filePath, "utf-8");
+    const lines = log.split(/\r?\n/);
+    const baseDate =
+      extractBaseDateFromLog(lines) || extractBaseDateFromFilePath(filePath);
+
+    // Every ADM file represents a new DayZ server process. Presence from older
+    // files must not leak into the current online list. Rebuilding presence from
+    // scratch avoids ghost players when disconnect events are missed around
+    // restarts, crashes, or log rotation.
+    rebuiltOnlinePlayers = {};
+    rebuiltOnlineSessions = {};
+
+    let currentDayOffset = 0;
+    let previousSeconds: number | null = null;
+
+    for (const rawLine of lines) {
+      const line = rawLine?.trim();
+      if (!line) continue;
+
+      const lineSeconds = extractLineSeconds(line);
+
+      if (
+        lineSeconds !== null &&
+        previousSeconds !== null &&
+        lineSeconds < previousSeconds
+      ) {
+        currentDayOffset++;
+      }
+
+      previousSeconds = lineSeconds ?? previousSeconds;
+
+      const eventTime =
+        baseDate && lineSeconds !== null
+          ? createAdmEventTime(baseDate, currentDayOffset, lineSeconds)
+          : null;
+
+      const connectMatch = line.match(CONNECT_REGEX);
+
+      if (connectMatch?.[1]) {
+        setOnlineRecord(
+          rebuiltOnlinePlayers,
+          rebuiltOnlineSessions,
+          connectMatch[1],
+          eventTime,
+        );
+        continue;
+      }
+
+      const disconnectMatch = line.match(DISCONNECT_REGEX);
+
+      if (disconnectMatch?.[1]) {
+        deleteOnlineRecord(
+          rebuiltOnlinePlayers,
+          rebuiltOnlineSessions,
+          disconnectMatch[1],
+        );
+      }
+    }
+  }
+
+  for (const [player, session] of Object.entries(rebuiltOnlineSessions)) {
+    const previousKey =
+      findRecordKeyByPlayerName(previousSessions, player) || player;
+    const previousSession = previousSessions[previousKey] as any;
+
+    if (!previousSession) continue;
+
+    rebuiltOnlineSessions[player] = {
+      ...session,
+      kills: Number(previousSession.kills || 0),
+      deaths: Number(previousSession.deaths || 0),
+      streak: Number(previousSession.streak || 0),
+    };
+  }
+
+  const before = Object.keys(previousOnlinePlayers)
+    .map(normalizeOnlineName)
+    .sort()
+    .join("|");
+  const after = Object.keys(rebuiltOnlinePlayers)
+    .map(normalizeOnlineName)
+    .sort()
+    .join("|");
+
+  state.onlinePlayers = rebuiltOnlinePlayers;
+  (state as any).onlineSessions = rebuiltOnlineSessions;
+
+  if (before !== after) {
+    console.log(
+      `🧭 online recalculado pelos ADMs: ${Object.keys(rebuiltOnlinePlayers).length}`,
+    );
+    return true;
+  }
+
+  return false;
+}
+
 function applyResets(state: AppState): boolean {
   const { date: today } = getBrazilDateParts();
   const currentWeek = getBrazilWeekKey();
@@ -523,7 +710,9 @@ function readManifestFiles(): string[] {
 
   try {
     const manifest = JSON.parse(fs.readFileSync(MANIFEST_FILE, "utf-8"));
-    return Array.isArray(manifest.files) ? manifest.files : [];
+    return Array.isArray(manifest.files)
+      ? sortAdmFilesChronologically(manifest.files)
+      : [];
   } catch {
     return [];
   }
@@ -736,7 +925,9 @@ export async function getLeaderboard() {
     };
   }
 
-  for (const file of files) {
+  const orderedFiles = sortAdmFilesChronologically(files);
+
+  for (const file of orderedFiles) {
     try {
       changed = processFile(file, state) || changed;
     } catch (err) {
@@ -745,8 +936,14 @@ export async function getLeaderboard() {
   }
 
   try {
+    changed = rebuildOnlinePresenceFromAdmFiles(state, orderedFiles) || changed;
+  } catch (err) {
+    console.error("❌ erro recalculando players online pelos ADMs:", err);
+  }
+
+  try {
     const monitorBefore = getShopResetMonitorPersistenceKey(state);
-    const clearResult = await tryAutoClearShopAfterAdmReset(state, files);
+    const clearResult = await tryAutoClearShopAfterAdmReset(state, orderedFiles);
     const monitorChanged = getShopResetMonitorPersistenceKey(state) !== monitorBefore;
     changed = Boolean(clearResult) || monitorChanged || changed;
   } catch (err) {
