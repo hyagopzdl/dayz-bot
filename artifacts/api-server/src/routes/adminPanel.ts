@@ -556,6 +556,102 @@ function buildCatalogPayload() {
   };
 }
 
+function formatShopStatusLabel(status: string) {
+  const labels: Record<string, string> = {
+    pending_spawn: "Pending spawn",
+    included_in_restart: "Included in restart",
+    spawned: "Spawned",
+    failed: "Failed",
+  };
+
+  return labels[status] || status || "Unknown";
+}
+
+function formatShopDateLabel(value: unknown) {
+  const date = value ? new Date(String(value)) : null;
+  if (!date || Number.isNaN(date.getTime())) return "Unknown date";
+
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const startOfDate = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+  const diffDays = Math.round((startOfToday - startOfDate) / 86400000);
+
+  if (diffDays === 0) return "Hoje";
+  if (diffDays === 1) return "Ontem";
+
+  return date.toLocaleDateString("pt-BR", { day: "2-digit", month: "long" });
+}
+
+function buildShopQueuePayload(state: AdminState) {
+  const catalog = getShopCatalog();
+  const runtime = getShopRuntimeStatus(state);
+  const orders = Array.isArray(state.shopOrders) ? state.shopOrders : [];
+  const links = state.playerLinks || {};
+  const catalogByClass = new Map(
+    catalog.items.map((item) => [String(item.className || "").toLowerCase(), item]),
+  );
+  const catalogById = new Map(
+    catalog.items.map((item) => [String(item.id || "").toLowerCase(), item]),
+  );
+
+  const counts = orders.reduce<Record<string, number>>((acc, order) => {
+    const status = String(order.status || "unknown");
+    acc[status] = (acc[status] || 0) + 1;
+    return acc;
+  }, {});
+
+  const latest = [...orders]
+    .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")))
+    .slice(0, 100)
+    .map((order) => {
+      const item =
+        catalogByClass.get(String(order.itemClass || "").toLowerCase()) ||
+        catalogById.get(String(order.itemClass || "").toLowerCase()) ||
+        null;
+      const link = links[String(order.discordUserId || "")];
+
+      return {
+        id: String(order.id || ""),
+        status: String(order.status || "unknown"),
+        statusLabel: formatShopStatusLabel(String(order.status || "unknown")),
+        itemClass: String(order.itemClass || item?.className || "Unknown item"),
+        itemName: String(order.itemName || item?.name || item?.popularName || order.itemClass || "Unknown item"),
+        imageUrl: item?.imageUrl || "",
+        discordUserId: String(order.discordUserId || ""),
+        gamertag: link?.gamertag || "Unlinked Discord user",
+        x: Number(order.x || 0),
+        y: Number(order.y || 0),
+        z: Number(order.z || 0),
+        createdAt: order.createdAt || null,
+        includedAt: order.includedAt || null,
+        spawnedAt: order.spawnedAt || null,
+        failedAt: order.failedAt || null,
+        failReason: order.failReason || "",
+        dateLabel: formatShopDateLabel(order.createdAt),
+      };
+    });
+
+  return {
+    runtime: {
+      state: runtime.state,
+      canAcceptPurchase: runtime.canAcceptPurchase,
+      reason: runtime.reason || "",
+      nextRestartLabel: runtime.nextRestartLabel || "unknown",
+      minutesUntilRestart: runtime.minutesUntilRestart ?? null,
+    },
+    counts: {
+      total: orders.length,
+      pending: counts.pending_spawn || 0,
+      included: counts.included_in_restart || 0,
+      spawned: counts.spawned || 0,
+      failed: counts.failed || 0,
+    },
+    latest,
+    generatedAt: new Date().toISOString(),
+  };
+}
+
+
 async function readCatalogItemPayload(body: unknown, fallbackId?: string): Promise<ShopItem> {
   const input = (body && typeof body === "object" ? body : {}) as Record<string, unknown>;
   const requestedClassName = String(input.className || input.class_name || input.id || fallbackId || "").trim();
@@ -1066,6 +1162,28 @@ function renderAdminPanelHtml(token: string) {
     .toggle-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px; border-radius: 14px; background: #25262A; border: 1px solid var(--border); }
     .toggle-row input { width: auto; }
     .catalog-empty { padding: 42px; text-align: center; color: var(--text-3); border: 1px dashed var(--border-strong); border-radius: 18px; background: #2B2D31; }
+    .shop-queue-shell { display: grid; gap: 14px; }
+    .shop-queue-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+    .shop-queue-status { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
+    .shop-queue-list { display: grid; gap: 10px; }
+    .shop-queue-order {
+      display: grid;
+      grid-template-columns: 48px minmax(0, 1fr) auto;
+      gap: 12px;
+      align-items: center;
+      padding: 12px;
+      border-radius: 16px;
+      border: 1px solid var(--border);
+      background: #2B2D31;
+    }
+    .shop-queue-order:hover { background: #303238; border-color: var(--border-strong); }
+    .shop-queue-thumb { width: 48px; height: 48px; border-radius: 13px; overflow: hidden; border: 1px solid var(--border); background: #232428; display: grid; place-items: center; color: var(--text-3); }
+    .shop-queue-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .shop-queue-title { font-size: 14px; font-weight: 650; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+    .shop-queue-subtitle { color: var(--text-3); font-size: 12px; margin-top: 3px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+    .shop-queue-meta { text-align: right; color: var(--text-3); font-size: 12px; line-height: 1.45; }
+    .shop-date-separator { display: flex; align-items: center; gap: 10px; color: var(--text-3); font-size: 12px; font-weight: 650; margin-top: 10px; }
+    .shop-date-separator::after { content: ""; height: 1px; flex: 1; background: var(--border); }
 
     .items-shell { display: grid; gap: 14px; }
     .items-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) 180px auto; gap: 10px; align-items: center; }
@@ -1321,7 +1439,7 @@ function renderAdminPanelHtml(token: string) {
       <nav class="nav">
         <button class="active" data-view="general">🏠 Geral</button>
         <button data-view="members">👥 Membros</button>
-        <button data-view="catalog">🛒 Catálogo</button>
+        <button data-view="catalog">🛒 Shop</button>
         <button data-view="items">📦 Itens</button>
       </nav>
       <div class="sidebar-footer"><div class="avatar">A</div><div><b>Admin</b><div class="member-meta">Painel seguro</div></div></div>
@@ -1383,9 +1501,9 @@ function renderAdminPanelHtml(token: string) {
               <div class="card">
                 <div class="section-title">
                   <h2>Categorias</h2>
-                  <div style="display:flex;align-items:center;gap:8px"><span class="chip">Neon</span><button id="catalogCategoryCreate" class="primary-btn">Nova categoria</button><button id="catalogRefresh" class="ghost-btn">Refresh</button></div>
+                  <div style="display:flex;align-items:center;gap:8px"><span class="chip">Neon</span><button id="shopQueueOpen" class="ghost-btn">Queue</button><button id="catalogCategoryCreate" class="primary-btn">Nova categoria</button><button id="catalogRefresh" class="ghost-btn">Refresh</button></div>
                 </div>
-                <div class="catalog-breadcrumb">Escolha uma categoria para gerenciar os itens dentro dela.</div>
+                <div class="catalog-breadcrumb">Escolha uma categoria para gerenciar os itens vendidos no shop.</div>
               </div>
               <div id="catalogCategoryGrid" class="catalog-category-grid"></div>
             </div>
@@ -1393,9 +1511,9 @@ function renderAdminPanelHtml(token: string) {
               <div class="card">
                 <div class="section-title">
                   <h2 id="catalogCurrentCategoryTitle">Itens</h2>
-                  <div style="display:flex;align-items:center;gap:8px"><button id="catalogBack" class="ghost-btn">← Categorias</button><button id="catalogCreate" class="primary-btn">Novo item</button></div>
+                  <div style="display:flex;align-items:center;gap:8px"><button id="catalogBack" class="ghost-btn">← Categorias</button><button id="shopQueueOpenFromItems" class="ghost-btn">Queue</button><button id="catalogCreate" class="primary-btn">Novo item</button></div>
                 </div>
-                <div class="catalog-breadcrumb"><span>Catálogo</span><span>›</span><b id="catalogCurrentCategoryLabel">Categoria</b></div>
+                <div class="catalog-breadcrumb"><span>Shop</span><span>›</span><b id="catalogCurrentCategoryLabel">Categoria</b></div>
                 <div class="catalog-toolbar" style="margin-top:12px">
                   <div class="search"><input id="catalogSearch" placeholder="Buscar por item ou classe" /></div>
                   <button id="catalogItemsRefresh" class="ghost-btn">Refresh</button>
@@ -1404,6 +1522,21 @@ function renderAdminPanelHtml(token: string) {
               <div id="catalogLoading" class="catalog-grid" style="display:none"><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div></div>
               <div id="catalogGrid" class="catalog-grid"></div>
               <div id="catalogEmpty" class="catalog-empty" style="display:none">Nenhum item encontrado nessa categoria.</div>
+            </div>
+            <div id="shopQueueView" class="shop-queue-shell" style="display:none">
+              <div class="card shop-queue-header">
+                <div>
+                  <h2>Shop Queue</h2>
+                  <p>Visão operacional dos pedidos criados pelo /shop e organizados como no /shop-queue.</p>
+                </div>
+                <div style="display:flex;align-items:center;gap:8px"><button id="shopQueueBack" class="ghost-btn">← Shop</button><button id="shopQueueRefresh" class="primary-btn">Refresh</button></div>
+              </div>
+              <div id="shopQueueStats" class="shop-queue-status"></div>
+              <div class="card">
+                <div class="section-title"><h2>Pedidos recentes</h2><span id="shopQueueRuntime" class="chip">Carregando</span></div>
+                <div id="shopQueueList" class="shop-queue-list"></div>
+                <div id="shopQueueEmpty" class="catalog-empty" style="display:none">Nenhum pedido de shop encontrado.</div>
+              </div>
             </div>
           </div>
         </section>
@@ -1462,8 +1595,8 @@ function renderAdminPanelHtml(token: string) {
   </div>
   <div id="catalogModalBackdrop" class="modal-backdrop">
     <div class="modal">
-      <h2 id="catalogModalTitle">Item do catálogo</h2>
-      <p id="catalogModalSubtitle">Gerencie o item diretamente no Neon.</p>
+      <h2 id="catalogModalTitle">Item do shop</h2>
+      <p id="catalogModalSubtitle">Gerencie o item do shop diretamente no Neon.</p>
       <div class="form-grid two">
         <label class="full autocomplete-wrap">ID / Item base
           <input id="catalogItemId" autocomplete="off" placeholder="Digite para buscar na base DayZ" />
@@ -1473,7 +1606,7 @@ function renderAdminPanelHtml(token: string) {
         <label>Categoria<select id="catalogItemCategory"></select></label>
         <label>Preço<input id="catalogItemPrice" type="number" min="0" step="1" /></label>
         <label class="full">URL da imagem<input id="catalogItemImage" placeholder="https://..." /></label>
-        <label class="full">Descrição<textarea id="catalogItemDescription" placeholder="Descrição exibida no painel/shop..."></textarea></label>
+        <label class="full">Descrição<textarea id="catalogItemDescription" placeholder="Descrição exibida no painel e no shop..."></textarea></label>
         <label class="toggle-row full"><span><b>Disponível no shop</b><small style="display:block;color:var(--text-3);margin-top:4px">Itens desativados ficam ocultos no /shop.</small></span><input id="catalogItemEnabled" type="checkbox" checked /></label>
       </div>
       <div class="modal-actions"><button class="ghost-btn" id="catalogModalCancel">Cancelar</button><button class="primary-btn" id="catalogModalConfirm">Salvar item</button></div>
@@ -1517,14 +1650,14 @@ function renderAdminPanelHtml(token: string) {
   <script>
     const adminToken = ${tokenJson};
     if (adminToken) document.cookie = "${TOKEN_COOKIE}=" + encodeURIComponent(adminToken) + "; path=/admin-panel; SameSite=Lax";
-    const state = { view: "general", cursor: 0, hasMore: true, loadingMembers: false, memberForceRefresh: false, search: "", filter: "", modal: null, catalogModal: null, selectedDiscordId: null, catalog: null, catalogSearch: "", catalogCategory: "", catalogMode: "categories", itemsCursor: 0, itemsHasMore: true, itemsLoading: false, itemsSearch: "", itemsFilter: "all", dayzItems: [], itemsStats: null, itemModal: null };
+    const state = { view: "general", cursor: 0, hasMore: true, loadingMembers: false, memberForceRefresh: false, search: "", filter: "", modal: null, catalogModal: null, selectedDiscordId: null, catalog: null, catalogSearch: "", catalogCategory: "", catalogMode: "categories", shopQueue: null, shopQueueModeBefore: "categories", itemsCursor: 0, itemsHasMore: true, itemsLoading: false, itemsSearch: "", itemsFilter: "all", dayzItems: [], itemsStats: null, itemModal: null };
     const els = {
       pageTitle: document.getElementById("pageTitle"), serverName: document.getElementById("serverName"),
       memberList: document.getElementById("memberList"), memberLoading: document.getElementById("memberLoading"), memberEmpty: document.getElementById("memberEmpty"),
       modalBackdrop: document.getElementById("modalBackdrop"), modalTitle: document.getElementById("modalTitle"), modalSubtitle: document.getElementById("modalSubtitle"),
       coinAmount: document.getElementById("coinAmount"), coinReason: document.getElementById("coinReason"), toast: document.getElementById("toast"),
       detailDrawer: document.getElementById("detailDrawer"), drawerBody: document.getElementById("drawerBody"), drawerAvatar: document.getElementById("drawerAvatar"), drawerName: document.getElementById("drawerName"), drawerMeta: document.getElementById("drawerMeta"),
-      catalogGrid: document.getElementById("catalogGrid"), catalogLoading: document.getElementById("catalogLoading"), catalogEmpty: document.getElementById("catalogEmpty"), catalogSearch: document.getElementById("catalogSearch"), catalogCategoryView: document.getElementById("catalogCategoryView"), catalogItemsView: document.getElementById("catalogItemsView"), catalogCategoryGrid: document.getElementById("catalogCategoryGrid"), catalogCurrentCategoryTitle: document.getElementById("catalogCurrentCategoryTitle"), catalogCurrentCategoryLabel: document.getElementById("catalogCurrentCategoryLabel"),
+      catalogGrid: document.getElementById("catalogGrid"), catalogLoading: document.getElementById("catalogLoading"), catalogEmpty: document.getElementById("catalogEmpty"), catalogSearch: document.getElementById("catalogSearch"), catalogCategoryView: document.getElementById("catalogCategoryView"), catalogItemsView: document.getElementById("catalogItemsView"), catalogCategoryGrid: document.getElementById("catalogCategoryGrid"), catalogCurrentCategoryTitle: document.getElementById("catalogCurrentCategoryTitle"), catalogCurrentCategoryLabel: document.getElementById("catalogCurrentCategoryLabel"), shopQueueView: document.getElementById("shopQueueView"), shopQueueStats: document.getElementById("shopQueueStats"), shopQueueList: document.getElementById("shopQueueList"), shopQueueEmpty: document.getElementById("shopQueueEmpty"), shopQueueRuntime: document.getElementById("shopQueueRuntime"),
       catalogModalBackdrop: document.getElementById("catalogModalBackdrop"), catalogModalTitle: document.getElementById("catalogModalTitle"), catalogModalSubtitle: document.getElementById("catalogModalSubtitle"), catalogItemId: document.getElementById("catalogItemId"), catalogItemAutocomplete: document.getElementById("catalogItemAutocomplete"), catalogItemCategory: document.getElementById("catalogItemCategory"), catalogItemName: document.getElementById("catalogItemName"), catalogItemPrice: document.getElementById("catalogItemPrice"), catalogItemImage: document.getElementById("catalogItemImage"), catalogItemDescription: document.getElementById("catalogItemDescription"), catalogItemEnabled: document.getElementById("catalogItemEnabled"), catalogCategoryModalBackdrop: document.getElementById("catalogCategoryModalBackdrop"), catalogCategoryName: document.getElementById("catalogCategoryName"), catalogCategoryId: document.getElementById("catalogCategoryId"), catalogCategoryDescription: document.getElementById("catalogCategoryDescription"), catalogCategoryEnabled: document.getElementById("catalogCategoryEnabled"),
       itemsList: document.getElementById("itemsList"), itemsLoading: document.getElementById("itemsLoading"), itemsEmpty: document.getElementById("itemsEmpty"), itemsSearch: document.getElementById("itemsSearch"), itemsFilter: document.getElementById("itemsFilter"), itemsRefresh: document.getElementById("itemsRefresh"), itemsSentinel: document.getElementById("itemsSentinel"),
       itemModalBackdrop: document.getElementById("itemModalBackdrop"), itemModalTitle: document.getElementById("itemModalTitle"), itemModalSubtitle: document.getElementById("itemModalSubtitle"), itemModalPreviewImage: document.getElementById("itemModalPreviewImage"), itemModalPreviewName: document.getElementById("itemModalPreviewName"), itemModalPreviewClass: document.getElementById("itemModalPreviewClass"), itemModalPopularName: document.getElementById("itemModalPopularName"), itemModalImageUrl: document.getElementById("itemModalImageUrl"), itemModalSpawnEventName: document.getElementById("itemModalSpawnEventName"), itemModalEnabled: document.getElementById("itemModalEnabled")
@@ -1663,6 +1796,68 @@ function renderAdminPanelHtml(token: string) {
     function categoryIcon(category) {
       return category.emoji || "📁";
     }
+    function showShopQueueView() {
+      state.shopQueueModeBefore = state.catalogMode || "categories";
+      state.catalogMode = "queue";
+      els.catalogCategoryView.style.display = "none";
+      els.catalogItemsView.style.display = "none";
+      els.shopQueueView.style.display = "grid";
+      loadShopQueue();
+    }
+    function hideShopQueueView() {
+      state.catalogMode = state.catalogCategory ? "items" : "categories";
+      els.shopQueueView.style.display = "none";
+      renderCatalog();
+    }
+    function shopQueueMetric(label, value, hint) {
+      return '<div class="card"><div class="metric-label">' + escapeHtml(label) + '</div><div class="metric-value">' + escapeHtml(String(value ?? '—')) + '</div><div class="metric-hint">' + escapeHtml(hint || '') + '</div></div>';
+    }
+    function shopQueueOrderHtml(order) {
+      const thumb = order.imageUrl ? '<img src="' + escapeHtml(order.imageUrl) + '" alt="" loading="lazy" />' : '🛒';
+      const statusClass = order.status === 'failed' ? 'danger' : order.status === 'spawned' ? 'success' : '';
+      return '<article class="shop-queue-order">' +
+        '<div class="shop-queue-thumb">' + thumb + '</div>' +
+        '<div style="min-width:0"><div class="shop-queue-title">' + escapeHtml(order.itemName || order.itemClass) + '</div>' +
+        '<div class="shop-queue-subtitle">' + escapeHtml(order.gamertag || 'Unlinked Discord user') + ' · ' + escapeHtml(order.itemClass || '') + '</div>' +
+        '<div class="shop-queue-subtitle">Spawn: ' + escapeHtml([order.x, order.y, order.z].join(', ')) + '</div></div>' +
+        '<div class="shop-queue-meta"><span class="chip ' + statusClass + '">' + escapeHtml(order.statusLabel || order.status) + '</span><br />' + escapeHtml(order.createdAt ? new Date(order.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '—') + '</div>' +
+        '</article>';
+    }
+    function renderShopQueue() {
+      const payload = state.shopQueue;
+      if (!payload) return;
+      const counts = payload.counts || {};
+      const runtime = payload.runtime || {};
+      els.shopQueueStats.innerHTML = [
+        shopQueueMetric('Total', counts.total || 0, 'pedidos registrados'),
+        shopQueueMetric('Pending', counts.pending || 0, 'aguardando spawn'),
+        shopQueueMetric('Next restart', counts.included || 0, 'incluídos no restart'),
+        shopQueueMetric('Spawned', counts.spawned || 0, 'entregues'),
+        shopQueueMetric('Failed', counts.failed || 0, 'falhas'),
+      ].join('');
+      els.shopQueueRuntime.textContent = runtime.canAcceptPurchase ? 'Checkout aberto' : 'Checkout fechado';
+      const orders = payload.latest || [];
+      if (!orders.length) {
+        els.shopQueueList.innerHTML = '';
+        els.shopQueueEmpty.style.display = 'block';
+        return;
+      }
+      els.shopQueueEmpty.style.display = 'none';
+      let lastDate = '';
+      els.shopQueueList.innerHTML = orders.map((order) => {
+        const date = order.dateLabel || 'Unknown date';
+        const separator = date !== lastDate ? '<div class="shop-date-separator">' + escapeHtml(date) + '</div>' : '';
+        lastDate = date;
+        return separator + shopQueueOrderHtml(order);
+      }).join('');
+    }
+    async function loadShopQueue() {
+      if (els.shopQueueList) els.shopQueueList.innerHTML = '<div class="skeleton"></div><div class="skeleton"></div>';
+      const response = await apiFetch('/admin-panel/api/shop-queue');
+      if (!response.ok) { showToast(await response.text()); return; }
+      state.shopQueue = await response.json();
+      renderShopQueue();
+    }
     function catalogCategoryCard(category) {
       const countLabel = formatCoins(category.itemCount || 0) + " item" + (Number(category.itemCount || 0) === 1 ? "" : "s");
       const deleteButton = Number(category.itemCount || 0) > 0
@@ -1722,9 +1917,12 @@ function renderAdminPanelHtml(token: string) {
       if (!state.catalog) return;
       renderCatalogCategoryOptions(state.catalog);
 
-      const isItems = state.catalogMode === "items" && state.catalogCategory;
-      els.catalogCategoryView.style.display = isItems ? "none" : "grid";
+      const isQueue = state.catalogMode === "queue";
+      const isItems = !isQueue && state.catalogMode === "items" && state.catalogCategory;
+      els.shopQueueView.style.display = isQueue ? "grid" : "none";
+      els.catalogCategoryView.style.display = (!isQueue && !isItems) ? "grid" : "none";
       els.catalogItemsView.style.display = isItems ? "grid" : "none";
+      if (isQueue) { renderShopQueue(); return; }
 
       if (!isItems) {
         els.catalogCategoryGrid.innerHTML = (state.catalog.categories || []).map(catalogCategoryCard).join("") + catalogNewCategoryCard();
@@ -1800,7 +1998,7 @@ function renderAdminPanelHtml(token: string) {
       const activeCategory = state.catalogCategory || (state.catalog?.categories?.[0]?.id || "misc");
       state.catalogModal = { mode, itemId: item?.id || null };
       els.catalogModalTitle.textContent = mode === "create" ? "Novo item" : "Editar item";
-      els.catalogModalSubtitle.textContent = mode === "create" ? "Escolha um item da base DayZ e publique no catálogo do Neon." : "Atualize os dados exibidos no shop.";
+      els.catalogModalSubtitle.textContent = mode === "create" ? "Escolha um item da base DayZ e publique no shop." : "Atualize os dados exibidos no shop.";
       els.catalogItemId.disabled = mode !== "create";
       els.catalogItemId.value = item?.className || item?.id || "";
       renderCatalogCategoryOptions(state.catalog || { categories: [] });
@@ -2002,7 +2200,7 @@ function renderAdminPanelHtml(token: string) {
     function switchView(view) {
       state.view = view; document.querySelectorAll(".view").forEach((el) => el.classList.toggle("active", el.id === "view-" + view));
       document.querySelectorAll(".nav button").forEach((el) => el.classList.toggle("active", el.dataset.view === view));
-      els.pageTitle.textContent = view === "general" ? "Geral" : view === "members" ? "Membros" : view === "catalog" ? "Catálogo" : "Itens";
+      els.pageTitle.textContent = view === "general" ? "Geral" : view === "members" ? "Membros" : view === "catalog" ? "Shop" : "Itens";
       if (view === "members" && !els.memberList.children.length) loadMembers(true);
       if (view === "catalog" && !state.catalog) loadCatalog();
       if (view === "items" && !state.dayzItems.length) loadDayzItems(true);
@@ -2025,7 +2223,7 @@ function renderAdminPanelHtml(token: string) {
       els.modalBackdrop.classList.remove("open"); showToast("Carteira atualizada com sucesso."); await loadOverview(); await loadMembers(true); if (state.selectedDiscordId) await openMemberDrawer(state.selectedDiscordId);
     }
     document.querySelectorAll(".nav button").forEach((button) => button.addEventListener("click", () => switchView(button.dataset.view)));
-    document.getElementById("refreshButton").addEventListener("click", async () => { await loadOverview(); if (state.view === "members") await loadMembers(true); if (state.view === "catalog") await loadCatalog(); if (state.view === "items") await loadDayzItems(true); showToast("Dados atualizados."); });
+    document.getElementById("refreshButton").addEventListener("click", async () => { await loadOverview(); if (state.view === "members") await loadMembers(true); if (state.view === "catalog") { if (state.catalogMode === "queue") await loadShopQueue(); else await loadCatalog(); } if (state.view === "items") await loadDayzItems(true); showToast("Dados atualizados."); });
     document.getElementById("membersRefresh").addEventListener("click", () => { state.memberForceRefresh = true; loadMembers(true); });
     let searchTimer = null;
     function updateSearch(value) { state.search = value; clearTimeout(searchTimer); searchTimer = setTimeout(() => loadMembers(true), 240); }
@@ -2035,6 +2233,10 @@ function renderAdminPanelHtml(token: string) {
     document.getElementById("catalogSearch").addEventListener("input", (event) => { state.catalogSearch = event.target.value; renderCatalog(); });
     document.getElementById("catalogRefresh").addEventListener("click", loadCatalog);
     document.getElementById("catalogItemsRefresh").addEventListener("click", loadCatalog);
+    document.getElementById("shopQueueOpen").addEventListener("click", showShopQueueView);
+    document.getElementById("shopQueueOpenFromItems").addEventListener("click", showShopQueueView);
+    document.getElementById("shopQueueBack").addEventListener("click", hideShopQueueView);
+    document.getElementById("shopQueueRefresh").addEventListener("click", loadShopQueue);
     document.getElementById("catalogBack").addEventListener("click", leaveCatalogCategory);
     document.getElementById("catalogCategoryCreate").addEventListener("click", openCatalogCategoryModal);
     document.getElementById("catalogCreate").addEventListener("click", () => openCatalogModal("create", null));
@@ -2317,6 +2519,18 @@ router.patch("/api/items/:className/toggle", async (req, res) => {
     res.json({ ok: true, item });
   } catch (err) {
     res.status(400).send(String(err));
+  }
+});
+
+router.get("/api/shop-queue", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+
+  try {
+    await ensureShopCatalogLoaded();
+    const state = (await getStateAsync()) as AdminState;
+    res.json(buildShopQueuePayload(state));
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
   }
 });
 
