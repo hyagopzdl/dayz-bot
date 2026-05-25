@@ -649,8 +649,88 @@ function buildShopQueuePayload(state: AdminState) {
     latest,
     generatedAt: new Date().toISOString(),
   };
+
 }
 
+function buildShopTransactionsPayload(state: AdminState, options: { search?: string; limit?: number } = {}) {
+  const catalog = getShopCatalog();
+  const orders = Array.isArray(state.shopOrders) ? state.shopOrders : [];
+  const links = state.playerLinks || {};
+  const economyTransactions = Array.isArray(state.economyTransactions) ? state.economyTransactions : [];
+  const search = normalizeText(options.search || "");
+  const limit = Math.min(500, Math.max(1, Math.floor(Number(options.limit || 250))));
+
+  const catalogByClass = new Map(
+    catalog.items.map((item) => [String(item.className || "").toLowerCase(), item]),
+  );
+  const catalogById = new Map(
+    catalog.items.map((item) => [String(item.id || "").toLowerCase(), item]),
+  );
+
+  const purchaseByOrderId = new Map<string, any>();
+  for (const transaction of economyTransactions) {
+    const tx = transaction as { type?: string; reason?: string; createdAt?: string };
+    if (tx.type !== "SHOP_PURCHASE") continue;
+    const reason = String(tx.reason || "");
+    const match = reason.match(/\((shop_[^)]+)\)$/);
+    if (match?.[1]) purchaseByOrderId.set(match[1], transaction);
+  }
+
+  const transactions = [...orders]
+    .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")))
+    .map((order) => {
+      const item =
+        catalogByClass.get(String(order.itemClass || "").toLowerCase()) ||
+        catalogById.get(String(order.itemClass || "").toLowerCase()) ||
+        null;
+      const link = links[String(order.discordUserId || "")];
+      const purchase = purchaseByOrderId.get(String(order.id || "")) as {
+        amount?: number;
+        balanceBefore?: number;
+        balanceAfter?: number;
+        createdAt?: string;
+      } | undefined;
+
+      return {
+        id: String(order.id || ""),
+        status: String(order.status || "unknown"),
+        statusLabel: formatShopStatusLabel(String(order.status || "unknown")),
+        itemClass: String(order.itemClass || item?.className || "Unknown item"),
+        itemName: String(order.itemName || item?.name || item?.popularName || order.itemClass || "Unknown item"),
+        imageUrl: item?.imageUrl || "",
+        discordUserId: String(order.discordUserId || ""),
+        gamertag: link?.gamertag || "Unlinked Discord user",
+        x: Number(order.x || 0),
+        y: Number(order.y || 0),
+        z: Number(order.z || 0),
+        amount: Math.floor(Number(purchase?.amount || 0)),
+        balanceBefore: Math.floor(Number(purchase?.balanceBefore || 0)),
+        balanceAfter: Math.floor(Number(purchase?.balanceAfter || 0)),
+        createdAt: order.createdAt || purchase?.createdAt || null,
+        includedAt: order.includedAt || null,
+        spawnedAt: order.spawnedAt || null,
+        failedAt: order.failedAt || null,
+        failReason: order.failReason || "",
+        dateLabel: formatShopDateLabel(order.createdAt || purchase?.createdAt),
+      };
+    })
+    .filter((entry) => {
+      if (!search) return true;
+      return [entry.id, entry.itemName, entry.itemClass, entry.gamertag, entry.discordUserId, entry.status]
+        .some((value) => normalizeText(value).includes(search));
+    })
+    .slice(0, limit);
+
+  return {
+    transactions,
+    stats: {
+      totalPurchases: orders.length,
+      filtered: transactions.length,
+      totalSpent: transactions.reduce((sum, transaction) => sum + Math.floor(Number(transaction.amount || 0)), 0),
+    },
+    generatedAt: new Date().toISOString(),
+  };
+}
 
 async function readCatalogItemPayload(body: unknown, fallbackId?: string): Promise<ShopItem> {
   const input = (body && typeof body === "object" ? body : {}) as Record<string, unknown>;
@@ -1184,6 +1264,23 @@ function renderAdminPanelHtml(token: string) {
     .shop-queue-meta { text-align: right; color: var(--text-3); font-size: 12px; line-height: 1.45; }
     .shop-date-separator { display: flex; align-items: center; gap: 10px; color: var(--text-3); font-size: 12px; font-weight: 650; margin-top: 10px; }
     .shop-date-separator::after { content: ""; height: 1px; flex: 1; background: var(--border); }
+    .shop-history-toolbar { display: grid; gap: 10px; margin-bottom: 14px; }
+    .shop-history-list { display: grid; gap: 10px; }
+    .shop-history-item {
+      display: grid;
+      grid-template-columns: 48px minmax(0, 1fr) auto;
+      gap: 12px;
+      align-items: center;
+      padding: 12px;
+      border-radius: 16px;
+      border: 1px solid var(--border);
+      background: #25262A;
+    }
+    .shop-history-thumb { width: 48px; height: 48px; border-radius: 13px; overflow: hidden; border: 1px solid var(--border); background: #1E1F22; display: grid; place-items: center; color: var(--text-3); }
+    .shop-history-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .shop-history-title { font-size: 14px; font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .shop-history-meta { color: var(--text-3); font-size: 12px; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .shop-history-side { text-align: right; color: var(--text-3); font-size: 12px; line-height: 1.45; }
 
     .items-shell { display: grid; gap: 14px; }
     .items-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) 180px auto; gap: 10px; align-items: center; }
@@ -1501,7 +1598,7 @@ function renderAdminPanelHtml(token: string) {
               <div class="card">
                 <div class="section-title">
                   <h2>Categorias</h2>
-                  <div style="display:flex;align-items:center;gap:8px"><span class="chip">Neon</span><button id="shopQueueOpen" class="ghost-btn">Queue</button><button id="catalogCategoryCreate" class="primary-btn">Nova categoria</button><button id="catalogRefresh" class="ghost-btn">Refresh</button></div>
+                  <div style="display:flex;align-items:center;gap:8px"><span class="chip">Neon</span><button id="shopQueueOpen" class="ghost-btn">Queue</button><button id="shopHistoryOpen" class="ghost-btn">Transactions</button><button id="catalogCategoryCreate" class="primary-btn">Nova categoria</button><button id="catalogRefresh" class="ghost-btn">Refresh</button></div>
                 </div>
                 <div class="catalog-breadcrumb">Escolha uma categoria para gerenciar os itens vendidos no shop.</div>
               </div>
@@ -1511,7 +1608,7 @@ function renderAdminPanelHtml(token: string) {
               <div class="card">
                 <div class="section-title">
                   <h2 id="catalogCurrentCategoryTitle">Itens</h2>
-                  <div style="display:flex;align-items:center;gap:8px"><button id="catalogBack" class="ghost-btn">← Categorias</button><button id="shopQueueOpenFromItems" class="ghost-btn">Queue</button><button id="catalogCreate" class="primary-btn">Novo item</button></div>
+                  <div style="display:flex;align-items:center;gap:8px"><button id="catalogBack" class="ghost-btn">← Categorias</button><button id="shopQueueOpenFromItems" class="ghost-btn">Queue</button><button id="shopHistoryOpenFromItems" class="ghost-btn">Transactions</button><button id="catalogCreate" class="primary-btn">Novo item</button></div>
                 </div>
                 <div class="catalog-breadcrumb"><span>Shop</span><span>›</span><b id="catalogCurrentCategoryLabel">Categoria</b></div>
                 <div class="catalog-toolbar" style="margin-top:12px">
@@ -1529,7 +1626,7 @@ function renderAdminPanelHtml(token: string) {
                   <h2>Shop Queue</h2>
                   <p>Visão operacional dos pedidos criados pelo /shop e organizados como no /shop-queue.</p>
                 </div>
-                <div style="display:flex;align-items:center;gap:8px"><button id="shopQueueBack" class="ghost-btn">← Shop</button><button id="shopQueueRefresh" class="primary-btn">Refresh</button></div>
+                <div style="display:flex;align-items:center;gap:8px"><button id="shopQueueBack" class="ghost-btn">← Shop</button><button id="shopHistoryOpenFromQueue" class="ghost-btn">Transactions</button><button id="shopQueueRefresh" class="primary-btn">Refresh</button></div>
               </div>
               <div id="shopQueueStats" class="shop-queue-status"></div>
               <div class="card">
@@ -1650,7 +1747,7 @@ function renderAdminPanelHtml(token: string) {
   <script>
     const adminToken = ${tokenJson};
     if (adminToken) document.cookie = "${TOKEN_COOKIE}=" + encodeURIComponent(adminToken) + "; path=/admin-panel; SameSite=Lax";
-    const state = { view: "general", cursor: 0, hasMore: true, loadingMembers: false, memberForceRefresh: false, search: "", filter: "", modal: null, catalogModal: null, selectedDiscordId: null, catalog: null, catalogSearch: "", catalogCategory: "", catalogMode: "categories", shopQueue: null, shopQueueModeBefore: "categories", itemsCursor: 0, itemsHasMore: true, itemsLoading: false, itemsSearch: "", itemsFilter: "all", dayzItems: [], itemsStats: null, itemModal: null };
+    const state = { view: "general", cursor: 0, hasMore: true, loadingMembers: false, memberForceRefresh: false, search: "", filter: "", modal: null, catalogModal: null, selectedDiscordId: null, catalog: null, catalogSearch: "", catalogCategory: "", catalogMode: "categories", shopQueue: null, shopTransactions: null, shopHistorySearch: "", shopQueueModeBefore: "categories", itemsCursor: 0, itemsHasMore: true, itemsLoading: false, itemsSearch: "", itemsFilter: "all", dayzItems: [], itemsStats: null, itemModal: null };
     const els = {
       pageTitle: document.getElementById("pageTitle"), serverName: document.getElementById("serverName"),
       memberList: document.getElementById("memberList"), memberLoading: document.getElementById("memberLoading"), memberEmpty: document.getElementById("memberEmpty"),
@@ -1857,6 +1954,60 @@ function renderAdminPanelHtml(token: string) {
       if (!response.ok) { showToast(await response.text()); return; }
       state.shopQueue = await response.json();
       renderShopQueue();
+    }
+    function shopHistoryItemHtml(transaction) {
+      const thumb = transaction.imageUrl ? '<img src="' + escapeHtml(transaction.imageUrl) + '" alt="" loading="lazy" />' : '🛒';
+      const statusClass = transaction.status === 'failed' ? 'danger' : transaction.status === 'spawned' ? 'success' : '';
+      const amount = Number(transaction.amount || 0) > 0 ? formatCoins(transaction.amount) + ' coins' : '—';
+      return '<article class="shop-history-item">' +
+        '<div class="shop-history-thumb">' + thumb + '</div>' +
+        '<div style="min-width:0"><div class="shop-history-title">' + escapeHtml(transaction.itemName || transaction.itemClass) + '</div>' +
+        '<div class="shop-history-meta">' + escapeHtml(transaction.gamertag || 'Unlinked Discord user') + ' · ' + escapeHtml(transaction.itemClass || '') + '</div>' +
+        '<div class="shop-history-meta">Spawn: ' + escapeHtml([transaction.x, transaction.y, transaction.z].join(', ')) + '</div></div>' +
+        '<div class="shop-history-side"><span class="chip ' + statusClass + '">' + escapeHtml(transaction.statusLabel || transaction.status) + '</span><br />' + amount + '<br />' + escapeHtml(transaction.createdAt ? new Date(transaction.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '—') + '</div>' +
+      '</article>';
+    }
+    function renderShopHistoryDrawer(payload) {
+      const transactions = payload.transactions || [];
+      els.drawerAvatar.className = "avatar";
+      els.drawerAvatar.innerHTML = "🛒";
+      els.drawerName.textContent = "Shop transactions";
+      els.drawerMeta.textContent = "Compras realizadas via /shop";
+      let lastDate = '';
+      const listHtml = transactions.length ? transactions.map((transaction) => {
+        const date = transaction.dateLabel || 'Unknown date';
+        const separator = date !== lastDate ? '<div class="shop-date-separator">' + escapeHtml(date) + '</div>' : '';
+        lastDate = date;
+        return separator + shopHistoryItemHtml(transaction);
+      }).join('') : '<div class="drawer-empty">Nenhuma compra encontrada.</div>';
+      els.drawerBody.innerHTML =
+        '<div class="drawer-card shop-history-toolbar"><div class="section-title"><h2>Histórico de compras</h2><span class="chip">' + formatCoins(transactions.length) + ' registros</span></div>' +
+        '<div class="search"><input id="shopHistorySearchInput" placeholder="Buscar por gamertag, item ou status" value="' + escapeHtml(state.shopHistorySearch || '') + '" /></div></div>' +
+        '<div class="shop-history-list">' + listHtml + '</div>';
+      const input = document.getElementById('shopHistorySearchInput');
+      if (input) {
+        let timer = null;
+        input.addEventListener('input', (event) => {
+          state.shopHistorySearch = event.target.value || '';
+          clearTimeout(timer);
+          timer = setTimeout(() => loadShopTransactions(state.shopHistorySearch), 260);
+        });
+        setTimeout(() => input.focus(), 80);
+      }
+    }
+    async function loadShopTransactions(search) {
+      els.drawerBody.innerHTML = '<div class="drawer-skeleton"></div><div class="drawer-skeleton"></div><div class="drawer-skeleton"></div>';
+      const params = new URLSearchParams({ limit: '250', search: search || '' });
+      const response = await apiFetch('/admin-panel/api/shop-transactions?' + params.toString());
+      if (!response.ok) { showToast(await response.text()); return; }
+      state.shopTransactions = await response.json();
+      renderShopHistoryDrawer(state.shopTransactions);
+    }
+    function openShopHistoryDrawer() {
+      state.selectedDiscordId = null;
+      document.querySelectorAll(".member-card").forEach((card) => card.classList.remove("selected"));
+      els.detailDrawer.classList.add("open");
+      loadShopTransactions(state.shopHistorySearch || '');
     }
     function catalogCategoryCard(category) {
       const countLabel = formatCoins(category.itemCount || 0) + " item" + (Number(category.itemCount || 0) === 1 ? "" : "s");
@@ -2237,6 +2388,9 @@ function renderAdminPanelHtml(token: string) {
     document.getElementById("shopQueueOpenFromItems").addEventListener("click", showShopQueueView);
     document.getElementById("shopQueueBack").addEventListener("click", hideShopQueueView);
     document.getElementById("shopQueueRefresh").addEventListener("click", loadShopQueue);
+    document.getElementById("shopHistoryOpen").addEventListener("click", openShopHistoryDrawer);
+    document.getElementById("shopHistoryOpenFromItems").addEventListener("click", openShopHistoryDrawer);
+    document.getElementById("shopHistoryOpenFromQueue").addEventListener("click", openShopHistoryDrawer);
     document.getElementById("catalogBack").addEventListener("click", leaveCatalogCategory);
     document.getElementById("catalogCategoryCreate").addEventListener("click", openCatalogCategoryModal);
     document.getElementById("catalogCreate").addEventListener("click", () => openCatalogModal("create", null));
@@ -2529,6 +2683,20 @@ router.get("/api/shop-queue", async (req, res) => {
     await ensureShopCatalogLoaded();
     const state = (await getStateAsync()) as AdminState;
     res.json(buildShopQueuePayload(state));
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
+  }
+});
+
+router.get("/api/shop-transactions", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+
+  try {
+    await ensureShopCatalogLoaded();
+    const state = (await getStateAsync()) as AdminState;
+    const search = typeof req.query.search === "string" ? req.query.search : "";
+    const limit = Math.min(500, Math.max(1, Math.floor(Number(req.query.limit || 250))));
+    res.json(buildShopTransactionsPayload(state, { search, limit }));
   } catch (err) {
     res.status(500).json({ error: String(err) });
   }
