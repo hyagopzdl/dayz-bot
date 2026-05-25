@@ -64,7 +64,7 @@ function normalizeCatalog(input: Partial<ShopCatalog> | ShopItem[]): ShopCatalog
 
   const safeItems = items
     .filter((item) => item?.id && item?.className && item?.name)
-    .map((item) => ({
+    .map((item, index) => ({
       ...item,
       id: normalizeId(item.id),
       name: String(item.name || item.className).trim(),
@@ -76,17 +76,19 @@ function normalizeCatalog(input: Partial<ShopCatalog> | ShopItem[]): ShopCatalog
       description: item.description ? String(item.description).trim() : undefined,
       imageUrl: item.imageUrl ? String(item.imageUrl).trim() : undefined,
       maxPerRestart: Number.isFinite(Number(item.maxPerRestart)) ? Number(item.maxPerRestart) : undefined,
+      sortOrder: Number.isFinite(Number(item.sortOrder)) ? Number(item.sortOrder) : index,
     }));
 
   const safeCategories = categories
     .filter((category) => category?.id && category?.label)
-    .map((category) => ({
+    .map((category, index) => ({
       ...category,
       id: normalizeId(category.id) || "misc",
       label: String(category.label || labelFromId(category.id)).trim(),
       enabled: category.enabled !== false,
       emoji: category.emoji ? String(category.emoji).trim() : undefined,
       description: category.description ? String(category.description).trim() : undefined,
+      sortOrder: Number.isFinite(Number(category.sortOrder)) ? Number(category.sortOrder) : index,
     }));
 
   const categoryIds = new Set(safeCategories.map((category) => category.id));
@@ -99,6 +101,7 @@ function normalizeCatalog(input: Partial<ShopCatalog> | ShopItem[]): ShopCatalog
       enabled: true,
       emoji: undefined,
       description: undefined,
+      sortOrder: safeCategories.length,
     });
     categoryIds.add(categoryId);
   }

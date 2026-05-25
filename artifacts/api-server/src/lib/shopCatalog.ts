@@ -9,6 +9,8 @@ import {
   upsertShopCatalogCategory,
   upsertShopCatalogItemInDatabase,
   seedShopCatalogInDatabase,
+  reorderShopCatalogCategories,
+  reorderShopCatalogItems,
 } from "./catalogService";
 
 export type ShopItem = {
@@ -22,6 +24,7 @@ export type ShopItem = {
   enabled?: boolean;
   maxPerRestart?: number;
   popularName?: string;
+  sortOrder?: number;
 };
 
 export type ShopCategory = {
@@ -30,6 +33,7 @@ export type ShopCategory = {
   emoji?: string;
   description?: string;
   enabled?: boolean;
+  sortOrder?: number;
 };
 
 export type ShopCatalog = {
@@ -135,6 +139,14 @@ export async function toggleShopCatalogItem(itemId: string, enabled?: boolean) {
 
 export async function seedShopCatalog(catalog: ShopCatalog, options?: { replace?: boolean }) {
   return seedShopCatalogInDatabase(catalog, options);
+}
+
+export async function reorderShopCategories(categoryIds: string[]) {
+  return reorderShopCatalogCategories(categoryIds);
+}
+
+export async function reorderShopItems(categoryId: string, itemIds: string[]) {
+  return reorderShopCatalogItems(categoryId, itemIds);
 }
 
 /**

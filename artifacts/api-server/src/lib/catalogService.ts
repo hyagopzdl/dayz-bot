@@ -81,6 +81,16 @@ export async function ensureShopCatalogSchema() {
   `;
 
   await db`
+    ALTER TABLE shop_catalog_categories
+    ADD COLUMN IF NOT EXISTS sort_order INTEGER NOT NULL DEFAULT 0
+  `;
+
+  await db`
+    ALTER TABLE shop_catalog_items
+    ADD COLUMN IF NOT EXISTS sort_order INTEGER NOT NULL DEFAULT 0
+  `;
+
+  await db`
     CREATE INDEX IF NOT EXISTS shop_catalog_items_category_idx
     ON shop_catalog_items (category)
   `;
@@ -100,6 +110,7 @@ function rowToCategory(row: any): ShopCategory {
     emoji: row.emoji ? String(row.emoji).trim() : undefined,
     description: row.description ? String(row.description).trim() : undefined,
     enabled: row.enabled !== false,
+    sortOrder: Number.isFinite(Number(row.sort_order)) ? Number(row.sort_order) : 0,
   };
 }
 
@@ -120,13 +131,14 @@ function rowToItem(row: any): ShopItem {
     maxPerRestart: Number.isFinite(Number(row.max_per_restart))
       ? Number(row.max_per_restart)
       : undefined,
+    sortOrder: Number.isFinite(Number(row.sort_order)) ? Number(row.sort_order) : 0,
   };
 }
 
 function normalizeCatalog(catalog: ShopCatalog): ShopCatalog {
   const items = (catalog.items || [])
     .filter((item) => item?.id && item?.className && item?.name)
-    .map((item) => ({
+    .map((item, index) => ({
       ...item,
       id: normalizeShopCatalogId(item.id),
       name: String(item.name || item.className).trim(),
@@ -140,17 +152,19 @@ function normalizeCatalog(catalog: ShopCatalog): ShopCatalog {
       maxPerRestart: Number.isFinite(Number(item.maxPerRestart))
         ? Number(item.maxPerRestart)
         : undefined,
+      sortOrder: Number.isFinite(Number(item.sortOrder)) ? Number(item.sortOrder) : index,
     }));
 
   const categories = (catalog.categories || [])
     .filter((category) => category?.id && category?.label)
-    .map((category) => ({
+    .map((category, index) => ({
       ...category,
       id: normalizeShopCatalogId(category.id) || "misc",
       label: String(category.label || labelFromId(category.id)).trim(),
       enabled: category.enabled !== false,
       emoji: category.emoji ? String(category.emoji).trim() : undefined,
       description: category.description ? String(category.description).trim() : undefined,
+      sortOrder: Number.isFinite(Number(category.sortOrder)) ? Number(category.sortOrder) : index,
     }));
 
   const categoryIds = new Set(categories.map((category) => category.id));
@@ -164,16 +178,22 @@ function normalizeCatalog(catalog: ShopCatalog): ShopCatalog {
       enabled: true,
       emoji: undefined,
       description: undefined,
+      sortOrder: categories.length,
     });
     categoryIds.add(categoryId);
   }
 
   return {
     version: Number(catalog.version || CATALOG_VERSION),
-    categories: categories.sort((a, b) => a.label.localeCompare(b.label)),
+    categories: categories.sort(
+      (a, b) =>
+        (a.sortOrder ?? 0) - (b.sortOrder ?? 0) ||
+        a.label.localeCompare(b.label),
+    ),
     items: items.sort(
       (a, b) =>
         String(a.category || "misc").localeCompare(String(b.category || "misc")) ||
+        (a.sortOrder ?? 0) - (b.sortOrder ?? 0) ||
         a.name.localeCompare(b.name),
     ),
   };
@@ -193,7 +213,7 @@ export async function loadShopCatalogFromDatabase(): Promise<ShopCatalog> {
       SELECT id, name, class_name, popular_name, category, price, description, image_url,
              enabled, max_per_restart, sort_order, created_at, updated_at
       FROM shop_catalog_items
-      ORDER BY sort_order ASC, category ASC, name ASC
+      ORDER BY category ASC, sort_order ASC, name ASC
     `,
   ]);
 
@@ -248,14 +268,19 @@ export async function upsertShopCatalogCategory(category: ShopCategory) {
   const id = normalizeShopCatalogId(category.id || category.label);
   if (!id) throw new Error("Category requires an id.");
 
+  const sortOrder = Number.isFinite(Number(category.sortOrder))
+    ? Math.floor(Number(category.sortOrder))
+    : null;
+
   await db`
-    INSERT INTO shop_catalog_categories (id, label, emoji, description, enabled, updated_at)
+    INSERT INTO shop_catalog_categories (id, label, emoji, description, enabled, sort_order, updated_at)
     VALUES (
       ${id},
       ${String(category.label || labelFromId(id)).trim()},
       ${category.emoji || null},
       ${category.description || null},
       ${category.enabled !== false},
+      ${sortOrder ?? 0},
       NOW()
     )
     ON CONFLICT (id)
@@ -264,6 +289,7 @@ export async function upsertShopCatalogCategory(category: ShopCategory) {
       emoji = EXCLUDED.emoji,
       description = EXCLUDED.description,
       enabled = EXCLUDED.enabled,
+      sort_order = COALESCE(${sortOrder}, shop_catalog_categories.sort_order),
       updated_at = NOW()
   `;
 }
@@ -315,6 +341,9 @@ export async function upsertShopCatalogItemInDatabase(item: ShopItem) {
     maxPerRestart: Number.isFinite(Number(item.maxPerRestart))
       ? Number(item.maxPerRestart)
       : undefined,
+    sortOrder: Number.isFinite(Number(item.sortOrder))
+      ? Math.floor(Number(item.sortOrder))
+      : undefined,
   };
 
   if (!normalized.id || !normalized.className || !normalized.name) {
@@ -330,7 +359,7 @@ export async function upsertShopCatalogItemInDatabase(item: ShopItem) {
   await db`
     INSERT INTO shop_catalog_items (
       id, name, class_name, popular_name, category, price, description, image_url,
-      enabled, max_per_restart, updated_at
+      enabled, max_per_restart, sort_order, updated_at
     )
     VALUES (
       ${normalized.id},
@@ -343,6 +372,7 @@ export async function upsertShopCatalogItemInDatabase(item: ShopItem) {
       ${normalized.imageUrl || null},
       ${normalized.enabled !== false},
       ${normalized.maxPerRestart ?? null},
+      ${normalized.sortOrder ?? 0},
       NOW()
     )
     ON CONFLICT (id)
@@ -356,6 +386,7 @@ export async function upsertShopCatalogItemInDatabase(item: ShopItem) {
       image_url = EXCLUDED.image_url,
       enabled = EXCLUDED.enabled,
       max_per_restart = EXCLUDED.max_per_restart,
+      sort_order = COALESCE(${normalized.sortOrder ?? null}, shop_catalog_items.sort_order),
       updated_at = NOW()
   `;
 
@@ -403,11 +434,51 @@ export async function toggleShopCatalogItemInDatabase(itemId: string, enabled?: 
     SET enabled = ${nextEnabled}, updated_at = NOW()
     WHERE id = ${normalized}
     RETURNING id, name, class_name, popular_name, category, price, description, image_url,
-              enabled, max_per_restart
+              enabled, max_per_restart, sort_order
   `;
 
   await refreshShopCatalogCache();
   return rows[0] ? rowToItem(rows[0]) : null;
+}
+
+export async function reorderShopCatalogCategories(categoryIds: string[]) {
+  const db = requireSql();
+  await ensureShopCatalogSchema();
+
+  const normalizedIds = categoryIds.map(normalizeShopCatalogId).filter(Boolean);
+
+  await db.begin(async (tx) => {
+    for (let index = 0; index < normalizedIds.length; index += 1) {
+      await tx`
+        UPDATE shop_catalog_categories
+        SET sort_order = ${index}, updated_at = NOW()
+        WHERE id = ${normalizedIds[index]}
+      `;
+    }
+  });
+
+  return refreshShopCatalogCache();
+}
+
+export async function reorderShopCatalogItems(categoryId: string, itemIds: string[]) {
+  const db = requireSql();
+  await ensureShopCatalogSchema();
+
+  const normalizedCategoryId = normalizeShopCatalogId(categoryId || "misc") || "misc";
+  const normalizedIds = itemIds.map(normalizeShopCatalogId).filter(Boolean);
+
+  await db.begin(async (tx) => {
+    for (let index = 0; index < normalizedIds.length; index += 1) {
+      await tx`
+        UPDATE shop_catalog_items
+        SET sort_order = ${index}, updated_at = NOW()
+        WHERE id = ${normalizedIds[index]}
+          AND category = ${normalizedCategoryId}
+      `;
+    }
+  });
+
+  return refreshShopCatalogCache();
 }
 
 export async function seedShopCatalogInDatabase(catalog: ShopCatalog, options?: { replace?: boolean }) {

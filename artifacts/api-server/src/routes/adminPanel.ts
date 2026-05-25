@@ -7,6 +7,8 @@ import {
   ensureShopCatalogLoaded,
   getShopCatalog,
   normalizeShopCatalogId,
+  reorderShopCategories,
+  reorderShopItems,
   toggleShopCatalogItem,
   upsertShopCatalogCategoryItem,
   upsertShopCatalogItem,
@@ -506,9 +508,10 @@ function buildCatalogPayload() {
       emoji: category.emoji || "",
       description: category.description || "",
       enabled: category.enabled !== false,
+      sortOrder: Number.isFinite(Number(category.sortOrder)) ? Number(category.sortOrder) : 0,
       itemCount: categoryCounts.get(category.id) || 0,
     }))
-    .sort((a, b) => a.label.localeCompare(b.label));
+    .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0) || a.label.localeCompare(b.label));
 
   const knownCategoryIds = new Set(categories.map((category) => category.id));
   for (const [categoryId, itemCount] of categoryCounts.entries()) {
@@ -519,6 +522,7 @@ function buildCatalogPayload() {
       emoji: "",
       description: "",
       enabled: true,
+      sortOrder: categories.length,
       itemCount,
     });
   }
@@ -535,9 +539,14 @@ function buildCatalogPayload() {
       description: item.description || "",
       imageUrl: item.imageUrl || "",
       enabled: item.enabled !== false,
+      sortOrder: Number.isFinite(Number(item.sortOrder)) ? Number(item.sortOrder) : 0,
       maxPerRestart: Number.isFinite(Number(item.maxPerRestart)) ? Number(item.maxPerRestart) : null,
     }))
-    .sort((a, b) => a.categoryLabel.localeCompare(b.categoryLabel) || a.name.localeCompare(b.name));
+    .sort((a, b) =>
+      a.categoryLabel.localeCompare(b.categoryLabel) ||
+      (a.sortOrder || 0) - (b.sortOrder || 0) ||
+      a.name.localeCompare(b.name),
+    );
 
   return {
     version: catalog.version,
@@ -763,6 +772,7 @@ async function readCatalogItemPayload(body: unknown, fallbackId?: string): Promi
     description: input.description ? String(input.description).trim() : undefined,
     imageUrl: imageUrl || undefined,
     enabled,
+    sortOrder: Number.isFinite(Number(input.sortOrder)) ? Math.floor(Number(input.sortOrder)) : undefined,
   };
 }
 
@@ -1151,6 +1161,10 @@ function renderAdminPanelHtml(token: string) {
       transition: background .16s ease, border-color .16s ease, transform .16s ease;
     }
     .catalog-category-card:hover { background: #303238; border-color: var(--border-strong); transform: translateY(-1px); }
+    .catalog-category-card.dragging, .catalog-item.dragging { opacity: .58; transform: scale(.985); border-color: rgba(88,101,242,.48); }
+    .drag-handle { position: absolute; top: 10px; left: 10px; width: 30px; height: 30px; border-radius: 10px; border: 1px solid var(--border); background: rgba(37,38,42,.88); color: var(--text-3); cursor: grab; display: grid; place-items: center; font-size: 15px; line-height: 1; transition: background .16s ease, color .16s ease, border-color .16s ease, opacity .16s ease; }
+    .drag-handle:hover { background: #35373D; color: var(--text); border-color: var(--border-strong); }
+    .drag-handle:active { cursor: grabbing; }
     .catalog-category-card.new { border-style: dashed; color: var(--text-3); }
     .category-icon { width: 44px; height: 44px; border-radius: 14px; display: grid; place-items: center; border: 1px solid var(--border); background: #25262A; font-size: 22px; }
     .category-title { font-size: 14px; font-weight: 650; letter-spacing: -.025em; color: var(--text); text-align: center; }
@@ -1159,6 +1173,7 @@ function renderAdminPanelHtml(token: string) {
     .catalog-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
     .catalog-item {
       min-width: 0;
+      position: relative;
       background: #2B2D31;
       border: 1px solid var(--border);
       border-radius: 16px;
@@ -1169,7 +1184,8 @@ function renderAdminPanelHtml(token: string) {
       transition: background .16s ease, border-color .16s ease, transform .16s ease;
     }
     .catalog-item:hover { background: #303238; border-color: var(--border-strong); transform: translateY(-1px); }
-    .catalog-item-top { display: grid; grid-template-columns: 46px minmax(0, 1fr) auto; gap: 12px; align-items: center; }
+    .catalog-item .drag-handle { left: auto; right: 10px; top: 10px; }
+    .catalog-item-top { display: grid; grid-template-columns: 46px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding-right: 34px; }
     .catalog-thumb {
       width: 46px;
       height: 46px;
@@ -1747,7 +1763,7 @@ function renderAdminPanelHtml(token: string) {
   <script>
     const adminToken = ${tokenJson};
     if (adminToken) document.cookie = "${TOKEN_COOKIE}=" + encodeURIComponent(adminToken) + "; path=/admin-panel; SameSite=Lax";
-    const state = { view: "general", cursor: 0, hasMore: true, loadingMembers: false, memberForceRefresh: false, search: "", filter: "", modal: null, catalogModal: null, selectedDiscordId: null, catalog: null, catalogSearch: "", catalogCategory: "", catalogMode: "categories", shopQueue: null, shopTransactions: null, shopHistorySearch: "", shopQueueModeBefore: "categories", itemsCursor: 0, itemsHasMore: true, itemsLoading: false, itemsSearch: "", itemsFilter: "all", dayzItems: [], itemsStats: null, itemModal: null };
+    const state = { view: "general", cursor: 0, hasMore: true, loadingMembers: false, memberForceRefresh: false, search: "", filter: "", modal: null, catalogModal: null, selectedDiscordId: null, catalog: null, catalogSearch: "", catalogCategory: "", catalogMode: "categories", catalogDrag: null, catalogJustDragged: false, shopQueue: null, shopTransactions: null, shopHistorySearch: "", shopQueueModeBefore: "categories", itemsCursor: 0, itemsHasMore: true, itemsLoading: false, itemsSearch: "", itemsFilter: "all", dayzItems: [], itemsStats: null, itemModal: null };
     const els = {
       pageTitle: document.getElementById("pageTitle"), serverName: document.getElementById("serverName"),
       memberList: document.getElementById("memberList"), memberLoading: document.getElementById("memberLoading"), memberEmpty: document.getElementById("memberEmpty"),
@@ -2015,6 +2031,7 @@ function renderAdminPanelHtml(token: string) {
         ? ""
         : '<button class="mini-btn danger category-delete" data-category-action="delete" title="Excluir categoria">🗑</button>';
       return '<article class="catalog-category-card" data-category-id="' + escapeHtml(category.id) + '">' +
+        '<button type="button" class="drag-handle" draggable="true" data-drag-type="category" title="Reordenar categoria">⋮⋮</button>' +
         deleteButton +
         '<div class="category-icon">' + escapeHtml(categoryIcon(category)) + '</div>' +
         '<div class="category-title">' + escapeHtml(category.label) + '</div>' +
@@ -2056,6 +2073,7 @@ function renderAdminPanelHtml(token: string) {
         : '<span class="chip">Max ' + escapeHtml(String(item.maxPerRestart)) + '/restart</span>';
       const toggleLabel = item.enabled ? 'Desativar' : 'Ativar';
       return '<article class="catalog-item" data-item-id="' + escapeHtml(item.id) + '">' +
+        '<button type="button" class="drag-handle" draggable="true" data-drag-type="item" title="Reordenar item">⋮⋮</button>' +
         '<div class="catalog-item-top"><div class="catalog-thumb">' + thumb + '</div>' +
         '<div><div class="catalog-name">' + escapeHtml(item.name) + '</div><div class="catalog-class">' + escapeHtml(item.className) + '</div></div>' +
         '<div class="catalog-price">' + formatCoins(item.price) + '</div></div>' +
@@ -2348,6 +2366,73 @@ function renderAdminPanelHtml(token: string) {
       renderDayzItems(true);
     }
 
+    function orderedCatalogCategoryIdsFromDom() {
+      return Array.from(els.catalogCategoryGrid.querySelectorAll('.catalog-category-card[data-category-id]'))
+        .map((card) => card.getAttribute('data-category-id'))
+        .filter(Boolean);
+    }
+    function orderedCatalogItemIdsFromDom() {
+      return Array.from(els.catalogGrid.querySelectorAll('.catalog-item[data-item-id]'))
+        .map((card) => card.getAttribute('data-item-id'))
+        .filter(Boolean);
+    }
+    function moveDragElement(container, selector, dragging, event) {
+      const target = event.target.closest(selector);
+      if (!target || target === dragging || target.id === 'catalogNewCategoryCard') return;
+      const rect = target.getBoundingClientRect();
+      const before = event.clientY < rect.top + rect.height / 2;
+      container.insertBefore(dragging, before ? target : target.nextSibling);
+    }
+    function startCatalogDrag(event, type) {
+      const card = event.target.closest(type === 'category' ? '.catalog-category-card[data-category-id]' : '.catalog-item[data-item-id]');
+      if (!card || card.id === 'catalogNewCategoryCard') return;
+      const id = card.getAttribute(type === 'category' ? 'data-category-id' : 'data-item-id');
+      if (!id) return;
+      state.catalogDrag = { type, id, element: card };
+      card.classList.add('dragging');
+      event.dataTransfer.effectAllowed = 'move';
+      event.dataTransfer.setData('text/plain', id);
+    }
+    async function finishCatalogDrag() {
+      const drag = state.catalogDrag;
+      if (!drag) return;
+      drag.element?.classList.remove('dragging');
+      state.catalogDrag = null;
+      state.catalogJustDragged = true;
+      setTimeout(() => { state.catalogJustDragged = false; }, 120);
+
+      try {
+        if (drag.type === 'category') {
+          const categoryIds = orderedCatalogCategoryIdsFromDom();
+          const response = await apiFetch('/admin-panel/api/catalog/categories/reorder', {
+            method: 'PATCH',
+            body: JSON.stringify({ categoryIds }),
+          });
+          if (!response.ok) { showToast(await response.text()); await loadCatalog(); return; }
+          const payload = await response.json();
+          if (payload.catalog) state.catalog = payload.catalog;
+          renderCatalog();
+          showToast('Ordem das categorias atualizada.');
+          return;
+        }
+
+        const categoryId = state.catalogCategory;
+        const itemIds = orderedCatalogItemIdsFromDom();
+        const response = await apiFetch('/admin-panel/api/catalog/categories/' + encodeURIComponent(categoryId) + '/items/reorder', {
+          method: 'PATCH',
+          body: JSON.stringify({ itemIds }),
+        });
+        if (!response.ok) { showToast(await response.text()); await loadCatalog(); return; }
+        const payload = await response.json();
+        if (payload.catalog) state.catalog = payload.catalog;
+        renderCatalog();
+        showToast('Ordem dos itens atualizada.');
+      } catch (err) {
+        showToast(String(err));
+        await loadCatalog();
+      }
+    }
+
     function switchView(view) {
       state.view = view; document.querySelectorAll(".view").forEach((el) => el.classList.toggle("active", el.id === "view-" + view));
       document.querySelectorAll(".nav button").forEach((el) => el.classList.toggle("active", el.dataset.view === view));
@@ -2408,7 +2493,16 @@ function renderAdminPanelHtml(token: string) {
     document.addEventListener("click", (event) => {
       if (!els.catalogItemAutocomplete?.contains(event.target) && event.target !== els.catalogItemId) setCatalogAutocompleteOpen(false);
     });
+    els.catalogCategoryGrid.addEventListener("dragstart", (event) => { if (event.target.closest('[data-drag-type="category"]')) startCatalogDrag(event, 'category'); });
+    els.catalogCategoryGrid.addEventListener("dragover", (event) => { if (state.catalogDrag?.type !== 'category') return; event.preventDefault(); moveDragElement(els.catalogCategoryGrid, '.catalog-category-card[data-category-id]', state.catalogDrag.element, event); });
+    els.catalogCategoryGrid.addEventListener("drop", (event) => { if (state.catalogDrag?.type === 'category') event.preventDefault(); });
+    els.catalogCategoryGrid.addEventListener("dragend", () => { if (state.catalogDrag?.type === 'category') finishCatalogDrag(); });
+    els.catalogGrid.addEventListener("dragstart", (event) => { if (event.target.closest('[data-drag-type="item"]')) startCatalogDrag(event, 'item'); });
+    els.catalogGrid.addEventListener("dragover", (event) => { if (state.catalogDrag?.type !== 'item') return; event.preventDefault(); moveDragElement(els.catalogGrid, '.catalog-item[data-item-id]', state.catalogDrag.element, event); });
+    els.catalogGrid.addEventListener("drop", (event) => { if (state.catalogDrag?.type === 'item') event.preventDefault(); });
+    els.catalogGrid.addEventListener("dragend", () => { if (state.catalogDrag?.type === 'item') finishCatalogDrag(); });
     els.catalogCategoryGrid.addEventListener("click", (event) => {
+      if (state.catalogJustDragged || event.target.closest('[data-drag-type="category"]')) return;
       const deleteButton = event.target.closest("button[data-category-action]");
       const card = event.target.closest(".catalog-category-card");
       if (!card) return;
@@ -2423,6 +2517,7 @@ function renderAdminPanelHtml(token: string) {
       enterCatalogCategory(categoryId);
     });
     els.catalogGrid.addEventListener("click", (event) => {
+      if (state.catalogJustDragged || event.target.closest('[data-drag-type="item"]')) return;
       const button = event.target.closest("button[data-catalog-action]");
       if (!button) return;
       const card = button.closest(".catalog-item");
@@ -2710,6 +2805,34 @@ router.get("/api/catalog", async (req, res) => {
     res.json(buildCatalogPayload());
   } catch (err) {
     res.status(500).json({ error: String(err) });
+  }
+});
+
+router.patch("/api/catalog/categories/reorder", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+
+  try {
+    const body = (req.body && typeof req.body === "object" ? req.body : {}) as { categoryIds?: unknown };
+    const categoryIds = Array.isArray(body.categoryIds) ? body.categoryIds.map((id) => String(id)) : [];
+    await reorderShopCategories(categoryIds);
+    await ensureShopCatalogLoaded();
+    res.json({ ok: true, catalog: buildCatalogPayload() });
+  } catch (err) {
+    res.status(400).send(String(err));
+  }
+});
+
+router.patch("/api/catalog/categories/:id/items/reorder", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+
+  try {
+    const body = (req.body && typeof req.body === "object" ? req.body : {}) as { itemIds?: unknown };
+    const itemIds = Array.isArray(body.itemIds) ? body.itemIds.map((id) => String(id)) : [];
+    await reorderShopItems(req.params.id, itemIds);
+    await ensureShopCatalogLoaded();
+    res.json({ ok: true, catalog: buildCatalogPayload() });
+  } catch (err) {
+    res.status(400).send(String(err));
   }
 });
 
