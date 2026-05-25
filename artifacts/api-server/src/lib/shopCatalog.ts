@@ -13,6 +13,8 @@ import {
   reorderShopCatalogItems,
 } from "./catalogService";
 
+export type ShopDeliveryKind = "item" | "vehicle";
+
 export type ShopItem = {
   id: string;
   name: string;
@@ -24,6 +26,8 @@ export type ShopItem = {
   enabled?: boolean;
   maxPerRestart?: number;
   popularName?: string;
+  spawnEventName?: string;
+  deliveryKind?: ShopDeliveryKind;
   sortOrder?: number;
 };
 
@@ -48,6 +52,43 @@ export function normalizeShopCatalogId(value: string) {
     .toLowerCase()
     .replace(/[^a-z0-9_-]+/g, "_")
     .replace(/^_+|_+$/g, "");
+}
+
+const KNOWN_VEHICLE_CATALOG_CLASSES = new Set([
+  "CivilianSedan",
+  "CivilianSedan_Black",
+  "CivilianSedan_Wine",
+  "OffroadHatchback",
+  "OffroadHatchback_Blue",
+  "OffroadHatchback_White",
+  "Hatchback_02",
+  "Hatchback_02_Black",
+  "Hatchback_02_Blue",
+  "Sedan_02",
+  "Sedan_02_Grey",
+  "Sedan_02_Red",
+  "Truck_01_Cargo",
+  "Truck_01_Cargo_Blue",
+  "Truck_01_Cargo_Grey",
+  "Truck_01_Cargo_Orange",
+  "Truck_01_Chassis",
+  "Truck_01_Chassis_Blue",
+  "Truck_01_Chassis_Grey",
+  "Truck_01_Chassis_Orange",
+  "Truck_01_Covered",
+  "Truck_01_Covered_Blue",
+  "Truck_01_Covered_Grey",
+  "Truck_01_Covered_Orange",
+  "Truck_02",
+  "M1025",
+]);
+
+export function getShopItemDeliveryKind(item: Pick<ShopItem, "className" | "spawnEventName" | "deliveryKind">): ShopDeliveryKind {
+  if (item.deliveryKind === "vehicle") return "vehicle";
+  if (String(item.spawnEventName || "").trim().startsWith("Vehicle")) return "vehicle";
+  if (KNOWN_VEHICLE_CATALOG_CLASSES.has(String(item.className || "").trim())) return "vehicle";
+
+  return "item";
 }
 
 export async function initializeShopCatalog() {

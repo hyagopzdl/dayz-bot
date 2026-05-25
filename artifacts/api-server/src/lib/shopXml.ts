@@ -31,14 +31,66 @@ function formatNumber(value: number) {
   return Number(value.toFixed(2)).toString();
 }
 
-function isVehicleOrder(order: ShopOrder) {
-  const dayzItem = findDayzItem(order.itemClass || "");
-  const configuredEventName = String(dayzItem?.spawnEventName || "").trim();
+const KNOWN_VEHICLE_CLASSES = new Set([
+  "CivilianSedan",
+  "CivilianSedan_Black",
+  "CivilianSedan_Wine",
 
-  // spawnEventName is now used only as metadata to identify that this item must
-  // be spawned through a Vehicle* CE event. We do NOT inject into or edit the
-  // vanilla VehicleCivilianSedan/VehicleTruck01 event anymore.
-  return configuredEventName.startsWith("Vehicle");
+  "OffroadHatchback",
+  "OffroadHatchback_Blue",
+  "OffroadHatchback_White",
+
+  "Hatchback_02",
+  "Hatchback_02_Black",
+  "Hatchback_02_Blue",
+
+  "Sedan_02",
+  "Sedan_02_Grey",
+  "Sedan_02_Red",
+
+  "Truck_01_Cargo",
+  "Truck_01_Cargo_Blue",
+  "Truck_01_Cargo_Grey",
+  "Truck_01_Cargo_Orange",
+  "Truck_01_Chassis",
+  "Truck_01_Chassis_Blue",
+  "Truck_01_Chassis_Grey",
+  "Truck_01_Chassis_Orange",
+  "Truck_01_Covered",
+  "Truck_01_Covered_Blue",
+  "Truck_01_Covered_Grey",
+  "Truck_01_Covered_Orange",
+
+  "Truck_02",
+  "M1025",
+]);
+
+function getConfiguredSpawnEventName(order: ShopOrder) {
+  const orderSpawnEventName = String(order.spawnEventName || "").trim();
+  if (orderSpawnEventName) return orderSpawnEventName;
+
+  const dayzItem = findDayzItem(order.itemClass || "");
+  return String(dayzItem?.spawnEventName || "").trim();
+}
+
+function isKnownVehicleClass(className: string) {
+  return KNOWN_VEHICLE_CLASSES.has(String(className || "").trim());
+}
+
+function isVehicleOrder(order: ShopOrder) {
+  if (order.deliveryKind === "vehicle") return true;
+
+  const configuredEventName = getConfiguredSpawnEventName(order);
+
+  // spawnEventName is metadata to identify that this item must be spawned
+  // through a Vehicle* CE event. We do NOT inject into or edit the vanilla
+  // VehicleCivilianSedan/VehicleTruck01 event anymore.
+  if (configuredEventName.startsWith("Vehicle")) return true;
+
+  // Fallback for valid vehicle classes that may exist in the shop catalog but
+  // are missing/stale in the local DayZ item seed. Avoid broad prefixes here so
+  // vehicle parts such as wheels/doors are not misclassified as vehicles.
+  return isKnownVehicleClass(order.itemClass || "");
 }
 
 function getOrderEventName(order: ShopOrder, index: number) {
@@ -94,13 +146,13 @@ function buildVehicleEventXml(order: ShopOrder, eventName: string) {
   return [
     `    <event name="${eventName}">`,
     "        <nominal>1</nominal>",
-    "        <min>0</min>",
-    "        <max>0</max>",
-    "        <lifetime>3888000</lifetime>",
+    "        <min>1</min>",
+    "        <max>1</max>",
+    "        <lifetime>300</lifetime>",
     "        <restock>0</restock>",
-    "        <saferadius>3</saferadius>",
-    "        <distanceradius>3</distanceradius>",
-    "        <cleanupradius>0</cleanupradius>",
+    "        <saferadius>5</saferadius>",
+    "        <distanceradius>5</distanceradius>",
+    "        <cleanupradius>200</cleanupradius>",
     '        <flags deletable="0" init_random="0" remove_damaged="1"/>',
     "        <position>fixed</position>",
     "        <limit>mixed</limit>",

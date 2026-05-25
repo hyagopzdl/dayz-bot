@@ -13,6 +13,7 @@ import { systems } from "./systems";
 import {
   findShopItem,
   getShopCategories,
+  getShopItemDeliveryKind,
   getShopItems,
   getShopItemsByCategory,
   type ShopItem,
@@ -22,6 +23,7 @@ export type { ShopItem } from "./shopCatalog";
 export {
   findShopItem,
   getShopCategories,
+  getShopItemDeliveryKind,
   getShopItems,
   getShopItemsByCategory,
 } from "./shopCatalog";
@@ -467,6 +469,8 @@ export function createShopOrder(options: {
     discordUserId: options.discordUserId,
     itemClass: item.className,
     itemName: item.name,
+    ...(item.spawnEventName ? { spawnEventName: item.spawnEventName } : {}),
+    deliveryKind: getShopItemDeliveryKind(item),
     x: Number(options.x.toFixed(2)),
     y: Number(options.y.toFixed(2)),
     z: Number(options.z.toFixed(2)),

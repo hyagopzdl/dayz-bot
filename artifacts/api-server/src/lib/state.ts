@@ -136,6 +136,8 @@ export type ShopPendingCheckout = {
   itemClass: string;
   itemName?: string;
   price?: number;
+  spawnEventName?: string;
+  deliveryKind?: "item" | "vehicle";
   x: number;
   y: number;
   z: number;
@@ -149,6 +151,8 @@ export type ShopOrder = {
   discordUserId: string;
   itemClass: string;
   itemName?: string;
+  spawnEventName?: string;
+  deliveryKind?: "item" | "vehicle";
   x: number;
   y: number;
   z: number;

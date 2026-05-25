@@ -12,6 +12,7 @@ import {
   getShopCategories,
   getShopItemsByCategory,
   getShopItems,
+  getShopItemDeliveryKind,
   getSavedShopLocations,
 } from "../../../shop";
 import { generateShopMapPreview } from "../../../shopMapPreview";
@@ -177,6 +178,7 @@ export function buildShopItemPayload(
         item.description || "Delivered on the next restart.",
         "",
         `Class: \`${item.className}\``,
+        getShopItemDeliveryKind(item) === "vehicle" ? "Type: **Vehicle**" : null,
         `Price: **${item.price}**`,
         selectedLocation
           ? `Delivery: **${selectedLocation.name}** — \`${selectedLocation.x}, ${selectedLocation.y}, ${selectedLocation.z}\``
@@ -357,6 +359,8 @@ export function createPendingShopCheckout(options: {
     itemClass: item.className,
     itemName: item.name,
     price: item.price,
+    ...(item.spawnEventName ? { spawnEventName: item.spawnEventName } : {}),
+    deliveryKind: getShopItemDeliveryKind(item),
     x: Number(options.x.toFixed(2)),
     y: Number(options.y.toFixed(2)),
     z: Number(options.z.toFixed(2)),

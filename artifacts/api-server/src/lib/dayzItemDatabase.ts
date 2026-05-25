@@ -172,8 +172,13 @@ function inferVehicleSpawnEventName(className: string) {
     Truck_01_Chassis_Blue: "VehicleTruck01",
     Truck_01_Chassis_Grey: "VehicleTruck01",
     Truck_01_Chassis_Orange: "VehicleTruck01",
+    Truck_01_Covered: "VehicleTruck01",
+    Truck_01_Covered_Blue: "VehicleTruck01",
+    Truck_01_Covered_Grey: "VehicleTruck01",
+    Truck_01_Covered_Orange: "VehicleTruck01",
 
     Truck_02: "VehicleTruck02",
+    M1025: "VehicleM1025",
   };
 
   return vehicleEventByClassName[normalized] || "";

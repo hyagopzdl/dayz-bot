@@ -539,6 +539,8 @@ function buildCatalogPayload() {
       description: item.description || "",
       imageUrl: item.imageUrl || "",
       enabled: item.enabled !== false,
+      spawnEventName: item.spawnEventName || "",
+      deliveryKind: item.deliveryKind || "item",
       sortOrder: Number.isFinite(Number(item.sortOrder)) ? Number(item.sortOrder) : 0,
       maxPerRestart: Number.isFinite(Number(item.maxPerRestart)) ? Number(item.maxPerRestart) : null,
     }))
@@ -767,6 +769,8 @@ async function readCatalogItemPayload(body: unknown, fallbackId?: string): Promi
     name,
     className,
     popularName: definition.popularName || name,
+    spawnEventName: definition.spawnEventName,
+    deliveryKind: String(definition.spawnEventName || "").startsWith("Vehicle") ? "vehicle" : "item",
     category,
     price,
     description: input.description ? String(input.description).trim() : undefined,

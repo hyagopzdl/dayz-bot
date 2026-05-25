@@ -1,5 +1,5 @@
 import postgres from "postgres";
-import type { ShopCatalog, ShopCategory, ShopItem } from "./shopCatalog";
+import type { ShopCatalog, ShopCategory, ShopDeliveryKind, ShopItem } from "./shopCatalog";
 
 const CATALOG_VERSION = 1;
 
@@ -34,6 +34,12 @@ function labelFromId(value: string) {
       .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
       .join(" ") || "Misc"
   );
+}
+
+function getDeliveryKindFromSpawnEventName(spawnEventName: string | undefined): ShopDeliveryKind {
+  return String(spawnEventName || "").trim().startsWith("Vehicle")
+    ? "vehicle"
+    : "item";
 }
 
 function requireSql() {
@@ -81,6 +87,28 @@ export async function ensureShopCatalogSchema() {
   `;
 
   await db`
+    CREATE TABLE IF NOT EXISTS dayz_items (
+      class_name TEXT PRIMARY KEY,
+      popular_name TEXT NOT NULL,
+      image_url TEXT,
+      spawn_event_name TEXT,
+      enabled BOOLEAN NOT NULL DEFAULT true,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `;
+
+  await db`
+    ALTER TABLE dayz_items
+    ADD COLUMN IF NOT EXISTS spawn_event_name TEXT
+  `;
+
+  await db`
+    ALTER TABLE dayz_items
+    ADD COLUMN IF NOT EXISTS image_url TEXT
+  `;
+
+  await db`
     ALTER TABLE shop_catalog_categories
     ADD COLUMN IF NOT EXISTS sort_order INTEGER NOT NULL DEFAULT 0
   `;
@@ -117,6 +145,9 @@ function rowToCategory(row: any): ShopCategory {
 function rowToItem(row: any): ShopItem {
   const id = normalizeShopCatalogId(row.id || row.name || row.class_name);
   const category = normalizeShopCatalogId(row.category || "misc") || "misc";
+  const spawnEventName = row.spawn_event_name
+    ? String(row.spawn_event_name).trim()
+    : undefined;
 
   return {
     id,
@@ -131,6 +162,8 @@ function rowToItem(row: any): ShopItem {
     maxPerRestart: Number.isFinite(Number(row.max_per_restart))
       ? Number(row.max_per_restart)
       : undefined,
+    ...(spawnEventName ? { spawnEventName } : {}),
+    deliveryKind: getDeliveryKindFromSpawnEventName(spawnEventName),
     sortOrder: Number.isFinite(Number(row.sort_order)) ? Number(row.sort_order) : 0,
   };
 }
@@ -149,6 +182,8 @@ function normalizeCatalog(catalog: ShopCatalog): ShopCatalog {
       enabled: item.enabled !== false,
       description: item.description ? String(item.description).trim() : undefined,
       imageUrl: item.imageUrl ? String(item.imageUrl).trim() : undefined,
+      spawnEventName: item.spawnEventName ? String(item.spawnEventName).trim() : undefined,
+      deliveryKind: getDeliveryKindFromSpawnEventName(item.spawnEventName),
       maxPerRestart: Number.isFinite(Number(item.maxPerRestart))
         ? Number(item.maxPerRestart)
         : undefined,
@@ -210,10 +245,15 @@ export async function loadShopCatalogFromDatabase(): Promise<ShopCatalog> {
       ORDER BY sort_order ASC, label ASC
     `,
     db`
-      SELECT id, name, class_name, popular_name, category, price, description, image_url,
-             enabled, max_per_restart, sort_order, created_at, updated_at
-      FROM shop_catalog_items
-      ORDER BY category ASC, sort_order ASC, name ASC
+      SELECT
+        item.id, item.name, item.class_name, item.popular_name, item.category,
+        item.price, item.description, item.image_url, item.enabled,
+        item.max_per_restart, item.sort_order, item.created_at, item.updated_at,
+        dayz.spawn_event_name
+      FROM shop_catalog_items AS item
+      LEFT JOIN dayz_items AS dayz
+        ON LOWER(dayz.class_name) = LOWER(item.class_name)
+      ORDER BY item.category ASC, item.sort_order ASC, item.name ASC
     `,
   ]);
 
@@ -338,6 +378,8 @@ export async function upsertShopCatalogItemInDatabase(item: ShopItem) {
     enabled: item.enabled !== false,
     description: item.description ? String(item.description).trim() : undefined,
     imageUrl: item.imageUrl ? String(item.imageUrl).trim() : undefined,
+    spawnEventName: item.spawnEventName ? String(item.spawnEventName).trim() : undefined,
+    deliveryKind: getDeliveryKindFromSpawnEventName(item.spawnEventName),
     maxPerRestart: Number.isFinite(Number(item.maxPerRestart))
       ? Number(item.maxPerRestart)
       : undefined,

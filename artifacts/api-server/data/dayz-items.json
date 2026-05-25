@@ -8924,5 +8924,34 @@
     "className": "C130",
     "popularName": "Lockheed C-130 Hercules",
     "urlImg": "/artifacts/api-server/assets/ui/img-placeholder.png"
+  },
+  {
+    "className": "Truck_01_Covered",
+    "popularName": "M3S Covered",
+    "spawnEventName": "VehicleTruck01",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/f/fb/M3S_Covered_Blue.png/revision/latest?cb=20210119114148"
+  },
+  {
+    "className": "Truck_01_Covered_Blue",
+    "popularName": "M3S Covered Blue",
+    "spawnEventName": "VehicleTruck01",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/f/fb/M3S_Covered_Blue.png/revision/latest?cb=20210119114148"
+  },
+  {
+    "className": "Truck_01_Covered_Grey",
+    "popularName": "M3S Covered Grey",
+    "spawnEventName": "VehicleTruck01",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/f/fb/M3S_Covered_Blue.png/revision/latest?cb=20210119114148"
+  },
+  {
+    "className": "Truck_01_Covered_Orange",
+    "popularName": "M3S Covered Orange",
+    "spawnEventName": "VehicleTruck01",
+    "urlImg": "https://static.wikia.nocookie.net/dayz_gamepedia/images/f/fb/M3S_Covered_Blue.png/revision/latest?cb=20210119114148"
+  },
+  {
+    "className": "M1025",
+    "popularName": "M1025",
+    "spawnEventName": "VehicleM1025"
   }
 ]
