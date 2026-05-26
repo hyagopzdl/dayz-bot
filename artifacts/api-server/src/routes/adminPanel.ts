@@ -1891,6 +1891,218 @@ function renderAdminPanelHtml(token: string) {
     @media (max-width: 760px) {
       .content { padding: 16px; }
     }
+
+
+    /* Mobile responsive hardening -------------------------------------------------- */
+    html, body { max-width: 100%; overflow-x: hidden; }
+    img, svg, canvas { max-width: 100%; }
+    .mobile-menu-btn { display: none; }
+    .mobile-nav-backdrop {
+      position: fixed;
+      inset: 0;
+      display: none;
+      background: rgba(0,0,0,.54);
+      backdrop-filter: blur(8px);
+      z-index: 74;
+    }
+    .mobile-nav-backdrop.open { display: block; }
+
+    @media (max-width: 860px) {
+      .app { display: block; min-height: 100vh; }
+      body.nav-open { overflow: hidden; }
+      .sidebar {
+        position: fixed;
+        inset: 0 auto 0 0;
+        width: min(292px, calc(100vw - 48px));
+        height: 100dvh;
+        display: flex;
+        z-index: 75;
+        transform: translateX(calc(-100% - 16px));
+        transition: transform .22s ease;
+        box-shadow: 22px 0 60px rgba(0,0,0,.42);
+      }
+      .sidebar.open { transform: translateX(0); }
+      .mobile-menu-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 38px;
+        min-width: 38px;
+        padding: 0;
+      }
+      .main { width: 100%; min-width: 0; }
+      .topbar {
+        min-height: 58px;
+        height: auto;
+        padding: 10px 12px;
+        gap: 10px;
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        align-items: center;
+      }
+      .page-title {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 16px;
+      }
+      .top-actions {
+        gap: 7px;
+        justify-content: flex-end;
+        min-width: 0;
+      }
+      .top-actions select { display: none; }
+      .top-actions .avatar { display: none; }
+      #refreshButton {
+        width: 38px;
+        min-width: 38px;
+        padding: 0;
+        display: inline-grid;
+        place-items: center;
+      }
+      #refreshButton span { display: none; }
+      .global-search { display: none; }
+      .content { padding: 14px 12px 22px; width: 100%; max-width: 100%; overflow-x: hidden; }
+      .view { min-width: 0; }
+
+      .metric-grid,
+      .catalog-stats,
+      .members-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+      .dashboard-grid,
+      .catalog-toolbar,
+      .items-toolbar,
+      .members-toolbar,
+      .shop-history-toolbar { grid-template-columns: 1fr; gap: 10px; }
+      .card { padding: 13px; border-radius: 12px; min-width: 0; }
+      .metric-label { font-size: 10px; letter-spacing: .06em; }
+      .metric-value { font-size: 20px; margin-top: 8px; }
+      .metric-hint { font-size: 11px; margin-top: 7px; }
+      .section-title { align-items: flex-start; flex-wrap: wrap; gap: 8px; }
+      .section-title h2 { font-size: 14px; }
+      .chart { height: 168px; gap: 5px; overflow: hidden; }
+      .bar-label { font-size: 9px; }
+
+      .members-toolbar select,
+      .items-toolbar select,
+      .catalog-toolbar select,
+      .search input,
+      select { width: 100%; min-width: 0; }
+      .member-card {
+        grid-template-columns: 44px minmax(0, 1fr);
+        gap: 11px;
+        padding: 12px;
+        border-radius: 12px;
+      }
+      .member-avatar-wrap,
+      .member-avatar-img,
+      .member-avatar-fallback { width: 42px; height: 42px; border-radius: 12px; }
+      .member-card > * { min-width: 0; }
+      .member-economy,
+      .actions { grid-column: 1 / -1; justify-content: flex-start; }
+      .actions { gap: 6px; }
+      .mini-btn { height: 31px; padding: 0 9px; font-size: 12px; }
+
+      .catalog-category-grid,
+      .catalog-grid { grid-template-columns: 1fr; gap: 10px; }
+      .catalog-category-card { min-height: 118px; padding: 14px; border-radius: 13px; }
+      .catalog-item { padding: 12px; min-width: 0; }
+      .catalog-item-top { grid-template-columns: 42px minmax(0, 1fr); gap: 10px; padding-right: 32px; }
+      .catalog-item-top > :last-child { grid-column: 1 / -1; justify-self: start; }
+      .catalog-thumb { width: 42px; height: 42px; border-radius: 10px; }
+      .catalog-name,
+      .catalog-class,
+      .catalog-description,
+      .shop-queue-title,
+      .shop-queue-subtitle,
+      .shop-history-title,
+      .shop-history-meta { white-space: normal; overflow-wrap: anywhere; }
+      .catalog-meta,
+      .catalog-actions { flex-wrap: wrap; }
+      .catalog-actions { gap: 7px; }
+      .catalog-actions .ghost-btn,
+      .catalog-actions .danger-btn { flex: 1 1 132px; padding: 0 10px; }
+
+      .shop-queue-order,
+      .shop-history-item {
+        grid-template-columns: 42px minmax(0, 1fr);
+        gap: 10px;
+        padding: 11px;
+        border-radius: 12px;
+      }
+      .shop-queue-thumb,
+      .shop-history-thumb { width: 42px; height: 42px; border-radius: 10px; }
+      .shop-queue-meta,
+      .shop-history-side { grid-column: 1 / -1; text-align: left; }
+      .shop-history-toolbar .section-title { margin-bottom: 0; }
+
+      .dayz-item-row {
+        align-items: flex-start;
+        gap: 10px;
+        padding: 11px;
+        border-radius: 12px;
+      }
+      .dayz-item-main { min-width: 0; gap: 10px; }
+      .dayz-item-image { width: 40px; height: 40px; border-radius: 10px; }
+      .dayz-item-copy { min-width: 0; }
+      .dayz-item-title,
+      .dayz-item-subtitle { white-space: normal; overflow-wrap: anywhere; }
+      .switch { width: 40px; height: 24px; margin-top: 7px; }
+
+      .drawer-stats { grid-template-columns: 1fr; }
+      .detail-drawer {
+        width: 100vw;
+        max-width: 100vw;
+        height: 100dvh;
+        border-left: 0;
+      }
+      .drawer-header { padding: 14px 12px; align-items: center; }
+      .drawer-body { padding: 12px; gap: 10px; }
+      .drawer-card,
+      .drawer-stat,
+      .transaction-item { border-radius: 12px; }
+      .transaction-item { grid-template-columns: 28px minmax(0, 1fr); }
+      .tx-amount { grid-column: 2; white-space: normal; }
+
+      .modal-backdrop { padding: 10px; align-items: end; place-items: end stretch; }
+      .modal {
+        width: 100%;
+        max-height: calc(100dvh - 20px);
+        overflow: auto;
+        border-radius: 16px;
+        padding: 16px;
+      }
+      .modal-actions {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 8px;
+      }
+      .modal-actions .ghost-btn,
+      .modal-actions .primary-btn,
+      .modal-actions .danger-btn { width: 100%; }
+      .toast {
+        left: 12px;
+        right: 12px;
+        bottom: 12px;
+        max-width: none;
+      }
+    }
+
+    @media (max-width: 430px) {
+      .metric-grid,
+      .catalog-stats,
+      .members-stats { grid-template-columns: 1fr; }
+      .content { padding-left: 10px; padding-right: 10px; }
+      .topbar { padding-left: 10px; padding-right: 10px; }
+      .catalog-item-top { grid-template-columns: 38px minmax(0, 1fr); }
+      .catalog-thumb,
+      .shop-queue-thumb,
+      .shop-history-thumb { width: 38px; height: 38px; }
+      .dayz-item-image { width: 38px; height: 38px; }
+      .chip { max-width: 100%; overflow-wrap: anywhere; }
+      .ghost-btn, .primary-btn, .danger-btn, .icon-btn { border-radius: 10px; }
+    }
+
   </style>
 </head>
 <body>
@@ -1909,6 +2121,7 @@ function renderAdminPanelHtml(token: string) {
     <symbol id="icon-plus" viewBox="0 0 24 24"><path d="M12 5v14"/><path d="M5 12h14"/></symbol>
     <symbol id="icon-check" viewBox="0 0 24 24"><path d="m5 12.5 4.25 4.25L19.5 6.5"/></symbol>
     <symbol id="icon-warning" viewBox="0 0 24 24"><path d="M12 3.25 21 19H3l9-15.75Z"/><path d="M12 8.5v5"/><path d="M12 17.25h.01"/></symbol>
+    <symbol id="icon-menu" viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h16"/></symbol>
   </svg>
 
   <div class="app">
@@ -1929,8 +2142,10 @@ function renderAdminPanelHtml(token: string) {
       </nav>
       <div class="sidebar-footer"><div class="avatar">A</div><div><b>Admin</b><div class="member-meta">Painel seguro</div></div></div>
     </aside>
+    <div id="mobileNavBackdrop" class="mobile-nav-backdrop" aria-hidden="true"></div>
     <section class="main">
       <header class="topbar">
+        <button class="mobile-menu-btn icon-btn" id="mobileMenuButton" aria-label="Abrir menu" type="button"><svg class="icon"><use href="#icon-menu"></use></svg></button>
         <div class="page-title" id="pageTitle">Geral</div>
         <div class="global-search"><input id="globalSearch" placeholder="Buscar membros, gamertags ou Discord ID..." /></div>
         <div class="top-actions">
@@ -2155,6 +2370,15 @@ function renderAdminPanelHtml(token: string) {
     function formatCoins(value) { return new Intl.NumberFormat("pt-BR").format(Number(value || 0)); }
     function relativeDate(value) { if (!value) return "Nunca"; const date = new Date(value); if (Number.isNaN(date.getTime())) return String(value); return date.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }); }
     function showToast(message) { els.toast.textContent = message; els.toast.classList.add("show"); setTimeout(() => els.toast.classList.remove("show"), 3200); }
+    const mobileMenuButton = document.getElementById("mobileMenuButton");
+    const mobileNavBackdrop = document.getElementById("mobileNavBackdrop");
+    const sidebar = document.querySelector(".sidebar");
+    function setMobileMenuOpen(open) {
+      if (!sidebar || !mobileNavBackdrop) return;
+      sidebar.classList.toggle("open", open);
+      mobileNavBackdrop.classList.toggle("open", open);
+      document.body.classList.toggle("nav-open", open);
+    }
     function setText(id, value) { const el = document.getElementById(id); if (el) el.textContent = value; }
     function renderActivity(series) { const chart = document.getElementById("activityChart"); const max = Math.max(1, ...series.map((item) => item.players)); chart.innerHTML = series.map((item) => '<div class="bar-wrap"><div class="bar" style="height:' + Math.max(8, Math.round((item.players / max) * 190)) + 'px"></div><div class="bar-label">' + escapeHtml(item.hour) + '</div></div>').join(""); }
     async function loadOverview() {
@@ -2831,7 +3055,10 @@ function renderAdminPanelHtml(token: string) {
       if (!response.ok) { showToast(await response.text()); return; }
       els.modalBackdrop.classList.remove("open"); showToast("Carteira atualizada com sucesso."); await loadOverview(); await loadMembers(true); if (state.selectedDiscordId) await openMemberDrawer(state.selectedDiscordId);
     }
-    document.querySelectorAll(".nav button").forEach((button) => button.addEventListener("click", () => switchView(button.dataset.view)));
+    document.querySelectorAll(".nav button").forEach((button) => button.addEventListener("click", () => { switchView(button.dataset.view); setMobileMenuOpen(false); }));
+    if (mobileMenuButton) mobileMenuButton.addEventListener("click", () => setMobileMenuOpen(!(sidebar && sidebar.classList.contains("open"))));
+    if (mobileNavBackdrop) mobileNavBackdrop.addEventListener("click", () => setMobileMenuOpen(false));
+    window.addEventListener("keydown", (event) => { if (event.key === "Escape") setMobileMenuOpen(false); });
     document.getElementById("refreshButton").addEventListener("click", async () => { await loadOverview(); if (state.view === "members") await loadMembers(true); if (state.view === "catalog") { if (state.catalogMode === "queue") await loadShopQueue(); else await loadCatalog(); } if (state.view === "items") await loadDayzItems(true); showToast("Dados atualizados."); });
     document.getElementById("membersRefresh").addEventListener("click", () => { state.memberForceRefresh = true; loadMembers(true); });
     let searchTimer = null;
