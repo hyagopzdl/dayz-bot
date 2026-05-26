@@ -1793,6 +1793,101 @@ function renderAdminPanelHtml(token: string) {
     .tx-icon { background: rgba(124,140,255,.12); color: #cbd1ff; font-size: 0; }
     .tx-icon .icon { width: 15px; height: 15px; }
     .top-actions select { width: 132px; }
+
+    /* Shop catalog and DayZ database cards use legacy class names in the markup. */
+    .catalog-item,
+    .dayz-item-row {
+      background: linear-gradient(180deg, rgba(255,255,255,.045), rgba(255,255,255,.024));
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      box-shadow: var(--shadow-sm);
+      transition: background .14s ease, border-color .14s ease, transform .14s ease, box-shadow .14s ease;
+    }
+    .catalog-item:hover,
+    .dayz-item-row:hover {
+      background: linear-gradient(180deg, rgba(255,255,255,.068), rgba(255,255,255,.034));
+      border-color: var(--border-strong);
+      transform: translateY(-1px);
+      box-shadow: 0 1px 0 rgba(255,255,255,.05) inset, 0 10px 30px rgba(0,0,0,.22);
+    }
+    .catalog-item.dragging,
+    .dayz-item-row.dragging {
+      opacity: .62;
+      transform: scale(.988);
+      border-color: rgba(124,140,255,.48);
+    }
+    .catalog-thumb,
+    .dayz-item-image {
+      background: rgba(255,255,255,.04);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      color: #aeb6ff;
+      box-shadow: 0 1px 0 rgba(255,255,255,.035) inset;
+    }
+    .catalog-thumb img,
+    .dayz-item-image img { filter: saturate(.96) contrast(1.02); }
+    .catalog-name,
+    .dayz-item-title {
+      color: var(--text);
+      font-weight: 650;
+      letter-spacing: -.02em;
+    }
+    .catalog-class,
+    .dayz-item-subtitle {
+      color: var(--text-3);
+      font-size: 12px;
+    }
+    .catalog-class {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      font-size: 11px;
+      letter-spacing: -.015em;
+    }
+    .catalog-price {
+      color: #f4f5ff;
+      font-weight: 680;
+      letter-spacing: -.025em;
+    }
+    .catalog-description { color: var(--text-3); }
+    .catalog-meta { gap: 6px; }
+    .catalog-actions { border-top: 1px solid rgba(255,255,255,.055); padding-top: 10px; }
+    .catalog-item .drag-handle {
+      background: rgba(255,255,255,.038);
+      border-color: var(--border);
+      color: var(--text-3);
+      border-radius: 9px;
+    }
+    .catalog-item .drag-handle:hover {
+      background: rgba(255,255,255,.07);
+      border-color: var(--border-strong);
+      color: var(--text);
+    }
+    .dayz-item-row { padding: 11px 12px; }
+    .dayz-item-main { gap: 11px; }
+    .dayz-item-copy { gap: 3px; }
+    .items-list { gap: 8px; }
+    .switch-slider {
+      background: rgba(255,255,255,.12);
+      border-color: var(--border);
+      box-shadow: 0 1px 0 rgba(255,255,255,.035) inset;
+    }
+    .switch-slider::before { background: #e6e7eb; box-shadow: 0 2px 8px rgba(0,0,0,.34); }
+    .switch input:checked + .switch-slider {
+      background: linear-gradient(180deg, var(--primary-hover), var(--primary));
+      border-color: rgba(124,140,255,.55);
+    }
+    .catalog-empty,
+    .items-empty {
+      background: rgba(255,255,255,.025);
+      border-color: var(--border);
+      color: var(--text-3);
+      border-radius: 12px;
+    }
+    .item-preview-card {
+      background: rgba(255,255,255,.032);
+      border-color: var(--border);
+      border-radius: 12px;
+      box-shadow: var(--shadow-sm);
+    }
     @media (max-width: 760px) {
       .content { padding: 16px; }
     }
