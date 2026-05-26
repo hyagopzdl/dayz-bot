@@ -1540,13 +1540,286 @@ function renderAdminPanelHtml(token: string) {
       .content { padding: 18px; }
       .metric-grid, .members-toolbar, .members-stats { grid-template-columns: 1fr; }
     }
+
+
+    /* Linear-inspired visual system -------------------------------------------------- */
+    :root {
+      --bg: #08090a;
+      --bg-soft: #0b0c0e;
+      --surface: #101114;
+      --surface-2: #141519;
+      --surface-3: #191b20;
+      --surface-elevated: #17181d;
+      --primary: #7c8cff;
+      --primary-hover: #8b99ff;
+      --primary-soft: rgba(124, 140, 255, .14);
+      --text: #f3f4f6;
+      --text-2: #a0a3ad;
+      --text-3: #737782;
+      --success: #5ade8d;
+      --warning: #f3cc5a;
+      --danger: #ff6b72;
+      --border: rgba(255,255,255,.075);
+      --border-strong: rgba(255,255,255,.13);
+      --shadow-sm: 0 1px 0 rgba(255,255,255,.035) inset, 0 1px 2px rgba(0,0,0,.28);
+      --shadow-md: 0 1px 0 rgba(255,255,255,.045) inset, 0 22px 70px rgba(0,0,0,.38);
+      --radius: 10px;
+      --radius-lg: 14px;
+    }
+    * { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,.18) transparent; }
+    ::selection { background: rgba(124, 140, 255, .35); color: #fff; }
+    body {
+      background:
+        radial-gradient(circle at 18% -10%, rgba(124,140,255,.12), transparent 32%),
+        radial-gradient(circle at 82% 0%, rgba(92,214,138,.055), transparent 28%),
+        var(--bg);
+      color: var(--text);
+      font-size: 13px;
+      line-height: 1.45;
+      -webkit-font-smoothing: antialiased;
+      text-rendering: geometricPrecision;
+    }
+    .app { grid-template-columns: 248px minmax(0, 1fr); }
+    .sidebar {
+      background: rgba(8,9,10,.88);
+      border-right: 1px solid var(--border);
+      padding: 14px 10px;
+      gap: 14px;
+      backdrop-filter: blur(22px);
+    }
+    .brand {
+      padding: 7px 8px 13px;
+      gap: 10px;
+      border-bottom-color: rgba(255,255,255,.06);
+    }
+    .logo {
+      width: 34px;
+      height: 34px;
+      border-radius: 10px;
+      background: linear-gradient(180deg, rgba(255,255,255,.075), rgba(255,255,255,.035));
+      color: #dfe3ff;
+      font-size: 0;
+      box-shadow: 0 1px 0 rgba(255,255,255,.08) inset, 0 10px 30px rgba(0,0,0,.26);
+    }
+    .logo .icon { width: 18px; height: 18px; stroke-width: 1.9; }
+    .brand-title { font-size: 13px; font-weight: 650; letter-spacing: -.018em; }
+    .status { color: var(--text-3); font-size: 11px; }
+    .dot { width: 6px; height: 6px; background: var(--success); box-shadow: 0 0 0 3px rgba(90,222,141,.09); }
+    .nav-label { color: #696d78; font-size: 10px; letter-spacing: .13em; padding: 2px 10px; }
+    .nav { gap: 2px; }
+    .nav button {
+      min-height: 34px;
+      padding: 7px 10px;
+      border-radius: 8px;
+      color: #a6a9b3;
+      font-size: 13px;
+      font-weight: 520;
+      letter-spacing: -.01em;
+    }
+    .nav button:hover { background: rgba(255,255,255,.045); color: #f1f2f5; }
+    .nav button.active {
+      background: rgba(255,255,255,.075);
+      color: #fff;
+      box-shadow: 0 1px 0 rgba(255,255,255,.045) inset;
+    }
+    .nav button.active::before { display: none; }
+    .nav-icon, .icon {
+      width: 16px;
+      height: 16px;
+      flex: 0 0 auto;
+      stroke: currentColor;
+      stroke-width: 1.8;
+      fill: none;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+    .nav-icon { color: #777b86; }
+    .nav button.active .nav-icon, .nav button:hover .nav-icon { color: var(--primary); }
+    .sidebar-footer {
+      padding: 12px 8px 4px;
+      color: var(--text-2);
+      border-top-color: rgba(255,255,255,.06);
+    }
+    .main { background: linear-gradient(180deg, rgba(255,255,255,.018), transparent 160px); }
+    .topbar {
+      height: 58px;
+      padding: 0 22px;
+      background: rgba(8,9,10,.78);
+      border-bottom-color: var(--border);
+      backdrop-filter: blur(18px);
+    }
+    .page-title { font-size: 15px; font-weight: 660; letter-spacing: -.018em; }
+    .global-search { width: min(440px, 36vw); }
+    .global-search input, .search input, select, .form-grid input, .form-grid textarea {
+      background: rgba(255,255,255,.035);
+      border-color: var(--border);
+      border-radius: 9px;
+      color: var(--text);
+      box-shadow: 0 1px 0 rgba(255,255,255,.035) inset;
+    }
+    .global-search input, .search input, select { height: 34px; padding: 0 11px; }
+    .form-grid input, .form-grid textarea { padding: 10px 11px; }
+    .global-search input::placeholder, .search input::placeholder, textarea::placeholder { color: #686c76; }
+    .global-search input:focus, .search input:focus, select:focus, .form-grid input:focus, .form-grid textarea:focus {
+      border-color: rgba(124,140,255,.58);
+      box-shadow: 0 0 0 3px rgba(124,140,255,.11), 0 1px 0 rgba(255,255,255,.045) inset;
+      background: rgba(255,255,255,.055);
+    }
+    .content { padding: 22px; max-width: 1500px; }
+    .card {
+      background: linear-gradient(180deg, rgba(255,255,255,.045), rgba(255,255,255,.025));
+      border-color: var(--border);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-sm);
+      padding: 16px;
+    }
+    .card:hover { background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.032)); border-color: var(--border-strong); }
+    .metric-grid { gap: 10px; }
+    .metric-label { color: var(--text-3); font-size: 11px; letter-spacing: .065em; }
+    .metric-value { margin-top: 10px; font-size: 25px; font-weight: 680; letter-spacing: -.055em; }
+    .metric-hint { color: var(--text-3); font-size: 12px; }
+    .dashboard-grid { gap: 10px; margin-top: 10px; }
+    .section-title { margin-bottom: 13px; }
+    .section-title h2 { font-size: 14px; font-weight: 650; letter-spacing: -.018em; }
+    .chip {
+      background: rgba(255,255,255,.055);
+      border: 1px solid rgba(255,255,255,.075);
+      color: #a8abb5;
+      border-radius: 999px;
+      padding: 4px 8px;
+      font-size: 11px;
+      font-weight: 560;
+      letter-spacing: -.005em;
+    }
+    .chip.success, .chip.online, .status-online { color: #9df2b8; background: rgba(90,222,141,.10); border-color: rgba(90,222,141,.18); }
+    .chip.warning, .chip.pending { color: #f5db83; background: rgba(243,204,90,.10); border-color: rgba(243,204,90,.18); }
+    .chip.danger, .chip.failed, .status-offline { color: #ffadb1; background: rgba(255,107,114,.10); border-color: rgba(255,107,114,.18); }
+    .icon-btn, .primary-btn, .ghost-btn, .danger-btn, .mini-btn {
+      height: 34px;
+      border-radius: 9px;
+      padding: 0 11px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      font-size: 12px;
+      font-weight: 580;
+      letter-spacing: -.005em;
+      box-shadow: 0 1px 0 rgba(255,255,255,.035) inset;
+    }
+    .icon-btn, .ghost-btn, .mini-btn { background: rgba(255,255,255,.035); border: 1px solid var(--border); color: #d9dbe2; }
+    .icon-btn:hover, .ghost-btn:hover, .mini-btn:hover { background: rgba(255,255,255,.07); border-color: var(--border-strong); transform: none; }
+    .primary-btn {
+      background: linear-gradient(180deg, var(--primary-hover), var(--primary));
+      color: #ffffff;
+      border: 1px solid rgba(255,255,255,.13);
+    }
+    .primary-btn:hover { filter: brightness(1.04); transform: none; }
+    .danger-btn { background: rgba(255,107,114,.09); color: #ffb8bc; border: 1px solid rgba(255,107,114,.20); }
+    .avatar {
+      width: 30px;
+      height: 30px;
+      border-radius: 9px;
+      background: rgba(255,255,255,.055);
+      border-color: var(--border);
+      color: #e7e8ee;
+      font-size: 11px;
+    }
+    .bar { background: linear-gradient(180deg, #9aa5ff, #6d7fff); border-radius: 6px 6px 2px 2px; }
+    .setting-row, .drawer-card, .drawer-stat, .transaction-item {
+      background: rgba(255,255,255,.032);
+      border-color: var(--border);
+      border-radius: 11px;
+    }
+    .members-stats, .members-toolbar { gap: 10px; }
+    .member-card, .catalog-card, .catalog-category-card, .dayz-item-card, .shop-queue-item, .shop-history-item {
+      background: rgba(255,255,255,.032);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      box-shadow: var(--shadow-sm);
+      transition: background .14s ease, border-color .14s ease, transform .14s ease;
+    }
+    .member-card:hover, .catalog-card:hover, .catalog-category-card:hover, .dayz-item-card:hover, .shop-queue-item:hover, .shop-history-item:hover {
+      background: rgba(255,255,255,.055);
+      border-color: var(--border-strong);
+      transform: translateY(-1px);
+    }
+    .member-avatar-img, .member-avatar-fallback, .item-image, .catalog-item-image, .dayz-item-image, .shop-queue-thumb, .shop-history-thumb, .autocomplete-fallback {
+      background: rgba(255,255,255,.04);
+      border-color: var(--border);
+      border-radius: 10px;
+      color: #bfc4ff;
+    }
+    .entity-icon { width: 20px; height: 20px; color: #aeb6ff; }
+    .catalog-shell, .items-shell, .shop-queue-shell { gap: 10px; }
+    .catalog-grid { gap: 10px; }
+    .catalog-category-grid { gap: 10px; }
+    .catalog-breadcrumb, .member-meta, .dayz-item-subtitle, .catalog-description { color: var(--text-3); }
+    .detail-drawer {
+      background: rgba(13,14,17,.96);
+      border-left-color: var(--border);
+      box-shadow: -20px 0 70px rgba(0,0,0,.42);
+      backdrop-filter: blur(18px);
+    }
+    .drawer-header { background: rgba(13,14,17,.82); border-bottom-color: var(--border); }
+    .modal-backdrop { background: rgba(0,0,0,.58); backdrop-filter: blur(10px); }
+    .modal {
+      background: linear-gradient(180deg, #17181c, #121318);
+      border: 1px solid var(--border-strong);
+      border-radius: 16px;
+      box-shadow: 0 28px 90px rgba(0,0,0,.55), 0 1px 0 rgba(255,255,255,.045) inset;
+    }
+    .modal h2 { font-size: 17px; letter-spacing: -.03em; }
+    .toast {
+      background: rgba(17,18,22,.96);
+      border-color: var(--border-strong);
+      color: #fff;
+      border-radius: 12px;
+      box-shadow: 0 18px 55px rgba(0,0,0,.36);
+    }
+    .skeleton, .drawer-skeleton {
+      background: linear-gradient(90deg, rgba(255,255,255,.035), rgba(255,255,255,.075), rgba(255,255,255,.035));
+      background-size: 220% 100%;
+      border-color: var(--border);
+    }
+    .empty, .catalog-empty, .items-empty, .drawer-empty {
+      background: rgba(255,255,255,.025);
+      border-color: var(--border);
+      color: var(--text-3);
+      border-radius: 12px;
+    }
+    .presence-dot { border-color: #08090a; }
+    .presence-dot.online { background: var(--success); }
+    .tx-icon { background: rgba(124,140,255,.12); color: #cbd1ff; font-size: 0; }
+    .tx-icon .icon { width: 15px; height: 15px; }
+    .top-actions select { width: 132px; }
+    @media (max-width: 760px) {
+      .content { padding: 16px; }
+    }
   </style>
 </head>
 <body>
+
+  <svg aria-hidden="true" width="0" height="0" style="position:absolute;overflow:hidden">
+    <symbol id="icon-cube" viewBox="0 0 24 24"><path d="M12 2.75 20 7.25v9.5l-8 4.5-8-4.5v-9.5l8-4.5Z"/><path d="M4.5 7.5 12 12l7.5-4.5"/><path d="M12 12v8.5"/></symbol>
+    <symbol id="icon-house" viewBox="0 0 24 24"><path d="M3.5 11.25 12 4l8.5 7.25"/><path d="M5.5 10.25v9.25h13v-9.25"/><path d="M9.5 19.5v-5h5v5"/></symbol>
+    <symbol id="icon-users" viewBox="0 0 24 24"><path d="M15.5 19.25c-.85-2.1-2.1-3.25-5.5-3.25s-4.65 1.15-5.5 3.25"/><path d="M10 12.25a3.75 3.75 0 1 0 0-7.5 3.75 3.75 0 0 0 0 7.5Z"/><path d="M19.5 18.75c-.55-1.55-1.5-2.45-3.75-2.75"/><path d="M15.25 5.25a3.25 3.25 0 0 1 0 6.25"/></symbol>
+    <symbol id="icon-shopping-cart" viewBox="0 0 24 24"><path d="M3.5 5h2.2l1.8 10.25h10.75L20.5 8H7"/><path d="M9 20a1.25 1.25 0 1 0 0-2.5A1.25 1.25 0 0 0 9 20Z"/><path d="M17 20a1.25 1.25 0 1 0 0-2.5A1.25 1.25 0 0 0 17 20Z"/></symbol>
+    <symbol id="icon-package" viewBox="0 0 24 24"><path d="M4 7.25 12 3l8 4.25v9.5L12 21l-8-4.25v-9.5Z"/><path d="M4.5 7.5 12 11.75 19.5 7.5"/><path d="M12 11.75V21"/><path d="M8 5.25 16 9.5"/></symbol>
+    <symbol id="icon-refresh" viewBox="0 0 24 24"><path d="M20 12a8 8 0 0 1-13.65 5.65"/><path d="M4 12A8 8 0 0 1 17.65 6.35"/><path d="M17.75 3.75v3h-3"/><path d="M6.25 20.25v-3h3"/></symbol>
+    <symbol id="icon-clock" viewBox="0 0 24 24"><path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z"/><path d="M12 7.5v5l3.25 2"/></symbol>
+    <symbol id="icon-coins" viewBox="0 0 24 24"><path d="M12 7c4.15 0 7.5-1.12 7.5-2.5S16.15 2 12 2 4.5 3.12 4.5 4.5 7.85 7 12 7Z"/><path d="M4.5 4.5v5c0 1.38 3.35 2.5 7.5 2.5s7.5-1.12 7.5-2.5v-5"/><path d="M4.5 9.5v5c0 1.38 3.35 2.5 7.5 2.5s7.5-1.12 7.5-2.5v-5"/><path d="M4.5 14.5v5c0 1.38 3.35 2.5 7.5 2.5s7.5-1.12 7.5-2.5v-5"/></symbol>
+    <symbol id="icon-database" viewBox="0 0 24 24"><path d="M12 7c4.15 0 7.5-1.12 7.5-2.5S16.15 2 12 2 4.5 3.12 4.5 4.5 7.85 7 12 7Z"/><path d="M4.5 4.5v6c0 1.38 3.35 2.5 7.5 2.5s7.5-1.12 7.5-2.5v-6"/><path d="M4.5 10.5v6c0 1.38 3.35 2.5 7.5 2.5s7.5-1.12 7.5-2.5v-6"/></symbol>
+    <symbol id="icon-arrow-left" viewBox="0 0 24 24"><path d="M15 5 8 12l7 7"/><path d="M8.5 12H21"/></symbol>
+    <symbol id="icon-plus" viewBox="0 0 24 24"><path d="M12 5v14"/><path d="M5 12h14"/></symbol>
+    <symbol id="icon-check" viewBox="0 0 24 24"><path d="m5 12.5 4.25 4.25L19.5 6.5"/></symbol>
+    <symbol id="icon-warning" viewBox="0 0 24 24"><path d="M12 3.25 21 19H3l9-15.75Z"/><path d="M12 8.5v5"/><path d="M12 17.25h.01"/></symbol>
+  </svg>
+
   <div class="app">
     <aside class="sidebar">
       <div class="brand">
-        <div class="logo">DZ</div>
+        <div class="logo"><svg class="icon"><use href="#icon-cube"></use></svg></div>
         <div style="min-width:0">
           <div id="serverName" class="brand-title">DayZ Server</div>
           <div class="status"><span class="dot"></span><span>Online</span></div>
@@ -1554,10 +1827,10 @@ function renderAdminPanelHtml(token: string) {
       </div>
       <div class="nav-label">Navegação</div>
       <nav class="nav">
-        <button class="active" data-view="general">🏠 Geral</button>
-        <button data-view="members">👥 Membros</button>
-        <button data-view="catalog">🛒 Shop</button>
-        <button data-view="items">📦 Itens</button>
+        <button class="active" data-view="general"><svg class="nav-icon"><use href="#icon-house"></use></svg><span>Geral</span></button>
+        <button data-view="members"><svg class="nav-icon"><use href="#icon-users"></use></svg><span>Membros</span></button>
+        <button data-view="catalog"><svg class="nav-icon"><use href="#icon-shopping-cart"></use></svg><span>Shop</span></button>
+        <button data-view="items"><svg class="nav-icon"><use href="#icon-package"></use></svg><span>Itens</span></button>
       </nav>
       <div class="sidebar-footer"><div class="avatar">A</div><div><b>Admin</b><div class="member-meta">Painel seguro</div></div></div>
     </aside>
@@ -1567,7 +1840,7 @@ function renderAdminPanelHtml(token: string) {
         <div class="global-search"><input id="globalSearch" placeholder="Buscar membros, gamertags ou Discord ID..." /></div>
         <div class="top-actions">
           <select id="languageSelect" aria-label="Idioma"><option value="pt-BR">Português</option><option value="en-US">English</option></select>
-          <button class="icon-btn" id="refreshButton">Refresh</button>
+          <button class="icon-btn" id="refreshButton"><svg class="icon"><use href="#icon-refresh"></use></svg><span>Atualizar</span></button>
           <div class="avatar">PZ</div>
         </div>
       </header>
@@ -1618,7 +1891,7 @@ function renderAdminPanelHtml(token: string) {
               <div class="card">
                 <div class="section-title">
                   <h2>Categorias</h2>
-                  <div style="display:flex;align-items:center;gap:8px"><span class="chip">Neon</span><button id="shopQueueOpen" class="ghost-btn">Queue</button><button id="shopHistoryOpen" class="ghost-btn">Transactions</button><button id="catalogCategoryCreate" class="primary-btn">Nova categoria</button><button id="catalogRefresh" class="ghost-btn">Refresh</button></div>
+                  <div style="display:flex;align-items:center;gap:8px"><span class="chip">Neon</span><button id="shopQueueOpen" class="ghost-btn">Queue</button><button id="shopHistoryOpen" class="ghost-btn">Transactions</button><button id="catalogCategoryCreate" class="primary-btn"><svg class="icon"><use href="#icon-plus"></use></svg>Nova categoria</button><button id="catalogRefresh" class="ghost-btn">Refresh</button></div>
                 </div>
                 <div class="catalog-breadcrumb">Escolha uma categoria para gerenciar os itens vendidos no shop.</div>
               </div>
@@ -1628,7 +1901,7 @@ function renderAdminPanelHtml(token: string) {
               <div class="card">
                 <div class="section-title">
                   <h2 id="catalogCurrentCategoryTitle">Itens</h2>
-                  <div style="display:flex;align-items:center;gap:8px"><button id="catalogBack" class="ghost-btn">← Categorias</button><button id="shopQueueOpenFromItems" class="ghost-btn">Queue</button><button id="shopHistoryOpenFromItems" class="ghost-btn">Transactions</button><button id="catalogCreate" class="primary-btn">Novo item</button></div>
+                  <div style="display:flex;align-items:center;gap:8px"><button id="catalogBack" class="ghost-btn"><svg class="icon"><use href="#icon-arrow-left"></use></svg>Categorias</button><button id="shopQueueOpenFromItems" class="ghost-btn">Queue</button><button id="shopHistoryOpenFromItems" class="ghost-btn">Transactions</button><button id="catalogCreate" class="primary-btn"><svg class="icon"><use href="#icon-plus"></use></svg>Novo item</button></div>
                 </div>
                 <div class="catalog-breadcrumb"><span>Shop</span><span>›</span><b id="catalogCurrentCategoryLabel">Categoria</b></div>
                 <div class="catalog-toolbar" style="margin-top:12px">
@@ -1646,7 +1919,7 @@ function renderAdminPanelHtml(token: string) {
                   <h2>Shop Queue</h2>
                   <p>Visão operacional dos pedidos criados pelo /shop e organizados como no /shop-queue.</p>
                 </div>
-                <div style="display:flex;align-items:center;gap:8px"><button id="shopQueueBack" class="ghost-btn">← Shop</button><button id="shopHistoryOpenFromQueue" class="ghost-btn">Transactions</button><button id="shopQueueRefresh" class="primary-btn">Refresh</button></div>
+                <div style="display:flex;align-items:center;gap:8px"><button id="shopQueueBack" class="ghost-btn"><svg class="icon"><use href="#icon-arrow-left"></use></svg>Shop</button><button id="shopHistoryOpenFromQueue" class="ghost-btn">Transactions</button><button id="shopQueueRefresh" class="primary-btn">Refresh</button></div>
               </div>
               <div id="shopQueueStats" class="shop-queue-status"></div>
               <div class="card">
@@ -1734,7 +2007,7 @@ function renderAdminPanelHtml(token: string) {
       <h2 id="itemModalTitle">Item DayZ</h2>
       <p id="itemModalSubtitle">Atualize a base mestre usada pelo autocomplete do catálogo.</p>
       <div class="item-preview-card">
-        <div id="itemModalPreviewImage" class="dayz-item-image">🎒</div>
+        <div id="itemModalPreviewImage" class="dayz-item-image"><svg class="entity-icon"><use href="#icon-package"></use></svg></div>
         <div class="dayz-item-copy">
           <div id="itemModalPreviewName" class="dayz-item-title">Item</div>
           <div id="itemModalPreviewClass" class="dayz-item-subtitle">ClassName</div>
@@ -1782,6 +2055,7 @@ function renderAdminPanelHtml(token: string) {
     function apiUrl(path) { const separator = path.includes("?") ? "&" : "?"; return adminToken ? path + separator + "token=" + encodeURIComponent(adminToken) : path; }
     async function apiFetch(path, options) { const headers = Object.assign({ "Content-Type": "application/json" }, (options && options.headers) || {}); if (adminToken) headers["x-admin-token"] = adminToken; return fetch(apiUrl(path), Object.assign({}, options || {}, { headers, credentials: "same-origin" })); }
     function escapeHtml(value) { return String(value ?? "").replace(/[&<>\"]/g, (char) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'\"':"&quot;"}[char] || char)); }
+    function icon(name, className) { return '<svg class="icon ' + escapeHtml(className || '') + '"><use href="#icon-' + escapeHtml(name) + '"></use></svg>'; }
     function formatNumber(value) { return new Intl.NumberFormat("pt-BR").format(Number(value || 0)); }
     function formatCoins(value) { return new Intl.NumberFormat("pt-BR").format(Number(value || 0)); }
     function relativeDate(value) { if (!value) return "Nunca"; const date = new Date(value); if (Number.isNaN(date.getTime())) return String(value); return date.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }); }
@@ -1930,7 +2204,7 @@ function renderAdminPanelHtml(token: string) {
       return '<div class="card"><div class="metric-label">' + escapeHtml(label) + '</div><div class="metric-value">' + escapeHtml(String(value ?? '—')) + '</div><div class="metric-hint">' + escapeHtml(hint || '') + '</div></div>';
     }
     function shopQueueOrderHtml(order) {
-      const thumb = order.imageUrl ? '<img src="' + escapeHtml(order.imageUrl) + '" alt="" loading="lazy" />' : '🛒';
+      const thumb = order.imageUrl ? '<img src="' + escapeHtml(order.imageUrl) + '" alt="" loading="lazy" />' : icon("shopping-cart", "entity-icon");
       const statusClass = order.status === 'failed' ? 'danger' : order.status === 'spawned' ? 'success' : '';
       return '<article class="shop-queue-order">' +
         '<div class="shop-queue-thumb">' + thumb + '</div>' +
@@ -1976,7 +2250,7 @@ function renderAdminPanelHtml(token: string) {
       renderShopQueue();
     }
     function shopHistoryItemHtml(transaction) {
-      const thumb = transaction.imageUrl ? '<img src="' + escapeHtml(transaction.imageUrl) + '" alt="" loading="lazy" />' : '🛒';
+      const thumb = transaction.imageUrl ? '<img src="' + escapeHtml(transaction.imageUrl) + '" alt="" loading="lazy" />' : icon("shopping-cart", "entity-icon");
       const statusClass = transaction.status === 'failed' ? 'danger' : transaction.status === 'spawned' ? 'success' : '';
       const amount = Number(transaction.amount || 0) > 0 ? formatCoins(transaction.amount) + ' coins' : '—';
       return '<article class="shop-history-item">' +
@@ -1990,7 +2264,7 @@ function renderAdminPanelHtml(token: string) {
     function renderShopHistoryDrawer(payload) {
       const transactions = payload.transactions || [];
       els.drawerAvatar.className = "avatar";
-      els.drawerAvatar.innerHTML = "🛒";
+      els.drawerAvatar.innerHTML = icon("shopping-cart", "entity-icon");
       els.drawerName.textContent = "Shop transactions";
       els.drawerMeta.textContent = "Compras realizadas via /shop";
       let lastDate = '';
@@ -2068,7 +2342,7 @@ function renderAdminPanelHtml(token: string) {
     function catalogItemCard(item) {
       const thumb = item.imageUrl
         ? '<img src="' + escapeHtml(item.imageUrl) + '" alt="" loading="lazy" />'
-        : '🛒';
+        : icon("shopping-cart", "entity-icon");
       const enabledChip = item.enabled
         ? '<span class="chip online">● Active</span>'
         : '<span class="chip">○ Disabled</span>';
@@ -2144,7 +2418,7 @@ function renderAdminPanelHtml(token: string) {
       els.catalogItemAutocomplete.innerHTML = items.map((item) => {
         const thumb = item.imageUrl
           ? '<img src="' + escapeHtml(item.imageUrl) + '" alt="" loading="lazy" />'
-          : '<div class="autocomplete-fallback">🎒</div>';
+          : '<div class="autocomplete-fallback">' + icon("package", "entity-icon") + '</div>';
         return '<button type="button" class="autocomplete-option" data-class-name="' + escapeHtml(item.className) + '" data-popular-name="' + escapeHtml(item.popularName || item.className) + '" data-image-url="' + escapeHtml(item.imageUrl || '') + '">' +
           thumb + '<span><div class="autocomplete-title">' + escapeHtml(item.popularName || item.className) + '</div><div class="autocomplete-subtitle">' + escapeHtml(item.className) + '</div></span></button>';
       }).join("");
@@ -2274,7 +2548,7 @@ function renderAdminPanelHtml(token: string) {
 
     function dayzItemImageHtml(item) {
       const imageUrl = item?.imageUrl || item?.urlImg || "";
-      return imageUrl ? '<img src="' + escapeHtml(imageUrl) + '" alt="" loading="lazy" />' : '🎒';
+      return imageUrl ? '<img src="' + escapeHtml(imageUrl) + '" alt="" loading="lazy" />' : icon("package", "entity-icon");
     }
     function dayzItemRow(item) {
       const checked = item.enabled !== false ? "checked" : "";
