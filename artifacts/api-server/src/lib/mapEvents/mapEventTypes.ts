@@ -5,6 +5,16 @@ export type MapEventPresetId =
   | "shipping_key_blue"
   | "shipping_key_yellow";
 
+export type MapEventLootMode = "rng" | "guaranteed_container" | "guaranteed_items";
+
+export type MapEventGuaranteedItem = {
+  type: string;
+  quantity: number;
+  chance?: number;
+  quantmin?: number;
+  quantmax?: number;
+};
+
 export type MapEventChild = {
   type: string;
   min: number;
@@ -53,6 +63,9 @@ export type MapEventInjectRequest = {
   safeRadius?: number;
   distanceRadius?: number;
   cleanupRadius?: number;
+  lootMode?: MapEventLootMode;
+  rewardStorageClass?: string;
+  guaranteedItems?: MapEventGuaranteedItem[] | string;
 };
 
 export type ResolvedMapEvent = {
@@ -69,6 +82,9 @@ export type ResolvedMapEvent = {
   distanceradius: number;
   cleanupradius: number;
   children: MapEventChild[];
+  lootMode: MapEventLootMode;
+  rewardStorageClass?: string;
+  guaranteedItems: MapEventGuaranteedItem[];
 };
 
 export type MapEventDeployResult = {
@@ -76,6 +92,7 @@ export type MapEventDeployResult = {
   id: string;
   eventName: string;
   presetId: MapEventPresetId;
+  lootMode: MapEventLootMode;
   path: string;
 };
 
@@ -83,5 +100,6 @@ export type MapEventCleanupResult = {
   ok: true;
   clearedEventsXml: boolean;
   clearedEventSpawnsXml: boolean;
+  clearedSpawnableTypesXml: boolean;
   path: string;
 };

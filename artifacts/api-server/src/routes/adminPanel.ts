@@ -2288,7 +2288,15 @@ function renderAdminPanelHtml(token: string) {
                   <label>Safe radius<input id="mapEventSafeRadius" type="number" min="0" step="1" value="50" /></label>
                   <label>Distance radius<input id="mapEventDistanceRadius" type="number" min="0" step="1" value="50" /></label>
                   <label>Cleanup radius<input id="mapEventCleanupRadius" type="number" min="0" step="1" value="250" /></label>
+                  <label class="full">Tipo de loot<select id="mapEventLootMode"><option value="rng">Random por usage/mapgroupproto</option><option value="guaranteed_container">Garantido dentro de storage</option><option value="guaranteed_items">Itens garantidos no chão</option></select></label>
+                  <label id="mapEventRewardStorageWrap" class="full" style="display:none">Storage de recompensa<input id="mapEventRewardStorage" placeholder="SeaChest" value="SeaChest" /></label>
+                  <label id="mapEventGuaranteedItemsWrap" class="full" style="display:none">Itens garantidos<textarea id="mapEventGuaranteedItems" placeholder="Um item por linha. Exemplos:
+M4A1 x1
+Mag_STANAG_30Rnd x3
+Ammo_556x45 x2
+NVGoggles x1"></textarea></label>
                 </div>
+                <div class="catalog-breadcrumb" style="margin-top:12px">Random usa o loot do container/mapgroupproto. Storage garantido gera cfgspawnabletypes.xml temporário. Itens garantidos cria eventos auxiliares no chão.</div>
                 <div class="modal-actions" style="padding:14px 0 0"><button id="mapEventsInject" class="primary-btn">Injetar agora</button></div>
                 <div id="mapEventStatus" class="map-event-status" style="margin-top:14px"></div>
               </div>
@@ -2408,7 +2416,7 @@ function renderAdminPanelHtml(token: string) {
     const state = { view: "general", cursor: 0, hasMore: true, loadingMembers: false, memberForceRefresh: false, search: "", filter: "", modal: null, catalogModal: null, selectedDiscordId: null, catalog: null, catalogSearch: "", catalogCategory: "", catalogMode: "categories", catalogDrag: null, catalogJustDragged: false, shopQueue: null, shopTransactions: null, shopHistorySearch: "", shopQueueModeBefore: "categories", itemsCursor: 0, itemsHasMore: true, itemsLoading: false, itemsSearch: "", itemsFilter: "all", dayzItems: [], itemsStats: null, itemModal: null, mapEventPresets: [], selectedMapEventPresetId: "locked_container_blue" };
     const els = {
       pageTitle: document.getElementById("pageTitle"), serverName: document.getElementById("serverName"),
-      mapEventPresetGrid: document.getElementById("mapEventPresetGrid"), mapEventSelectedPreset: document.getElementById("mapEventSelectedPreset"), mapEventName: document.getElementById("mapEventName"), mapEventX: document.getElementById("mapEventX"), mapEventZ: document.getElementById("mapEventZ"), mapEventAngle: document.getElementById("mapEventAngle"), mapEventQuantity: document.getElementById("mapEventQuantity"), mapEventLifetime: document.getElementById("mapEventLifetime"), mapEventSafeRadius: document.getElementById("mapEventSafeRadius"), mapEventDistanceRadius: document.getElementById("mapEventDistanceRadius"), mapEventCleanupRadius: document.getElementById("mapEventCleanupRadius"), mapEventStatus: document.getElementById("mapEventStatus"),
+      mapEventPresetGrid: document.getElementById("mapEventPresetGrid"), mapEventSelectedPreset: document.getElementById("mapEventSelectedPreset"), mapEventName: document.getElementById("mapEventName"), mapEventX: document.getElementById("mapEventX"), mapEventZ: document.getElementById("mapEventZ"), mapEventAngle: document.getElementById("mapEventAngle"), mapEventQuantity: document.getElementById("mapEventQuantity"), mapEventLifetime: document.getElementById("mapEventLifetime"), mapEventSafeRadius: document.getElementById("mapEventSafeRadius"), mapEventDistanceRadius: document.getElementById("mapEventDistanceRadius"), mapEventCleanupRadius: document.getElementById("mapEventCleanupRadius"), mapEventLootMode: document.getElementById("mapEventLootMode"), mapEventRewardStorage: document.getElementById("mapEventRewardStorage"), mapEventRewardStorageWrap: document.getElementById("mapEventRewardStorageWrap"), mapEventGuaranteedItems: document.getElementById("mapEventGuaranteedItems"), mapEventGuaranteedItemsWrap: document.getElementById("mapEventGuaranteedItemsWrap"), mapEventStatus: document.getElementById("mapEventStatus"),
       memberList: document.getElementById("memberList"), memberLoading: document.getElementById("memberLoading"), memberEmpty: document.getElementById("memberEmpty"),
       modalBackdrop: document.getElementById("modalBackdrop"), modalTitle: document.getElementById("modalTitle"), modalSubtitle: document.getElementById("modalSubtitle"),
       coinAmount: document.getElementById("coinAmount"), coinReason: document.getElementById("coinReason"), toast: document.getElementById("toast"),
@@ -3123,7 +3131,24 @@ function renderAdminPanelHtml(token: string) {
       if (!state.selectedMapEventPresetId && state.mapEventPresets[0]) state.selectedMapEventPresetId = state.mapEventPresets[0].id;
       applyMapEventPresetDefaults(selectedMapEventPreset());
     }
+    function parseGuaranteedItemsText(value) {
+      return String(value || '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean).map((line) => {
+        const normalized = line.replace(/[,;]+/g, ' ').replace(/\s+/g, ' ').trim();
+        const parts = normalized.split(' ');
+        const first = parts[0] && parts[0].match(/^(\d+)x?$/i);
+        const last = parts[parts.length - 1] && parts[parts.length - 1].match(/^x?(\d+)$/i);
+        if (first && parts[1]) return { quantity: Number(first[1]), type: parts.slice(1).join('') };
+        if (last && parts.length > 1) return { quantity: Number(last[1]), type: parts.slice(0, -1).join('') };
+        return { quantity: 1, type: parts.join('') };
+      });
+    }
+    function updateMapEventLootModeUi() {
+      const mode = els.mapEventLootMode?.value || 'rng';
+      if (els.mapEventRewardStorageWrap) els.mapEventRewardStorageWrap.style.display = mode === 'guaranteed_container' ? '' : 'none';
+      if (els.mapEventGuaranteedItemsWrap) els.mapEventGuaranteedItemsWrap.style.display = mode === 'guaranteed_container' || mode === 'guaranteed_items' ? '' : 'none';
+    }
     function readMapEventForm() {
+      const lootMode = els.mapEventLootMode?.value || 'rng';
       return {
         presetId: state.selectedMapEventPresetId,
         name: els.mapEventName?.value || '',
@@ -3135,6 +3160,9 @@ function renderAdminPanelHtml(token: string) {
         safeRadius: Number(els.mapEventSafeRadius?.value || 50),
         distanceRadius: Number(els.mapEventDistanceRadius?.value || 50),
         cleanupRadius: Number(els.mapEventCleanupRadius?.value || 250),
+        lootMode,
+        rewardStorageClass: els.mapEventRewardStorage?.value || 'SeaChest',
+        guaranteedItems: parseGuaranteedItemsText(els.mapEventGuaranteedItems?.value || ''),
       };
     }
     function setMapEventStatus(html) {
@@ -3149,7 +3177,7 @@ function renderAdminPanelHtml(token: string) {
       const response = await apiFetch('/admin-panel/api/map-events/inject', { method: 'POST', body: JSON.stringify(payload) });
       if (!response.ok) { const text = await response.text(); setMapEventStatus('<div class="map-event-result"><b>Erro:</b> ' + escapeHtml(text) + '</div>'); showToast(text); return; }
       const result = await response.json();
-      setMapEventStatus('<div class="map-event-result"><b>Evento injetado:</b><br>' + escapeHtml(result.eventName) + '<br><span class="member-meta">Reinicie o servidor para spawnar. Path: ' + escapeHtml(result.path || '') + '</span></div>');
+      setMapEventStatus('<div class="map-event-result"><b>Evento injetado:</b><br>' + escapeHtml(result.eventName) + '<br><span class="chip">' + escapeHtml(result.lootMode || 'rng') + '</span><br><span class="member-meta">Reinicie o servidor para spawnar. Path: ' + escapeHtml(result.path || '') + '</span></div>');
       showToast('Evento do mapa injetado. Reinicie o servidor.');
     }
     async function cleanupMapEventsAction() {
@@ -3158,7 +3186,7 @@ function renderAdminPanelHtml(token: string) {
       const response = await apiFetch('/admin-panel/api/map-events/cleanup', { method: 'POST', body: JSON.stringify({}) });
       if (!response.ok) { const text = await response.text(); setMapEventStatus('<div class="map-event-result"><b>Erro:</b> ' + escapeHtml(text) + '</div>'); showToast(text); return; }
       const result = await response.json();
-      setMapEventStatus('<div class="map-event-result"><b>Cleanup concluído.</b><br>events.xml: ' + (result.clearedEventsXml ? 'limpo' : 'sem bloco') + '<br>cfgeventspawns.xml: ' + (result.clearedEventSpawnsXml ? 'limpo' : 'sem bloco') + '</div>');
+      setMapEventStatus('<div class="map-event-result"><b>Cleanup concluído.</b><br>events.xml: ' + (result.clearedEventsXml ? 'limpo' : 'sem bloco') + '<br>cfgeventspawns.xml: ' + (result.clearedEventSpawnsXml ? 'limpo' : 'sem bloco') + '<br>cfgspawnabletypes.xml: ' + (result.clearedSpawnableTypesXml ? 'limpo' : 'sem bloco') + '</div>');
       showToast('Eventos do mapa limpos.');
     }
     function switchView(view) {
@@ -3211,6 +3239,8 @@ function renderAdminPanelHtml(token: string) {
     if (mapEventsInject) mapEventsInject.addEventListener("click", injectMapEventAction);
     const mapEventsCleanup = document.getElementById("mapEventsCleanup");
     if (mapEventsCleanup) mapEventsCleanup.addEventListener("click", cleanupMapEventsAction);
+    if (els.mapEventLootMode) els.mapEventLootMode.addEventListener("change", updateMapEventLootModeUi);
+    updateMapEventLootModeUi();
     document.getElementById("catalogSearch").addEventListener("input", (event) => { state.catalogSearch = event.target.value; renderCatalog(); });
     document.getElementById("catalogRefresh").addEventListener("click", loadCatalog);
     document.getElementById("catalogItemsRefresh").addEventListener("click", loadCatalog);
