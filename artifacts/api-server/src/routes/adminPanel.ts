@@ -1,6 +1,7 @@
 import { Router, type Request, type Response } from "express";
 import { Routes } from "discord.js";
 import { getShopRuntimeStatus } from "../lib/shop";
+import { cleanupMapEventsNow, getMapEventPresetPayload, injectMapEventNow } from "../lib/mapEvents/mapEventService";
 import {
   deleteShopCatalogCategory,
   deleteShopCatalogItem,
@@ -2103,6 +2104,20 @@ function renderAdminPanelHtml(token: string) {
       .ghost-btn, .primary-btn, .danger-btn, .icon-btn { border-radius: 10px; }
     }
 
+
+    .map-events-grid { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(300px, .9fr); gap: 14px; align-items: start; }
+    .preset-grid { display: grid; gap: 10px; }
+    .preset-card { display: grid; gap: 8px; padding: 13px; border-radius: 12px; background: rgba(255,255,255,.03); border: 1px solid var(--border); cursor: pointer; transition: background .14s ease, border-color .14s ease, transform .14s ease; }
+    .preset-card:hover { background: rgba(255,255,255,.05); border-color: var(--border-strong); transform: translateY(-1px); }
+    .preset-card.active { border-color: rgba(124,140,255,.55); background: rgba(124,140,255,.12); }
+    .preset-card b { font-size: 13px; }
+    .preset-card p { margin: 0; color: var(--text-3); font-size: 12px; line-height: 1.45; }
+    .preset-children { display: flex; flex-wrap: wrap; gap: 6px; }
+    .map-event-status { display: grid; gap: 10px; }
+    .map-event-result { padding: 12px; border-radius: 12px; background: rgba(255,255,255,.025); border: 1px solid var(--border); color: var(--text-2); overflow-wrap: anywhere; }
+    .map-event-result b { color: var(--text); }
+    @media (max-width: 920px) { .map-events-grid { grid-template-columns: 1fr; } }
+
   </style>
 </head>
 <body>
@@ -2139,6 +2154,7 @@ function renderAdminPanelHtml(token: string) {
         <button data-view="members"><svg class="nav-icon"><use href="#icon-users"></use></svg><span>Membros</span></button>
         <button data-view="catalog"><svg class="nav-icon"><use href="#icon-shopping-cart"></use></svg><span>Shop</span></button>
         <button data-view="items"><svg class="nav-icon"><use href="#icon-package"></use></svg><span>Itens</span></button>
+        <button data-view="map-events"><svg class="nav-icon"><use href="#icon-clock"></use></svg><span>Eventos do Mapa</span></button>
       </nav>
       <div class="sidebar-footer"><div class="avatar">A</div><div><b>Admin</b><div class="member-meta">Painel seguro</div></div></div>
     </aside>
@@ -2236,6 +2252,45 @@ function renderAdminPanelHtml(token: string) {
                 <div class="section-title"><h2>Pedidos recentes</h2><span id="shopQueueRuntime" class="chip">Carregando</span></div>
                 <div id="shopQueueList" class="shop-queue-list"></div>
                 <div id="shopQueueEmpty" class="catalog-empty" style="display:none">Nenhum pedido de shop encontrado.</div>
+              </div>
+            </div>
+          </div>
+        </section>
+        <section id="view-map-events" class="view">
+          <div class="items-shell">
+            <div class="card">
+              <div class="section-title">
+                <div>
+                  <h2>Eventos do Mapa</h2>
+                  <div class="member-meta">Injete eventos temporários em events.xml e cfgeventspawns.xml sem interferir na loja.</div>
+                </div>
+                <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                  <button id="mapEventsRefresh" class="ghost-btn">Refresh</button>
+                  <button id="mapEventsCleanup" class="danger-btn">Limpar eventos</button>
+                </div>
+              </div>
+              <div class="catalog-breadcrumb">Use para testes controlados. Após injetar, reinicie o servidor para o evento nascer.</div>
+            </div>
+            <div class="map-events-grid">
+              <div class="card">
+                <div class="section-title"><h2>Presets</h2><span class="chip">MAP_EVENT</span></div>
+                <div id="mapEventPresetGrid" class="preset-grid"></div>
+              </div>
+              <div class="card">
+                <div class="section-title"><h2>Injetar evento</h2><span id="mapEventSelectedPreset" class="chip">Selecione</span></div>
+                <div class="form-grid two">
+                  <label class="full">Nome interno<input id="mapEventName" placeholder="Ex: Container PvP quarta" /></label>
+                  <label>X<input id="mapEventX" type="number" step="0.01" placeholder="5155.72" /></label>
+                  <label>Z<input id="mapEventZ" type="number" step="0.01" placeholder="8575.05" /></label>
+                  <label>Ângulo<input id="mapEventAngle" type="number" step="0.01" value="0" /></label>
+                  <label>Quantidade<input id="mapEventQuantity" type="number" min="1" max="25" step="1" value="1" /></label>
+                  <label>Lifetime<input id="mapEventLifetime" type="number" min="60" step="60" value="2400" /></label>
+                  <label>Safe radius<input id="mapEventSafeRadius" type="number" min="0" step="1" value="50" /></label>
+                  <label>Distance radius<input id="mapEventDistanceRadius" type="number" min="0" step="1" value="50" /></label>
+                  <label>Cleanup radius<input id="mapEventCleanupRadius" type="number" min="0" step="1" value="250" /></label>
+                </div>
+                <div class="modal-actions" style="padding:14px 0 0"><button id="mapEventsInject" class="primary-btn">Injetar agora</button></div>
+                <div id="mapEventStatus" class="map-event-status" style="margin-top:14px"></div>
               </div>
             </div>
           </div>
@@ -2350,9 +2405,10 @@ function renderAdminPanelHtml(token: string) {
   <script>
     const adminToken = ${tokenJson};
     if (adminToken) document.cookie = "${TOKEN_COOKIE}=" + encodeURIComponent(adminToken) + "; path=/admin-panel; SameSite=Lax";
-    const state = { view: "general", cursor: 0, hasMore: true, loadingMembers: false, memberForceRefresh: false, search: "", filter: "", modal: null, catalogModal: null, selectedDiscordId: null, catalog: null, catalogSearch: "", catalogCategory: "", catalogMode: "categories", catalogDrag: null, catalogJustDragged: false, shopQueue: null, shopTransactions: null, shopHistorySearch: "", shopQueueModeBefore: "categories", itemsCursor: 0, itemsHasMore: true, itemsLoading: false, itemsSearch: "", itemsFilter: "all", dayzItems: [], itemsStats: null, itemModal: null };
+    const state = { view: "general", cursor: 0, hasMore: true, loadingMembers: false, memberForceRefresh: false, search: "", filter: "", modal: null, catalogModal: null, selectedDiscordId: null, catalog: null, catalogSearch: "", catalogCategory: "", catalogMode: "categories", catalogDrag: null, catalogJustDragged: false, shopQueue: null, shopTransactions: null, shopHistorySearch: "", shopQueueModeBefore: "categories", itemsCursor: 0, itemsHasMore: true, itemsLoading: false, itemsSearch: "", itemsFilter: "all", dayzItems: [], itemsStats: null, itemModal: null, mapEventPresets: [], selectedMapEventPresetId: "locked_container_blue" };
     const els = {
       pageTitle: document.getElementById("pageTitle"), serverName: document.getElementById("serverName"),
+      mapEventPresetGrid: document.getElementById("mapEventPresetGrid"), mapEventSelectedPreset: document.getElementById("mapEventSelectedPreset"), mapEventName: document.getElementById("mapEventName"), mapEventX: document.getElementById("mapEventX"), mapEventZ: document.getElementById("mapEventZ"), mapEventAngle: document.getElementById("mapEventAngle"), mapEventQuantity: document.getElementById("mapEventQuantity"), mapEventLifetime: document.getElementById("mapEventLifetime"), mapEventSafeRadius: document.getElementById("mapEventSafeRadius"), mapEventDistanceRadius: document.getElementById("mapEventDistanceRadius"), mapEventCleanupRadius: document.getElementById("mapEventCleanupRadius"), mapEventStatus: document.getElementById("mapEventStatus"),
       memberList: document.getElementById("memberList"), memberLoading: document.getElementById("memberLoading"), memberEmpty: document.getElementById("memberEmpty"),
       modalBackdrop: document.getElementById("modalBackdrop"), modalTitle: document.getElementById("modalTitle"), modalSubtitle: document.getElementById("modalSubtitle"),
       coinAmount: document.getElementById("coinAmount"), coinReason: document.getElementById("coinReason"), toast: document.getElementById("toast"),
@@ -3030,13 +3086,89 @@ function renderAdminPanelHtml(token: string) {
       }
     }
 
+
+    function selectedMapEventPreset() {
+      return (state.mapEventPresets || []).find((preset) => preset.id === state.selectedMapEventPresetId) || (state.mapEventPresets || [])[0] || null;
+    }
+    function applyMapEventPresetDefaults(preset) {
+      if (!preset) return;
+      state.selectedMapEventPresetId = preset.id;
+      if (els.mapEventSelectedPreset) els.mapEventSelectedPreset.textContent = preset.name;
+      if (els.mapEventName && !els.mapEventName.value) els.mapEventName.value = preset.name;
+      if (els.mapEventQuantity) els.mapEventQuantity.value = preset.nominal || 1;
+      if (els.mapEventLifetime) els.mapEventLifetime.value = preset.lifetime || 2400;
+      if (els.mapEventSafeRadius) els.mapEventSafeRadius.value = preset.saferadius ?? 50;
+      if (els.mapEventDistanceRadius) els.mapEventDistanceRadius.value = preset.distanceradius ?? 50;
+      if (els.mapEventCleanupRadius) els.mapEventCleanupRadius.value = preset.cleanupradius ?? 250;
+      renderMapEventPresets();
+    }
+    function renderMapEventPresets() {
+      if (!els.mapEventPresetGrid) return;
+      const presets = state.mapEventPresets || [];
+      els.mapEventPresetGrid.innerHTML = presets.map((preset) => {
+        const children = (preset.children || []).map((child) => '<span class="chip">' + escapeHtml(child.type) + '</span>').join('');
+        return '<button class="preset-card ' + (preset.id === state.selectedMapEventPresetId ? 'active' : '') + '" data-map-event-preset="' + escapeHtml(preset.id) + '">' +
+          '<b>' + escapeHtml(preset.name) + '</b>' +
+          '<p>' + escapeHtml(preset.description || '') + '</p>' +
+          '<div class="preset-children">' + children + '</div>' +
+        '</button>';
+      }).join('') || '<div class="empty">Nenhum preset carregado.</div>';
+    }
+    async function loadMapEventPresets() {
+      if (!els.mapEventPresetGrid) return;
+      const response = await apiFetch('/admin-panel/api/map-events/presets');
+      if (!response.ok) { showToast(await response.text()); return; }
+      const payload = await response.json();
+      state.mapEventPresets = payload.presets || [];
+      if (!state.selectedMapEventPresetId && state.mapEventPresets[0]) state.selectedMapEventPresetId = state.mapEventPresets[0].id;
+      applyMapEventPresetDefaults(selectedMapEventPreset());
+    }
+    function readMapEventForm() {
+      return {
+        presetId: state.selectedMapEventPresetId,
+        name: els.mapEventName?.value || '',
+        x: Number(els.mapEventX?.value || 0),
+        z: Number(els.mapEventZ?.value || 0),
+        angle: Number(els.mapEventAngle?.value || 0),
+        quantity: Number(els.mapEventQuantity?.value || 1),
+        lifetime: Number(els.mapEventLifetime?.value || 2400),
+        safeRadius: Number(els.mapEventSafeRadius?.value || 50),
+        distanceRadius: Number(els.mapEventDistanceRadius?.value || 50),
+        cleanupRadius: Number(els.mapEventCleanupRadius?.value || 250),
+      };
+    }
+    function setMapEventStatus(html) {
+      if (els.mapEventStatus) els.mapEventStatus.innerHTML = html;
+    }
+    async function injectMapEventAction() {
+      const preset = selectedMapEventPreset();
+      if (!preset) { showToast('Selecione um preset.'); return; }
+      const payload = readMapEventForm();
+      if (!Number.isFinite(payload.x) || !Number.isFinite(payload.z) || !payload.x || !payload.z) { showToast('Informe coordenadas X e Z válidas.'); return; }
+      setMapEventStatus('<div class="map-event-result">Injetando evento nos XMLs...</div>');
+      const response = await apiFetch('/admin-panel/api/map-events/inject', { method: 'POST', body: JSON.stringify(payload) });
+      if (!response.ok) { const text = await response.text(); setMapEventStatus('<div class="map-event-result"><b>Erro:</b> ' + escapeHtml(text) + '</div>'); showToast(text); return; }
+      const result = await response.json();
+      setMapEventStatus('<div class="map-event-result"><b>Evento injetado:</b><br>' + escapeHtml(result.eventName) + '<br><span class="member-meta">Reinicie o servidor para spawnar. Path: ' + escapeHtml(result.path || '') + '</span></div>');
+      showToast('Evento do mapa injetado. Reinicie o servidor.');
+    }
+    async function cleanupMapEventsAction() {
+      if (!confirm('Remover todos os blocos MAP_EVENT dos XMLs?')) return;
+      setMapEventStatus('<div class="map-event-result">Limpando eventos do mapa...</div>');
+      const response = await apiFetch('/admin-panel/api/map-events/cleanup', { method: 'POST', body: JSON.stringify({}) });
+      if (!response.ok) { const text = await response.text(); setMapEventStatus('<div class="map-event-result"><b>Erro:</b> ' + escapeHtml(text) + '</div>'); showToast(text); return; }
+      const result = await response.json();
+      setMapEventStatus('<div class="map-event-result"><b>Cleanup concluído.</b><br>events.xml: ' + (result.clearedEventsXml ? 'limpo' : 'sem bloco') + '<br>cfgeventspawns.xml: ' + (result.clearedEventSpawnsXml ? 'limpo' : 'sem bloco') + '</div>');
+      showToast('Eventos do mapa limpos.');
+    }
     function switchView(view) {
       state.view = view; document.querySelectorAll(".view").forEach((el) => el.classList.toggle("active", el.id === "view-" + view));
       document.querySelectorAll(".nav button").forEach((el) => el.classList.toggle("active", el.dataset.view === view));
-      els.pageTitle.textContent = view === "general" ? "Geral" : view === "members" ? "Membros" : view === "catalog" ? "Shop" : "Itens";
+      els.pageTitle.textContent = view === "general" ? "Geral" : view === "members" ? "Membros" : view === "catalog" ? "Shop" : view === "map-events" ? "Eventos do Mapa" : "Itens";
       if (view === "members" && !els.memberList.children.length) loadMembers(true);
       if (view === "catalog" && !state.catalog) loadCatalog();
       if (view === "items" && !state.dayzItems.length) loadDayzItems(true);
+      if (view === "map-events" && !state.mapEventPresets.length) loadMapEventPresets();
     }
     function openCoinModal(action, memberCardEl) {
       const discordId = memberCardEl.getAttribute("data-discord-id");
@@ -3059,13 +3191,26 @@ function renderAdminPanelHtml(token: string) {
     if (mobileMenuButton) mobileMenuButton.addEventListener("click", () => setMobileMenuOpen(!(sidebar && sidebar.classList.contains("open"))));
     if (mobileNavBackdrop) mobileNavBackdrop.addEventListener("click", () => setMobileMenuOpen(false));
     window.addEventListener("keydown", (event) => { if (event.key === "Escape") setMobileMenuOpen(false); });
-    document.getElementById("refreshButton").addEventListener("click", async () => { await loadOverview(); if (state.view === "members") await loadMembers(true); if (state.view === "catalog") { if (state.catalogMode === "queue") await loadShopQueue(); else await loadCatalog(); } if (state.view === "items") await loadDayzItems(true); showToast("Dados atualizados."); });
+    document.getElementById("refreshButton").addEventListener("click", async () => { await loadOverview(); if (state.view === "members") await loadMembers(true); if (state.view === "catalog") { if (state.catalogMode === "queue") await loadShopQueue(); else await loadCatalog(); } if (state.view === "items") await loadDayzItems(true); if (state.view === "map-events") await loadMapEventPresets(); showToast("Dados atualizados."); });
     document.getElementById("membersRefresh").addEventListener("click", () => { state.memberForceRefresh = true; loadMembers(true); });
     let searchTimer = null;
     function updateSearch(value) { state.search = value; clearTimeout(searchTimer); searchTimer = setTimeout(() => loadMembers(true), 240); }
     document.getElementById("memberSearch").addEventListener("input", (event) => updateSearch(event.target.value));
     document.getElementById("globalSearch").addEventListener("input", (event) => { document.getElementById("memberSearch").value = event.target.value; updateSearch(event.target.value); if (state.view !== "members") switchView("members"); });
     document.getElementById("memberFilter").addEventListener("change", (event) => { state.filter = event.target.value; loadMembers(true); });
+
+    if (els.mapEventPresetGrid) els.mapEventPresetGrid.addEventListener("click", (event) => {
+      const card = event.target.closest("[data-map-event-preset]");
+      if (!card) return;
+      const preset = (state.mapEventPresets || []).find((item) => item.id === card.getAttribute("data-map-event-preset"));
+      if (preset) { if (els.mapEventName) els.mapEventName.value = preset.name; applyMapEventPresetDefaults(preset); }
+    });
+    const mapEventsRefresh = document.getElementById("mapEventsRefresh");
+    if (mapEventsRefresh) mapEventsRefresh.addEventListener("click", loadMapEventPresets);
+    const mapEventsInject = document.getElementById("mapEventsInject");
+    if (mapEventsInject) mapEventsInject.addEventListener("click", injectMapEventAction);
+    const mapEventsCleanup = document.getElementById("mapEventsCleanup");
+    if (mapEventsCleanup) mapEventsCleanup.addEventListener("click", cleanupMapEventsAction);
     document.getElementById("catalogSearch").addEventListener("input", (event) => { state.catalogSearch = event.target.value; renderCatalog(); });
     document.getElementById("catalogRefresh").addEventListener("click", loadCatalog);
     document.getElementById("catalogItemsRefresh").addEventListener("click", loadCatalog);
@@ -3514,6 +3659,34 @@ router.delete("/api/catalog/items/:id", async (req, res) => {
       return;
     }
     res.json({ ok: true, deleted: true, catalog: buildCatalogPayload() });
+  } catch (err) {
+    res.status(400).send(String(err));
+  }
+});
+
+
+router.get("/api/map-events/presets", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  res.json(getMapEventPresetPayload());
+});
+
+router.post("/api/map-events/inject", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+
+  try {
+    const result = await injectMapEventNow((req.body || {}) as any);
+    res.json(result);
+  } catch (err) {
+    res.status(400).send(String(err));
+  }
+});
+
+router.post("/api/map-events/cleanup", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+
+  try {
+    const result = await cleanupMapEventsNow();
+    res.json(result);
   } catch (err) {
     res.status(400).send(String(err));
   }
