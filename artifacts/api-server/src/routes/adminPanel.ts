@@ -1258,6 +1258,18 @@ function renderAdminPanelHtml(token: string) {
     }
     .autocomplete-title { font-size: 13px; font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .autocomplete-subtitle { margin-top: 3px; font-size: 11px; color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .map-loot-picker { display: grid; gap: 10px; }
+    .map-loot-selected { display: grid; grid-template-columns: 46px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 10px; border-radius: 12px; background: rgba(255,255,255,.035); border: 1px solid var(--border); }
+    .map-loot-selected.is-empty { color: var(--text-3); grid-template-columns: 1fr; }
+    .map-loot-thumb { width: 46px; height: 46px; border-radius: 10px; overflow: hidden; background: rgba(255,255,255,.045); border: 1px solid var(--border); display: grid; place-items: center; color: var(--text-3); }
+    .map-loot-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .map-loot-title { color: var(--text); font-weight: 650; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .map-loot-subtitle { color: var(--text-3); font-size: 11px; margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .map-loot-list { display: grid; gap: 8px; }
+    .map-loot-row { display: grid; grid-template-columns: 42px minmax(0, 1fr) 84px auto; gap: 10px; align-items: center; padding: 9px; border-radius: 12px; background: rgba(255,255,255,.03); border: 1px solid var(--border); }
+    .map-loot-row input { width: 84px; min-width: 0; }
+    .map-loot-empty { padding: 12px; border-radius: 12px; border: 1px dashed var(--border-strong); color: var(--text-3); background: rgba(255,255,255,.02); font-size: 12px; }
+    @media (max-width: 620px) { .map-loot-selected { grid-template-columns: 42px minmax(0, 1fr); } .map-loot-selected > .mini-btn { grid-column: 1 / -1; width: 100%; } .map-loot-row { grid-template-columns: 38px minmax(0, 1fr); } .map-loot-row input, .map-loot-row .mini-btn { grid-column: 1 / -1; width: 100%; } }
     .form-grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .form-grid .full { grid-column: 1 / -1; }
     .toggle-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px; border-radius: 14px; background: #25262A; border: 1px solid var(--border); }
@@ -2289,12 +2301,21 @@ function renderAdminPanelHtml(token: string) {
                   <label>Distance radius<input id="mapEventDistanceRadius" type="number" min="0" step="1" value="50" /></label>
                   <label>Cleanup radius<input id="mapEventCleanupRadius" type="number" min="0" step="1" value="250" /></label>
                   <label class="full">Tipo de loot<select id="mapEventLootMode"><option value="rng">Random por usage/mapgroupproto</option><option value="guaranteed_container">Garantido dentro de storage</option><option value="guaranteed_items">Itens garantidos no chão</option></select></label>
-                  <label id="mapEventRewardStorageWrap" class="full" style="display:none">Storage de recompensa<input id="mapEventRewardStorage" placeholder="SeaChest" value="SeaChest" /></label>
-                  <label id="mapEventGuaranteedItemsWrap" class="full" style="display:none">Itens garantidos<textarea id="mapEventGuaranteedItems" placeholder="Um item por linha. Exemplos:
-M4A1 x1
-Mag_STANAG_30Rnd x3
-Ammo_556x45 x2
-NVGoggles x1"></textarea></label>
+                  <div id="mapEventRewardStorageWrap" class="full map-loot-picker" style="display:none">
+                    <label class="autocomplete-wrap">Storage de recompensa
+                      <input id="mapEventRewardStorageSearch" autocomplete="off" placeholder="Buscar storage na base DayZ. Ex: SeaChest" />
+                      <input id="mapEventRewardStorage" type="hidden" value="SeaChest" />
+                      <div id="mapEventRewardStorageAutocomplete" class="autocomplete-menu"></div>
+                    </label>
+                    <div id="mapEventRewardStorageSelected" class="map-loot-selected is-empty">Nenhum storage selecionado.</div>
+                  </div>
+                  <div id="mapEventGuaranteedItemsWrap" class="full map-loot-picker" style="display:none">
+                    <label class="autocomplete-wrap">Adicionar item ao loot
+                      <input id="mapEventGuaranteedItemSearch" autocomplete="off" placeholder="Buscar item na base DayZ. Ex: M4A1, STANAG, Nails" />
+                      <div id="mapEventGuaranteedItemAutocomplete" class="autocomplete-menu"></div>
+                    </label>
+                    <div id="mapEventGuaranteedItemsList" class="map-loot-list"></div>
+                  </div>
                 </div>
                 <div class="catalog-breadcrumb" style="margin-top:12px">Random usa o loot do container/mapgroupproto. Storage garantido gera cfgspawnabletypes.xml temporário. Itens garantidos cria eventos auxiliares no chão.</div>
                 <div class="modal-actions" style="padding:14px 0 0"><button id="mapEventsInject" class="primary-btn">Injetar agora</button></div>
@@ -2413,10 +2434,10 @@ NVGoggles x1"></textarea></label>
   <script>
     const adminToken = ${tokenJson};
     if (adminToken) document.cookie = "${TOKEN_COOKIE}=" + encodeURIComponent(adminToken) + "; path=/admin-panel; SameSite=Lax";
-    const state = { view: "general", cursor: 0, hasMore: true, loadingMembers: false, memberForceRefresh: false, search: "", filter: "", modal: null, catalogModal: null, selectedDiscordId: null, catalog: null, catalogSearch: "", catalogCategory: "", catalogMode: "categories", catalogDrag: null, catalogJustDragged: false, shopQueue: null, shopTransactions: null, shopHistorySearch: "", shopQueueModeBefore: "categories", itemsCursor: 0, itemsHasMore: true, itemsLoading: false, itemsSearch: "", itemsFilter: "all", dayzItems: [], itemsStats: null, itemModal: null, mapEventPresets: [], selectedMapEventPresetId: "locked_container_blue" };
+    const state = { view: "general", cursor: 0, hasMore: true, loadingMembers: false, memberForceRefresh: false, search: "", filter: "", modal: null, catalogModal: null, selectedDiscordId: null, catalog: null, catalogSearch: "", catalogCategory: "", catalogMode: "categories", catalogDrag: null, catalogJustDragged: false, shopQueue: null, shopTransactions: null, shopHistorySearch: "", shopQueueModeBefore: "categories", itemsCursor: 0, itemsHasMore: true, itemsLoading: false, itemsSearch: "", itemsFilter: "all", dayzItems: [], itemsStats: null, itemModal: null, mapEventPresets: [], selectedMapEventPresetId: "locked_container_blue", mapEventRewardStorageItem: null, mapEventLootItems: [] };
     const els = {
       pageTitle: document.getElementById("pageTitle"), serverName: document.getElementById("serverName"),
-      mapEventPresetGrid: document.getElementById("mapEventPresetGrid"), mapEventSelectedPreset: document.getElementById("mapEventSelectedPreset"), mapEventName: document.getElementById("mapEventName"), mapEventX: document.getElementById("mapEventX"), mapEventZ: document.getElementById("mapEventZ"), mapEventAngle: document.getElementById("mapEventAngle"), mapEventQuantity: document.getElementById("mapEventQuantity"), mapEventLifetime: document.getElementById("mapEventLifetime"), mapEventSafeRadius: document.getElementById("mapEventSafeRadius"), mapEventDistanceRadius: document.getElementById("mapEventDistanceRadius"), mapEventCleanupRadius: document.getElementById("mapEventCleanupRadius"), mapEventLootMode: document.getElementById("mapEventLootMode"), mapEventRewardStorage: document.getElementById("mapEventRewardStorage"), mapEventRewardStorageWrap: document.getElementById("mapEventRewardStorageWrap"), mapEventGuaranteedItems: document.getElementById("mapEventGuaranteedItems"), mapEventGuaranteedItemsWrap: document.getElementById("mapEventGuaranteedItemsWrap"), mapEventStatus: document.getElementById("mapEventStatus"),
+      mapEventPresetGrid: document.getElementById("mapEventPresetGrid"), mapEventSelectedPreset: document.getElementById("mapEventSelectedPreset"), mapEventName: document.getElementById("mapEventName"), mapEventX: document.getElementById("mapEventX"), mapEventZ: document.getElementById("mapEventZ"), mapEventAngle: document.getElementById("mapEventAngle"), mapEventQuantity: document.getElementById("mapEventQuantity"), mapEventLifetime: document.getElementById("mapEventLifetime"), mapEventSafeRadius: document.getElementById("mapEventSafeRadius"), mapEventDistanceRadius: document.getElementById("mapEventDistanceRadius"), mapEventCleanupRadius: document.getElementById("mapEventCleanupRadius"), mapEventLootMode: document.getElementById("mapEventLootMode"), mapEventRewardStorage: document.getElementById("mapEventRewardStorage"), mapEventRewardStorageSearch: document.getElementById("mapEventRewardStorageSearch"), mapEventRewardStorageSelected: document.getElementById("mapEventRewardStorageSelected"), mapEventRewardStorageAutocomplete: document.getElementById("mapEventRewardStorageAutocomplete"), mapEventRewardStorageWrap: document.getElementById("mapEventRewardStorageWrap"), mapEventGuaranteedItemSearch: document.getElementById("mapEventGuaranteedItemSearch"), mapEventGuaranteedItemAutocomplete: document.getElementById("mapEventGuaranteedItemAutocomplete"), mapEventGuaranteedItemsList: document.getElementById("mapEventGuaranteedItemsList"), mapEventGuaranteedItemsWrap: document.getElementById("mapEventGuaranteedItemsWrap"), mapEventStatus: document.getElementById("mapEventStatus"),
       memberList: document.getElementById("memberList"), memberLoading: document.getElementById("memberLoading"), memberEmpty: document.getElementById("memberEmpty"),
       modalBackdrop: document.getElementById("modalBackdrop"), modalTitle: document.getElementById("modalTitle"), modalSubtitle: document.getElementById("modalSubtitle"),
       coinAmount: document.getElementById("coinAmount"), coinReason: document.getElementById("coinReason"), toast: document.getElementById("toast"),
@@ -3131,21 +3152,95 @@ NVGoggles x1"></textarea></label>
       if (!state.selectedMapEventPresetId && state.mapEventPresets[0]) state.selectedMapEventPresetId = state.mapEventPresets[0].id;
       applyMapEventPresetDefaults(selectedMapEventPreset());
     }
-    function parseGuaranteedItemsText(value) {
-      return String(value || '').split(/\\r?\\n/).map((line) => line.trim()).filter(Boolean).map((line) => {
-        const normalized = line.replace(/[,;]+/g, ' ').replace(/\\s+/g, ' ').trim();
-        const parts = normalized.split(' ');
-        const first = parts[0] && parts[0].match(/^(\\d+)x?$/i);
-        const last = parts[parts.length - 1] && parts[parts.length - 1].match(/^x?(\\d+)$/i);
-        if (first && parts[1]) return { quantity: Number(first[1]), type: parts.slice(1).join('') };
-        if (last && parts.length > 1) return { quantity: Number(last[1]), type: parts.slice(0, -1).join('') };
-        return { quantity: 1, type: parts.join('') };
-      });
+    function mapEventItemThumb(item) {
+      if (item && item.imageUrl) return '<div class="map-loot-thumb"><img src="' + escapeHtml(item.imageUrl) + '" alt="" loading="lazy" /></div>';
+      return '<div class="map-loot-thumb">' + icon("package", "entity-icon") + '</div>';
+    }
+    function mapEventAutocompleteOption(item, target) {
+      const thumb = item && item.imageUrl
+        ? '<img src="' + escapeHtml(item.imageUrl) + '" alt="" loading="lazy" />'
+        : '<div class="autocomplete-fallback">' + icon("package", "entity-icon") + '</div>';
+      return '<button type="button" class="autocomplete-option" data-map-event-target="' + target + '" data-class-name="' + escapeHtml(item.className || '') + '" data-popular-name="' + escapeHtml(item.popularName || item.className || '') + '" data-image-url="' + escapeHtml(item.imageUrl || '') + '">' +
+        thumb + '<span><div class="autocomplete-title">' + escapeHtml(item.popularName || item.className || '') + '</div><div class="autocomplete-subtitle">' + escapeHtml(item.className || '') + '</div></span></button>';
+    }
+    function setMapEventAutocompleteOpen(target, open) {
+      const menu = target === 'storage' ? els.mapEventRewardStorageAutocomplete : els.mapEventGuaranteedItemAutocomplete;
+      if (menu) menu.classList.toggle('open', Boolean(open));
+    }
+    function renderMapEventAutocomplete(target, items) {
+      const menu = target === 'storage' ? els.mapEventRewardStorageAutocomplete : els.mapEventGuaranteedItemAutocomplete;
+      if (!menu) return;
+      if (!items.length) {
+        menu.innerHTML = '<div class="autocomplete-subtitle" style="padding:12px">Nenhum item encontrado na base DayZ.</div>';
+        setMapEventAutocompleteOpen(target, true);
+        return;
+      }
+      menu.innerHTML = items.map((item) => mapEventAutocompleteOption(item, target)).join('');
+      setMapEventAutocompleteOpen(target, true);
+    }
+    const mapEventSearchTimers = { storage: null, item: null };
+    async function searchMapEventBaseItems(target, query) {
+      clearTimeout(mapEventSearchTimers[target]);
+      mapEventSearchTimers[target] = setTimeout(async () => {
+        const response = await apiFetch('/admin-panel/api/dayz-items?query=' + encodeURIComponent(query || '') + '&limit=12');
+        if (!response.ok) return;
+        const payload = await response.json();
+        renderMapEventAutocomplete(target, payload.items || []);
+      }, 160);
+    }
+    function selectMapEventStorage(item) {
+      if (!item || !item.className) return;
+      state.mapEventRewardStorageItem = item;
+      if (els.mapEventRewardStorage) els.mapEventRewardStorage.value = item.className;
+      if (els.mapEventRewardStorageSearch) els.mapEventRewardStorageSearch.value = item.popularName || item.className;
+      renderMapEventRewardStorage();
+      setMapEventAutocompleteOpen('storage', false);
+    }
+    function addMapEventLootItem(item) {
+      if (!item || !item.className) return;
+      const existing = state.mapEventLootItems.find((entry) => entry.type === item.className);
+      if (existing) existing.quantity = Math.min(50, Number(existing.quantity || 1) + 1);
+      else state.mapEventLootItems.push({ type: item.className, quantity: 1, item });
+      if (els.mapEventGuaranteedItemSearch) els.mapEventGuaranteedItemSearch.value = '';
+      renderMapEventLootItems();
+      setMapEventAutocompleteOpen('item', false);
+    }
+    function renderMapEventRewardStorage() {
+      if (!els.mapEventRewardStorageSelected) return;
+      const item = state.mapEventRewardStorageItem;
+      const className = (els.mapEventRewardStorage && els.mapEventRewardStorage.value) || (item && item.className) || '';
+      if (!className) {
+        els.mapEventRewardStorageSelected.className = 'map-loot-selected is-empty';
+        els.mapEventRewardStorageSelected.innerHTML = 'Nenhum storage selecionado.';
+        return;
+      }
+      els.mapEventRewardStorageSelected.className = 'map-loot-selected';
+      els.mapEventRewardStorageSelected.innerHTML = mapEventItemThumb(item) + '<div><div class="map-loot-title">' + escapeHtml((item && (item.popularName || item.className)) || className) + '</div><div class="map-loot-subtitle">' + escapeHtml(className) + '</div></div><button type="button" class="mini-btn" id="mapEventClearStorage">Limpar</button>';
+      const clearButton = document.getElementById('mapEventClearStorage');
+      if (clearButton) clearButton.addEventListener('click', () => { state.mapEventRewardStorageItem = null; if (els.mapEventRewardStorage) els.mapEventRewardStorage.value = ''; if (els.mapEventRewardStorageSearch) els.mapEventRewardStorageSearch.value = ''; renderMapEventRewardStorage(); });
+    }
+    function renderMapEventLootItems() {
+      if (!els.mapEventGuaranteedItemsList) return;
+      if (!state.mapEventLootItems.length) {
+        els.mapEventGuaranteedItemsList.innerHTML = '<div class="map-loot-empty">Nenhum item adicionado. Use a busca acima para selecionar itens da base DayZ.</div>';
+        return;
+      }
+      els.mapEventGuaranteedItemsList.innerHTML = state.mapEventLootItems.map((entry, index) => {
+        const item = entry.item || { className: entry.type };
+        return '<div class="map-loot-row" data-loot-index="' + index + '">' +
+          mapEventItemThumb(item) +
+          '<div><div class="map-loot-title">' + escapeHtml((item && (item.popularName || item.className)) || entry.type) + '</div><div class="map-loot-subtitle">' + escapeHtml(entry.type) + '</div></div>' +
+          '<input type="number" min="1" max="50" step="1" value="' + escapeHtml(String(entry.quantity || 1)) + '" data-loot-quantity="' + index + '" />' +
+          '<button type="button" class="mini-btn danger" data-loot-remove="' + index + '">Remover</button>' +
+          '</div>';
+      }).join('');
     }
     function updateMapEventLootModeUi() {
       const mode = els.mapEventLootMode?.value || 'rng';
       if (els.mapEventRewardStorageWrap) els.mapEventRewardStorageWrap.style.display = mode === 'guaranteed_container' ? '' : 'none';
       if (els.mapEventGuaranteedItemsWrap) els.mapEventGuaranteedItemsWrap.style.display = mode === 'guaranteed_container' || mode === 'guaranteed_items' ? '' : 'none';
+      renderMapEventRewardStorage();
+      renderMapEventLootItems();
     }
     function readMapEventForm() {
       const lootMode = els.mapEventLootMode?.value || 'rng';
@@ -3162,7 +3257,7 @@ NVGoggles x1"></textarea></label>
         cleanupRadius: Number(els.mapEventCleanupRadius?.value || 250),
         lootMode,
         rewardStorageClass: els.mapEventRewardStorage?.value || 'SeaChest',
-        guaranteedItems: parseGuaranteedItemsText(els.mapEventGuaranteedItems?.value || ''),
+        guaranteedItems: (state.mapEventLootItems || []).map((entry) => ({ type: entry.type, quantity: Number(entry.quantity || 1) })),
       };
     }
     function setMapEventStatus(html) {
@@ -3240,6 +3335,40 @@ NVGoggles x1"></textarea></label>
     const mapEventsCleanup = document.getElementById("mapEventsCleanup");
     if (mapEventsCleanup) mapEventsCleanup.addEventListener("click", cleanupMapEventsAction);
     if (els.mapEventLootMode) els.mapEventLootMode.addEventListener("change", updateMapEventLootModeUi);
+    if (els.mapEventRewardStorageSearch) els.mapEventRewardStorageSearch.addEventListener("input", (event) => searchMapEventBaseItems('storage', event.target.value));
+    if (els.mapEventGuaranteedItemSearch) els.mapEventGuaranteedItemSearch.addEventListener("input", (event) => searchMapEventBaseItems('item', event.target.value));
+    if (els.mapEventRewardStorageAutocomplete) els.mapEventRewardStorageAutocomplete.addEventListener("click", (event) => {
+      const option = event.target.closest('[data-map-event-target="storage"]');
+      if (!option) return;
+      selectMapEventStorage({ className: option.getAttribute('data-class-name') || '', popularName: option.getAttribute('data-popular-name') || '', imageUrl: option.getAttribute('data-image-url') || '' });
+    });
+    if (els.mapEventGuaranteedItemAutocomplete) els.mapEventGuaranteedItemAutocomplete.addEventListener("click", (event) => {
+      const option = event.target.closest('[data-map-event-target="item"]');
+      if (!option) return;
+      addMapEventLootItem({ className: option.getAttribute('data-class-name') || '', popularName: option.getAttribute('data-popular-name') || '', imageUrl: option.getAttribute('data-image-url') || '' });
+    });
+    if (els.mapEventGuaranteedItemsList) els.mapEventGuaranteedItemsList.addEventListener("input", (event) => {
+      const input = event.target.closest('[data-loot-quantity]');
+      if (!input) return;
+      const index = Number(input.getAttribute('data-loot-quantity'));
+      if (!Number.isFinite(index) || !state.mapEventLootItems[index]) return;
+      state.mapEventLootItems[index].quantity = Math.max(1, Math.min(50, Number(input.value || 1)));
+    });
+    if (els.mapEventGuaranteedItemsList) els.mapEventGuaranteedItemsList.addEventListener("click", (event) => {
+      const button = event.target.closest('[data-loot-remove]');
+      if (!button) return;
+      const index = Number(button.getAttribute('data-loot-remove'));
+      if (!Number.isFinite(index)) return;
+      state.mapEventLootItems.splice(index, 1);
+      renderMapEventLootItems();
+    });
+    document.addEventListener("click", (event) => {
+      if (els.mapEventRewardStorageWrap && !els.mapEventRewardStorageWrap.contains(event.target)) setMapEventAutocompleteOpen('storage', false);
+      if (els.mapEventGuaranteedItemsWrap && !els.mapEventGuaranteedItemsWrap.contains(event.target)) setMapEventAutocompleteOpen('item', false);
+    });
+    if (els.mapEventRewardStorage) els.mapEventRewardStorage.value = 'SeaChest';
+    if (els.mapEventRewardStorageSearch) els.mapEventRewardStorageSearch.value = 'SeaChest';
+    state.mapEventRewardStorageItem = { className: 'SeaChest', popularName: 'SeaChest', imageUrl: '' };
     updateMapEventLootModeUi();
     document.getElementById("catalogSearch").addEventListener("input", (event) => { state.catalogSearch = event.target.value; renderCatalog(); });
     document.getElementById("catalogRefresh").addEventListener("click", loadCatalog);
