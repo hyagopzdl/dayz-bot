@@ -3132,11 +3132,11 @@ NVGoggles x1"></textarea></label>
       applyMapEventPresetDefaults(selectedMapEventPreset());
     }
     function parseGuaranteedItemsText(value) {
-      return String(value || '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean).map((line) => {
-        const normalized = line.replace(/[,;]+/g, ' ').replace(/\s+/g, ' ').trim();
+      return String(value || '').split(/\\r?\\n/).map((line) => line.trim()).filter(Boolean).map((line) => {
+        const normalized = line.replace(/[,;]+/g, ' ').replace(/\\s+/g, ' ').trim();
         const parts = normalized.split(' ');
-        const first = parts[0] && parts[0].match(/^(\d+)x?$/i);
-        const last = parts[parts.length - 1] && parts[parts.length - 1].match(/^x?(\d+)$/i);
+        const first = parts[0] && parts[0].match(/^(\\d+)x?$/i);
+        const last = parts[parts.length - 1] && parts[parts.length - 1].match(/^x?(\\d+)$/i);
         if (first && parts[1]) return { quantity: Number(first[1]), type: parts.slice(1).join('') };
         if (last && parts.length > 1) return { quantity: Number(last[1]), type: parts.slice(0, -1).join('') };
         return { quantity: 1, type: parts.join('') };
