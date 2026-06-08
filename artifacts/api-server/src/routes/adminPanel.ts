@@ -454,16 +454,37 @@ async function buildOverviewPayload(state: AdminState) {
   const totalCoins = wallets.reduce((sum, wallet) => sum + Math.floor(Number(wallet.balance || 0)), 0);
   const totalEarned = wallets.reduce((sum, wallet) => sum + Math.floor(Number(wallet.totalEarned || 0)), 0);
   const totalSpent = wallets.reduce((sum, wallet) => sum + Math.floor(Number(wallet.totalSpent || 0)), 0);
+  const shopOverview = buildShopOverview(state);
+  const economyToday = buildEconomyToday(transactions);
+  const maxPlayers = Math.max(1, Math.floor(Number(process.env.DAYZ_SERVER_MAX_PLAYERS || process.env.ADMIN_PANEL_MAX_PLAYERS || 10)));
 
   return {
     server: {
       name: process.env.ADMIN_PANEL_SERVER_NAME || process.env.SERVER_NAME || "DayZ Server",
       status: "online",
       onlinePlayers: countObject(state.onlinePlayers),
+      maxPlayers,
+      totalPlayers: countObject(state.players),
       knownPlayers: countObject(state.players),
       linkedMembers: members.length,
       nextRestart: runtime.nextRestartLabel || "unknown",
       minutesUntilRestart: runtime.minutesUntilRestart ?? null,
+    },
+    combat: {
+      dailyKills: sumPlayerKills(state.dailyPlayers),
+      dailyDeaths: sumPlayerDeaths(state.dailyPlayers),
+      weeklyKills: sumPlayerKills(state.weeklyPlayers),
+      weeklyDeaths: sumPlayerDeaths(state.weeklyPlayers),
+      totalKills: sumPlayerKills(state.players),
+      totalDeaths: sumPlayerDeaths(state.players),
+      killfeedEvents: Array.isArray(state.killFeedEvents) ? state.killFeedEvents.length : 0,
+      longShotEvents: Array.isArray(state.longShotEvents) ? state.longShotEvents.length : 0,
+      killStreakEvents: Array.isArray(state.killStreakEvents) ? state.killStreakEvents.length : 0,
+    },
+    parser: {
+      lastProcessedAt: getLastParserProcessedAt(state),
+      files: countObject(state.files),
+      lastFileName: state.lastFileName || null,
     },
     economy: {
       ...getEconomyConfig(),
@@ -472,6 +493,9 @@ async function buildOverviewPayload(state: AdminState) {
       totalEarned,
       totalSpent,
       transactions: transactions.length,
+      todayEarned: economyToday.earned,
+      todaySpent: economyToday.spent,
+      todayNet: economyToday.net,
     },
     locale: {
       active: process.env.ADMIN_PANEL_DEFAULT_LOCALE || "pt-BR",
@@ -481,6 +505,10 @@ async function buildOverviewPayload(state: AdminState) {
       state: runtime.state,
       canAcceptPurchase: runtime.canAcceptPurchase,
       reason: runtime.reason,
+      ...shopOverview,
+    },
+    mapEvents: {
+      mode: "Manual pelo painel",
     },
     activity: buildActivitySeries(state),
     generatedAt: new Date().toISOString(),
@@ -803,22 +831,86 @@ function readCatalogCategoryPayload(body: unknown) {
   };
 }
 
-function buildActivitySeries(state: AdminState) {
-  const online = countObject(state.onlinePlayers);
-  const weekly = countObject(state.weeklyPlayers);
-  const daily = countObject(state.dailyPlayers);
-  const transactions = Array.isArray(state.economyTransactions) ? state.economyTransactions.length : 0;
-  const base = Math.max(online, 1);
+function sumPlayerKills(players: unknown) {
+  if (!players || typeof players !== "object") return 0;
+  return Object.values(players as Record<string, Partial<{ kills: number }>>)
+    .reduce((sum, player) => sum + Math.max(0, Math.floor(Number(player?.kills || 0))), 0);
+}
 
-  return Array.from({ length: 12 }, (_, index) => {
-    const hour = `${String((index * 2) % 24).padStart(2, "0")}:00`;
-    return {
-      hour,
-      players: Math.max(0, Math.round(base + Math.sin(index / 1.7) * Math.max(1, base * 0.45) + index / 2)),
-      joins: Math.max(0, Math.round((weekly + index * 3) % 18)),
-      economy: Math.max(0, Math.round((transactions + daily + index * 11) % 120)),
-    };
-  });
+function sumPlayerDeaths(players: unknown) {
+  if (!players || typeof players !== "object") return 0;
+  return Object.values(players as Record<string, Partial<{ deaths: number }>>)
+    .reduce((sum, player) => sum + Math.max(0, Math.floor(Number(player?.deaths || 0))), 0);
+}
+
+function isToday(value: unknown) {
+  if (!value) return false;
+  const date = new Date(String(value));
+  if (Number.isNaN(date.getTime())) return false;
+  const now = new Date();
+  return date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth() && date.getDate() === now.getDate();
+}
+
+function buildShopOverview(state: AdminState) {
+  const orders = Array.isArray(state.shopOrders) ? state.shopOrders : [];
+  const counts = orders.reduce<Record<string, number>>((acc, order) => {
+    const status = String((order as { status?: string }).status || "unknown");
+    acc[status] = (acc[status] || 0) + 1;
+    return acc;
+  }, {});
+
+  return {
+    total: orders.length,
+    pending: counts.pending_spawn || 0,
+    included: counts.included_in_restart || 0,
+    spawned: counts.spawned || 0,
+    failed: counts.failed || 0,
+  };
+}
+
+function buildEconomyToday(transactions: unknown[]) {
+  let earned = 0;
+  let spent = 0;
+
+  for (const entry of transactions) {
+    const transaction = entry as { type?: string; amount?: number; createdAt?: string };
+    if (!isToday(transaction.createdAt)) continue;
+    const amount = Math.max(0, Math.floor(Number(transaction.amount || 0)));
+    const type = String(transaction.type || "");
+
+    if (["ADMIN_ADD", "PLAYTIME_REWARD", "EVENT_REWARD", "DONATION_REWARD"].includes(type)) earned += amount;
+    if (["ADMIN_REMOVE", "SHOP_PURCHASE"].includes(type)) spent += amount;
+  }
+
+  return { earned, spent, net: earned - spent };
+}
+
+function getLastParserProcessedAt(state: AdminState) {
+  const files = state.files || {};
+  let latest: string | null = null;
+
+  for (const value of Object.values(files)) {
+    const cursor = value as { lastProcessedAt?: string } | undefined;
+    if (!cursor?.lastProcessedAt) continue;
+    if (!latest || String(cursor.lastProcessedAt) > latest) latest = String(cursor.lastProcessedAt);
+  }
+
+  return latest;
+}
+
+function buildActivitySeries(state: AdminState) {
+  const shop = buildShopOverview(state);
+  const transactions = Array.isArray(state.economyTransactions) ? state.economyTransactions : [];
+  const todayEconomy = buildEconomyToday(transactions);
+
+  return [
+    { label: "Online", title: "Players online agora", value: countObject(state.onlinePlayers) },
+    { label: "Hoje", title: "Kills hoje", value: sumPlayerKills(state.dailyPlayers) },
+    { label: "Semana", title: "Kills na semana", value: sumPlayerKills(state.weeklyPlayers) },
+    { label: "Total", title: "Kills globais", value: sumPlayerKills(state.players) },
+    { label: "Fila", title: "Pedidos pendentes da loja", value: shop.pending },
+    { label: "Coins", title: "Coins emitidas hoje", value: todayEconomy.earned },
+  ];
 }
 
 function renderAdminPanelHtml(token: string) {
@@ -2185,23 +2277,24 @@ function renderAdminPanelHtml(token: string) {
       <main class="content">
         <section id="view-general" class="view active">
           <div class="metric-grid">
-            <div class="card"><div class="metric-label">Players Online</div><div class="metric-value" id="metricOnline">—</div><div class="metric-hint" id="metricOnlineHint">Carregando...</div></div>
-            <div class="card"><div class="metric-label">Próximo Reset</div><div class="metric-value" id="metricReset">—</div><div class="metric-hint" id="metricResetHint">Countdown do servidor</div></div>
-            <div class="card"><div class="metric-label">Economia</div><div class="metric-value" id="metricEconomy">—</div><div class="metric-hint" id="metricEconomyHint">Reward por tempo online</div></div>
-            <div class="card"><div class="metric-label">Idioma Ativo</div><div class="metric-value" id="metricLocale">—</div><div class="metric-hint">Preferência do painel</div></div>
+            <div class="card"><div class="metric-label">Online agora</div><div class="metric-value" id="metricOnline">—</div><div class="metric-hint" id="metricOnlineHint">Capacidade do servidor</div></div>
+            <div class="card"><div class="metric-label">Total de players</div><div class="metric-value" id="metricTotalPlayers">—</div><div class="metric-hint" id="metricTotalPlayersHint">Jogadores registrados no parser</div></div>
+            <div class="card"><div class="metric-label">Kills hoje</div><div class="metric-value" id="metricKillsToday">—</div><div class="metric-hint" id="metricKillsTodayHint">Dados reais do ADM</div></div>
+            <div class="card"><div class="metric-label">Fila da loja</div><div class="metric-value" id="metricShopQueue">—</div><div class="metric-hint" id="metricShopQueueHint">Pedidos aguardando reset</div></div>
           </div>
           <div class="dashboard-grid">
             <div class="card">
-              <div class="section-title"><h2>Atividade do servidor</h2><span class="chip">tempo real</span></div>
+              <div class="section-title"><h2>Operação do servidor</h2><span class="chip">dados reais</span></div>
               <div id="activityChart" class="chart"></div>
             </div>
             <aside class="card">
-              <div class="section-title"><h2>Configurações rápidas</h2><span class="chip">config</span></div>
+              <div class="section-title"><h2>Status operacional</h2><span class="chip">live</span></div>
               <div class="settings-list">
-                <div class="setting-row"><div><b>Pontos por hora</b><span id="quickCoins">—</span></div><button class="mini-btn disabled">Editar</button></div>
-                <div class="setting-row"><div><b>Idioma</b><span id="quickLocale">—</span></div><button class="mini-btn disabled">Alterar</button></div>
-                <div class="setting-row"><div><b>Próximo reset</b><span id="quickReset">—</span></div><button class="mini-btn disabled">Configurar</button></div>
-                <div class="setting-row"><div><b>Shop</b><span id="quickShop">—</span></div><button class="mini-btn disabled">Ver</button></div>
+                <div class="setting-row"><div><b>Próximo reset</b><span id="quickReset">—</span></div><button class="mini-btn disabled">Reset</button></div>
+                <div class="setting-row"><div><b>Parser ADM</b><span id="quickParser">—</span></div><button class="mini-btn disabled">ADM</button></div>
+                <div class="setting-row"><div><b>Economia hoje</b><span id="quickEconomyToday">—</span></div><button class="mini-btn disabled">Coins</button></div>
+                <div class="setting-row"><div><b>Loja</b><span id="quickShop">—</span></div><button class="mini-btn disabled">Shop</button></div>
+                <div class="setting-row"><div><b>Eventos do mapa</b><span id="quickMapEvents">Manual pelo painel</span></div><button class="mini-btn disabled">Eventos</button></div>
               </div>
             </aside>
           </div>
@@ -2465,23 +2558,35 @@ function renderAdminPanelHtml(token: string) {
       document.body.classList.toggle("nav-open", open);
     }
     function setText(id, value) { const el = document.getElementById(id); if (el) el.textContent = value; }
-    function renderActivity(series) { const chart = document.getElementById("activityChart"); const max = Math.max(1, ...series.map((item) => item.players)); chart.innerHTML = series.map((item) => '<div class="bar-wrap"><div class="bar" style="height:' + Math.max(8, Math.round((item.players / max) * 190)) + 'px"></div><div class="bar-label">' + escapeHtml(item.hour) + '</div></div>').join(""); }
+    function renderActivity(series) {
+      const chart = document.getElementById("activityChart");
+      const rows = Array.isArray(series) ? series : [];
+      const max = Math.max(1, ...rows.map((item) => Number(item.value || 0)));
+      chart.innerHTML = rows.map((item) => {
+        const value = Number(item.value || 0);
+        const label = item.label || item.hour || "—";
+        const title = item.title || label;
+        return '<div class="bar-wrap" title="' + escapeHtml(title + ': ' + value) + '"><div class="bar" style="height:' + Math.max(8, Math.round((value / max) * 190)) + 'px"></div><div class="bar-label">' + escapeHtml(label) + '</div></div>';
+      }).join("");
+    }
     async function loadOverview() {
       const response = await apiFetch("/admin-panel/api/overview");
       if (!response.ok) { showToast(await response.text()); return; }
       const payload = await response.json();
       els.serverName.textContent = payload.server.name;
-      setText("metricOnline", payload.server.onlinePlayers + " / " + Math.max(payload.server.knownPlayers, payload.server.onlinePlayers));
-      setText("metricOnlineHint", payload.server.linkedMembers + " membros vinculados");
-      setText("metricReset", payload.server.nextRestart || "unknown");
-      setText("metricResetHint", payload.server.minutesUntilRestart === null ? "Sem countdown ativo" : payload.server.minutesUntilRestart + " minutos restantes");
-      setText("metricEconomy", payload.economy.coinsPerHour + " coins/h");
-      setText("metricEconomyHint", payload.economy.enabled ? "Reward automático ativo" : "Reward automático desligado");
-      setText("metricLocale", payload.locale.active === "pt-BR" ? "Português 🇧🇷" : "English 🇺🇸");
-      setText("quickCoins", payload.economy.rewardCoins + " coins a cada " + payload.economy.rewardMinutes + " min");
-      setText("quickLocale", payload.locale.active);
-      setText("quickReset", payload.server.nextRestart || "unknown");
+      setText("metricOnline", payload.server.onlinePlayers + " / " + payload.server.maxPlayers);
+      setText("metricOnlineHint", payload.server.onlinePlayers === 1 ? "1 jogador online agora" : payload.server.onlinePlayers + " jogadores online agora");
+      setText("metricTotalPlayers", formatNumber(payload.server.totalPlayers));
+      setText("metricTotalPlayersHint", payload.server.linkedMembers + " membros vinculados ao Discord");
+      setText("metricKillsToday", formatNumber(payload.combat.dailyKills));
+      setText("metricKillsTodayHint", formatNumber(payload.combat.weeklyKills) + " kills na semana");
+      setText("metricShopQueue", formatNumber(payload.shop.pending));
+      setText("metricShopQueueHint", payload.shop.included + " incluídos · " + payload.shop.failed + " falhas");
+      setText("quickReset", payload.server.nextRestart || "Sem countdown ativo");
+      setText("quickParser", payload.parser.lastProcessedAt ? "Última leitura " + relativeDate(payload.parser.lastProcessedAt) : "Aguardando ADM");
+      setText("quickEconomyToday", "+" + formatCoins(payload.economy.todayEarned) + " / -" + formatCoins(payload.economy.todaySpent));
       setText("quickShop", payload.shop.canAcceptPurchase ? "Checkout aberto" : "Checkout fechado");
+      setText("quickMapEvents", payload.mapEvents.mode || "Manual pelo painel");
       renderActivity(payload.activity || []);
     }
     function memberAvatarHtml(member) {

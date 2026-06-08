@@ -23,3 +23,6 @@ deploymentTarget = "cloudrun"
 
 [agent]
 expertMode = true
+
+[nix]
+packages = ["zip"]
