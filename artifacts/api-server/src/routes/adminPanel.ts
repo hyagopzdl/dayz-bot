@@ -1,7 +1,11 @@
 import { Router, type Request, type Response } from "express";
 import { Routes } from "discord.js";
 import { getShopRuntimeStatus } from "../lib/shop";
-import { cleanupMapEventsNow, getMapEventPresetPayload, injectMapEventNow } from "../lib/mapEvents/mapEventService";
+import {
+  cleanupMapEventsNow,
+  getMapEventPresetPayload,
+  injectMapEventNow,
+} from "../lib/mapEvents/mapEventService";
 import {
   deleteShopCatalogCategory,
   deleteShopCatalogItem,
@@ -16,7 +20,12 @@ import {
   type ShopCatalog,
   type ShopItem,
 } from "../lib/shopCatalog";
-import { addCoins, removeCoins, setCoins, getOrCreateWalletForLink } from "../lib/economy";
+import {
+  addCoins,
+  removeCoins,
+  setCoins,
+  getOrCreateWalletForLink,
+} from "../lib/economy";
 import {
   getDayzItemByClassName,
   getDayzItemsPage,
@@ -24,7 +33,13 @@ import {
   toggleDayzItemInDatabase,
   updateDayzItemInDatabase,
 } from "../lib/dayzItemsService";
-import { getStateAsync, saveStateAsync, type AppState, type PlayerLink, type Wallet } from "../lib/state";
+import {
+  getStateAsync,
+  saveStateAsync,
+  type AppState,
+  type PlayerLink,
+  type Wallet,
+} from "../lib/state";
 import { getDiscordClient } from "../lib/discordBot";
 
 const router = Router();
@@ -54,8 +69,12 @@ type MemberRow = {
 };
 
 function readCookie(req: Request, name: string) {
-  const cookieHeader = typeof req.headers.cookie === "string" ? req.headers.cookie : "";
-  const cookies = cookieHeader.split(";").map((part) => part.trim()).filter(Boolean);
+  const cookieHeader =
+    typeof req.headers.cookie === "string" ? req.headers.cookie : "";
+  const cookies = cookieHeader
+    .split(";")
+    .map((part) => part.trim())
+    .filter(Boolean);
 
   for (const cookie of cookies) {
     const separatorIndex = cookie.indexOf("=");
@@ -75,20 +94,32 @@ function getConfiguredToken() {
 
 function getTokenFromRequest(req: Request) {
   const queryToken = typeof req.query.token === "string" ? req.query.token : "";
-  const headerToken = typeof req.headers["x-admin-token"] === "string" ? req.headers["x-admin-token"] : "";
-  const authHeader = typeof req.headers.authorization === "string" ? req.headers.authorization : "";
-  const bearerToken = authHeader.toLowerCase().startsWith("bearer ") ? authHeader.slice(7).trim() : "";
+  const headerToken =
+    typeof req.headers["x-admin-token"] === "string"
+      ? req.headers["x-admin-token"]
+      : "";
+  const authHeader =
+    typeof req.headers.authorization === "string"
+      ? req.headers.authorization
+      : "";
+  const bearerToken = authHeader.toLowerCase().startsWith("bearer ")
+    ? authHeader.slice(7).trim()
+    : "";
   const cookieToken = readCookie(req, TOKEN_COOKIE);
 
-  const referer = typeof req.headers.referer === "string" ? req.headers.referer : "";
+  const referer =
+    typeof req.headers.referer === "string" ? req.headers.referer : "";
   let refererToken = "";
   try {
-    if (referer) refererToken = new URL(referer).searchParams.get("token") || "";
+    if (referer)
+      refererToken = new URL(referer).searchParams.get("token") || "";
   } catch {
     refererToken = "";
   }
 
-  return queryToken || headerToken || bearerToken || cookieToken || refererToken;
+  return (
+    queryToken || headerToken || bearerToken || cookieToken || refererToken
+  );
 }
 
 function requireAdmin(req: Request, res: Response) {
@@ -116,7 +147,9 @@ function setPanelCookie(req: Request, res: Response) {
 }
 
 function normalizeText(value: unknown) {
-  return String(value || "").trim().toLowerCase();
+  return String(value || "")
+    .trim()
+    .toLowerCase();
 }
 
 function formatIso(value: unknown) {
@@ -148,7 +181,9 @@ function getLastSeenAt(state: AdminState, gamertag: string) {
 
   for (const [name, value] of Object.entries(sessions)) {
     if (normalizeText(name) !== normalized) continue;
-    const sessionValue = value as { lastSeenAt?: string; connectedAt?: string } | undefined;
+    const sessionValue = value as
+      | { lastSeenAt?: string; connectedAt?: string }
+      | undefined;
     return formatIso(sessionValue?.lastSeenAt || sessionValue?.connectedAt);
   }
 
@@ -195,15 +230,18 @@ function getDiscordAvatarUrl(userId: string, avatarHash?: string | null) {
   return `https://cdn.discordapp.com/avatars/${userId}/${avatarHash}.${extension}?size=96`;
 }
 
-async function fetchDiscordMembersViaRest(guildId: string): Promise<DiscordMemberSnapshot[]> {
+async function fetchDiscordMembersViaRest(
+  guildId: string,
+): Promise<DiscordMemberSnapshot[]> {
   const client = getDiscordClient();
   const members: DiscordMemberSnapshot[] = [];
   let after = "0";
 
   for (let page = 0; page < 20; page += 1) {
     const query = new URLSearchParams({ limit: "1000", after });
-    const route = `${Routes.guildMembers(guildId)}?${query.toString()}` as `/${string}`;
-    const pageMembers = await client.rest.get(route) as DiscordRestMember[];
+    const route =
+      `${Routes.guildMembers(guildId)}?${query.toString()}` as `/${string}`;
+    const pageMembers = (await client.rest.get(route)) as DiscordRestMember[];
 
     if (!Array.isArray(pageMembers) || pageMembers.length === 0) break;
 
@@ -214,8 +252,16 @@ async function fetchDiscordMembersViaRest(guildId: string): Promise<DiscordMembe
 
       members.push({
         discordId: userId,
-        discordName: String(member.nick || user?.global_name || user?.username || `Discord User ${userId.slice(-4)}`),
-        avatarUrl: getDiscordAvatarUrl(userId, member.avatar || user?.avatar || null),
+        discordName: String(
+          member.nick ||
+            user?.global_name ||
+            user?.username ||
+            `Discord User ${userId.slice(-4)}`,
+        ),
+        avatarUrl: getDiscordAvatarUrl(
+          userId,
+          member.avatar || user?.avatar || null,
+        ),
         isOnline: false,
       });
     }
@@ -229,22 +275,33 @@ async function fetchDiscordMembersViaRest(guildId: string): Promise<DiscordMembe
 }
 
 const DISCORD_MEMBERS_CACHE_TTL_MS = 60_000;
-let discordMembersCache: DiscordMembersCache = { expiresAt: 0, members: [], error: null };
+let discordMembersCache: DiscordMembersCache = {
+  expiresAt: 0,
+  members: [],
+  error: null,
+};
 
-async function fetchDiscordMemberSnapshots(forceRefresh = false): Promise<DiscordMembersCache> {
+async function fetchDiscordMemberSnapshots(
+  forceRefresh = false,
+): Promise<DiscordMembersCache> {
   const now = Date.now();
-  if (!forceRefresh && discordMembersCache.expiresAt > now) return discordMembersCache;
+  if (!forceRefresh && discordMembersCache.expiresAt > now)
+    return discordMembersCache;
 
   try {
     const client = getDiscordClient();
     if (!client.isReady()) throw new Error("Discord client is not ready yet.");
 
-    const configuredGuildId = process.env.DISCORD_SERVER_ID || process.env.DISCORD_GUILD_ID || "";
+    const configuredGuildId =
+      process.env.DISCORD_SERVER_ID || process.env.DISCORD_GUILD_ID || "";
     const guild = configuredGuildId
       ? await client.guilds.fetch(configuredGuildId)
       : client.guilds.cache.first();
 
-    if (!guild) throw new Error("Discord guild not found. Set DISCORD_GUILD_ID or DISCORD_SERVER_ID.");
+    if (!guild)
+      throw new Error(
+        "Discord guild not found. Set DISCORD_GUILD_ID or DISCORD_SERVER_ID.",
+      );
 
     let members: DiscordMemberSnapshot[] = [];
     let fetchError: string | null = null;
@@ -258,7 +315,11 @@ async function fetchDiscordMemberSnapshots(forceRefresh = false): Promise<Discor
           const status = presence?.status || "offline";
           return {
             discordId: member.id,
-            discordName: member.displayName || member.user.globalName || member.user.username || `Discord User ${member.id.slice(-4)}`,
+            discordName:
+              member.displayName ||
+              member.user.globalName ||
+              member.user.username ||
+              `Discord User ${member.id.slice(-4)}`,
             avatarUrl: member.displayAvatarURL({ extension: "png", size: 96 }),
             isOnline: status !== "offline",
           };
@@ -273,7 +334,9 @@ async function fetchDiscordMemberSnapshots(forceRefresh = false): Promise<Discor
       const presenceById = guild.presences.cache;
       members = restMembers.map((member) => ({
         ...member,
-        isOnline: (presenceById.get(member.discordId)?.status || "offline") !== "offline",
+        isOnline:
+          (presenceById.get(member.discordId)?.status || "offline") !==
+          "offline",
       }));
     }
 
@@ -297,7 +360,9 @@ async function fetchDiscordMemberSnapshots(forceRefresh = false): Promise<Discor
   return discordMembersCache;
 }
 
-function fallbackDiscordMembersFromLinks(state: AdminState): DiscordMemberSnapshot[] {
+function fallbackDiscordMembersFromLinks(
+  state: AdminState,
+): DiscordMemberSnapshot[] {
   const onlineNames = getOnlinePlayerNames(state);
   const links = Object.values(state.playerLinks || {}) as PlayerLink[];
 
@@ -307,11 +372,16 @@ function fallbackDiscordMembersFromLinks(state: AdminState): DiscordMemberSnapsh
       discordId: link.discordId,
       discordName: `Discord User ${link.discordId.slice(-4)}`,
       avatarUrl: null,
-      isOnline: Boolean(link.gamertag && onlineNames.has(normalizeText(link.gamertag))),
+      isOnline: Boolean(
+        link.gamertag && onlineNames.has(normalizeText(link.gamertag)),
+      ),
     }));
 }
 
-function buildMemberStats(rows: MemberRow[], discordError: string | null = null) {
+function buildMemberStats(
+  rows: MemberRow[],
+  discordError: string | null = null,
+) {
   const linked = rows.filter((member) => member.isLinked).length;
   const online = rows.filter((member) => member.isOnline).length;
 
@@ -324,48 +394,69 @@ function buildMemberStats(rows: MemberRow[], discordError: string | null = null)
   };
 }
 
-async function buildMemberRows(state: AdminState, options: { forceDiscordRefresh?: boolean } = {}): Promise<{ rows: MemberRow[]; stats: ReturnType<typeof buildMemberStats> }> {
+async function buildMemberRows(
+  state: AdminState,
+  options: { forceDiscordRefresh?: boolean } = {},
+): Promise<{ rows: MemberRow[]; stats: ReturnType<typeof buildMemberStats> }> {
   const linksByDiscordId = new Map<string, PlayerLink>();
   for (const link of Object.values(state.playerLinks || {}) as PlayerLink[]) {
     if (link?.discordId) linksByDiscordId.set(link.discordId, link);
   }
 
-  const discordCache = await fetchDiscordMemberSnapshots(Boolean(options.forceDiscordRefresh));
-  const discordMembers = discordCache.members.length ? discordCache.members : fallbackDiscordMembersFromLinks(state);
+  const discordCache = await fetchDiscordMemberSnapshots(
+    Boolean(options.forceDiscordRefresh),
+  );
+  const discordMembers = discordCache.members.length
+    ? discordCache.members
+    : fallbackDiscordMembersFromLinks(state);
   const onlineNames = getOnlinePlayerNames(state);
 
-  const rows = discordMembers.map((discordMember) => {
-    const link = linksByDiscordId.get(discordMember.discordId);
-    const gamertag = String(link?.gamertag || "").trim();
-    const wallet = state.wallets?.[discordMember.discordId] as Wallet | undefined;
-    const numbers = walletToNumbers(wallet);
-    const isDayzOnline = gamertag ? onlineNames.has(normalizeText(gamertag)) : false;
-    const isOnline = Boolean(discordMember.isOnline || isDayzOnline);
+  const rows = discordMembers
+    .map((discordMember) => {
+      const link = linksByDiscordId.get(discordMember.discordId);
+      const gamertag = String(link?.gamertag || "").trim();
+      const wallet = state.wallets?.[discordMember.discordId] as
+        | Wallet
+        | undefined;
+      const numbers = walletToNumbers(wallet);
+      const isDayzOnline = gamertag
+        ? onlineNames.has(normalizeText(gamertag))
+        : false;
+      const isOnline = Boolean(discordMember.isOnline || isDayzOnline);
 
-    return {
-      discordId: discordMember.discordId,
-      discordName: discordMember.discordName,
-      gamertag,
-      gamertagNormalized: link?.gamertagNormalized || normalizeText(gamertag),
-      isLinked: Boolean(link && gamertag),
-      locale: link?.locale || "pt",
-      avatarUrl: discordMember.avatarUrl,
-      balance: numbers.balance,
-      totalEarned: numbers.totalEarned,
-      totalSpent: numbers.totalSpent,
-      onlineRewardMinutes: numbers.onlineRewardMinutes,
-      status: (isOnline ? "online" : "offline") as "online" | "offline",
-      isOnline,
-      linkedAt: formatIso(link?.linkedAt),
-      updatedAt: formatIso(link?.updatedAt),
-      lastSeenAt: gamertag ? getLastSeenAt(state, gamertag) : null,
-    };
-  }).sort((a, b) => Number(b.isOnline) - Number(a.isOnline) || Number(b.isLinked) - Number(a.isLinked) || a.discordName.localeCompare(b.discordName));
+      return {
+        discordId: discordMember.discordId,
+        discordName: discordMember.discordName,
+        gamertag,
+        gamertagNormalized: link?.gamertagNormalized || normalizeText(gamertag),
+        isLinked: Boolean(link && gamertag),
+        locale: link?.locale || "pt",
+        avatarUrl: discordMember.avatarUrl,
+        balance: numbers.balance,
+        totalEarned: numbers.totalEarned,
+        totalSpent: numbers.totalSpent,
+        onlineRewardMinutes: numbers.onlineRewardMinutes,
+        status: (isOnline ? "online" : "offline") as "online" | "offline",
+        isOnline,
+        linkedAt: formatIso(link?.linkedAt),
+        updatedAt: formatIso(link?.updatedAt),
+        lastSeenAt: gamertag ? getLastSeenAt(state, gamertag) : null,
+      };
+    })
+    .sort(
+      (a, b) =>
+        Number(b.isOnline) - Number(a.isOnline) ||
+        Number(b.isLinked) - Number(a.isLinked) ||
+        a.discordName.localeCompare(b.discordName),
+    );
 
   return { rows, stats: buildMemberStats(rows, discordCache.error) };
 }
 
-function filterMembers(rows: MemberRow[], params: { search: string; filter: string }) {
+function filterMembers(
+  rows: MemberRow[],
+  params: { search: string; filter: string },
+) {
   const search = normalizeText(params.search);
   const filter = normalizeText(params.filter);
 
@@ -378,16 +469,30 @@ function filterMembers(rows: MemberRow[], params: { search: string; filter: stri
     if (filter === "en" && member.locale !== "en") return false;
 
     if (!search) return true;
-    return [member.discordId, member.discordName, member.gamertag, member.gamertagNormalized]
-      .some((value) => normalizeText(value).includes(search));
+    return [
+      member.discordId,
+      member.discordName,
+      member.gamertag,
+      member.gamertagNormalized,
+    ].some((value) => normalizeText(value).includes(search));
   });
 }
 
-function buildMemberTransactions(state: AdminState, discordId: string, limit = 20) {
-  const transactions = Array.isArray(state.economyTransactions) ? state.economyTransactions : [];
+function buildMemberTransactions(
+  state: AdminState,
+  discordId: string,
+  limit = 20,
+) {
+  const transactions = Array.isArray(state.economyTransactions)
+    ? state.economyTransactions
+    : [];
 
   return transactions
-    .filter((transaction) => String((transaction as { discordId?: string }).discordId || "") === discordId)
+    .filter(
+      (transaction) =>
+        String((transaction as { discordId?: string }).discordId || "") ===
+        discordId,
+    )
     .slice()
     .reverse()
     .slice(0, limit)
@@ -433,7 +538,9 @@ async function buildMemberDetails(state: AdminState, discordId: string) {
 
 function getEconomyConfig() {
   const rewardCoins = Number(process.env.ECONOMY_PLAYTIME_REWARD_COINS || 60);
-  const rewardMinutes = Number(process.env.ECONOMY_PLAYTIME_REWARD_MINUTES || 60);
+  const rewardMinutes = Number(
+    process.env.ECONOMY_PLAYTIME_REWARD_MINUTES || 60,
+  );
   const tickMinutes = Number(process.env.ECONOMY_PLAYTIME_TICK_MINUTES || 5);
   const enabled = process.env.ECONOMY_PLAYTIME_REWARD_ENABLED === "true";
 
@@ -442,7 +549,10 @@ function getEconomyConfig() {
     rewardCoins,
     rewardMinutes,
     tickMinutes,
-    coinsPerHour: rewardMinutes > 0 ? Math.round((rewardCoins / rewardMinutes) * 60) : rewardCoins,
+    coinsPerHour:
+      rewardMinutes > 0
+        ? Math.round((rewardCoins / rewardMinutes) * 60)
+        : rewardCoins,
   };
 }
 
@@ -450,17 +560,40 @@ async function buildOverviewPayload(state: AdminState) {
   const runtime = getShopRuntimeStatus(state);
   const { rows: members } = await buildMemberRows(state);
   const wallets = Object.values(state.wallets || {}) as Wallet[];
-  const transactions = Array.isArray(state.economyTransactions) ? state.economyTransactions : [];
-  const totalCoins = wallets.reduce((sum, wallet) => sum + Math.floor(Number(wallet.balance || 0)), 0);
-  const totalEarned = wallets.reduce((sum, wallet) => sum + Math.floor(Number(wallet.totalEarned || 0)), 0);
-  const totalSpent = wallets.reduce((sum, wallet) => sum + Math.floor(Number(wallet.totalSpent || 0)), 0);
+  const transactions = Array.isArray(state.economyTransactions)
+    ? state.economyTransactions
+    : [];
+  const totalCoins = wallets.reduce(
+    (sum, wallet) => sum + Math.floor(Number(wallet.balance || 0)),
+    0,
+  );
+  const totalEarned = wallets.reduce(
+    (sum, wallet) => sum + Math.floor(Number(wallet.totalEarned || 0)),
+    0,
+  );
+  const totalSpent = wallets.reduce(
+    (sum, wallet) => sum + Math.floor(Number(wallet.totalSpent || 0)),
+    0,
+  );
   const shopOverview = buildShopOverview(state);
   const economyToday = buildEconomyToday(transactions);
-  const maxPlayers = Math.max(1, Math.floor(Number(process.env.DAYZ_SERVER_MAX_PLAYERS || process.env.ADMIN_PANEL_MAX_PLAYERS || 10)));
+  const maxPlayers = Math.max(
+    1,
+    Math.floor(
+      Number(
+        process.env.DAYZ_SERVER_MAX_PLAYERS ||
+          process.env.ADMIN_PANEL_MAX_PLAYERS ||
+          10,
+      ),
+    ),
+  );
 
   return {
     server: {
-      name: process.env.ADMIN_PANEL_SERVER_NAME || process.env.SERVER_NAME || "DayZ Server",
+      name:
+        process.env.ADMIN_PANEL_SERVER_NAME ||
+        process.env.SERVER_NAME ||
+        "DayZ Server",
       status: "online",
       onlinePlayers: countObject(state.onlinePlayers),
       maxPlayers,
@@ -477,9 +610,15 @@ async function buildOverviewPayload(state: AdminState) {
       weeklyDeaths: sumPlayerDeaths(state.weeklyPlayers),
       totalKills: sumPlayerKills(state.players),
       totalDeaths: sumPlayerDeaths(state.players),
-      killfeedEvents: Array.isArray(state.killFeedEvents) ? state.killFeedEvents.length : 0,
-      longShotEvents: Array.isArray(state.longShotEvents) ? state.longShotEvents.length : 0,
-      killStreakEvents: Array.isArray(state.killStreakEvents) ? state.killStreakEvents.length : 0,
+      killfeedEvents: Array.isArray(state.killFeedEvents)
+        ? state.killFeedEvents.length
+        : 0,
+      longShotEvents: Array.isArray(state.longShotEvents)
+        ? state.longShotEvents.length
+        : 0,
+      killStreakEvents: Array.isArray(state.killStreakEvents)
+        ? state.killStreakEvents.length
+        : 0,
     },
     parser: {
       lastProcessedAt: getLastParserProcessedAt(state),
@@ -515,7 +654,6 @@ async function buildOverviewPayload(state: AdminState) {
   };
 }
 
-
 function labelForCategory(catalog: ShopCatalog, categoryId: string) {
   const category = catalog.categories.find((entry) => entry.id === categoryId);
   return category?.label || categoryId || "Misc";
@@ -537,10 +675,16 @@ function buildCatalogPayload() {
       emoji: category.emoji || "",
       description: category.description || "",
       enabled: category.enabled !== false,
-      sortOrder: Number.isFinite(Number(category.sortOrder)) ? Number(category.sortOrder) : 0,
+      sortOrder: Number.isFinite(Number(category.sortOrder))
+        ? Number(category.sortOrder)
+        : 0,
       itemCount: categoryCounts.get(category.id) || 0,
     }))
-    .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0) || a.label.localeCompare(b.label));
+    .sort(
+      (a, b) =>
+        (a.sortOrder || 0) - (b.sortOrder || 0) ||
+        a.label.localeCompare(b.label),
+    );
 
   const knownCategoryIds = new Set(categories.map((category) => category.id));
   for (const [categoryId, itemCount] of categoryCounts.entries()) {
@@ -570,13 +714,18 @@ function buildCatalogPayload() {
       enabled: item.enabled !== false,
       spawnEventName: item.spawnEventName || "",
       deliveryKind: item.deliveryKind || "item",
-      sortOrder: Number.isFinite(Number(item.sortOrder)) ? Number(item.sortOrder) : 0,
-      maxPerRestart: Number.isFinite(Number(item.maxPerRestart)) ? Number(item.maxPerRestart) : null,
+      sortOrder: Number.isFinite(Number(item.sortOrder))
+        ? Number(item.sortOrder)
+        : 0,
+      maxPerRestart: Number.isFinite(Number(item.maxPerRestart))
+        ? Number(item.maxPerRestart)
+        : null,
     }))
-    .sort((a, b) =>
-      a.categoryLabel.localeCompare(b.categoryLabel) ||
-      (a.sortOrder || 0) - (b.sortOrder || 0) ||
-      a.name.localeCompare(b.name),
+    .sort(
+      (a, b) =>
+        a.categoryLabel.localeCompare(b.categoryLabel) ||
+        (a.sortOrder || 0) - (b.sortOrder || 0) ||
+        a.name.localeCompare(b.name),
     );
 
   return {
@@ -589,7 +738,9 @@ function buildCatalogPayload() {
       disabledItems: items.filter((item) => !item.enabled).length,
       categories: categories.length,
       averagePrice: items.length
-        ? Math.round(items.reduce((sum, item) => sum + item.price, 0) / items.length)
+        ? Math.round(
+            items.reduce((sum, item) => sum + item.price, 0) / items.length,
+          )
         : 0,
     },
     generatedAt: new Date().toISOString(),
@@ -612,8 +763,16 @@ function formatShopDateLabel(value: unknown) {
   if (!date || Number.isNaN(date.getTime())) return "Unknown date";
 
   const now = new Date();
-  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-  const startOfDate = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+  const startOfToday = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate(),
+  ).getTime();
+  const startOfDate = new Date(
+    date.getFullYear(),
+    date.getMonth(),
+    date.getDate(),
+  ).getTime();
   const diffDays = Math.round((startOfToday - startOfDate) / 86400000);
 
   if (diffDays === 0) return "Hoje";
@@ -628,7 +787,10 @@ function buildShopQueuePayload(state: AdminState) {
   const orders = Array.isArray(state.shopOrders) ? state.shopOrders : [];
   const links = state.playerLinks || {};
   const catalogByClass = new Map(
-    catalog.items.map((item) => [String(item.className || "").toLowerCase(), item]),
+    catalog.items.map((item) => [
+      String(item.className || "").toLowerCase(),
+      item,
+    ]),
   );
   const catalogById = new Map(
     catalog.items.map((item) => [String(item.id || "").toLowerCase(), item]),
@@ -641,7 +803,9 @@ function buildShopQueuePayload(state: AdminState) {
   }, {});
 
   const latest = [...orders]
-    .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")))
+    .sort((a, b) =>
+      String(b.createdAt || "").localeCompare(String(a.createdAt || "")),
+    )
     .slice(0, 100)
     .map((order) => {
       const item =
@@ -655,7 +819,13 @@ function buildShopQueuePayload(state: AdminState) {
         status: String(order.status || "unknown"),
         statusLabel: formatShopStatusLabel(String(order.status || "unknown")),
         itemClass: String(order.itemClass || item?.className || "Unknown item"),
-        itemName: String(order.itemName || item?.name || item?.popularName || order.itemClass || "Unknown item"),
+        itemName: String(
+          order.itemName ||
+            item?.name ||
+            item?.popularName ||
+            order.itemClass ||
+            "Unknown item",
+        ),
         imageUrl: item?.imageUrl || "",
         discordUserId: String(order.discordUserId || ""),
         gamertag: link?.gamertag || "Unlinked Discord user",
@@ -689,19 +859,29 @@ function buildShopQueuePayload(state: AdminState) {
     latest,
     generatedAt: new Date().toISOString(),
   };
-
 }
 
-function buildShopTransactionsPayload(state: AdminState, options: { search?: string; limit?: number } = {}) {
+function buildShopTransactionsPayload(
+  state: AdminState,
+  options: { search?: string; limit?: number } = {},
+) {
   const catalog = getShopCatalog();
   const orders = Array.isArray(state.shopOrders) ? state.shopOrders : [];
   const links = state.playerLinks || {};
-  const economyTransactions = Array.isArray(state.economyTransactions) ? state.economyTransactions : [];
+  const economyTransactions = Array.isArray(state.economyTransactions)
+    ? state.economyTransactions
+    : [];
   const search = normalizeText(options.search || "");
-  const limit = Math.min(500, Math.max(1, Math.floor(Number(options.limit || 250))));
+  const limit = Math.min(
+    500,
+    Math.max(1, Math.floor(Number(options.limit || 250))),
+  );
 
   const catalogByClass = new Map(
-    catalog.items.map((item) => [String(item.className || "").toLowerCase(), item]),
+    catalog.items.map((item) => [
+      String(item.className || "").toLowerCase(),
+      item,
+    ]),
   );
   const catalogById = new Map(
     catalog.items.map((item) => [String(item.id || "").toLowerCase(), item]),
@@ -709,7 +889,11 @@ function buildShopTransactionsPayload(state: AdminState, options: { search?: str
 
   const purchaseByOrderId = new Map<string, any>();
   for (const transaction of economyTransactions) {
-    const tx = transaction as { type?: string; reason?: string; createdAt?: string };
+    const tx = transaction as {
+      type?: string;
+      reason?: string;
+      createdAt?: string;
+    };
     if (tx.type !== "SHOP_PURCHASE") continue;
     const reason = String(tx.reason || "");
     const match = reason.match(/\((shop_[^)]+)\)$/);
@@ -717,26 +901,36 @@ function buildShopTransactionsPayload(state: AdminState, options: { search?: str
   }
 
   const transactions = [...orders]
-    .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")))
+    .sort((a, b) =>
+      String(b.createdAt || "").localeCompare(String(a.createdAt || "")),
+    )
     .map((order) => {
       const item =
         catalogByClass.get(String(order.itemClass || "").toLowerCase()) ||
         catalogById.get(String(order.itemClass || "").toLowerCase()) ||
         null;
       const link = links[String(order.discordUserId || "")];
-      const purchase = purchaseByOrderId.get(String(order.id || "")) as {
-        amount?: number;
-        balanceBefore?: number;
-        balanceAfter?: number;
-        createdAt?: string;
-      } | undefined;
+      const purchase = purchaseByOrderId.get(String(order.id || "")) as
+        | {
+            amount?: number;
+            balanceBefore?: number;
+            balanceAfter?: number;
+            createdAt?: string;
+          }
+        | undefined;
 
       return {
         id: String(order.id || ""),
         status: String(order.status || "unknown"),
         statusLabel: formatShopStatusLabel(String(order.status || "unknown")),
         itemClass: String(order.itemClass || item?.className || "Unknown item"),
-        itemName: String(order.itemName || item?.name || item?.popularName || order.itemClass || "Unknown item"),
+        itemName: String(
+          order.itemName ||
+            item?.name ||
+            item?.popularName ||
+            order.itemClass ||
+            "Unknown item",
+        ),
         imageUrl: item?.imageUrl || "",
         discordUserId: String(order.discordUserId || ""),
         gamertag: link?.gamertag || "Unlinked Discord user",
@@ -756,8 +950,14 @@ function buildShopTransactionsPayload(state: AdminState, options: { search?: str
     })
     .filter((entry) => {
       if (!search) return true;
-      return [entry.id, entry.itemName, entry.itemClass, entry.gamertag, entry.discordUserId, entry.status]
-        .some((value) => normalizeText(value).includes(search));
+      return [
+        entry.id,
+        entry.itemName,
+        entry.itemClass,
+        entry.gamertag,
+        entry.discordUserId,
+        entry.status,
+      ].some((value) => normalizeText(value).includes(search));
     })
     .slice(0, limit);
 
@@ -766,32 +966,52 @@ function buildShopTransactionsPayload(state: AdminState, options: { search?: str
     stats: {
       totalPurchases: orders.length,
       filtered: transactions.length,
-      totalSpent: transactions.reduce((sum, transaction) => sum + Math.floor(Number(transaction.amount || 0)), 0),
+      totalSpent: transactions.reduce(
+        (sum, transaction) => sum + Math.floor(Number(transaction.amount || 0)),
+        0,
+      ),
     },
     generatedAt: new Date().toISOString(),
   };
 }
 
-async function readCatalogItemPayload(body: unknown, fallbackId?: string): Promise<ShopItem> {
-  const input = (body && typeof body === "object" ? body : {}) as Record<string, unknown>;
-  const requestedClassName = String(input.className || input.class_name || input.id || fallbackId || "").trim();
+async function readCatalogItemPayload(
+  body: unknown,
+  fallbackId?: string,
+): Promise<ShopItem> {
+  const input = (body && typeof body === "object" ? body : {}) as Record<
+    string,
+    unknown
+  >;
+  const requestedClassName = String(
+    input.className || input.class_name || input.id || fallbackId || "",
+  ).trim();
   const definition = await getDayzItemByClassName(requestedClassName);
 
   if (!definition || definition.enabled === false) {
-    throw new Error("Select a valid enabled DayZ item from the database before saving.");
+    throw new Error(
+      "Select a valid enabled DayZ item from the database before saving.",
+    );
   }
 
   const className = definition.className;
   const id = normalizeShopCatalogId(String(input.id || className));
-  const name = String(input.name || definition.popularName || definition.className).trim();
-  const category = normalizeShopCatalogId(String(input.category || "misc")) || "misc";
+  const name = String(
+    input.name || definition.popularName || definition.className,
+  ).trim();
+  const category =
+    normalizeShopCatalogId(String(input.category || "misc")) || "misc";
   const price = Math.floor(Number(input.price || 0));
-  const enabled = typeof input.enabled === "boolean" ? input.enabled : input.enabled !== false;
+  const enabled =
+    typeof input.enabled === "boolean"
+      ? input.enabled
+      : input.enabled !== false;
   const imageUrl = String(input.imageUrl || definition.imageUrl || "").trim();
 
   if (!id) throw new Error("Item id is required.");
   if (!name) throw new Error("Store item name is required.");
-  if (!Number.isFinite(price) || price < 0) throw new Error("Item price must be a valid positive number.");
+  if (!Number.isFinite(price) || price < 0)
+    throw new Error("Item price must be a valid positive number.");
 
   return {
     id,
@@ -799,25 +1019,36 @@ async function readCatalogItemPayload(body: unknown, fallbackId?: string): Promi
     className,
     popularName: definition.popularName || name,
     spawnEventName: definition.spawnEventName,
-    deliveryKind: String(definition.spawnEventName || "").startsWith("Vehicle") ? "vehicle" : "item",
+    deliveryKind: String(definition.spawnEventName || "").startsWith("Vehicle")
+      ? "vehicle"
+      : "item",
     category,
     price,
-    description: input.description ? String(input.description).trim() : undefined,
+    description: input.description
+      ? String(input.description).trim()
+      : undefined,
     imageUrl: imageUrl || undefined,
     enabled,
-    sortOrder: Number.isFinite(Number(input.sortOrder)) ? Math.floor(Number(input.sortOrder)) : undefined,
+    sortOrder: Number.isFinite(Number(input.sortOrder))
+      ? Math.floor(Number(input.sortOrder))
+      : undefined,
   };
 }
 
-
 function readCatalogCategoryPayload(body: unknown) {
-  const input = (body && typeof body === "object" ? body : {}) as Record<string, unknown>;
+  const input = (body && typeof body === "object" ? body : {}) as Record<
+    string,
+    unknown
+  >;
   const label = String(input.label || input.name || "").trim();
   const requestedId = String(input.id || label).trim();
   const id = normalizeShopCatalogId(requestedId);
   const description = String(input.description || "").trim();
   const emoji = String(input.emoji || "").trim();
-  const enabled = typeof input.enabled === "boolean" ? input.enabled : input.enabled !== false;
+  const enabled =
+    typeof input.enabled === "boolean"
+      ? input.enabled
+      : input.enabled !== false;
 
   if (!id) throw new Error("Category id is required.");
   if (!label) throw new Error("Category name is required.");
@@ -833,14 +1064,22 @@ function readCatalogCategoryPayload(body: unknown) {
 
 function sumPlayerKills(players: unknown) {
   if (!players || typeof players !== "object") return 0;
-  return Object.values(players as Record<string, Partial<{ kills: number }>>)
-    .reduce((sum, player) => sum + Math.max(0, Math.floor(Number(player?.kills || 0))), 0);
+  return Object.values(
+    players as Record<string, Partial<{ kills: number }>>,
+  ).reduce(
+    (sum, player) => sum + Math.max(0, Math.floor(Number(player?.kills || 0))),
+    0,
+  );
 }
 
 function sumPlayerDeaths(players: unknown) {
   if (!players || typeof players !== "object") return 0;
-  return Object.values(players as Record<string, Partial<{ deaths: number }>>)
-    .reduce((sum, player) => sum + Math.max(0, Math.floor(Number(player?.deaths || 0))), 0);
+  return Object.values(
+    players as Record<string, Partial<{ deaths: number }>>,
+  ).reduce(
+    (sum, player) => sum + Math.max(0, Math.floor(Number(player?.deaths || 0))),
+    0,
+  );
 }
 
 function isToday(value: unknown) {
@@ -848,7 +1087,11 @@ function isToday(value: unknown) {
   const date = new Date(String(value));
   if (Number.isNaN(date.getTime())) return false;
   const now = new Date();
-  return date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth() && date.getDate() === now.getDate();
+  return (
+    date.getFullYear() === now.getFullYear() &&
+    date.getMonth() === now.getMonth() &&
+    date.getDate() === now.getDate()
+  );
 }
 
 function buildShopOverview(state: AdminState) {
@@ -873,12 +1116,24 @@ function buildEconomyToday(transactions: unknown[]) {
   let spent = 0;
 
   for (const entry of transactions) {
-    const transaction = entry as { type?: string; amount?: number; createdAt?: string };
+    const transaction = entry as {
+      type?: string;
+      amount?: number;
+      createdAt?: string;
+    };
     if (!isToday(transaction.createdAt)) continue;
     const amount = Math.max(0, Math.floor(Number(transaction.amount || 0)));
     const type = String(transaction.type || "");
 
-    if (["ADMIN_ADD", "PLAYTIME_REWARD", "EVENT_REWARD", "DONATION_REWARD"].includes(type)) earned += amount;
+    if (
+      [
+        "ADMIN_ADD",
+        "PLAYTIME_REWARD",
+        "EVENT_REWARD",
+        "DONATION_REWARD",
+      ].includes(type)
+    )
+      earned += amount;
     if (["ADMIN_REMOVE", "SHOP_PURCHASE"].includes(type)) spent += amount;
   }
 
@@ -892,25 +1147,120 @@ function getLastParserProcessedAt(state: AdminState) {
   for (const value of Object.values(files)) {
     const cursor = value as { lastProcessedAt?: string } | undefined;
     if (!cursor?.lastProcessedAt) continue;
-    if (!latest || String(cursor.lastProcessedAt) > latest) latest = String(cursor.lastProcessedAt);
+    if (!latest || String(cursor.lastProcessedAt) > latest)
+      latest = String(cursor.lastProcessedAt);
   }
 
   return latest;
 }
 
-function buildActivitySeries(state: AdminState) {
-  const shop = buildShopOverview(state);
-  const transactions = Array.isArray(state.economyTransactions) ? state.economyTransactions : [];
-  const todayEconomy = buildEconomyToday(transactions);
+function getBrazilHour(date: Date) {
+  const value = new Intl.DateTimeFormat("pt-BR", {
+    timeZone: "America/Sao_Paulo",
+    hour: "2-digit",
+    hour12: false,
+  }).format(date);
 
-  return [
-    { label: "Online", title: "Players online agora", value: countObject(state.onlinePlayers) },
-    { label: "Hoje", title: "Kills hoje", value: sumPlayerKills(state.dailyPlayers) },
-    { label: "Semana", title: "Kills na semana", value: sumPlayerKills(state.weeklyPlayers) },
-    { label: "Total", title: "Kills globais", value: sumPlayerKills(state.players) },
-    { label: "Fila", title: "Pedidos pendentes da loja", value: shop.pending },
-    { label: "Coins", title: "Coins emitidas hoje", value: todayEconomy.earned },
+  return Math.max(0, Math.min(23, Number(value.replace(/\D/g, "")) || 0));
+}
+
+function getBrazilWeekdayIndex(date: Date) {
+  const value = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Sao_Paulo",
+    weekday: "short",
+  }).format(date);
+
+  return ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(value);
+}
+
+function buildPeakHours(state: AdminState) {
+  const samples = Array.isArray(state.onlineActivitySamples)
+    ? state.onlineActivitySamples
+    : [];
+  const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  const buckets = new Map<
+    number,
+    { sum: number; count: number; max: number }
+  >();
+
+  for (const sample of samples) {
+    const date = new Date(String(sample.bucket || ""));
+    const time = date.getTime();
+    if (!Number.isFinite(time) || time < cutoff) continue;
+    const hour = getBrazilHour(date);
+    const online = Math.max(0, Number(sample.online || 0));
+    const current = buckets.get(hour) || { sum: 0, count: 0, max: 0 };
+    current.sum += online;
+    current.count += 1;
+    current.max = Math.max(current.max, online);
+    buckets.set(hour, current);
+  }
+
+  if (buckets.size === 0) {
+    const hour = getBrazilHour(new Date());
+    buckets.set(hour, {
+      sum: countObject(state.onlinePlayers),
+      count: 1,
+      max: countObject(state.onlinePlayers),
+    });
+  }
+
+  return Array.from(buckets.entries())
+    .map(([hour, item]) => ({
+      hour,
+      label: `${String(hour).padStart(2, "0")}h`,
+      average: item.count > 0 ? Number((item.sum / item.count).toFixed(1)) : 0,
+      max: item.max,
+      samples: item.count,
+    }))
+    .sort((a, b) => b.average - a.average || b.max - a.max || a.hour - b.hour)
+    .slice(0, 8);
+}
+
+function buildWeekdayActivity(state: AdminState) {
+  const names = [
+    "Domingo",
+    "Segunda",
+    "Terça",
+    "Quarta",
+    "Quinta",
+    "Sexta",
+    "Sábado",
   ];
+  const rows = names.map((label, index) => ({ index, label, kills: 0 }));
+  const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  const events = Array.isArray(state.killFeedEvents)
+    ? state.killFeedEvents
+    : [];
+
+  for (const event of events) {
+    const date = new Date(
+      String(
+        (event as { at?: string; timestamp?: string }).at ||
+          (event as { at?: string; timestamp?: string }).timestamp ||
+          "",
+      ),
+    );
+    const time = date.getTime();
+    if (!Number.isFinite(time) || time < cutoff) continue;
+    const index = getBrazilWeekdayIndex(date);
+    if (index >= 0) rows[index].kills += 1;
+  }
+
+  if (rows.every((row) => row.kills === 0)) {
+    const todayIndex = getBrazilWeekdayIndex(new Date());
+    if (todayIndex >= 0)
+      rows[todayIndex].kills = sumPlayerKills(state.dailyPlayers);
+  }
+
+  return rows;
+}
+
+function buildActivitySeries(state: AdminState) {
+  return {
+    peakHours: buildPeakHours(state),
+    weekdayActivity: buildWeekdayActivity(state),
+  };
 }
 
 function renderAdminPanelHtml(token: string) {
@@ -2222,6 +2572,68 @@ function renderAdminPanelHtml(token: string) {
     .map-event-result b { color: var(--text); }
     @media (max-width: 920px) { .map-events-grid { grid-template-columns: 1fr; } }
 
+
+    .overview-hero {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 18px;
+      margin-bottom: 14px;
+      background: radial-gradient(circle at 16% 0%, rgba(124,140,255,.12), transparent 32%), linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.024));
+    }
+    .overview-hero h1 { margin: 0; font-size: 22px; line-height: 1.1; letter-spacing: -.045em; }
+    .overview-hero p { margin: 8px 0 0; color: var(--text-2); font-size: 13px; }
+    .overview-hero-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+    .inline-dot { width: 8px; height: 8px; border-radius: 999px; background: currentColor; display: inline-block; margin-right: 6px; box-shadow: 0 0 16px currentColor; }
+    .operation-kpis { grid-template-columns: repeat(6, minmax(0, 1fr)); margin-bottom: 14px; }
+    .kpi-card { display: flex; align-items: flex-start; gap: 14px; min-height: 126px; }
+    .kpi-icon, .ops-icon {
+      width: 38px;
+      height: 38px;
+      border-radius: 12px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: #dfe3ff;
+      background: rgba(124,140,255,.14);
+      border: 1px solid rgba(124,140,255,.18);
+      flex: 0 0 auto;
+    }
+    .kpi-icon .icon, .ops-icon .icon { width: 20px; height: 20px; }
+    .kpi-purple { background: rgba(124,92,255,.14); border-color: rgba(124,92,255,.20); color: #a89dff; }
+    .kpi-red { background: rgba(255,107,114,.12); border-color: rgba(255,107,114,.18); color: #ff9a9f; }
+    .kpi-orange { background: rgba(255,168,84,.12); border-color: rgba(255,168,84,.18); color: #ffb56c; }
+    .kpi-green { background: rgba(91,214,138,.12); border-color: rgba(91,214,138,.18); color: #8befad; }
+    .kpi-blue { background: rgba(76,169,255,.12); border-color: rgba(76,169,255,.18); color: #8bc9ff; }
+    .operation-charts-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; margin-bottom: 14px; }
+    .operation-card { padding: 20px; }
+    .section-subtitle { color: var(--text-3); font-size: 12px; margin-top: 5px; font-weight: 450; }
+    .horizontal-bars { display: grid; gap: 12px; }
+    .hbar-row { display: grid; grid-template-columns: 52px minmax(0, 1fr) 58px; gap: 12px; align-items: center; min-height: 26px; }
+    .hbar-label { color: var(--text); font-weight: 600; font-size: 13px; white-space: nowrap; }
+    .hbar-track { height: 20px; border-radius: 7px; background: rgba(255,255,255,.035); border: 1px solid rgba(255,255,255,.045); overflow: hidden; box-shadow: 0 1px 0 rgba(255,255,255,.03) inset; }
+    .hbar-fill { height: 100%; width: 0%; border-radius: 7px; background: linear-gradient(90deg, #6571f5, #8892ff); box-shadow: 0 0 24px rgba(124,140,255,.18); transition: width .35s ease; }
+    .hbar-value { text-align: right; color: var(--text); font-weight: 650; font-size: 13px; font-variant-numeric: tabular-nums; }
+    .hbar-meta { color: var(--text-3); font-size: 11px; }
+    .insight-row { margin-top: 16px; padding: 12px; border-radius: 12px; border: 1px solid rgba(255,255,255,.06); background: rgba(255,255,255,.035); color: var(--text-2); font-size: 13px; display: flex; gap: 9px; align-items: center; }
+    .insight-row:empty { display: none; }
+    .insight-row .icon { width: 16px; height: 16px; color: #ffd66e; }
+    .operations-summary-card { margin-top: 0; }
+    .ops-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
+    .ops-card { display: grid; grid-template-columns: 38px minmax(0, 1fr); gap: 10px; align-items: center; padding: 12px; border-radius: 13px; background: rgba(255,255,255,.035); border: 1px solid var(--border); min-width: 0; }
+    .ops-card b { font-size: 13px; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .ops-card small { grid-column: 1 / -1; color: var(--text-3); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .status-line { display: block; color: var(--text-3); font-size: 12px; margin-top: 4px; }
+    .status-line.success { color: #7be99f; }
+    .status-line.warning { color: #f2d27c; }
+    .status-line.danger { color: #ff9da3; }
+    .alerts-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; }
+    .alert-pill { min-height: 42px; display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 12px; background: rgba(242,204,90,.10); color: #f7dfa0; border: 1px solid rgba(242,204,90,.16); }
+    .alert-pill.success { background: rgba(91,214,138,.10); color: #aaf2c0; border-color: rgba(91,214,138,.16); }
+    .alert-pill .icon { width: 17px; height: 17px; }
+    @media (max-width: 1180px) { .operation-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } .operation-charts-grid, .alerts-row { grid-template-columns: 1fr; } .ops-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+    @media (max-width: 720px) { .overview-hero { flex-direction: column; } .operation-kpis, .ops-grid { grid-template-columns: 1fr; } .hbar-row { grid-template-columns: 44px minmax(0, 1fr) 48px; gap: 8px; } .operation-card { padding: 14px; } }
+
   </style>
 </head>
 <body>
@@ -2276,27 +2688,52 @@ function renderAdminPanelHtml(token: string) {
       </header>
       <main class="content">
         <section id="view-general" class="view active">
-          <div class="metric-grid">
-            <div class="card"><div class="metric-label">Online agora</div><div class="metric-value" id="metricOnline">—</div><div class="metric-hint" id="metricOnlineHint">Capacidade do servidor</div></div>
-            <div class="card"><div class="metric-label">Total de players</div><div class="metric-value" id="metricTotalPlayers">—</div><div class="metric-hint" id="metricTotalPlayersHint">Jogadores registrados no parser</div></div>
-            <div class="card"><div class="metric-label">Kills hoje</div><div class="metric-value" id="metricKillsToday">—</div><div class="metric-hint" id="metricKillsTodayHint">Dados reais do ADM</div></div>
-            <div class="card"><div class="metric-label">Fila da loja</div><div class="metric-value" id="metricShopQueue">—</div><div class="metric-hint" id="metricShopQueueHint">Pedidos aguardando reset</div></div>
-          </div>
-          <div class="dashboard-grid">
-            <div class="card">
-              <div class="section-title"><h2>Operação do servidor</h2><span class="chip">dados reais</span></div>
-              <div id="activityChart" class="chart"></div>
+          <div class="overview-hero card">
+            <div>
+              <h1>Visão geral do servidor</h1>
+              <p>Acompanhe desempenho, atividade e operação do servidor em tempo real.</p>
             </div>
-            <aside class="card">
-              <div class="section-title"><h2>Status operacional</h2><span class="chip">live</span></div>
-              <div class="settings-list">
-                <div class="setting-row"><div><b>Próximo reset</b><span id="quickReset">—</span></div><button class="mini-btn disabled">Reset</button></div>
-                <div class="setting-row"><div><b>Parser ADM</b><span id="quickParser">—</span></div><button class="mini-btn disabled">ADM</button></div>
-                <div class="setting-row"><div><b>Economia hoje</b><span id="quickEconomyToday">—</span></div><button class="mini-btn disabled">Coins</button></div>
-                <div class="setting-row"><div><b>Loja</b><span id="quickShop">—</span></div><button class="mini-btn disabled">Shop</button></div>
-                <div class="setting-row"><div><b>Eventos do mapa</b><span id="quickMapEvents">Manual pelo painel</span></div><button class="mini-btn disabled">Eventos</button></div>
-              </div>
-            </aside>
+            <div class="overview-hero-actions">
+              <span class="chip success"><span class="inline-dot"></span>Dados reais</span>
+              <span class="chip" id="overviewUpdatedAt">Atualizando...</span>
+            </div>
+          </div>
+
+          <div class="metric-grid operation-kpis">
+            <div class="card kpi-card"><div class="kpi-icon kpi-purple"><svg class="icon"><use href="#icon-users"></use></svg></div><div><div class="metric-label">Online agora</div><div class="metric-value" id="metricOnline">—</div><div class="metric-hint" id="metricOnlineHint">Capacidade do servidor</div></div></div>
+            <div class="card kpi-card"><div class="kpi-icon kpi-blue"><svg class="icon"><use href="#icon-database"></use></svg></div><div><div class="metric-label">Total de players</div><div class="metric-value" id="metricTotalPlayers">—</div><div class="metric-hint" id="metricTotalPlayersHint">Registrados no parser</div></div></div>
+            <div class="card kpi-card"><div class="kpi-icon kpi-red"><svg class="icon"><use href="#icon-warning"></use></svg></div><div><div class="metric-label">Kills hoje</div><div class="metric-value" id="metricKillsToday">—</div><div class="metric-hint" id="metricKillsTodayHint">Dados reais do ADM</div></div></div>
+            <div class="card kpi-card"><div class="kpi-icon kpi-orange"><svg class="icon"><use href="#icon-clock"></use></svg></div><div><div class="metric-label">Kills (7 dias)</div><div class="metric-value" id="metricWeeklyKills">—</div><div class="metric-hint" id="metricWeeklyKillsHint">Média semanal</div></div></div>
+            <div class="card kpi-card"><div class="kpi-icon kpi-green"><svg class="icon"><use href="#icon-shopping-cart"></use></svg></div><div><div class="metric-label">Fila da loja</div><div class="metric-value" id="metricShopQueue">—</div><div class="metric-hint" id="metricShopQueueHint">Pedidos aguardando reset</div></div></div>
+            <div class="card kpi-card"><div class="kpi-icon kpi-blue"><svg class="icon"><use href="#icon-coins"></use></svg></div><div><div class="metric-label">Coins em circulação</div><div class="metric-value" id="metricCoinsBalance">—</div><div class="metric-hint" id="metricCoinsBalanceHint">Saldo total das carteiras</div></div></div>
+          </div>
+
+          <div class="operation-charts-grid">
+            <div class="card operation-card">
+              <div class="section-title"><div><h2>Horários de pico</h2><div class="section-subtitle">Média de jogadores online por horário nos últimos 7 dias.</div></div><span class="chip">últimos 7 dias</span></div>
+              <div id="peakHoursChart" class="horizontal-bars"></div>
+              <div id="peakHoursInsight" class="insight-row"></div>
+            </div>
+            <div class="card operation-card">
+              <div class="section-title"><div><h2>Atividade por dia da semana</h2><div class="section-subtitle">Kills registradas por dia nos últimos 7 dias.</div></div><span class="chip">ADM</span></div>
+              <div id="weekdayActivityChart" class="horizontal-bars"></div>
+              <div id="weekdayActivityInsight" class="insight-row"></div>
+            </div>
+          </div>
+
+          <div class="card operation-card operations-summary-card">
+            <div class="section-title"><h2>Resumo operacional</h2><span class="chip">live</span></div>
+            <div class="ops-grid">
+              <div class="ops-card"><div class="ops-icon kpi-blue"><svg class="icon"><use href="#icon-cube"></use></svg></div><div><b>Discord Bot</b><span class="status-line success">Online</span></div><small>Conectado ao gateway</small></div>
+              <div class="ops-card"><div class="ops-icon"><svg class="icon"><use href="#icon-package"></use></svg></div><div><b>Parser ADM</b><span class="status-line" id="opsParserStatus">—</span></div><small id="opsParserMeta">Última leitura</small></div>
+              <div class="ops-card"><div class="ops-icon"><svg class="icon"><use href="#icon-database"></use></svg></div><div><b>Neon DB</b><span class="status-line success">Conectado</span></div><small>Fonte de catálogo/economia</small></div>
+              <div class="ops-card"><div class="ops-icon kpi-green"><svg class="icon"><use href="#icon-shopping-cart"></use></svg></div><div><b>Shop Worker</b><span class="status-line" id="opsShopStatus">—</span></div><small id="opsShopMeta">Fila da loja</small></div>
+              <div class="ops-card"><div class="ops-icon kpi-red"><svg class="icon"><use href="#icon-clock"></use></svg></div><div><b>Map Events</b><span class="status-line success">Manual</span></div><small id="opsMapEventsMeta">Eventos pelo painel</small></div>
+            </div>
+            <div class="alerts-row">
+              <div class="alert-pill"><svg class="icon"><use href="#icon-warning"></use></svg><span id="opsQueueAlert">Aguardando dados da fila</span></div>
+              <div class="alert-pill success"><svg class="icon"><use href="#icon-check"></use></svg><span id="opsCleanupAlert">Nenhum alerta de limpeza detectado</span></div>
+            </div>
           </div>
         </section>
         <section id="view-members" class="view">
@@ -2558,16 +2995,56 @@ function renderAdminPanelHtml(token: string) {
       document.body.classList.toggle("nav-open", open);
     }
     function setText(id, value) { const el = document.getElementById(id); if (el) el.textContent = value; }
-    function renderActivity(series) {
-      const chart = document.getElementById("activityChart");
-      const rows = Array.isArray(series) ? series : [];
-      const max = Math.max(1, ...rows.map((item) => Number(item.value || 0)));
-      chart.innerHTML = rows.map((item) => {
-        const value = Number(item.value || 0);
-        const label = item.label || item.hour || "—";
-        const title = item.title || label;
-        return '<div class="bar-wrap" title="' + escapeHtml(title + ': ' + value) + '"><div class="bar" style="height:' + Math.max(8, Math.round((value / max) * 190)) + 'px"></div><div class="bar-label">' + escapeHtml(label) + '</div></div>';
+    function renderHorizontalBars(containerId, rows, options) {
+      const container = document.getElementById(containerId);
+      if (!container) return;
+      const list = Array.isArray(rows) ? rows : [];
+      const valueKey = options?.valueKey || "value";
+      const labelKey = options?.labelKey || "label";
+      const suffix = options?.suffix || "";
+      const decimals = Number(options?.decimals || 0);
+      const max = Math.max(1, ...list.map((row) => Number(row[valueKey] || 0)));
+
+      if (!list.length) {
+        container.innerHTML = '<div class="empty" style="padding:18px">Ainda não há histórico suficiente.</div>';
+        return;
+      }
+
+      container.innerHTML = list.map((row) => {
+        const value = Number(row[valueKey] || 0);
+        const percent = Math.max(3, Math.min(100, (value / max) * 100));
+        const valueLabel = value.toLocaleString("pt-BR", {
+          minimumFractionDigits: decimals,
+          maximumFractionDigits: decimals,
+        }) + suffix;
+        const meta = row.max ? '<div class="hbar-meta">máx. ' + escapeHtml(row.max) + '</div>' : '';
+        return '<div class="hbar-row" title="' + escapeHtml(String(row[labelKey] || "—") + ': ' + valueLabel) + '">' +
+          '<div class="hbar-label">' + escapeHtml(row[labelKey] || "—") + '</div>' +
+          '<div class="hbar-track"><div class="hbar-fill" style="width:' + percent.toFixed(2) + '%"></div></div>' +
+          '<div class="hbar-value">' + escapeHtml(valueLabel) + meta + '</div>' +
+        '</div>';
       }).join("");
+    }
+
+    function renderPeakHours(rows) {
+      renderHorizontalBars("peakHoursChart", rows, { valueKey: "average", labelKey: "label", decimals: 1 });
+      const top = Array.isArray(rows) && rows.length ? rows[0] : null;
+      const insight = document.getElementById("peakHoursInsight");
+      if (!insight) return;
+      insight.innerHTML = top
+        ? icon("warning") + '<span>Pico estimado: <b>' + escapeHtml(top.label) + '</b> com média de <b>' + Number(top.average || 0).toLocaleString("pt-BR", { maximumFractionDigits: 1 }) + '</b> jogadores online.</span>'
+        : '';
+    }
+
+    function renderWeekdayActivity(rows) {
+      const ordered = Array.isArray(rows) ? rows.slice().sort((a, b) => (a.index || 0) - (b.index || 0)) : [];
+      renderHorizontalBars("weekdayActivityChart", ordered, { valueKey: "kills", labelKey: "label", decimals: 0 });
+      const top = ordered.slice().sort((a, b) => Number(b.kills || 0) - Number(a.kills || 0))[0];
+      const insight = document.getElementById("weekdayActivityInsight");
+      if (!insight) return;
+      insight.innerHTML = top && Number(top.kills || 0) > 0
+        ? icon("warning") + '<span>Dia mais ativo: <b>' + escapeHtml(top.label) + '</b> com <b>' + formatNumber(top.kills) + '</b> kills registradas.</span>'
+        : icon("warning") + '<span>Aguardando histórico de kills para montar o ranking semanal.</span>';
     }
     async function loadOverview() {
       const response = await apiFetch("/admin-panel/api/overview");
@@ -2577,17 +3054,28 @@ function renderAdminPanelHtml(token: string) {
       setText("metricOnline", payload.server.onlinePlayers + " / " + payload.server.maxPlayers);
       setText("metricOnlineHint", payload.server.onlinePlayers === 1 ? "1 jogador online agora" : payload.server.onlinePlayers + " jogadores online agora");
       setText("metricTotalPlayers", formatNumber(payload.server.totalPlayers));
-      setText("metricTotalPlayersHint", payload.server.linkedMembers + " membros vinculados ao Discord");
+      setText("metricTotalPlayersHint", payload.server.linkedMembers + " membros vinculados");
       setText("metricKillsToday", formatNumber(payload.combat.dailyKills));
       setText("metricKillsTodayHint", formatNumber(payload.combat.weeklyKills) + " kills na semana");
+      setText("metricWeeklyKills", formatNumber(payload.combat.weeklyKills));
+      setText("metricWeeklyKillsHint", "Média: " + Math.round(Number(payload.combat.weeklyKills || 0) / 7) + "/dia");
       setText("metricShopQueue", formatNumber(payload.shop.pending));
       setText("metricShopQueueHint", payload.shop.included + " incluídos · " + payload.shop.failed + " falhas");
-      setText("quickReset", payload.server.nextRestart || "Sem countdown ativo");
-      setText("quickParser", payload.parser.lastProcessedAt ? "Última leitura " + relativeDate(payload.parser.lastProcessedAt) : "Aguardando ADM");
-      setText("quickEconomyToday", "+" + formatCoins(payload.economy.todayEarned) + " / -" + formatCoins(payload.economy.todaySpent));
-      setText("quickShop", payload.shop.canAcceptPurchase ? "Checkout aberto" : "Checkout fechado");
-      setText("quickMapEvents", payload.mapEvents.mode || "Manual pelo painel");
-      renderActivity(payload.activity || []);
+      setText("metricCoinsBalance", formatCoins(payload.economy.totalCoins));
+      setText("metricCoinsBalanceHint", payload.economy.wallets + " carteiras registradas");
+      setText("overviewUpdatedAt", "Atualizado " + new Date(payload.generatedAt || Date.now()).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }));
+      setText("opsParserStatus", payload.parser.lastProcessedAt ? "Online" : "Aguardando");
+      const parserStatus = document.getElementById("opsParserStatus");
+      if (parserStatus) parserStatus.className = "status-line " + (payload.parser.lastProcessedAt ? "success" : "warning");
+      setText("opsParserMeta", payload.parser.lastProcessedAt ? "Última leitura " + relativeDate(payload.parser.lastProcessedAt) : "Sem leitura recente");
+      setText("opsShopStatus", payload.shop.canAcceptPurchase ? "Online" : "Pausado");
+      const shopStatus = document.getElementById("opsShopStatus");
+      if (shopStatus) shopStatus.className = "status-line " + (payload.shop.canAcceptPurchase ? "success" : "warning");
+      setText("opsShopMeta", payload.shop.pending + " pedidos pendentes");
+      setText("opsMapEventsMeta", payload.mapEvents.mode || "Manual pelo painel");
+      setText("opsQueueAlert", payload.shop.pending > 0 ? payload.shop.pending + " pedidos aguardando próximo reset" : "Nenhum pedido pendente na loja");
+      renderPeakHours(payload.activity?.peakHours || []);
+      renderWeekdayActivity(payload.activity?.weekdayActivity || []);
     }
     function memberAvatarHtml(member) {
       const initials = (member.discordName || member.gamertag || "?").slice(0, 2).toUpperCase();
@@ -3610,11 +4098,17 @@ router.get("/api/members", async (req, res) => {
   try {
     const state = (await getStateAsync()) as AdminState;
     const cursor = Math.max(0, Math.floor(Number(req.query.cursor || 0)));
-    const limit = Math.min(MAX_PAGE_SIZE, Math.max(1, Math.floor(Number(req.query.limit || DEFAULT_PAGE_SIZE))));
+    const limit = Math.min(
+      MAX_PAGE_SIZE,
+      Math.max(1, Math.floor(Number(req.query.limit || DEFAULT_PAGE_SIZE))),
+    );
     const search = typeof req.query.search === "string" ? req.query.search : "";
     const filter = typeof req.query.filter === "string" ? req.query.filter : "";
-    const forceRefresh = req.query.refresh === "true" || req.query.refresh === "1";
-    const { rows: allRows, stats } = await buildMemberRows(state, { forceDiscordRefresh: forceRefresh });
+    const forceRefresh =
+      req.query.refresh === "true" || req.query.refresh === "1";
+    const { rows: allRows, stats } = await buildMemberRows(state, {
+      forceDiscordRefresh: forceRefresh,
+    });
     const rows = filterMembers(allRows, { search, filter });
     const members = rows.slice(cursor, cursor + limit);
 
@@ -3629,7 +4123,6 @@ router.get("/api/members", async (req, res) => {
     res.status(500).json({ error: String(err) });
   }
 });
-
 
 router.get("/api/members/:discordId", async (req, res) => {
   if (!requireAdmin(req, res)) return;
@@ -3665,7 +4158,9 @@ router.post("/api/members/:discordId/coins", async (req, res) => {
 
     const action = String(req.body?.action || "");
     const amount = Math.floor(Number(req.body?.amount || 0));
-    const reason = req.body?.reason ? String(req.body.reason).trim() : "Admin panel";
+    const reason = req.body?.reason
+      ? String(req.body.reason).trim()
+      : "Admin panel";
     const createdBy = "admin-panel";
 
     if (amount < 0 || (action !== "set" && amount <= 0)) {
@@ -3693,19 +4188,23 @@ router.post("/api/members/:discordId/coins", async (req, res) => {
   }
 });
 
-
 router.get("/api/dayz-items", async (req, res) => {
   if (!requireAdmin(req, res)) return;
 
   try {
     const query = typeof req.query.query === "string" ? req.query.query : "";
-    const limit = Math.min(25, Math.max(1, Math.floor(Number(req.query.limit || 12))));
+    const limit = Math.min(
+      25,
+      Math.max(1, Math.floor(Number(req.query.limit || 12))),
+    );
     const includeDisabled = req.query.includeDisabled === "true";
-    const items = (await searchDayzItemsFromDatabase({
-      query,
-      limit,
-      enabledOnly: !includeDisabled,
-    })).map((item) => ({
+    const items = (
+      await searchDayzItemsFromDatabase({
+        query,
+        limit,
+        enabledOnly: !includeDisabled,
+      })
+    ).map((item) => ({
       className: item.className,
       popularName: item.popularName,
       imageUrl: item.imageUrl || "",
@@ -3725,7 +4224,10 @@ router.get("/api/items", async (req, res) => {
   try {
     const query = typeof req.query.query === "string" ? req.query.query : "";
     const cursor = Math.max(0, Math.floor(Number(req.query.cursor || 0)));
-    const limit = Math.min(100, Math.max(1, Math.floor(Number(req.query.limit || 30))));
+    const limit = Math.min(
+      100,
+      Math.max(1, Math.floor(Number(req.query.limit || 30))),
+    );
     const filter =
       req.query.filter === "enabled" ||
       req.query.filter === "disabled" ||
@@ -3743,11 +4245,22 @@ router.patch("/api/items/:className", async (req, res) => {
   if (!requireAdmin(req, res)) return;
 
   try {
-    const input = (req.body && typeof req.body === "object" ? req.body : {}) as Record<string, unknown>;
+    const input = (
+      req.body && typeof req.body === "object" ? req.body : {}
+    ) as Record<string, unknown>;
     const item = await updateDayzItemInDatabase(req.params.className, {
-      popularName: input.popularName === undefined ? undefined : String(input.popularName || "").trim(),
-      imageUrl: input.imageUrl === undefined ? undefined : String(input.imageUrl || "").trim(),
-      spawnEventName: input.spawnEventName === undefined ? undefined : String(input.spawnEventName || "").trim(),
+      popularName:
+        input.popularName === undefined
+          ? undefined
+          : String(input.popularName || "").trim(),
+      imageUrl:
+        input.imageUrl === undefined
+          ? undefined
+          : String(input.imageUrl || "").trim(),
+      spawnEventName:
+        input.spawnEventName === undefined
+          ? undefined
+          : String(input.spawnEventName || "").trim(),
       enabled: typeof input.enabled === "boolean" ? input.enabled : undefined,
     });
 
@@ -3766,8 +4279,13 @@ router.patch("/api/items/:className/toggle", async (req, res) => {
   if (!requireAdmin(req, res)) return;
 
   try {
-    const body = (req.body && typeof req.body === "object" ? req.body : {}) as { enabled?: boolean };
-    const item = await toggleDayzItemInDatabase(req.params.className, body.enabled);
+    const body = (req.body && typeof req.body === "object" ? req.body : {}) as {
+      enabled?: boolean;
+    };
+    const item = await toggleDayzItemInDatabase(
+      req.params.className,
+      body.enabled,
+    );
 
     if (!item) {
       res.status(404).send("DayZ item not found");
@@ -3799,7 +4317,10 @@ router.get("/api/shop-transactions", async (req, res) => {
     await ensureShopCatalogLoaded();
     const state = (await getStateAsync()) as AdminState;
     const search = typeof req.query.search === "string" ? req.query.search : "";
-    const limit = Math.min(500, Math.max(1, Math.floor(Number(req.query.limit || 250))));
+    const limit = Math.min(
+      500,
+      Math.max(1, Math.floor(Number(req.query.limit || 250))),
+    );
     res.json(buildShopTransactionsPayload(state, { search, limit }));
   } catch (err) {
     res.status(500).json({ error: String(err) });
@@ -3821,8 +4342,12 @@ router.patch("/api/catalog/categories/reorder", async (req, res) => {
   if (!requireAdmin(req, res)) return;
 
   try {
-    const body = (req.body && typeof req.body === "object" ? req.body : {}) as { categoryIds?: unknown };
-    const categoryIds = Array.isArray(body.categoryIds) ? body.categoryIds.map((id) => String(id)) : [];
+    const body = (req.body && typeof req.body === "object" ? req.body : {}) as {
+      categoryIds?: unknown;
+    };
+    const categoryIds = Array.isArray(body.categoryIds)
+      ? body.categoryIds.map((id) => String(id))
+      : [];
     await reorderShopCategories(categoryIds);
     await ensureShopCatalogLoaded();
     res.json({ ok: true, catalog: buildCatalogPayload() });
@@ -3835,8 +4360,12 @@ router.patch("/api/catalog/categories/:id/items/reorder", async (req, res) => {
   if (!requireAdmin(req, res)) return;
 
   try {
-    const body = (req.body && typeof req.body === "object" ? req.body : {}) as { itemIds?: unknown };
-    const itemIds = Array.isArray(body.itemIds) ? body.itemIds.map((id) => String(id)) : [];
+    const body = (req.body && typeof req.body === "object" ? req.body : {}) as {
+      itemIds?: unknown;
+    };
+    const itemIds = Array.isArray(body.itemIds)
+      ? body.itemIds.map((id) => String(id))
+      : [];
     await reorderShopItems(req.params.id, itemIds);
     await ensureShopCatalogLoaded();
     res.json({ ok: true, catalog: buildCatalogPayload() });
@@ -3901,7 +4430,9 @@ router.patch("/api/catalog/items/:id/toggle", async (req, res) => {
   if (!requireAdmin(req, res)) return;
 
   try {
-    const body = (req.body && typeof req.body === "object" ? req.body : {}) as { enabled?: boolean };
+    const body = (req.body && typeof req.body === "object" ? req.body : {}) as {
+      enabled?: boolean;
+    };
     const item = await toggleShopCatalogItem(req.params.id, body.enabled);
     if (!item) {
       res.status(404).send("Catalog item not found");
@@ -3927,7 +4458,6 @@ router.delete("/api/catalog/items/:id", async (req, res) => {
     res.status(400).send(String(err));
   }
 });
-
 
 router.get("/api/map-events/presets", async (req, res) => {
   if (!requireAdmin(req, res)) return;

@@ -224,12 +224,19 @@ export type ActiveMatch = {
   players: Record<string, PlayerStats>;
 };
 
+
+export type OnlineActivitySample = {
+  bucket: string;
+  online: number;
+};
+
 export type AppState = {
   players: Record<string, PlayerStats>;
   dailyPlayers: Record<string, PlayerStats>;
   weeklyPlayers: Record<string, PlayerStats>;
   onlinePlayers: Record<string, OnlinePlayer>;
   onlineSessions: Record<string, OnlineSession>;
+  onlineActivitySamples?: OnlineActivitySample[];
 
   playerLinks: Record<string, PlayerLink>;
   playerLinksByGamertag: Record<string, string>;
@@ -276,6 +283,7 @@ function defaultState(): AppState {
     weeklyPlayers: {},
     onlinePlayers: {},
     onlineSessions: {},
+    onlineActivitySamples: [],
     playerLinks: {},
     playerLinksByGamertag: {},
     wallets: {},

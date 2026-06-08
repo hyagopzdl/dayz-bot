@@ -187,6 +187,7 @@ function findRecordKeyByPlayerName(record: Record<string, any>, player: string) 
 
 function ensureOnlineState(state: AppState) {
   state.onlinePlayers = state.onlinePlayers || {};
+  state.onlineActivitySamples = state.onlineActivitySamples || [];
   (state as any).onlineSessions = (state as any).onlineSessions || {};
 }
 
@@ -201,6 +202,7 @@ function ensureStateDefaults(state: AppState) {
   state.dailyPlayers = state.dailyPlayers || {};
   state.weeklyPlayers = state.weeklyPlayers || {};
   state.onlinePlayers = state.onlinePlayers || {};
+  state.onlineActivitySamples = state.onlineActivitySamples || [];
   state.files = state.files || {};
   state.recentEventIds = state.recentEventIds || [];
   state.killFeedEvents = state.killFeedEvents || [];
@@ -519,6 +521,40 @@ function cleanupOnlinePlayers(state: AppState) {
 
   // Online presence is controlled only by real ADM connect/disconnect events.
   // Session stats are stored separately and cleared on disconnect.
+}
+
+
+function recordOnlineActivitySample(state: AppState) {
+  const samples = Array.isArray(state.onlineActivitySamples)
+    ? state.onlineActivitySamples
+    : [];
+  const now = new Date();
+  const bucketMs = 15 * 60 * 1000;
+  const bucket = new Date(Math.floor(now.getTime() / bucketMs) * bucketMs).toISOString();
+  const online = Object.keys(state.onlinePlayers || {}).length;
+  const last = samples[samples.length - 1];
+
+  if (last?.bucket === bucket) {
+    if (Number(last.online || 0) === online) {
+      state.onlineActivitySamples = samples;
+      return false;
+    }
+
+    last.online = online;
+    state.onlineActivitySamples = samples;
+    return true;
+  }
+
+  const cutoff = now.getTime() - 8 * 24 * 60 * 60 * 1000;
+  state.onlineActivitySamples = samples
+    .filter((sample) => {
+      const time = Date.parse(String(sample.bucket || ""));
+      return Number.isFinite(time) && time >= cutoff;
+    })
+    .concat({ bucket, online })
+    .slice(-900);
+
+  return true;
 }
 
 function setOnlineRecord(
@@ -951,6 +987,7 @@ export async function getLeaderboard() {
   }
 
   cleanupOnlinePlayers(state);
+  changed = recordOnlineActivitySample(state) || changed;
 
   console.log(`🟢 online agora: ${Object.keys(state.onlinePlayers).length}`);
 
