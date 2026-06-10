@@ -188,6 +188,7 @@ function findRecordKeyByPlayerName(record: Record<string, any>, player: string) 
 function ensureOnlineState(state: AppState) {
   state.onlinePlayers = state.onlinePlayers || {};
   state.onlineActivitySamples = state.onlineActivitySamples || [];
+  (state as any).onlineConnectionEvents = Array.isArray((state as any).onlineConnectionEvents) ? (state as any).onlineConnectionEvents : [];
   (state as any).onlineSessions = (state as any).onlineSessions || {};
 }
 
@@ -523,6 +524,25 @@ function cleanupOnlinePlayers(state: AppState) {
   // Session stats are stored separately and cleared on disconnect.
 }
 
+
+function recordOnlineConnectionEvent(state: AppState, player: string, eventTime: AdmEventTime | null) {
+  const events = Array.isArray((state as any).onlineConnectionEvents)
+    ? (state as any).onlineConnectionEvents
+    : [];
+  const at = eventTime?.date
+    ? eventTime.date.toISOString()
+    : new Date().toISOString();
+
+  events.push({ player, at });
+
+  const cutoff = Date.now() - 8 * 24 * 60 * 60 * 1000;
+  (state as any).onlineConnectionEvents = events
+    .filter((entry: any) => {
+      const time = Date.parse(String(entry?.at || ""));
+      return Number.isFinite(time) && time >= cutoff;
+    })
+    .slice(-5000);
+}
 
 function recordOnlineActivitySample(state: AppState) {
   const samples = Array.isArray(state.onlineActivitySamples)
@@ -870,6 +890,7 @@ function processFile(filePath: string, state: AppState): boolean {
       const player = connectMatch[1];
 
       markOnline(state, player, eventTime);
+      recordOnlineConnectionEvent(state, player, eventTime);
       state.recentEventIds.push(id);
       dedupe.add(id);
 

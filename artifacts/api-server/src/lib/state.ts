@@ -230,6 +230,11 @@ export type OnlineActivitySample = {
   online: number;
 };
 
+export type OnlineConnectionEvent = {
+  player: string;
+  at: string;
+};
+
 export type AppState = {
   players: Record<string, PlayerStats>;
   dailyPlayers: Record<string, PlayerStats>;
@@ -237,6 +242,7 @@ export type AppState = {
   onlinePlayers: Record<string, OnlinePlayer>;
   onlineSessions: Record<string, OnlineSession>;
   onlineActivitySamples?: OnlineActivitySample[];
+  onlineConnectionEvents?: OnlineConnectionEvent[];
 
   playerLinks: Record<string, PlayerLink>;
   playerLinksByGamertag: Record<string, string>;
@@ -284,6 +290,7 @@ function defaultState(): AppState {
     onlinePlayers: {},
     onlineSessions: {},
     onlineActivitySamples: [],
+    onlineConnectionEvents: [],
     playerLinks: {},
     playerLinksByGamertag: {},
     wallets: {},
@@ -372,6 +379,8 @@ function migrateLegacyState(data: any): AppState {
   state.lastFileName = data.lastFileName;
 
   state.onlineSessions = data.onlineSessions || {};
+  state.onlineActivitySamples = Array.isArray(data.onlineActivitySamples) ? data.onlineActivitySamples : [];
+  state.onlineConnectionEvents = Array.isArray((data as any).onlineConnectionEvents) ? (data as any).onlineConnectionEvents : [];
   state.playerLinks = data.playerLinks || {};
   state.playerLinksByGamertag = {};
 
@@ -641,6 +650,8 @@ export async function saveStateAsync(data: AppState) {
     weeklyPlayers: data.weeklyPlayers || {},
     onlinePlayers: data.onlinePlayers || {},
     onlineSessions: data.onlineSessions || {},
+    onlineActivitySamples: Array.isArray(data.onlineActivitySamples) ? data.onlineActivitySamples : [],
+    onlineConnectionEvents: Array.isArray(data.onlineConnectionEvents) ? data.onlineConnectionEvents.slice(-5000) : [],
     playerLinks: data.playerLinks || {},
     playerLinksByGamertag: data.playerLinksByGamertag || {},
     wallets: data.wallets || {},

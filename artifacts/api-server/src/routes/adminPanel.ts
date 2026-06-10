@@ -602,6 +602,10 @@ async function buildOverviewPayload(state: AdminState) {
       linkedMembers: members.length,
       nextRestart: runtime.nextRestartLabel || "unknown",
       minutesUntilRestart: runtime.minutesUntilRestart ?? null,
+      nextReset: {
+        label: runtime.nextRestartLabel || "unknown",
+        minutesUntil: runtime.minutesUntilRestart ?? null,
+      },
     },
     combat: {
       dailyKills: sumPlayerKills(state.dailyPlayers),
@@ -649,7 +653,7 @@ async function buildOverviewPayload(state: AdminState) {
     mapEvents: {
       mode: "Manual pelo painel",
     },
-    activity: buildActivitySeries(state),
+    activity: buildActivitySeries(state, maxPlayers),
     generatedAt: new Date().toISOString(),
   };
 }
@@ -1173,6 +1177,161 @@ function getBrazilWeekdayIndex(date: Date) {
   return ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(value);
 }
 
+
+function getBrazilDateKey(date: Date) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
+}
+
+function getBrazilTimeLabel(date: Date) {
+  return new Intl.DateTimeFormat("pt-BR", {
+    timeZone: "America/Sao_Paulo",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(date);
+}
+
+function buildTodayOnlineSeries(state: AdminState) {
+  const today = getBrazilDateKey(new Date());
+  const samples = (Array.isArray(state.onlineActivitySamples)
+    ? state.onlineActivitySamples
+    : [])
+    .map((sample) => {
+      const date = new Date(String((sample as { bucket?: string }).bucket || ""));
+      const time = date.getTime();
+      return {
+        date,
+        time,
+        online: Math.max(0, Math.floor(Number((sample as { online?: number }).online || 0))),
+      };
+    })
+    .filter((sample) => Number.isFinite(sample.time) && getBrazilDateKey(sample.date) === today)
+    .sort((a, b) => a.time - b.time);
+
+  if (samples.length === 0) {
+    const now = new Date();
+    return [{ label: getBrazilTimeLabel(now), online: countObject(state.onlinePlayers), at: now.toISOString() }];
+  }
+
+  const maxPoints = 64;
+  const step = Math.max(1, Math.ceil(samples.length / maxPoints));
+
+  return samples
+    .filter((_, index) => index % step === 0 || index === samples.length - 1)
+    .map((sample) => ({
+      label: getBrazilTimeLabel(sample.date),
+      online: sample.online,
+      at: sample.date.toISOString(),
+    }));
+}
+
+function buildFullServerPeaksToday(state: AdminState, maxPlayers: number) {
+  const today = getBrazilDateKey(new Date());
+  const samples = (Array.isArray(state.onlineActivitySamples)
+    ? state.onlineActivitySamples
+    : [])
+    .map((sample) => {
+      const date = new Date(String((sample as { bucket?: string }).bucket || ""));
+      const time = date.getTime();
+      return {
+        date,
+        time,
+        online: Math.max(0, Math.floor(Number((sample as { online?: number }).online || 0))),
+      };
+    })
+    .filter((sample) => Number.isFinite(sample.time) && getBrazilDateKey(sample.date) === today)
+    .sort((a, b) => a.time - b.time);
+
+  let count = 0;
+  let wasFull = false;
+  let lastPeakAt: string | null = null;
+
+  for (const sample of samples) {
+    const isFull = sample.online >= maxPlayers;
+    if (isFull && !wasFull) {
+      count += 1;
+      lastPeakAt = sample.date.toISOString();
+    }
+    wasFull = isFull;
+  }
+
+  if (samples.length === 0 && countObject(state.onlinePlayers) >= maxPlayers) {
+    count = 1;
+    lastPeakAt = new Date().toISOString();
+  }
+
+  return {
+    count,
+    lastPeakAt,
+    lastPeakLabel: lastPeakAt ? getBrazilTimeLabel(new Date(lastPeakAt)) : null,
+  };
+}
+
+function buildConnectionsToday(state: AdminState) {
+  const today = getBrazilDateKey(new Date());
+  const events = Array.isArray((state as any).onlineConnectionEvents)
+    ? ((state as any).onlineConnectionEvents as Array<{ player?: string; at?: string }>)
+    : [];
+  const todayEvents = events.filter((event) => {
+    const date = new Date(String(event.at || ""));
+    return !Number.isNaN(date.getTime()) && getBrazilDateKey(date) === today;
+  });
+  const uniquePlayers = new Set(
+    todayEvents
+      .map((event) => normalizeText(event.player || ""))
+      .filter(Boolean),
+  );
+
+  return {
+    uniquePlayers: uniquePlayers.size,
+    totalEntries: todayEvents.length,
+  };
+}
+
+function buildHourlyHeatmap(state: AdminState) {
+  const weekdayLabels = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
+  const buckets = new Map<string, { sum: number; count: number }>();
+  const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  const samples = Array.isArray(state.onlineActivitySamples)
+    ? state.onlineActivitySamples
+    : [];
+
+  for (const sample of samples) {
+    const date = new Date(String((sample as { bucket?: string }).bucket || ""));
+    const time = date.getTime();
+    if (!Number.isFinite(time) || time < cutoff) continue;
+    const day = getBrazilWeekdayIndex(date);
+    const hour = getBrazilHour(date);
+    if (day < 0) continue;
+    const key = `${day}:${hour}`;
+    const current = buckets.get(key) || { sum: 0, count: 0 };
+    current.sum += Math.max(0, Number((sample as { online?: number }).online || 0));
+    current.count += 1;
+    buckets.set(key, current);
+  }
+
+  if (buckets.size === 0) {
+    const now = new Date();
+    const day = getBrazilWeekdayIndex(now);
+    const hour = getBrazilHour(now);
+    buckets.set(`${day}:${hour}`, { sum: countObject(state.onlinePlayers), count: 1 });
+  }
+
+  return weekdayLabels.map((label, day) => ({
+    label,
+    hours: Array.from({ length: 24 }, (_, hour) => {
+      const item = buckets.get(`${day}:${hour}`);
+      const average = item && item.count > 0 ? Number((item.sum / item.count).toFixed(1)) : 0;
+      return { hour, label: `${String(hour).padStart(2, "0")}h`, average };
+    }),
+  }));
+}
+
 function buildPeakHours(state: AdminState) {
   const samples = Array.isArray(state.onlineActivitySamples)
     ? state.onlineActivitySamples
@@ -1256,10 +1415,14 @@ function buildWeekdayActivity(state: AdminState) {
   return rows;
 }
 
-function buildActivitySeries(state: AdminState) {
+function buildActivitySeries(state: AdminState, maxPlayers: number) {
   return {
     peakHours: buildPeakHours(state),
     weekdayActivity: buildWeekdayActivity(state),
+    onlineSeries: buildTodayOnlineSeries(state),
+    hourlyHeatmap: buildHourlyHeatmap(state),
+    fullServerPeaksToday: buildFullServerPeaksToday(state, maxPlayers),
+    connectionsToday: buildConnectionsToday(state),
   };
 }
 
@@ -2585,7 +2748,7 @@ function renderAdminPanelHtml(token: string) {
     .overview-hero p { margin: 8px 0 0; color: var(--text-2); font-size: 13px; }
     .overview-hero-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
     .inline-dot { width: 8px; height: 8px; border-radius: 999px; background: currentColor; display: inline-block; margin-right: 6px; box-shadow: 0 0 16px currentColor; }
-    .operation-kpis { grid-template-columns: repeat(6, minmax(0, 1fr)); margin-bottom: 14px; }
+    .operation-kpis { grid-template-columns: repeat(5, minmax(0, 1fr)); margin-bottom: 14px; }
     .kpi-card { display: flex; align-items: flex-start; gap: 14px; min-height: 126px; }
     .kpi-icon, .ops-icon {
       width: 38px;
@@ -2605,8 +2768,42 @@ function renderAdminPanelHtml(token: string) {
     .kpi-orange { background: rgba(255,168,84,.12); border-color: rgba(255,168,84,.18); color: #ffb56c; }
     .kpi-green { background: rgba(91,214,138,.12); border-color: rgba(91,214,138,.18); color: #8befad; }
     .kpi-blue { background: rgba(76,169,255,.12); border-color: rgba(76,169,255,.18); color: #8bc9ff; }
-    .operation-charts-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; margin-bottom: 14px; }
+    .operation-charts-grid { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(340px, .9fr); gap: 14px; margin-bottom: 14px; }
     .operation-card { padding: 20px; }
+    .online-line-chart {
+      position: relative;
+      min-height: 318px;
+      margin-top: 14px;
+      border-radius: 18px;
+      background: radial-gradient(circle at 55% 15%, rgba(91,214,138,.10), transparent 36%), rgba(3,8,16,.24);
+      border: 1px solid rgba(255,255,255,.055);
+      overflow: hidden;
+    }
+    .online-line-chart svg { width: 100%; height: 318px; display: block; }
+    .chart-axis-label { fill: rgba(226,232,240,.62); font-size: 11px; font-weight: 600; }
+    .chart-grid-line { stroke: rgba(255,255,255,.065); stroke-width: 1; }
+    .chart-capacity-line { stroke: rgba(255,255,255,.33); stroke-width: 1; stroke-dasharray: 6 8; }
+    .chart-online-area { fill: url(#onlineAreaGradient); }
+    .chart-online-line { fill: none; stroke: #78f26d; stroke-width: 3; filter: drop-shadow(0 0 8px rgba(120,242,109,.45)); }
+    .chart-online-dot { fill: #78f26d; stroke: #07100a; stroke-width: 2; }
+    .chart-peak-dot { fill: #ffe16b; stroke: #161100; stroke-width: 2; filter: drop-shadow(0 0 8px rgba(255,225,107,.65)); }
+    .chart-empty { min-height: 318px; display: grid; place-items: center; color: var(--text-3); }
+    .heatmap-card { min-height: 100%; }
+    .heatmap-tabs { display: inline-flex; gap: 4px; padding: 4px; border-radius: 12px; background: rgba(255,255,255,.035); border: 1px solid var(--border); }
+    .heatmap-tabs span { padding: 7px 10px; border-radius: 9px; color: var(--text-3); font-size: 11px; font-weight: 700; }
+    .heatmap-tabs span.active { color: #d9ffdf; background: rgba(91,214,138,.14); border: 1px solid rgba(91,214,138,.20); }
+    .activity-heatmap { display: grid; gap: 8px; margin-top: 18px; }
+    .heatmap-row { display: grid; grid-template-columns: 34px repeat(24, minmax(10px, 1fr)); gap: 4px; align-items: center; }
+    .heatmap-day { color: var(--text-2); font-size: 11px; font-weight: 700; }
+    .heatmap-cell { aspect-ratio: 1; min-height: 13px; border-radius: 4px; background: rgba(42,92,162,.22); border: 1px solid rgba(255,255,255,.035); }
+    .heatmap-cell[data-level="1"] { background: rgba(42,117,210,.42); }
+    .heatmap-cell[data-level="2"] { background: rgba(31,171,185,.55); }
+    .heatmap-cell[data-level="3"] { background: rgba(91,214,138,.68); }
+    .heatmap-cell[data-level="4"] { background: rgba(240,213,92,.78); box-shadow: 0 0 14px rgba(240,213,92,.14); }
+    .heatmap-hours { display: grid; grid-template-columns: 34px repeat(8, 1fr); gap: 4px; margin-top: 10px; color: var(--text-3); font-size: 10px; }
+    .heatmap-legend { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 16px; color: var(--text-3); font-size: 11px; }
+    .heatmap-gradient { flex: 1; height: 9px; max-width: 220px; border-radius: 999px; background: linear-gradient(90deg, rgba(42,92,162,.35), rgba(31,171,185,.65), rgba(91,214,138,.8), rgba(240,213,92,.9)); }
+
     .section-subtitle { color: var(--text-3); font-size: 12px; margin-top: 5px; font-weight: 450; }
     .horizontal-bars { display: grid; gap: 12px; }
     .hbar-row { display: grid; grid-template-columns: 52px minmax(0, 1fr) 58px; gap: 12px; align-items: center; min-height: 26px; }
@@ -2700,24 +2897,21 @@ function renderAdminPanelHtml(token: string) {
           </div>
 
           <div class="metric-grid operation-kpis">
-            <div class="card kpi-card"><div class="kpi-icon kpi-purple"><svg class="icon"><use href="#icon-users"></use></svg></div><div><div class="metric-label">Online agora</div><div class="metric-value" id="metricOnline">—</div><div class="metric-hint" id="metricOnlineHint">Capacidade do servidor</div></div></div>
+            <div class="card kpi-card"><div class="kpi-icon kpi-green"><svg class="icon"><use href="#icon-users"></use></svg></div><div><div class="metric-label">Players online</div><div class="metric-value" id="metricOnline">—</div><div class="metric-hint" id="metricOnlineHint">Capacidade do servidor</div></div></div>
             <div class="card kpi-card"><div class="kpi-icon kpi-blue"><svg class="icon"><use href="#icon-database"></use></svg></div><div><div class="metric-label">Total de players</div><div class="metric-value" id="metricTotalPlayers">—</div><div class="metric-hint" id="metricTotalPlayersHint">Registrados no parser</div></div></div>
-            <div class="card kpi-card"><div class="kpi-icon kpi-red"><svg class="icon"><use href="#icon-warning"></use></svg></div><div><div class="metric-label">Kills hoje</div><div class="metric-value" id="metricKillsToday">—</div><div class="metric-hint" id="metricKillsTodayHint">Dados reais do ADM</div></div></div>
-            <div class="card kpi-card"><div class="kpi-icon kpi-orange"><svg class="icon"><use href="#icon-clock"></use></svg></div><div><div class="metric-label">Kills (7 dias)</div><div class="metric-value" id="metricWeeklyKills">—</div><div class="metric-hint" id="metricWeeklyKillsHint">Média semanal</div></div></div>
-            <div class="card kpi-card"><div class="kpi-icon kpi-green"><svg class="icon"><use href="#icon-shopping-cart"></use></svg></div><div><div class="metric-label">Fila da loja</div><div class="metric-value" id="metricShopQueue">—</div><div class="metric-hint" id="metricShopQueueHint">Pedidos aguardando reset</div></div></div>
-            <div class="card kpi-card"><div class="kpi-icon kpi-blue"><svg class="icon"><use href="#icon-coins"></use></svg></div><div><div class="metric-label">Coins em circulação</div><div class="metric-value" id="metricCoinsBalance">—</div><div class="metric-hint" id="metricCoinsBalanceHint">Saldo total das carteiras</div></div></div>
+            <div class="card kpi-card"><div class="kpi-icon kpi-orange"><svg class="icon"><use href="#icon-warning"></use></svg></div><div><div class="metric-label">Picos de hoje</div><div class="metric-value" id="metricTodayPeaks">—</div><div class="metric-hint" id="metricTodayPeaksHint">Servidor cheio</div></div></div>
+            <div class="card kpi-card"><div class="kpi-icon kpi-purple"><svg class="icon"><use href="#icon-arrow-left"></use></svg></div><div><div class="metric-label">Conexões hoje</div><div class="metric-value" id="metricConnectionsToday">—</div><div class="metric-hint" id="metricConnectionsTodayHint">Players que logaram hoje</div></div></div>
+            <div class="card kpi-card"><div class="kpi-icon kpi-red"><svg class="icon"><use href="#icon-clock"></use></svg></div><div><div class="metric-label">Próximo reset</div><div class="metric-value" id="metricNextReset">—</div><div class="metric-hint" id="metricNextResetHint">Horário do próximo reset</div></div></div>
           </div>
 
           <div class="operation-charts-grid">
             <div class="card operation-card">
-              <div class="section-title"><div><h2>Horários de pico</h2><div class="section-subtitle">Média de jogadores online por horário nos últimos 7 dias.</div></div><span class="chip">últimos 7 dias</span></div>
-              <div id="peakHoursChart" class="horizontal-bars"></div>
-              <div id="peakHoursInsight" class="insight-row"></div>
+              <div class="section-title"><div><h2>Players online hoje</h2><div class="section-subtitle">Histórico do dia com marcação visual quando o servidor atinge capacidade máxima.</div></div><span class="chip">Hoje</span></div>
+              <div id="onlineSeriesChart" class="online-line-chart"></div>
             </div>
-            <div class="card operation-card">
-              <div class="section-title"><div><h2>Atividade por dia da semana</h2><div class="section-subtitle">Kills registradas por dia nos últimos 7 dias.</div></div><span class="chip">ADM</span></div>
-              <div id="weekdayActivityChart" class="horizontal-bars"></div>
-              <div id="weekdayActivityInsight" class="insight-row"></div>
+            <div class="card operation-card heatmap-card">
+              <div class="section-title"><div><h2>Atividade por hora</h2><div class="section-subtitle">Média de players online por dia e horário nos últimos 7 dias.</div></div><div class="heatmap-tabs"><span class="active">Players</span><span>Conexões</span><span>Tempo online</span></div></div>
+              <div id="hourlyHeatmapChart" class="activity-heatmap"></div>
             </div>
           </div>
 
@@ -3026,25 +3220,79 @@ function renderAdminPanelHtml(token: string) {
       }).join("");
     }
 
-    function renderPeakHours(rows) {
-      renderHorizontalBars("peakHoursChart", rows, { valueKey: "average", labelKey: "label", decimals: 1 });
-      const top = Array.isArray(rows) && rows.length ? rows[0] : null;
-      const insight = document.getElementById("peakHoursInsight");
-      if (!insight) return;
-      insight.innerHTML = top
-        ? icon("warning") + '<span>Pico estimado: <b>' + escapeHtml(top.label) + '</b> com média de <b>' + Number(top.average || 0).toLocaleString("pt-BR", { maximumFractionDigits: 1 }) + '</b> jogadores online.</span>'
-        : '';
+    function formatDurationFromMinutes(minutes) {
+      if (minutes === null || minutes === undefined || Number.isNaN(Number(minutes))) return "—";
+      const total = Math.max(0, Math.floor(Number(minutes)));
+      const hours = Math.floor(total / 60);
+      const mins = total % 60;
+      if (hours <= 0) return mins + "min";
+      if (mins === 0) return hours + "h";
+      return hours + "h " + mins + "min";
     }
 
-    function renderWeekdayActivity(rows) {
-      const ordered = Array.isArray(rows) ? rows.slice().sort((a, b) => (a.index || 0) - (b.index || 0)) : [];
-      renderHorizontalBars("weekdayActivityChart", ordered, { valueKey: "kills", labelKey: "label", decimals: 0 });
-      const top = ordered.slice().sort((a, b) => Number(b.kills || 0) - Number(a.kills || 0))[0];
-      const insight = document.getElementById("weekdayActivityInsight");
-      if (!insight) return;
-      insight.innerHTML = top && Number(top.kills || 0) > 0
-        ? icon("warning") + '<span>Dia mais ativo: <b>' + escapeHtml(top.label) + '</b> com <b>' + formatNumber(top.kills) + '</b> kills registradas.</span>'
-        : icon("warning") + '<span>Aguardando histórico de kills para montar o ranking semanal.</span>';
+    function renderOnlineSeriesChart(rows, maxPlayers) {
+      const container = document.getElementById("onlineSeriesChart");
+      if (!container) return;
+      const list = Array.isArray(rows) ? rows : [];
+      const cap = Math.max(1, Number(maxPlayers || 10));
+      if (!list.length) {
+        container.innerHTML = '<div class="chart-empty">Ainda não há histórico suficiente para o gráfico de hoje.</div>';
+        return;
+      }
+      const width = 980;
+      const height = 318;
+      const pad = { left: 42, right: 20, top: 28, bottom: 34 };
+      const innerW = width - pad.left - pad.right;
+      const innerH = height - pad.top - pad.bottom;
+      const maxY = Math.max(cap, ...list.map((row) => Number(row.online || 0)), 1);
+      const xFor = (index) => pad.left + (list.length <= 1 ? 0 : (index / (list.length - 1)) * innerW);
+      const yFor = (value) => pad.top + innerH - (Math.max(0, Number(value || 0)) / maxY) * innerH;
+      const points = list.map((row, index) => ({ x: xFor(index), y: yFor(row.online), online: Number(row.online || 0), label: row.label || "" }));
+      const path = points.map((point, index) => (index === 0 ? "M" : "L") + point.x.toFixed(1) + " " + point.y.toFixed(1)).join(" ");
+      const area = path + " L " + points[points.length - 1].x.toFixed(1) + " " + (pad.top + innerH).toFixed(1) + " L " + points[0].x.toFixed(1) + " " + (pad.top + innerH).toFixed(1) + " Z";
+      const grid = [0, Math.ceil(maxY / 2), maxY].map((value) => {
+        const y = yFor(value);
+        return '<line class="chart-grid-line" x1="' + pad.left + '" y1="' + y.toFixed(1) + '" x2="' + (width - pad.right) + '" y2="' + y.toFixed(1) + '" />' +
+          '<text class="chart-axis-label" x="12" y="' + (y + 4).toFixed(1) + '">' + escapeHtml(value) + '</text>';
+      }).join("");
+      const capacityY = yFor(cap);
+      const ticks = [0, Math.floor((list.length - 1) / 3), Math.floor(((list.length - 1) * 2) / 3), list.length - 1]
+        .filter((value, index, arr) => value >= 0 && arr.indexOf(value) === index)
+        .map((index) => '<text class="chart-axis-label" text-anchor="middle" x="' + xFor(index).toFixed(1) + '" y="' + (height - 10) + '">' + escapeHtml(list[index]?.label || '') + '</text>')
+        .join("");
+      const dots = points.map((point) => {
+        const peakClass = point.online >= cap ? "chart-peak-dot" : "chart-online-dot";
+        const r = point.online >= cap ? 5 : 3;
+        return '<circle class="' + peakClass + '" cx="' + point.x.toFixed(1) + '" cy="' + point.y.toFixed(1) + '" r="' + r + '"><title>' + escapeHtml(point.label + ' · ' + point.online + '/' + cap + ' players') + '</title></circle>';
+      }).join("");
+      container.innerHTML = '<svg viewBox="0 0 ' + width + ' ' + height + '" role="img" aria-label="Players online hoje">' +
+        '<defs><linearGradient id="onlineAreaGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#78f26d" stop-opacity="0.34"/><stop offset="1" stop-color="#78f26d" stop-opacity="0.02"/></linearGradient></defs>' +
+        grid + '<line class="chart-capacity-line" x1="' + pad.left + '" y1="' + capacityY.toFixed(1) + '" x2="' + (width - pad.right) + '" y2="' + capacityY.toFixed(1) + '" />' +
+        '<text class="chart-axis-label" x="' + (width - pad.right - 92) + '" y="' + (capacityY - 8).toFixed(1) + '">capacidade máxima</text>' +
+        '<path class="chart-online-area" d="' + area + '" />' +
+        '<path class="chart-online-line" d="' + path + '" />' + dots + ticks + '</svg>';
+    }
+
+    function renderHourlyHeatmap(rows, maxPlayers) {
+      const container = document.getElementById("hourlyHeatmapChart");
+      if (!container) return;
+      const list = Array.isArray(rows) ? rows : [];
+      const cap = Math.max(1, Number(maxPlayers || 10));
+      if (!list.length) {
+        container.innerHTML = '<div class="empty" style="padding:18px">Ainda não há histórico suficiente.</div>';
+        return;
+      }
+      container.innerHTML = list.map((row) => {
+        const cells = (Array.isArray(row.hours) ? row.hours : []).map((hour) => {
+          const average = Number(hour.average || 0);
+          const ratio = average / cap;
+          const level = ratio >= .78 ? 4 : ratio >= .52 ? 3 : ratio >= .28 ? 2 : ratio > 0 ? 1 : 0;
+          return '<span class="heatmap-cell" data-level="' + level + '" title="' + escapeHtml((row.label || '') + ' ' + (hour.label || '') + ': média ' + average.toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + ' players') + '"></span>';
+        }).join("");
+        return '<div class="heatmap-row"><div class="heatmap-day">' + escapeHtml(row.label || '') + '</div>' + cells + '</div>';
+      }).join("") +
+      '<div class="heatmap-hours"><span></span><span>00</span><span>03</span><span>06</span><span>09</span><span>12</span><span>15</span><span>18</span><span>21</span></div>' +
+      '<div class="heatmap-legend"><span>Menos ativo</span><div class="heatmap-gradient"></div><span>Mais ativo</span></div>';
     }
     async function loadOverview() {
       const response = await apiFetch("/admin-panel/api/overview");
@@ -3055,14 +3303,14 @@ function renderAdminPanelHtml(token: string) {
       setText("metricOnlineHint", payload.server.onlinePlayers === 1 ? "1 jogador online agora" : payload.server.onlinePlayers + " jogadores online agora");
       setText("metricTotalPlayers", formatNumber(payload.server.totalPlayers));
       setText("metricTotalPlayersHint", payload.server.linkedMembers + " membros vinculados");
-      setText("metricKillsToday", formatNumber(payload.combat.dailyKills));
-      setText("metricKillsTodayHint", formatNumber(payload.combat.weeklyKills) + " kills na semana");
-      setText("metricWeeklyKills", formatNumber(payload.combat.weeklyKills));
-      setText("metricWeeklyKillsHint", "Média: " + Math.round(Number(payload.combat.weeklyKills || 0) / 7) + "/dia");
-      setText("metricShopQueue", formatNumber(payload.shop.pending));
-      setText("metricShopQueueHint", payload.shop.included + " incluídos · " + payload.shop.failed + " falhas");
-      setText("metricCoinsBalance", formatCoins(payload.economy.totalCoins));
-      setText("metricCoinsBalanceHint", payload.economy.wallets + " carteiras registradas");
+      const peaks = payload.activity?.fullServerPeaksToday || {};
+      setText("metricTodayPeaks", formatNumber(peaks.count || 0) + "x");
+      setText("metricTodayPeaksHint", peaks.lastPeakLabel ? "Último pico às " + peaks.lastPeakLabel : "Ainda não lotou hoje");
+      const connections = payload.activity?.connectionsToday || {};
+      setText("metricConnectionsToday", formatNumber(connections.uniquePlayers || 0));
+      setText("metricConnectionsTodayHint", formatNumber(connections.totalEntries || 0) + " entradas totais hoje");
+      setText("metricNextReset", formatDurationFromMinutes(payload.server.nextReset?.minutesUntil));
+      setText("metricNextResetHint", payload.server.nextReset?.label && payload.server.nextReset.label !== "unknown" ? "Horário: " + payload.server.nextReset.label : "Horário não configurado");
       setText("overviewUpdatedAt", "Atualizado " + new Date(payload.generatedAt || Date.now()).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }));
       setText("opsParserStatus", payload.parser.lastProcessedAt ? "Online" : "Aguardando");
       const parserStatus = document.getElementById("opsParserStatus");
@@ -3074,8 +3322,8 @@ function renderAdminPanelHtml(token: string) {
       setText("opsShopMeta", payload.shop.pending + " pedidos pendentes");
       setText("opsMapEventsMeta", payload.mapEvents.mode || "Manual pelo painel");
       setText("opsQueueAlert", payload.shop.pending > 0 ? payload.shop.pending + " pedidos aguardando próximo reset" : "Nenhum pedido pendente na loja");
-      renderPeakHours(payload.activity?.peakHours || []);
-      renderWeekdayActivity(payload.activity?.weekdayActivity || []);
+      renderOnlineSeriesChart(payload.activity?.onlineSeries || [], payload.server.maxPlayers);
+      renderHourlyHeatmap(payload.activity?.hourlyHeatmap || [], payload.server.maxPlayers);
     }
     function memberAvatarHtml(member) {
       const initials = (member.discordName || member.gamertag || "?").slice(0, 2).toUpperCase();
