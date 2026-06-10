@@ -1545,49 +1545,49 @@ function buildNextResetInfo(now = new Date()) {
 }
 
 function buildOnlineTimeline(state: AdminState, maxPlayers: number) {
-  const todayKey = getBrazilDateKey();
-  const samples = getSamplesForDate(state, todayKey);
-  const formatter = new Intl.DateTimeFormat("pt-BR", {
-    timeZone: "America/Sao_Paulo",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
   const now = new Date();
-  const currentOnline = countObject(state.onlinePlayers);
+  const todayKey = getBrazilDateKey(now);
+  const currentParts = getBrazilDateTimeParts(now);
+  const samples = getSamplesForDate(state, todayKey).sort(
+    (a, b) => a.minuteOfDay - b.minuteOfDay,
+  );
+  const hourly = new Map<number, { sum: number; count: number; max: number }>();
 
-  if (!samples.length) {
-    const startOfToday = new Date(now);
-    startOfToday.setHours(0, 0, 0, 0);
-
-    return [
-      {
-        label: formatter.format(startOfToday),
-        online: 0,
-        isFull: false,
-      },
-      {
-        label: formatter.format(now),
-        online: currentOnline,
-        isFull: currentOnline >= maxPlayers,
-      },
-    ];
+  for (const sample of samples) {
+    const hour = Math.floor(sample.minuteOfDay / 60);
+    const current = hourly.get(hour) || { sum: 0, count: 0, max: 0 };
+    current.sum += Math.max(0, Number(sample.online || 0));
+    current.count += 1;
+    current.max = Math.max(current.max, Math.max(0, Number(sample.online || 0)));
+    hourly.set(hour, current);
   }
 
-  const rows = samples.map((sample) => ({
-    label: sample.label,
-    online: sample.online,
-    isFull: sample.online >= maxPlayers,
-  }));
-
-  if (rows.length === 1) {
-    rows.unshift({
-      label: "00:00",
-      online: 0,
-      isFull: false,
+  const currentOnline = countObject(state.onlinePlayers);
+  if (!hourly.has(currentParts.hour)) {
+    hourly.set(currentParts.hour, {
+      sum: currentOnline,
+      count: 1,
+      max: currentOnline,
     });
   }
 
-  return rows;
+  return Array.from({ length: 24 }, (_, hour) => {
+    const bucket = hourly.get(hour);
+    const isFuture = hour > currentParts.hour;
+    const online = bucket && bucket.count > 0
+      ? Number((bucket.sum / bucket.count).toFixed(1))
+      : isFuture
+        ? null
+        : 0;
+    const maxOnline = bucket?.max ?? online ?? 0;
+
+    return {
+      label: `${String(hour).padStart(2, "0")}:00`,
+      hour,
+      online,
+      isFull: Number(maxOnline || 0) >= maxPlayers,
+    };
+  });
 }
 
 function buildHourlyActivityHeatmap(state: AdminState) {
@@ -1610,18 +1610,6 @@ function buildHourlyActivityHeatmap(state: AdminState) {
     current.sum += Math.max(0, Number((sample as any).online || 0));
     current.count += 1;
     buckets.set(key, current);
-  }
-
-  if (buckets.size === 0) {
-    const now = new Date();
-    const day = getBrazilWeekdayIndex(now);
-    const hour = getBrazilHour(now);
-    if (day >= 0) {
-      buckets.set(`${day}:${hour}`, {
-        sum: countObject(state.onlinePlayers),
-        count: 1,
-      });
-    }
   }
 
   return weekdayLabels.map((dayLabel, day) => ({
@@ -3475,27 +3463,34 @@ function renderAdminPanelHtml(token: string) {
         return;
       }
       const capacity = Math.max(1, Number(maxPlayers || 10));
-      const maxValue = Math.max(capacity, ...list.map((row) => Number(row.online || 0)), 1);
+      const validRows = list.filter((row) => row && row.online !== null && row.online !== undefined && Number.isFinite(Number(row.online)));
+      const maxValue = Math.max(capacity, ...validRows.map((row) => Number(row.online || 0)), 1);
       const width = 100;
       const height = 100;
       const points = list.map((row, index) => {
         const x = list.length === 1 ? 0 : (index / (list.length - 1)) * width;
+        if (!row || row.online === null || row.online === undefined || !Number.isFinite(Number(row.online))) {
+          return { x, y: null, row, valid: false };
+        }
         const y = height - (Math.max(0, Number(row.online || 0)) / maxValue) * height;
-        return { x, y, row };
+        return { x, y, row, valid: true };
       });
-      const path = points.map((point, index) => (index === 0 ? "M" : "L") + point.x.toFixed(2) + " " + point.y.toFixed(2)).join(" ");
-      const area = path + " L " + points[points.length - 1].x.toFixed(2) + " 100 L " + points[0].x.toFixed(2) + " 100 Z";
+      const validPoints = points.filter((point) => point.valid && point.y !== null);
+      const path = validPoints.map((point, index) => (index === 0 ? "M" : "L") + point.x.toFixed(2) + " " + Number(point.y).toFixed(2)).join(" ");
+      const area = validPoints.length
+        ? path + " L " + validPoints[validPoints.length - 1].x.toFixed(2) + " 100 L " + validPoints[0].x.toFixed(2) + " 100 Z"
+        : "";
       const capacityY = height - (capacity / maxValue) * height;
       const yTicks = Array.from({ length: 6 }, (_, index) => Math.round((maxValue / 5) * (5 - index)));
-      const xLabels = list.filter((_, index) => index === 0 || index === list.length - 1 || index % Math.max(1, Math.floor(list.length / 4)) === 0).slice(0, 6);
+      const xLabels = list.filter((_, index) => index === 0 || index === list.length - 1 || index % 3 === 0);
       container.innerHTML =
         '<div class="chart-y-axis">' + yTicks.map((tick) => '<span>' + escapeHtml(tick) + '</span>').join("") + '</div>' +
         '<div class="chart-plot">' +
           '<svg class="chart-svg" viewBox="0 0 100 100" preserveAspectRatio="none">' +
-            '<path class="chart-area" d="' + area + '"></path>' +
+            (area ? '<path class="chart-area" d="' + area + '"></path>' : '') +
             '<line class="chart-capacity" x1="0" x2="100" y1="' + capacityY.toFixed(2) + '" y2="' + capacityY.toFixed(2) + '"></line>' +
-            '<path class="chart-line" d="' + path + '"></path>' +
-            points.map((point) => '<circle class="chart-point ' + (point.row.isFull ? 'full' : '') + '" cx="' + point.x.toFixed(2) + '" cy="' + point.y.toFixed(2) + '" r="1.35"><title>' + escapeHtml(point.row.label + ' · ' + point.row.online + '/' + capacity) + '</title></circle>').join("") +
+            (path ? '<path class="chart-line" d="' + path + '"></path>' : '') +
+            validPoints.map((point) => '<circle class="chart-point ' + (point.row.isFull ? 'full' : '') + '" cx="' + point.x.toFixed(2) + '" cy="' + Number(point.y).toFixed(2) + '" r="1.35"><title>' + escapeHtml(point.row.label + ' · ' + point.row.online + '/' + capacity) + '</title></circle>').join("") +
           '</svg>' +
         '</div>' +
         '<div class="chart-x-axis">' + xLabels.map((row) => '<span>' + escapeHtml(row.label) + '</span>').join("") + '</div>';

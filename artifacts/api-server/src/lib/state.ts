@@ -668,6 +668,16 @@ export async function saveStateAsync(data: AppState) {
     weeklyPlayers: data.weeklyPlayers || {},
     onlinePlayers: data.onlinePlayers || {},
     onlineSessions: data.onlineSessions || {},
+    onlineActivitySamples: Array.isArray(data.onlineActivitySamples)
+      ? data.onlineActivitySamples
+          .filter((sample) => !Number.isNaN(new Date(sample.bucket).getTime()))
+          .slice(-900)
+      : [],
+    onlineConnectionEvents: Array.isArray(data.onlineConnectionEvents)
+      ? data.onlineConnectionEvents
+          .filter((event) => !Number.isNaN(new Date(event.at).getTime()))
+          .slice(-5000)
+      : [],
     playerLinks: data.playerLinks || {},
     playerLinksByGamertag: data.playerLinksByGamertag || {},
     wallets: data.wallets || {},
