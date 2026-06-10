@@ -380,6 +380,15 @@ function migrateLegacyState(data: any): AppState {
   state.lastFileName = data.lastFileName;
 
   state.onlineSessions = data.onlineSessions || {};
+  state.onlineActivitySamples = Array.isArray(data.onlineActivitySamples)
+    ? data.onlineActivitySamples
+        .map((sample: any) => ({
+          bucket: sample.bucket || sample.at || new Date().toISOString(),
+          online: Math.max(0, Math.floor(Number(sample.online || 0))),
+        }))
+        .filter((sample: any) => !Number.isNaN(new Date(sample.bucket).getTime()))
+        .slice(-900)
+    : [];
   state.onlineConnectionEvents = Array.isArray(data.onlineConnectionEvents)
     ? data.onlineConnectionEvents
         .map((event: any) => ({

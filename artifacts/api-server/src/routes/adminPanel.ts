@@ -1547,27 +1547,47 @@ function buildNextResetInfo(now = new Date()) {
 function buildOnlineTimeline(state: AdminState, maxPlayers: number) {
   const todayKey = getBrazilDateKey();
   const samples = getSamplesForDate(state, todayKey);
+  const formatter = new Intl.DateTimeFormat("pt-BR", {
+    timeZone: "America/Sao_Paulo",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  const now = new Date();
+  const currentOnline = countObject(state.onlinePlayers);
 
   if (!samples.length) {
-    const now = new Date();
+    const startOfToday = new Date(now);
+    startOfToday.setHours(0, 0, 0, 0);
+
     return [
       {
-        label: new Intl.DateTimeFormat("pt-BR", {
-          timeZone: "America/Sao_Paulo",
-          hour: "2-digit",
-          minute: "2-digit",
-        }).format(now),
-        online: countObject(state.onlinePlayers),
-        isFull: countObject(state.onlinePlayers) >= maxPlayers,
+        label: formatter.format(startOfToday),
+        online: 0,
+        isFull: false,
+      },
+      {
+        label: formatter.format(now),
+        online: currentOnline,
+        isFull: currentOnline >= maxPlayers,
       },
     ];
   }
 
-  return samples.map((sample) => ({
+  const rows = samples.map((sample) => ({
     label: sample.label,
     online: sample.online,
     isFull: sample.online >= maxPlayers,
   }));
+
+  if (rows.length === 1) {
+    rows.unshift({
+      label: "00:00",
+      online: 0,
+      isFull: false,
+    });
+  }
+
+  return rows;
 }
 
 function buildHourlyActivityHeatmap(state: AdminState) {
@@ -1590,6 +1610,18 @@ function buildHourlyActivityHeatmap(state: AdminState) {
     current.sum += Math.max(0, Number((sample as any).online || 0));
     current.count += 1;
     buckets.set(key, current);
+  }
+
+  if (buckets.size === 0) {
+    const now = new Date();
+    const day = getBrazilWeekdayIndex(now);
+    const hour = getBrazilHour(now);
+    if (day >= 0) {
+      buckets.set(`${day}:${hour}`, {
+        sum: countObject(state.onlinePlayers),
+        count: 1,
+      });
+    }
   }
 
   return weekdayLabels.map((dayLabel, day) => ({
