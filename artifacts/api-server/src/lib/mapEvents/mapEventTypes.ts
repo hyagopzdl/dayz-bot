@@ -91,6 +91,7 @@ export type MapEventDeployResult = {
   ok: true;
   id: string;
   eventName: string;
+  companionEventNames?: string[];
   presetId: MapEventPresetId;
   lootMode: MapEventLootMode;
   path: string;
