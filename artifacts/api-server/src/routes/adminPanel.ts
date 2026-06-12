@@ -3,10 +3,12 @@ import { Router, type Request, type Response } from "express";
 import { Routes } from "discord.js";
 import { getShopRuntimeStatus } from "../lib/shop";
 import {
+  checkLockedContainerSetupNow,
   cleanupMapEventsNow,
   ensureLockedContainerSetupNow,
   getMapEventPresetPayload,
   injectMapEventNow,
+  uninstallLockedContainerSetupNow,
 } from "../lib/mapEvents/mapEventService";
 import {
   deleteShopCatalogCategory,
@@ -2690,6 +2692,7 @@ function renderAdminPanelHtml(token: string) {
         <button data-view="catalog"><svg class="nav-icon"><use href="#icon-shopping-cart"></use></svg><span>Shop</span></button>
         <button data-view="items"><svg class="nav-icon"><use href="#icon-package"></use></svg><span>Itens</span></button>
         <button data-view="map-events"><svg class="nav-icon"><use href="#icon-clock"></use></svg><span>Eventos do Mapa</span></button>
+        <button data-view="settings"><svg class="nav-icon"><use href="#icon-database"></use></svg><span>Settings</span></button>
       </nav>
       <div class="sidebar-footer"><div class="avatar">A</div><div><b>Admin</b><div class="member-meta">Painel seguro</div></div></div>
     </aside>
@@ -2823,25 +2826,24 @@ function renderAdminPanelHtml(token: string) {
               <div class="section-title">
                 <div>
                   <h2>Eventos do Mapa</h2>
-                  <div class="member-meta">Injete eventos temporários em events.xml e cfgeventspawns.xml sem interferir na loja.</div>
+                  <div class="member-meta">Crie locked containers temporários em events.xml e cfgeventspawns.xml sem interferir na loja.</div>
                 </div>
                 <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
                   <button id="mapEventsRefresh" class="ghost-btn">Refresh</button>
-                  <button id="mapEventsSetup" class="primary-btn">Instalar setup locked</button>
                   <button id="mapEventsCleanup" class="danger-btn">Limpar eventos</button>
                 </div>
               </div>
-              <div class="catalog-breadcrumb">Use para testes controlados. Primeiro instale o setup locked uma vez. Depois o painel injeta events.xml e cfgeventspawns.xml. Após injetar, reinicie o servidor para o evento nascer.</div>
+              <div class="catalog-breadcrumb">O suporte a Locked Containers fica em Settings > Eventos. Depois de injetar um evento, faça stop/start completo para o servidor carregar o spawn.</div>
             </div>
             <div class="map-events-grid">
               <div class="card">
-                <div class="section-title"><h2>Escolher tipo do evento</h2><span class="chip">1 etapa</span></div>
+                <div class="section-title"><h2>Escolher tema do container</h2><span class="chip">Locked Container</span></div>
                 <div id="mapEventPresetGrid" class="preset-grid"></div>
               </div>
               <div class="card">
                 <div class="section-title"><h2>Configurar evento</h2><span id="mapEventSelectedPreset" class="chip">Locked Container</span></div>
                 <div class="form-grid two">
-                  <label class="full">Tipo de loot<select id="mapEventLootMode"><option value="rng">Militar</option></select></label>
+                  <label class="full">Tipo de evento<select id="mapEventLootMode"><option value="rng">Locked Container por tema/cor</option></select></label>
                   <label class="full">Nome do evento<input id="mapEventName" placeholder="Ex: Container militar PvP" /></label>
                   <label class="full">Coordenadas<input id="mapEventCoordinates" inputmode="decimal" placeholder="5008.21 / 7418.99" /><small class="field-hint">Clique no mapa abaixo ou cole no formato X / Z. Ex: 5008.21 / 7418.99</small></label>
                   <div class="map-picker">
@@ -2879,9 +2881,39 @@ function renderAdminPanelHtml(token: string) {
                   <div id="mapEventGuaranteedItemsList" style="display:none"></div>
                   <div id="mapEventGuaranteedItemsWrap" style="display:none"></div>
                 </div>
-                <div class="catalog-breadcrumb" style="margin-top:12px">Esse fluxo cria somente o locked container azul com loot militar. As chaves ficam fora da aba de eventos e podem ser distribuídas pela loja ou manualmente.</div>
+                <div class="catalog-breadcrumb" style="margin-top:12px">Cada cor representa um tema fixo: vermelho militar, azul médico, amarelo construção e laranja raid. As chaves ficam fora da aba de eventos e podem ser distribuídas pela loja ou manualmente.</div>
                 <div class="modal-actions" style="padding:14px 0 0"><button id="mapEventsInject" class="primary-btn">Injetar locked container</button></div>
                 <div id="mapEventStatus" class="map-event-status" style="margin-top:14px"></div>
+              </div>
+            </div>
+          </div>
+        </section>
+        <section id="view-settings" class="view">
+          <div class="items-shell">
+            <div class="card">
+              <div class="section-title">
+                <div>
+                  <h2>Settings</h2>
+                  <div class="member-meta">Configurações estruturais do servidor e recursos do painel.</div>
+                </div>
+                <button id="settingsRefresh" class="ghost-btn">Verificar tudo</button>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="section-title">
+                <div>
+                  <h2>Eventos · Locked Containers</h2>
+                  <div class="member-meta">Prepara o servidor para eventos de container trancado com loot interno por cor/tema.</div>
+                </div>
+                <span id="lockedContainerSetupBadge" class="chip">Verificando...</span>
+              </div>
+              <div class="catalog-breadcrumb">Instale esse suporte uma vez por missão/servidor. Depois disso, a tela Eventos do Mapa só cria ou remove os spawns temporários.</div>
+              <div id="lockedContainerSetupStatus" class="settings-list" style="margin-top:14px"></div>
+              <div class="modal-actions" style="padding:14px 0 0; gap:8px; flex-wrap:wrap">
+                <button id="lockedContainerCheck" class="ghost-btn">Verificar instalação</button>
+                <button id="lockedContainerInstall" class="primary-btn">Instalar / reparar suporte</button>
+                <button id="lockedContainerUninstall" class="danger-btn">Desinstalar suporte</button>
               </div>
             </div>
           </div>
@@ -2996,7 +3028,7 @@ function renderAdminPanelHtml(token: string) {
   <script>
     const adminToken = ${tokenJson};
     if (adminToken) document.cookie = "${TOKEN_COOKIE}=" + encodeURIComponent(adminToken) + "; path=/admin-panel; SameSite=Lax";
-    const state = { view: "general", cursor: 0, hasMore: true, loadingMembers: false, memberForceRefresh: false, search: "", filter: "", modal: null, catalogModal: null, selectedDiscordId: null, catalog: null, catalogSearch: "", catalogCategory: "", catalogMode: "categories", catalogDrag: null, catalogJustDragged: false, shopQueue: null, shopTransactions: null, shopHistorySearch: "", shopQueueModeBefore: "categories", itemsCursor: 0, itemsHasMore: true, itemsLoading: false, itemsSearch: "", itemsFilter: "all", dayzItems: [], itemsStats: null, itemModal: null, mapEventPresets: [], selectedMapEventPresetId: "locked_container_blue", mapEventRewardStorageItem: null, mapEventLootItems: [] };
+    const state = { view: "general", cursor: 0, hasMore: true, loadingMembers: false, memberForceRefresh: false, search: "", filter: "", modal: null, catalogModal: null, selectedDiscordId: null, catalog: null, catalogSearch: "", catalogCategory: "", catalogMode: "categories", catalogDrag: null, catalogJustDragged: false, shopQueue: null, shopTransactions: null, shopHistorySearch: "", shopQueueModeBefore: "categories", itemsCursor: 0, itemsHasMore: true, itemsLoading: false, itemsSearch: "", itemsFilter: "all", dayzItems: [], itemsStats: null, itemModal: null, mapEventPresets: [], selectedMapEventPresetId: "locked_container_red_military", mapEventRewardStorageItem: null, mapEventLootItems: [] };
     const els = {
       pageTitle: document.getElementById("pageTitle"), serverName: document.getElementById("serverName"),
       mapEventPresetGrid: document.getElementById("mapEventPresetGrid"), mapEventSelectedPreset: document.getElementById("mapEventSelectedPreset"), mapEventName: document.getElementById("mapEventName"), mapEventCoordinates: document.getElementById("mapEventCoordinates"), mapEventX: document.getElementById("mapEventX"), mapEventZ: document.getElementById("mapEventZ"), mapEventAngle: document.getElementById("mapEventAngle"), mapEventQuantity: document.getElementById("mapEventQuantity"), mapEventLifetime: document.getElementById("mapEventLifetime"), mapEventSafeRadius: document.getElementById("mapEventSafeRadius"), mapEventDistanceRadius: document.getElementById("mapEventDistanceRadius"), mapEventCleanupRadius: document.getElementById("mapEventCleanupRadius"), mapEventLootMode: document.getElementById("mapEventLootMode"), mapEventRewardStorage: document.getElementById("mapEventRewardStorage"), mapEventRewardStorageSearch: document.getElementById("mapEventRewardStorageSearch"), mapEventRewardStorageSelected: document.getElementById("mapEventRewardStorageSelected"), mapEventRewardStorageAutocomplete: document.getElementById("mapEventRewardStorageAutocomplete"), mapEventRewardStorageWrap: document.getElementById("mapEventRewardStorageWrap"), mapEventGuaranteedItemSearch: document.getElementById("mapEventGuaranteedItemSearch"), mapEventGuaranteedItemAutocomplete: document.getElementById("mapEventGuaranteedItemAutocomplete"), mapEventGuaranteedItemsList: document.getElementById("mapEventGuaranteedItemsList"), mapEventGuaranteedItemsWrap: document.getElementById("mapEventGuaranteedItemsWrap"), mapEventMapViewport: document.getElementById("mapEventMapViewport"), mapEventMapInner: document.getElementById("mapEventMapInner"), mapEventMapImage: document.getElementById("mapEventMapImage"), mapEventMapPin: document.getElementById("mapEventMapPin"), mapEventMapZoomIn: document.getElementById("mapEventMapZoomIn"), mapEventMapZoomOut: document.getElementById("mapEventMapZoomOut"), mapEventMapZoomLabel: document.getElementById("mapEventMapZoomLabel"), mapEventStatus: document.getElementById("mapEventStatus"),
@@ -3007,6 +3039,7 @@ function renderAdminPanelHtml(token: string) {
       catalogGrid: document.getElementById("catalogGrid"), catalogLoading: document.getElementById("catalogLoading"), catalogEmpty: document.getElementById("catalogEmpty"), catalogSearch: document.getElementById("catalogSearch"), catalogCategoryView: document.getElementById("catalogCategoryView"), catalogItemsView: document.getElementById("catalogItemsView"), catalogCategoryGrid: document.getElementById("catalogCategoryGrid"), catalogCurrentCategoryTitle: document.getElementById("catalogCurrentCategoryTitle"), catalogCurrentCategoryLabel: document.getElementById("catalogCurrentCategoryLabel"), shopQueueView: document.getElementById("shopQueueView"), shopQueueStats: document.getElementById("shopQueueStats"), shopQueueList: document.getElementById("shopQueueList"), shopQueueEmpty: document.getElementById("shopQueueEmpty"), shopQueueRuntime: document.getElementById("shopQueueRuntime"),
       catalogModalBackdrop: document.getElementById("catalogModalBackdrop"), catalogModalTitle: document.getElementById("catalogModalTitle"), catalogModalSubtitle: document.getElementById("catalogModalSubtitle"), catalogItemId: document.getElementById("catalogItemId"), catalogItemAutocomplete: document.getElementById("catalogItemAutocomplete"), catalogItemCategory: document.getElementById("catalogItemCategory"), catalogItemName: document.getElementById("catalogItemName"), catalogItemPrice: document.getElementById("catalogItemPrice"), catalogItemImage: document.getElementById("catalogItemImage"), catalogItemDescription: document.getElementById("catalogItemDescription"), catalogItemEnabled: document.getElementById("catalogItemEnabled"), catalogCategoryModalBackdrop: document.getElementById("catalogCategoryModalBackdrop"), catalogCategoryName: document.getElementById("catalogCategoryName"), catalogCategoryId: document.getElementById("catalogCategoryId"), catalogCategoryDescription: document.getElementById("catalogCategoryDescription"), catalogCategoryEnabled: document.getElementById("catalogCategoryEnabled"),
       itemsList: document.getElementById("itemsList"), itemsLoading: document.getElementById("itemsLoading"), itemsEmpty: document.getElementById("itemsEmpty"), itemsSearch: document.getElementById("itemsSearch"), itemsFilter: document.getElementById("itemsFilter"), itemsRefresh: document.getElementById("itemsRefresh"), itemsSentinel: document.getElementById("itemsSentinel"),
+      lockedContainerSetupBadge: document.getElementById("lockedContainerSetupBadge"), lockedContainerSetupStatus: document.getElementById("lockedContainerSetupStatus"),
       itemModalBackdrop: document.getElementById("itemModalBackdrop"), itemModalTitle: document.getElementById("itemModalTitle"), itemModalSubtitle: document.getElementById("itemModalSubtitle"), itemModalPreviewImage: document.getElementById("itemModalPreviewImage"), itemModalPreviewName: document.getElementById("itemModalPreviewName"), itemModalPreviewClass: document.getElementById("itemModalPreviewClass"), itemModalPopularName: document.getElementById("itemModalPopularName"), itemModalImageUrl: document.getElementById("itemModalImageUrl"), itemModalSpawnEventName: document.getElementById("itemModalSpawnEventName"), itemModalEnabled: document.getElementById("itemModalEnabled")
     };
     function apiUrl(path) { const separator = path.includes("?") ? "&" : "?"; return adminToken ? path + separator + "token=" + encodeURIComponent(adminToken) : path; }
@@ -3780,7 +3813,7 @@ function renderAdminPanelHtml(token: string) {
       if (!response.ok) { showToast(await response.text()); return; }
       const payload = await response.json();
       state.mapEventPresets = payload.presets || [];
-      if (!state.selectedMapEventPresetId && state.mapEventPresets[0]) state.selectedMapEventPresetId = state.mapEventPresets[0].id;
+      if ((!state.selectedMapEventPresetId || !state.mapEventPresets.some((preset) => preset.id === state.selectedMapEventPresetId)) && state.mapEventPresets[0]) state.selectedMapEventPresetId = state.mapEventPresets[0].id;
       applyMapEventPresetDefaults(selectedMapEventPreset());
     }
     function mapEventItemThumb(item) {
@@ -4011,7 +4044,7 @@ function renderAdminPanelHtml(token: string) {
       const lootMode = 'rng';
       const coords = syncMapEventCoordinatesHiddenFields();
       return {
-        presetId: state.selectedMapEventPresetId || 'locked_container_blue',
+        presetId: state.selectedMapEventPresetId || 'locked_container_red_military',
         name: els.mapEventName?.value || '',
         x: coords.x,
         z: coords.z,
@@ -4029,14 +4062,44 @@ function renderAdminPanelHtml(token: string) {
     function setMapEventStatus(html) {
       if (els.mapEventStatus) els.mapEventStatus.innerHTML = html;
     }
-    async function installLockedContainerSetupAction() {
-      if (!confirm('Instalar/atualizar setup permanente do container azul? Isso escreve cfgeconomycore.xml, custom/locked-container-types.xml e mapgroupproto.xml. Faça backup antes.')) return;
-      setMapEventStatus('<div class="map-event-result">Instalando setup locked container...</div>');
-      const response = await apiFetch('/admin-panel/api/map-events/setup-locked-container', { method: 'POST', body: JSON.stringify({}) });
-      if (!response.ok) { const text = await response.text(); setMapEventStatus('<div class="map-event-result"><b>Erro:</b> ' + escapeHtml(text) + '</div>'); showToast(text); return; }
+    function renderLockedContainerSetupStatus(result) {
+      const status = result?.status || 'unknown';
+      const label = status === 'installed' ? 'Instalado' : status === 'partial' ? 'Parcial' : status === 'not_installed' ? 'Não instalado' : 'Indisponível';
+      const cls = status === 'installed' ? 'success' : status === 'partial' ? 'warning' : 'danger';
+      if (els.lockedContainerSetupBadge) {
+        els.lockedContainerSetupBadge.textContent = label;
+        els.lockedContainerSetupBadge.className = 'chip ' + (status === 'installed' ? 'success' : '');
+      }
+      const checks = Array.isArray(result?.checks) ? result.checks : [];
+      if (els.lockedContainerSetupStatus) {
+        els.lockedContainerSetupStatus.innerHTML = '<div class="alert-pill ' + (status === 'installed' ? 'success' : '') + '">' + icon(status === 'installed' ? 'check' : 'warning') + '<span><b>Status: ' + escapeHtml(label) + '</b><br><span class="member-meta">' + escapeHtml(String(result?.total - result?.missing || 0)) + '/' + escapeHtml(String(result?.total || 0)) + ' verificações OK</span></span></div>' +
+          checks.map((check) => '<div class="ops-card"><div class="ops-icon ' + (check.ok ? 'kpi-green' : 'kpi-red') + '">' + icon(check.ok ? 'check' : 'warning') + '</div><div><b>' + escapeHtml(check.label) + '</b><span class="status-line ' + (check.ok ? 'success' : 'danger') + '">' + (check.ok ? 'OK' : 'Pendente') + '</span></div><small>' + escapeHtml(check.path || '') + '</small></div>').join('');
+      }
+    }
+    async function checkLockedContainerSetupAction(showDoneToast = true) {
+      if (els.lockedContainerSetupStatus) els.lockedContainerSetupStatus.innerHTML = '<div class="map-event-result">Verificando suporte a Locked Containers...</div>';
+      const response = await apiFetch('/admin-panel/api/settings/locked-containers/check');
+      if (!response.ok) { const text = await response.text(); if (els.lockedContainerSetupStatus) els.lockedContainerSetupStatus.innerHTML = '<div class="map-event-result"><b>Erro:</b> ' + escapeHtml(text) + '</div>'; showToast(text); return; }
       const result = await response.json();
-      setMapEventStatus('<div class="map-event-result"><b>Setup locked instalado.</b><br><span class="member-meta">Arquivos: ' + escapeHtml((result.paths || []).join(' + ')) + '</span><br><span class="member-meta">Agora injete o evento e faça stop/start completo.</span></div>');
-      showToast('Setup locked instalado.');
+      renderLockedContainerSetupStatus(result);
+      if (showDoneToast) showToast('Instalação verificada.');
+    }
+    async function installLockedContainerSetupAction() {
+      if (!confirm('Instalar/reparar suporte a Locked Containers? Isso atualiza cfgeconomycore.xml, custom/locked-container-types.xml e mapgroupproto.xml. Faça backup antes.')) return;
+      if (els.lockedContainerSetupStatus) els.lockedContainerSetupStatus.innerHTML = '<div class="map-event-result">Instalando suporte a Locked Containers...</div>';
+      const response = await apiFetch('/admin-panel/api/settings/locked-containers/install', { method: 'POST', body: JSON.stringify({}) });
+      if (!response.ok) { const text = await response.text(); if (els.lockedContainerSetupStatus) els.lockedContainerSetupStatus.innerHTML = '<div class="map-event-result"><b>Erro:</b> ' + escapeHtml(text) + '</div>'; showToast(text); return; }
+      await checkLockedContainerSetupAction(false);
+      showToast('Suporte a Locked Containers instalado/reparado.');
+    }
+    async function uninstallLockedContainerSetupAction() {
+      if (!confirm('Desinstalar suporte a Locked Containers? Eventos existentes podem parar de funcionar após o próximo restart.')) return;
+      if (!confirm('Confirma mesmo assim? Essa ação remove os blocos gerenciados do mapgroupproto.xml e desregistra o arquivo custom.')) return;
+      if (els.lockedContainerSetupStatus) els.lockedContainerSetupStatus.innerHTML = '<div class="map-event-result">Desinstalando suporte a Locked Containers...</div>';
+      const response = await apiFetch('/admin-panel/api/settings/locked-containers/uninstall', { method: 'POST', body: JSON.stringify({}) });
+      if (!response.ok) { const text = await response.text(); if (els.lockedContainerSetupStatus) els.lockedContainerSetupStatus.innerHTML = '<div class="map-event-result"><b>Erro:</b> ' + escapeHtml(text) + '</div>'; showToast(text); return; }
+      await checkLockedContainerSetupAction(false);
+      showToast('Suporte a Locked Containers desinstalado.');
     }
     async function injectMapEventAction() {
       const preset = selectedMapEventPreset();
@@ -4062,11 +4125,12 @@ function renderAdminPanelHtml(token: string) {
     function switchView(view) {
       state.view = view; document.querySelectorAll(".view").forEach((el) => el.classList.toggle("active", el.id === "view-" + view));
       document.querySelectorAll(".nav button").forEach((el) => el.classList.toggle("active", el.dataset.view === view));
-      els.pageTitle.textContent = view === "general" ? "Geral" : view === "members" ? "Membros" : view === "catalog" ? "Shop" : view === "map-events" ? "Eventos do Mapa" : "Itens";
+      els.pageTitle.textContent = view === "general" ? "Geral" : view === "members" ? "Membros" : view === "catalog" ? "Shop" : view === "map-events" ? "Eventos do Mapa" : view === "settings" ? "Settings" : "Itens";
       if (view === "members" && !els.memberList.children.length) loadMembers(true);
       if (view === "catalog" && !state.catalog) loadCatalog();
       if (view === "items" && !state.dayzItems.length) loadDayzItems(true);
       if (view === "map-events" && !state.mapEventPresets.length) loadMapEventPresets();
+      if (view === "settings") checkLockedContainerSetupAction(false);
     }
     function openCoinModal(action, memberCardEl) {
       const discordId = memberCardEl.getAttribute("data-discord-id");
@@ -4089,7 +4153,7 @@ function renderAdminPanelHtml(token: string) {
     if (mobileMenuButton) mobileMenuButton.addEventListener("click", () => setMobileMenuOpen(!(sidebar && sidebar.classList.contains("open"))));
     if (mobileNavBackdrop) mobileNavBackdrop.addEventListener("click", () => setMobileMenuOpen(false));
     window.addEventListener("keydown", (event) => { if (event.key === "Escape") setMobileMenuOpen(false); });
-    document.getElementById("refreshButton").addEventListener("click", async () => { await loadOverview(); if (state.view === "members") await loadMembers(true); if (state.view === "catalog") { if (state.catalogMode === "queue") await loadShopQueue(); else await loadCatalog(); } if (state.view === "items") await loadDayzItems(true); if (state.view === "map-events") await loadMapEventPresets(); showToast("Dados atualizados."); });
+    document.getElementById("refreshButton").addEventListener("click", async () => { await loadOverview(); if (state.view === "members") await loadMembers(true); if (state.view === "catalog") { if (state.catalogMode === "queue") await loadShopQueue(); else await loadCatalog(); } if (state.view === "items") await loadDayzItems(true); if (state.view === "map-events") await loadMapEventPresets(); if (state.view === "settings") await checkLockedContainerSetupAction(false); showToast("Dados atualizados."); });
     document.getElementById("membersRefresh").addEventListener("click", () => { state.memberForceRefresh = true; loadMembers(true); });
     let searchTimer = null;
     function updateSearch(value) { state.search = value; clearTimeout(searchTimer); searchTimer = setTimeout(() => loadMembers(true), 240); }
@@ -4105,12 +4169,18 @@ function renderAdminPanelHtml(token: string) {
     });
     const mapEventsRefresh = document.getElementById("mapEventsRefresh");
     if (mapEventsRefresh) mapEventsRefresh.addEventListener("click", loadMapEventPresets);
-    const mapEventsSetup = document.getElementById("mapEventsSetup");
-    if (mapEventsSetup) mapEventsSetup.addEventListener("click", installLockedContainerSetupAction);
     const mapEventsInject = document.getElementById("mapEventsInject");
     if (mapEventsInject) mapEventsInject.addEventListener("click", injectMapEventAction);
     const mapEventsCleanup = document.getElementById("mapEventsCleanup");
     if (mapEventsCleanup) mapEventsCleanup.addEventListener("click", cleanupMapEventsAction);
+    const lockedContainerCheck = document.getElementById("lockedContainerCheck");
+    const lockedContainerInstall = document.getElementById("lockedContainerInstall");
+    const lockedContainerUninstall = document.getElementById("lockedContainerUninstall");
+    const settingsRefresh = document.getElementById("settingsRefresh");
+    if (lockedContainerCheck) lockedContainerCheck.addEventListener("click", () => checkLockedContainerSetupAction(true));
+    if (lockedContainerInstall) lockedContainerInstall.addEventListener("click", installLockedContainerSetupAction);
+    if (lockedContainerUninstall) lockedContainerUninstall.addEventListener("click", uninstallLockedContainerSetupAction);
+    if (settingsRefresh) settingsRefresh.addEventListener("click", () => checkLockedContainerSetupAction(true));
     if (els.mapEventLootMode) els.mapEventLootMode.addEventListener("change", updateMapEventLootModeUi);
     if (els.mapEventCoordinates) els.mapEventCoordinates.addEventListener("input", syncMapEventCoordinatesHiddenFields);
     if (els.mapEventMapInner) els.mapEventMapInner.addEventListener("click", handleMapEventMapClick);
@@ -4672,6 +4742,39 @@ router.get("/api/map-events/chernarus-map", (req, res) => {
 router.get("/api/map-events/presets", async (req, res) => {
   if (!requireAdmin(req, res)) return;
   res.json(getMapEventPresetPayload());
+});
+
+router.get("/api/settings/locked-containers/check", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+
+  try {
+    const result = await checkLockedContainerSetupNow();
+    res.json(result);
+  } catch (err) {
+    res.status(400).send(String(err));
+  }
+});
+
+router.post("/api/settings/locked-containers/install", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+
+  try {
+    const result = await ensureLockedContainerSetupNow();
+    res.json(result);
+  } catch (err) {
+    res.status(400).send(String(err));
+  }
+});
+
+router.post("/api/settings/locked-containers/uninstall", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+
+  try {
+    const result = await uninstallLockedContainerSetupNow();
+    res.json(result);
+  } catch (err) {
+    res.status(400).send(String(err));
+  }
 });
 
 router.post("/api/map-events/setup-locked-container", async (req, res) => {
