@@ -159,18 +159,30 @@ function removeCustomTypesRegistration(xml: string) {
   return next;
 }
 
+function getMapGroupProtoClosingTag(xml: string) {
+  const value = String(xml || "");
+  if (/<\/prototype>/i.test(value)) return "</prototype>";
+  if (/<\/mapgroupproto>/i.test(value)) return "</mapgroupproto>";
+  if (/<\/map>/i.test(value)) return "</map>";
+  return "";
+}
+
 function injectLockedContainerMapGroups(xml: string) {
   let value = String(xml || "");
+  const closingTag = getMapGroupProtoClosingTag(value);
+  if (!closingTag) throw new Error("mapgroupproto.xml sem tag final suportada: </prototype>, </mapgroupproto> ou </map>.");
+
   for (const def of LOCKED_CONTAINER_DEFINITIONS) {
     value = removeManagedBlock(value, def.startMarker, def.endMarker);
     if ("legacyStartMarker" in def && "legacyEndMarker" in def) value = removeManagedBlock(value, def.legacyStartMarker, def.legacyEndMarker);
-    const existingGroupPattern = new RegExp(`\\s*<group\\s+name=["']${escapeRegExp(def.className)}["'][\\s\\S]*?<\\/group>\\s*`, "i");
+    const existingGroupPattern = new RegExp(`\s*<group\s+name=["']${escapeRegExp(def.className)}["'][\s\S]*?<\/group>\s*`, "i");
     if (existingGroupPattern.test(value)) {
-      value = value.replace(existingGroupPattern, `\n${buildMapGroupBlock(def)}\n`);
+      value = value.replace(existingGroupPattern, `
+${buildMapGroupBlock(def)}
+`);
     } else {
-      const closingTag = value.includes("</mapgroupproto>") ? "</mapgroupproto>" : value.includes("</map>") ? "</map>" : "";
-      if (!closingTag) throw new Error("mapgroupproto.xml sem tag final </map> ou </mapgroupproto>.");
-      value = value.replace(closingTag, `${buildMapGroupBlock(def)}\n${closingTag}`);
+      value = value.replace(new RegExp(`${escapeRegExp(closingTag)}\s*$`, "i"), `${buildMapGroupBlock(def)}
+${closingTag}`);
     }
   }
   return value;

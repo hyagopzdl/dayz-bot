@@ -4741,7 +4741,7 @@ router.patch("/api/items/:className", async (req, res) => {
 
     res.json({ ok: true, item });
   } catch (err) {
-    res.status(400).send(String(err));
+    res.status(400).json({ ok: false, error: err instanceof Error ? err.message : String(err) });
   }
 });
 
@@ -4764,7 +4764,7 @@ router.patch("/api/items/:className/toggle", async (req, res) => {
 
     res.json({ ok: true, item });
   } catch (err) {
-    res.status(400).send(String(err));
+    res.status(400).json({ ok: false, error: err instanceof Error ? err.message : String(err) });
   }
 });
 
@@ -4822,7 +4822,7 @@ router.patch("/api/catalog/categories/reorder", async (req, res) => {
     await ensureShopCatalogLoaded();
     res.json({ ok: true, catalog: buildCatalogPayload() });
   } catch (err) {
-    res.status(400).send(String(err));
+    res.status(400).json({ ok: false, error: err instanceof Error ? err.message : String(err) });
   }
 });
 
@@ -4840,7 +4840,7 @@ router.patch("/api/catalog/categories/:id/items/reorder", async (req, res) => {
     await ensureShopCatalogLoaded();
     res.json({ ok: true, catalog: buildCatalogPayload() });
   } catch (err) {
-    res.status(400).send(String(err));
+    res.status(400).json({ ok: false, error: err instanceof Error ? err.message : String(err) });
   }
 });
 
@@ -4853,7 +4853,7 @@ router.post("/api/catalog/categories", async (req, res) => {
     await ensureShopCatalogLoaded();
     res.json({ ok: true, category, catalog: buildCatalogPayload() });
   } catch (err) {
-    res.status(400).send(String(err));
+    res.status(400).json({ ok: false, error: err instanceof Error ? err.message : String(err) });
   }
 });
 
@@ -4868,7 +4868,7 @@ router.delete("/api/catalog/categories/:id", async (req, res) => {
     }
     res.json({ ok: true, deleted: true, catalog: buildCatalogPayload() });
   } catch (err) {
-    res.status(400).send(String(err));
+    res.status(400).json({ ok: false, error: err instanceof Error ? err.message : String(err) });
   }
 });
 
@@ -4880,7 +4880,7 @@ router.post("/api/catalog/items", async (req, res) => {
     const saved = await upsertShopCatalogItem(item);
     res.json({ ok: true, item: saved, catalog: buildCatalogPayload() });
   } catch (err) {
-    res.status(400).send(String(err));
+    res.status(400).json({ ok: false, error: err instanceof Error ? err.message : String(err) });
   }
 });
 
@@ -4892,7 +4892,7 @@ router.patch("/api/catalog/items/:id", async (req, res) => {
     const saved = await upsertShopCatalogItem(item);
     res.json({ ok: true, item: saved, catalog: buildCatalogPayload() });
   } catch (err) {
-    res.status(400).send(String(err));
+    res.status(400).json({ ok: false, error: err instanceof Error ? err.message : String(err) });
   }
 });
 
@@ -4910,7 +4910,7 @@ router.patch("/api/catalog/items/:id/toggle", async (req, res) => {
     }
     res.json({ ok: true, item, catalog: buildCatalogPayload() });
   } catch (err) {
-    res.status(400).send(String(err));
+    res.status(400).json({ ok: false, error: err instanceof Error ? err.message : String(err) });
   }
 });
 
@@ -4925,7 +4925,7 @@ router.delete("/api/catalog/items/:id", async (req, res) => {
     }
     res.json({ ok: true, deleted: true, catalog: buildCatalogPayload() });
   } catch (err) {
-    res.status(400).send(String(err));
+    res.status(400).json({ ok: false, error: err instanceof Error ? err.message : String(err) });
   }
 });
 
@@ -4954,7 +4954,7 @@ router.get("/api/settings/locked-containers/check", async (req, res) => {
     const result = await checkLockedContainerSetupNow();
     res.json(result);
   } catch (err) {
-    res.status(400).send(String(err));
+    res.status(400).json({ ok: false, error: err instanceof Error ? err.message : String(err) });
   }
 });
 
@@ -4965,7 +4965,7 @@ router.post("/api/settings/locked-containers/install", async (req, res) => {
     const result = await ensureLockedContainerSetupNow();
     res.json(result);
   } catch (err) {
-    res.status(400).send(String(err));
+    res.status(400).json({ ok: false, error: err instanceof Error ? err.message : String(err) });
   }
 });
 
@@ -4976,7 +4976,7 @@ router.post("/api/settings/locked-containers/uninstall", async (req, res) => {
     const result = await uninstallLockedContainerSetupNow();
     res.json(result);
   } catch (err) {
-    res.status(400).send(String(err));
+    res.status(400).json({ ok: false, error: err instanceof Error ? err.message : String(err) });
   }
 });
 
@@ -4987,7 +4987,7 @@ router.post("/api/map-events/setup-locked-container", async (req, res) => {
     const result = await ensureLockedContainerSetupNow();
     res.json(result);
   } catch (err) {
-    res.status(400).send(String(err));
+    res.status(400).json({ ok: false, error: err instanceof Error ? err.message : String(err) });
   }
 });
 
@@ -4998,7 +4998,7 @@ router.post("/api/map-events/inject", async (req, res) => {
     const result = await injectMapEventNow((req.body || {}) as any);
     res.json(result);
   } catch (err) {
-    res.status(400).send(String(err));
+    res.status(400).json({ ok: false, error: err instanceof Error ? err.message : String(err) });
   }
 });
 
@@ -5009,7 +5009,7 @@ router.get("/api/map-events/scheduled", async (req, res) => {
   try {
     res.json(listScheduledMapEvents());
   } catch (err) {
-    res.status(400).send(String(err));
+    res.status(400).json({ ok: false, error: err instanceof Error ? err.message : String(err) });
   }
 });
 
@@ -5020,7 +5020,7 @@ router.post("/api/map-events/scheduled", async (req, res) => {
     const result = createScheduledMapEvent((req.body || {}) as any);
     res.json({ ok: true, event: result });
   } catch (err) {
-    res.status(400).send(String(err));
+    res.status(400).json({ ok: false, error: err instanceof Error ? err.message : String(err) });
   }
 });
 
@@ -5031,7 +5031,7 @@ router.post("/api/map-events/scheduled/:id/run", async (req, res) => {
     const result = await runScheduledMapEventNow(String(req.params.id || ""));
     res.json({ ok: true, ...result });
   } catch (err) {
-    res.status(400).send(String(err));
+    res.status(400).json({ ok: false, error: err instanceof Error ? err.message : String(err) });
   }
 });
 
@@ -5043,7 +5043,7 @@ router.patch("/api/map-events/scheduled/:id/status", async (req, res) => {
     const event = updateScheduledMapEventStatus(String(req.params.id || ""), status);
     res.json({ ok: true, event });
   } catch (err) {
-    res.status(400).send(String(err));
+    res.status(400).json({ ok: false, error: err instanceof Error ? err.message : String(err) });
   }
 });
 
@@ -5053,7 +5053,7 @@ router.delete("/api/map-events/scheduled/:id", async (req, res) => {
   try {
     res.json(deleteScheduledMapEvent(String(req.params.id || "")));
   } catch (err) {
-    res.status(400).send(String(err));
+    res.status(400).json({ ok: false, error: err instanceof Error ? err.message : String(err) });
   }
 });
 
@@ -5064,7 +5064,7 @@ router.post("/api/map-events/cleanup", async (req, res) => {
     const result = await cleanupMapEventsNow();
     res.json(result);
   } catch (err) {
-    res.status(400).send(String(err));
+    res.status(400).json({ ok: false, error: err instanceof Error ? err.message : String(err) });
   }
 });
 
