@@ -1,9 +1,4 @@
-export type MapEventPresetId =
-  | "locked_container_blue"
-  | "locked_container_yellow"
-  | "locked_container_mixed"
-  | "shipping_key_blue"
-  | "shipping_key_yellow";
+export type MapEventPresetId = "locked_container_blue";
 
 export type MapEventLootMode = "rng" | "guaranteed_container" | "guaranteed_items";
 
@@ -27,6 +22,9 @@ export type MapEventPreset = {
   id: MapEventPresetId;
   name: string;
   description: string;
+  imageUrl?: string;
+  eventTypeLabel?: string;
+  lootTypeLabel?: string;
   eventPrefix: string;
   defaultEventName: string;
   nominal: number;
@@ -91,7 +89,6 @@ export type MapEventDeployResult = {
   ok: true;
   id: string;
   eventName: string;
-  companionEventNames?: string[];
   presetId: MapEventPresetId;
   lootMode: MapEventLootMode;
   path: string;

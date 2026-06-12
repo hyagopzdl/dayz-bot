@@ -2562,16 +2562,21 @@ function renderAdminPanelHtml(token: string) {
 
     .map-events-grid { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(300px, .9fr); gap: 14px; align-items: start; }
     .preset-grid { display: grid; gap: 10px; }
-    .preset-card { display: grid; gap: 8px; padding: 13px; border-radius: 12px; background: rgba(255,255,255,.03); border: 1px solid var(--border); cursor: pointer; transition: background .14s ease, border-color .14s ease, transform .14s ease; }
+    .preset-card { display: grid; grid-template-columns: 74px minmax(0,1fr); gap: 12px; align-items: center; text-align: left; padding: 13px; border-radius: 14px; background: rgba(255,255,255,.03); border: 1px solid var(--border); cursor: pointer; transition: background .14s ease, border-color .14s ease, transform .14s ease; }
     .preset-card:hover { background: rgba(255,255,255,.05); border-color: var(--border-strong); transform: translateY(-1px); }
     .preset-card.active { border-color: rgba(124,140,255,.55); background: rgba(124,140,255,.12); }
-    .preset-card b { font-size: 13px; }
+    .preset-card-image { width: 74px; height: 74px; border-radius: 14px; display: grid; place-items: center; overflow: hidden; background: rgba(255,255,255,.045); border: 1px solid var(--border); }
+    .preset-card-image img { width: 100%; height: 100%; object-fit: contain; padding: 7px; display: block; }
+    .preset-card-body { min-width: 0; display: grid; gap: 7px; }
+    .preset-card b { font-size: 14px; }
     .preset-card p { margin: 0; color: var(--text-3); font-size: 12px; line-height: 1.45; }
     .preset-children { display: flex; flex-wrap: wrap; gap: 6px; }
+    .field-hint { display: block; margin-top: 6px; color: var(--text-3); font-size: 11px; line-height: 1.35; }
     .map-event-status { display: grid; gap: 10px; }
     .map-event-result { padding: 12px; border-radius: 12px; background: rgba(255,255,255,.025); border: 1px solid var(--border); color: var(--text-2); overflow-wrap: anywhere; }
     .map-event-result b { color: var(--text); }
     @media (max-width: 920px) { .map-events-grid { grid-template-columns: 1fr; } }
+    @media (max-width: 520px) { .preset-card { grid-template-columns: 58px minmax(0,1fr); } .preset-card-image { width: 58px; height: 58px; } }
 
 
     .overview-hero {
@@ -2817,40 +2822,35 @@ function renderAdminPanelHtml(token: string) {
             </div>
             <div class="map-events-grid">
               <div class="card">
-                <div class="section-title"><h2>Presets</h2><span class="chip">MAP_EVENT</span></div>
+                <div class="section-title"><h2>Escolher tipo do evento</h2><span class="chip">1 etapa</span></div>
                 <div id="mapEventPresetGrid" class="preset-grid"></div>
               </div>
               <div class="card">
-                <div class="section-title"><h2>Injetar evento</h2><span id="mapEventSelectedPreset" class="chip">Selecione</span></div>
+                <div class="section-title"><h2>Configurar evento</h2><span id="mapEventSelectedPreset" class="chip">Locked Container</span></div>
                 <div class="form-grid two">
-                  <label class="full">Nome interno<input id="mapEventName" placeholder="Ex: Container PvP quarta" /></label>
-                  <label>X<input id="mapEventX" type="number" step="0.01" placeholder="5155.72" /></label>
-                  <label>Z<input id="mapEventZ" type="number" step="0.01" placeholder="8575.05" /></label>
-                  <label>Ângulo<input id="mapEventAngle" type="number" step="0.01" value="0" /></label>
-                  <label>Quantidade<input id="mapEventQuantity" type="number" min="1" max="25" step="1" value="1" /></label>
-                  <label>Lifetime<input id="mapEventLifetime" type="number" min="60" step="60" value="2400" /></label>
-                  <label>Safe radius<input id="mapEventSafeRadius" type="number" min="0" step="1" value="50" /></label>
-                  <label>Distance radius<input id="mapEventDistanceRadius" type="number" min="0" step="1" value="50" /></label>
+                  <label class="full">Tipo de loot<select id="mapEventLootMode"><option value="rng">Militar</option></select></label>
+                  <label class="full">Nome do evento<input id="mapEventName" placeholder="Ex: Container militar PvP" /></label>
+                  <label class="full">Coordenadas<input id="mapEventCoordinates" inputmode="decimal" placeholder="5008.21 / 7418.99" /><small class="field-hint">Cole no formato X / Z. Ex: 5008.21 / 7418.99</small></label>
+                  <label>Safe radius<input id="mapEventSafeRadius" type="number" min="0" step="1" value="500" /></label>
+                  <label>Distance radius<input id="mapEventDistanceRadius" type="number" min="0" step="1" value="500" /></label>
                   <label>Cleanup radius<input id="mapEventCleanupRadius" type="number" min="0" step="1" value="250" /></label>
-                  <label class="full">Tipo de loot<select id="mapEventLootMode"><option value="rng">Random por usage/mapgroupproto</option><option value="guaranteed_container">Garantido dentro de storage</option><option value="guaranteed_items">Itens garantidos no chão</option></select></label>
-                  <div id="mapEventRewardStorageWrap" class="full map-loot-picker" style="display:none">
-                    <label class="autocomplete-wrap">Storage de recompensa
-                      <input id="mapEventRewardStorageSearch" autocomplete="off" placeholder="Buscar storage na base DayZ. Ex: SeaChest" />
-                      <input id="mapEventRewardStorage" type="hidden" value="SeaChest" />
-                      <div id="mapEventRewardStorageAutocomplete" class="autocomplete-menu"></div>
-                    </label>
-                    <div id="mapEventRewardStorageSelected" class="map-loot-selected is-empty">Nenhum storage selecionado.</div>
-                  </div>
-                  <div id="mapEventGuaranteedItemsWrap" class="full map-loot-picker" style="display:none">
-                    <label class="autocomplete-wrap">Adicionar item ao loot
-                      <input id="mapEventGuaranteedItemSearch" autocomplete="off" placeholder="Buscar item na base DayZ. Ex: M4A1, STANAG, Nails" />
-                      <div id="mapEventGuaranteedItemAutocomplete" class="autocomplete-menu"></div>
-                    </label>
-                    <div id="mapEventGuaranteedItemsList" class="map-loot-list"></div>
-                  </div>
+                  <label>Ângulo<input id="mapEventAngle" type="number" step="0.01" value="0" /></label>
+                  <input id="mapEventQuantity" type="hidden" value="1" />
+                  <input id="mapEventLifetime" type="hidden" value="2400" />
+                  <input id="mapEventX" type="hidden" />
+                  <input id="mapEventZ" type="hidden" />
+                  <input id="mapEventRewardStorage" type="hidden" value="" />
+                  <input id="mapEventRewardStorageSearch" type="hidden" value="" />
+                  <div id="mapEventRewardStorageAutocomplete" style="display:none"></div>
+                  <div id="mapEventRewardStorageSelected" style="display:none"></div>
+                  <div id="mapEventRewardStorageWrap" style="display:none"></div>
+                  <input id="mapEventGuaranteedItemSearch" type="hidden" value="" />
+                  <div id="mapEventGuaranteedItemAutocomplete" style="display:none"></div>
+                  <div id="mapEventGuaranteedItemsList" style="display:none"></div>
+                  <div id="mapEventGuaranteedItemsWrap" style="display:none"></div>
                 </div>
-                <div class="catalog-breadcrumb" style="margin-top:12px">Random usa o loot interno do locked container via locked-container-types.xml + mapgroupproto.xml. Storage garantido gera cfgspawnabletypes.xml temporário. Itens garantidos cria eventos auxiliares no chão.</div>
-                <div class="modal-actions" style="padding:14px 0 0"><button id="mapEventsInject" class="primary-btn">Injetar agora</button></div>
+                <div class="catalog-breadcrumb" style="margin-top:12px">Esse fluxo cria somente o locked container azul com loot militar. As chaves ficam fora da aba de eventos e podem ser distribuídas pela loja ou manualmente.</div>
+                <div class="modal-actions" style="padding:14px 0 0"><button id="mapEventsInject" class="primary-btn">Injetar locked container</button></div>
                 <div id="mapEventStatus" class="map-event-status" style="margin-top:14px"></div>
               </div>
             </div>
@@ -2969,7 +2969,7 @@ function renderAdminPanelHtml(token: string) {
     const state = { view: "general", cursor: 0, hasMore: true, loadingMembers: false, memberForceRefresh: false, search: "", filter: "", modal: null, catalogModal: null, selectedDiscordId: null, catalog: null, catalogSearch: "", catalogCategory: "", catalogMode: "categories", catalogDrag: null, catalogJustDragged: false, shopQueue: null, shopTransactions: null, shopHistorySearch: "", shopQueueModeBefore: "categories", itemsCursor: 0, itemsHasMore: true, itemsLoading: false, itemsSearch: "", itemsFilter: "all", dayzItems: [], itemsStats: null, itemModal: null, mapEventPresets: [], selectedMapEventPresetId: "locked_container_blue", mapEventRewardStorageItem: null, mapEventLootItems: [] };
     const els = {
       pageTitle: document.getElementById("pageTitle"), serverName: document.getElementById("serverName"),
-      mapEventPresetGrid: document.getElementById("mapEventPresetGrid"), mapEventSelectedPreset: document.getElementById("mapEventSelectedPreset"), mapEventName: document.getElementById("mapEventName"), mapEventX: document.getElementById("mapEventX"), mapEventZ: document.getElementById("mapEventZ"), mapEventAngle: document.getElementById("mapEventAngle"), mapEventQuantity: document.getElementById("mapEventQuantity"), mapEventLifetime: document.getElementById("mapEventLifetime"), mapEventSafeRadius: document.getElementById("mapEventSafeRadius"), mapEventDistanceRadius: document.getElementById("mapEventDistanceRadius"), mapEventCleanupRadius: document.getElementById("mapEventCleanupRadius"), mapEventLootMode: document.getElementById("mapEventLootMode"), mapEventRewardStorage: document.getElementById("mapEventRewardStorage"), mapEventRewardStorageSearch: document.getElementById("mapEventRewardStorageSearch"), mapEventRewardStorageSelected: document.getElementById("mapEventRewardStorageSelected"), mapEventRewardStorageAutocomplete: document.getElementById("mapEventRewardStorageAutocomplete"), mapEventRewardStorageWrap: document.getElementById("mapEventRewardStorageWrap"), mapEventGuaranteedItemSearch: document.getElementById("mapEventGuaranteedItemSearch"), mapEventGuaranteedItemAutocomplete: document.getElementById("mapEventGuaranteedItemAutocomplete"), mapEventGuaranteedItemsList: document.getElementById("mapEventGuaranteedItemsList"), mapEventGuaranteedItemsWrap: document.getElementById("mapEventGuaranteedItemsWrap"), mapEventStatus: document.getElementById("mapEventStatus"),
+      mapEventPresetGrid: document.getElementById("mapEventPresetGrid"), mapEventSelectedPreset: document.getElementById("mapEventSelectedPreset"), mapEventName: document.getElementById("mapEventName"), mapEventCoordinates: document.getElementById("mapEventCoordinates"), mapEventX: document.getElementById("mapEventX"), mapEventZ: document.getElementById("mapEventZ"), mapEventAngle: document.getElementById("mapEventAngle"), mapEventQuantity: document.getElementById("mapEventQuantity"), mapEventLifetime: document.getElementById("mapEventLifetime"), mapEventSafeRadius: document.getElementById("mapEventSafeRadius"), mapEventDistanceRadius: document.getElementById("mapEventDistanceRadius"), mapEventCleanupRadius: document.getElementById("mapEventCleanupRadius"), mapEventLootMode: document.getElementById("mapEventLootMode"), mapEventRewardStorage: document.getElementById("mapEventRewardStorage"), mapEventRewardStorageSearch: document.getElementById("mapEventRewardStorageSearch"), mapEventRewardStorageSelected: document.getElementById("mapEventRewardStorageSelected"), mapEventRewardStorageAutocomplete: document.getElementById("mapEventRewardStorageAutocomplete"), mapEventRewardStorageWrap: document.getElementById("mapEventRewardStorageWrap"), mapEventGuaranteedItemSearch: document.getElementById("mapEventGuaranteedItemSearch"), mapEventGuaranteedItemAutocomplete: document.getElementById("mapEventGuaranteedItemAutocomplete"), mapEventGuaranteedItemsList: document.getElementById("mapEventGuaranteedItemsList"), mapEventGuaranteedItemsWrap: document.getElementById("mapEventGuaranteedItemsWrap"), mapEventStatus: document.getElementById("mapEventStatus"),
       memberList: document.getElementById("memberList"), memberLoading: document.getElementById("memberLoading"), memberEmpty: document.getElementById("memberEmpty"),
       modalBackdrop: document.getElementById("modalBackdrop"), modalTitle: document.getElementById("modalTitle"), modalSubtitle: document.getElementById("modalSubtitle"),
       coinAmount: document.getElementById("coinAmount"), coinReason: document.getElementById("coinReason"), toast: document.getElementById("toast"),
@@ -3731,10 +3731,16 @@ function renderAdminPanelHtml(token: string) {
       const presets = state.mapEventPresets || [];
       els.mapEventPresetGrid.innerHTML = presets.map((preset) => {
         const children = (preset.children || []).map((child) => '<span class="chip">' + escapeHtml(child.type) + '</span>').join('');
+        const thumb = preset.imageUrl
+          ? '<div class="preset-card-image"><img src="' + escapeHtml(preset.imageUrl) + '" alt="" loading="lazy" /></div>'
+          : '<div class="preset-card-image">' + icon("package", "entity-icon") + '</div>';
         return '<button class="preset-card ' + (preset.id === state.selectedMapEventPresetId ? 'active' : '') + '" data-map-event-preset="' + escapeHtml(preset.id) + '">' +
-          '<b>' + escapeHtml(preset.name) + '</b>' +
-          '<p>' + escapeHtml(preset.description || '') + '</p>' +
-          '<div class="preset-children">' + children + '</div>' +
+          thumb +
+          '<div class="preset-card-body">' +
+            '<b>' + escapeHtml(preset.eventTypeLabel || preset.name) + '</b>' +
+            '<p>' + escapeHtml(preset.description || '') + '</p>' +
+            '<div class="preset-children"><span class="chip">Loot: ' + escapeHtml(preset.lootTypeLabel || 'Militar') + '</span>' + children + '</div>' +
+          '</div>' +
         '</button>';
       }).join('') || '<div class="empty">Nenhum preset carregado.</div>';
     }
@@ -3837,22 +3843,35 @@ function renderAdminPanelHtml(token: string) {
       renderMapEventRewardStorage();
       renderMapEventLootItems();
     }
+    function parseMapEventCoordinates(value) {
+      const text = String(value || '').trim().replace(/,/g, '.');
+      const matches = text.match(/-?\d+(?:\.\d+)?/g) || [];
+      if (matches.length < 2) return { x: NaN, z: NaN };
+      return { x: Number(matches[0]), z: Number(matches[1]) };
+    }
+    function syncMapEventCoordinatesHiddenFields() {
+      const parsed = parseMapEventCoordinates(els.mapEventCoordinates?.value || '');
+      if (els.mapEventX) els.mapEventX.value = Number.isFinite(parsed.x) ? String(parsed.x) : '';
+      if (els.mapEventZ) els.mapEventZ.value = Number.isFinite(parsed.z) ? String(parsed.z) : '';
+      return parsed;
+    }
     function readMapEventForm() {
-      const lootMode = els.mapEventLootMode?.value || 'rng';
+      const lootMode = 'rng';
+      const coords = syncMapEventCoordinatesHiddenFields();
       return {
-        presetId: state.selectedMapEventPresetId,
+        presetId: state.selectedMapEventPresetId || 'locked_container_blue',
         name: els.mapEventName?.value || '',
-        x: Number(els.mapEventX?.value || 0),
-        z: Number(els.mapEventZ?.value || 0),
+        x: coords.x,
+        z: coords.z,
         angle: Number(els.mapEventAngle?.value || 0),
-        quantity: Number(els.mapEventQuantity?.value || 1),
-        lifetime: Number(els.mapEventLifetime?.value || 2400),
-        safeRadius: Number(els.mapEventSafeRadius?.value || 50),
-        distanceRadius: Number(els.mapEventDistanceRadius?.value || 50),
+        quantity: 1,
+        lifetime: 2400,
+        safeRadius: Number(els.mapEventSafeRadius?.value || 500),
+        distanceRadius: Number(els.mapEventDistanceRadius?.value || 500),
         cleanupRadius: Number(els.mapEventCleanupRadius?.value || 250),
         lootMode,
-        rewardStorageClass: els.mapEventRewardStorage?.value || 'SeaChest',
-        guaranteedItems: (state.mapEventLootItems || []).map((entry) => ({ type: entry.type, quantity: Number(entry.quantity || 1) })),
+        rewardStorageClass: '',
+        guaranteedItems: [],
       };
     }
     function setMapEventStatus(html) {
@@ -3871,13 +3890,13 @@ function renderAdminPanelHtml(token: string) {
       const preset = selectedMapEventPreset();
       if (!preset) { showToast('Selecione um preset.'); return; }
       const payload = readMapEventForm();
-      if (!Number.isFinite(payload.x) || !Number.isFinite(payload.z) || !payload.x || !payload.z) { showToast('Informe coordenadas X e Z válidas.'); return; }
+      if (!Number.isFinite(payload.x) || !Number.isFinite(payload.z) || !payload.x || !payload.z) { showToast('Informe coordenadas no formato X / Z.'); return; }
       setMapEventStatus('<div class="map-event-result">Injetando evento nos XMLs...</div>');
       const response = await apiFetch('/admin-panel/api/map-events/inject', { method: 'POST', body: JSON.stringify(payload) });
       if (!response.ok) { const text = await response.text(); setMapEventStatus('<div class="map-event-result"><b>Erro:</b> ' + escapeHtml(text) + '</div>'); showToast(text); return; }
       const result = await response.json();
-      setMapEventStatus('<div class="map-event-result"><b>Evento injetado:</b><br>' + escapeHtml(result.eventName) + '<br><span class="chip">' + escapeHtml(result.lootMode || 'rng') + '</span><br><span class="member-meta">Reinicie o servidor para spawnar. Path: ' + escapeHtml(result.path || '') + '</span></div>');
-      showToast('Evento do mapa injetado. Reinicie o servidor.');
+      setMapEventStatus('<div class="map-event-result"><b>Locked container injetado:</b><br>' + escapeHtml(result.eventName) + '<br><span class="chip">' + escapeHtml(result.lootMode || 'rng') + '</span><br><span class="member-meta">Reinicie o servidor para spawnar. Path: ' + escapeHtml(result.path || '') + '</span></div>');
+      showToast('Locked container injetado. Reinicie o servidor.');
     }
     async function cleanupMapEventsAction() {
       if (!confirm('Remover todos os blocos MAP_EVENT dos XMLs?')) return;
@@ -3941,6 +3960,7 @@ function renderAdminPanelHtml(token: string) {
     const mapEventsCleanup = document.getElementById("mapEventsCleanup");
     if (mapEventsCleanup) mapEventsCleanup.addEventListener("click", cleanupMapEventsAction);
     if (els.mapEventLootMode) els.mapEventLootMode.addEventListener("change", updateMapEventLootModeUi);
+    if (els.mapEventCoordinates) els.mapEventCoordinates.addEventListener("input", syncMapEventCoordinatesHiddenFields);
     if (els.mapEventRewardStorageSearch) els.mapEventRewardStorageSearch.addEventListener("input", (event) => searchMapEventBaseItems('storage', event.target.value));
     if (els.mapEventGuaranteedItemSearch) els.mapEventGuaranteedItemSearch.addEventListener("input", (event) => searchMapEventBaseItems('item', event.target.value));
     if (els.mapEventRewardStorageAutocomplete) els.mapEventRewardStorageAutocomplete.addEventListener("click", (event) => {
