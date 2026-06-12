@@ -2577,10 +2577,10 @@ function renderAdminPanelHtml(token: string) {
     .map-picker-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 12px; border-bottom: 1px solid var(--border); color: var(--text-2); font-size: 12px; }
     .map-picker-actions { display: flex; align-items: center; gap: 6px; }
     .map-picker-actions button { min-width: 34px; height: 30px; padding: 0 10px; border-radius: 10px; }
-    .map-picker-viewport { height: min(56vh, 560px); min-height: 360px; overflow: auto; background: #10131b; cursor: crosshair; position: relative; overscroll-behavior: contain; scroll-behavior: auto; }
-    .map-picker-viewport.zoomed { cursor: grab; }
+    .map-picker-viewport { width: 100%; aspect-ratio: 1 / 1; overflow: hidden; background: #10131b; cursor: crosshair; position: relative; overscroll-behavior: contain; scroll-behavior: auto; }
+    .map-picker-viewport.zoomed { overflow: auto; cursor: grab; }
     .map-picker-viewport.dragging { cursor: grabbing; user-select: none; }
-    .map-picker-inner { position: relative; width: max(100%, calc(100% * var(--map-zoom, 1))); min-width: 720px; aspect-ratio: 1 / 1; }
+    .map-picker-inner { position: relative; width: calc(100% * var(--map-zoom, 1)); min-width: 0; aspect-ratio: 1 / 1; }
     .map-picker-inner img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; display: block; user-select: none; -webkit-user-drag: none; }
     .map-picker-pin { position: absolute; left: 0; top: 0; width: 22px; height: 22px; border-radius: 999px; transform: translate(-50%, -50%); background: #ff5b6e; border: 3px solid #fff; box-shadow: 0 0 0 5px rgba(255,91,110,.22), 0 8px 30px rgba(0,0,0,.45); pointer-events: none; display: none; }
     .map-picker-pin::after { content: ''; position: absolute; left: 50%; top: 50%; width: 6px; height: 6px; border-radius: 999px; background: #fff; transform: translate(-50%, -50%); }
@@ -3922,22 +3922,37 @@ function renderAdminPanelHtml(token: string) {
     let mapEventDragStartY = 0;
     let mapEventDragStartScrollLeft = 0;
     let mapEventDragStartScrollTop = 0;
-    function setMapEventMapZoom(nextZoom) {
+    function setMapEventMapZoom(nextZoom, anchorEvent = null) {
       const previousZoom = mapEventMapZoom;
+      const viewport = els.mapEventMapViewport;
+      const beforeRect = viewport?.getBoundingClientRect();
+      const anchorX = anchorEvent && beforeRect ? anchorEvent.clientX - beforeRect.left : beforeRect ? beforeRect.width / 2 : 0;
+      const anchorY = anchorEvent && beforeRect ? anchorEvent.clientY - beforeRect.top : beforeRect ? beforeRect.height / 2 : 0;
+      const scrollRatioX = viewport && previousZoom > 0 ? (viewport.scrollLeft + anchorX) / previousZoom : 0;
+      const scrollRatioY = viewport && previousZoom > 0 ? (viewport.scrollTop + anchorY) / previousZoom : 0;
+
       mapEventMapZoom = clampMapEventValue(Number(nextZoom) || 1, 1, 4);
       if (els.mapEventMapInner) els.mapEventMapInner.style.setProperty('--map-zoom', String(mapEventMapZoom));
       if (els.mapEventMapZoomLabel) els.mapEventMapZoomLabel.textContent = Math.round(mapEventMapZoom * 100) + '%';
-      if (els.mapEventMapViewport) els.mapEventMapViewport.classList.toggle('zoomed', mapEventMapZoom > 1.01);
-      if (els.mapEventMapViewport && mapEventMapZoom !== previousZoom) {
+      if (viewport) viewport.classList.toggle('zoomed', mapEventMapZoom > 1.01);
+      if (viewport && mapEventMapZoom !== previousZoom) {
         requestAnimationFrame(() => {
-          const viewport = els.mapEventMapViewport;
-          if (!viewport) return;
           if (mapEventMapZoom <= 1.01) {
             viewport.scrollLeft = 0;
             viewport.scrollTop = 0;
+            return;
           }
+          viewport.scrollLeft = Math.max(0, scrollRatioX * mapEventMapZoom - anchorX);
+          viewport.scrollTop = Math.max(0, scrollRatioY * mapEventMapZoom - anchorY);
         });
       }
+    }
+    function handleMapEventMapWheel(event) {
+      if (!els.mapEventMapViewport) return;
+      event.preventDefault();
+      const direction = event.deltaY > 0 ? -1 : 1;
+      const step = event.ctrlKey || event.metaKey ? 0.15 : 0.25;
+      setMapEventMapZoom(mapEventMapZoom + direction * step, event);
     }
     function handleMapEventMapClick(event) {
       if (mapEventDragMoved) {
@@ -4093,14 +4108,15 @@ function renderAdminPanelHtml(token: string) {
     if (els.mapEventCoordinates) els.mapEventCoordinates.addEventListener("input", syncMapEventCoordinatesHiddenFields);
     if (els.mapEventMapInner) els.mapEventMapInner.addEventListener("click", handleMapEventMapClick);
     if (els.mapEventMapViewport) {
+      els.mapEventMapViewport.addEventListener("wheel", handleMapEventMapWheel, { passive: false });
       els.mapEventMapViewport.addEventListener("pointerdown", handleMapEventMapPointerDown);
       els.mapEventMapViewport.addEventListener("pointermove", handleMapEventMapPointerMove);
       els.mapEventMapViewport.addEventListener("pointerup", finishMapEventMapDrag);
       els.mapEventMapViewport.addEventListener("pointercancel", finishMapEventMapDrag);
       els.mapEventMapViewport.addEventListener("pointerleave", finishMapEventMapDrag);
     }
-    if (els.mapEventMapZoomIn) els.mapEventMapZoomIn.addEventListener("click", () => setMapEventMapZoom(mapEventMapZoom + 0.25));
-    if (els.mapEventMapZoomOut) els.mapEventMapZoomOut.addEventListener("click", () => setMapEventMapZoom(mapEventMapZoom - 0.25));
+    if (els.mapEventMapZoomIn) els.mapEventMapZoomIn.addEventListener("click", (event) => setMapEventMapZoom(mapEventMapZoom + 0.25, event));
+    if (els.mapEventMapZoomOut) els.mapEventMapZoomOut.addEventListener("click", (event) => setMapEventMapZoom(mapEventMapZoom - 0.25, event));
     setMapEventMapZoom(1);
     if (els.mapEventRewardStorageSearch) els.mapEventRewardStorageSearch.addEventListener("input", (event) => searchMapEventBaseItems('storage', event.target.value));
     if (els.mapEventGuaranteedItemSearch) els.mapEventGuaranteedItemSearch.addEventListener("input", (event) => searchMapEventBaseItems('item', event.target.value));
