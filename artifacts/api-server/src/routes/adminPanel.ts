@@ -3844,10 +3844,12 @@ function renderAdminPanelHtml(token: string) {
       renderMapEventLootItems();
     }
     function parseMapEventCoordinates(value) {
-      const text = String(value || '').trim().replace(/,/g, '.');
-      const matches = text.match(/-?\d+(?:\.\d+)?/g) || [];
+      const text = String(value || '').trim();
+      const matches = text.match(/-?[0-9]+(?:[.,][0-9]+)?/g) || [];
       if (matches.length < 2) return { x: NaN, z: NaN };
-      return { x: Number(matches[0]), z: Number(matches[1]) };
+      const x = Number(String(matches[0]).replace(',', '.'));
+      const z = Number(String(matches[1]).replace(',', '.'));
+      return { x, z };
     }
     function syncMapEventCoordinatesHiddenFields() {
       const parsed = parseMapEventCoordinates(els.mapEventCoordinates?.value || '');
