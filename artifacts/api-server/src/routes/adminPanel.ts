@@ -1,3 +1,4 @@
+import path from "path";
 import { Router, type Request, type Response } from "express";
 import { Routes } from "discord.js";
 import { getShopRuntimeStatus } from "../lib/shop";
@@ -2572,6 +2573,16 @@ function renderAdminPanelHtml(token: string) {
     .preset-card p { margin: 0; color: var(--text-3); font-size: 12px; line-height: 1.45; }
     .preset-children { display: flex; flex-wrap: wrap; gap: 6px; }
     .field-hint { display: block; margin-top: 6px; color: var(--text-3); font-size: 11px; line-height: 1.35; }
+    .map-picker { grid-column: 1 / -1; border: 1px solid var(--border); border-radius: 16px; overflow: hidden; background: rgba(255,255,255,.025); }
+    .map-picker-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 12px; border-bottom: 1px solid var(--border); color: var(--text-2); font-size: 12px; }
+    .map-picker-actions { display: flex; align-items: center; gap: 6px; }
+    .map-picker-actions button { min-width: 34px; height: 30px; padding: 0 10px; border-radius: 10px; }
+    .map-picker-viewport { height: min(56vh, 560px); min-height: 360px; overflow: auto; background: #10131b; cursor: crosshair; position: relative; }
+    .map-picker-inner { position: relative; width: max(100%, calc(100% * var(--map-zoom, 1))); min-width: 720px; aspect-ratio: 1 / 1; }
+    .map-picker-inner img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; display: block; user-select: none; -webkit-user-drag: none; }
+    .map-picker-pin { position: absolute; left: 0; top: 0; width: 22px; height: 22px; border-radius: 999px; transform: translate(-50%, -50%); background: #ff5b6e; border: 3px solid #fff; box-shadow: 0 0 0 5px rgba(255,91,110,.22), 0 8px 30px rgba(0,0,0,.45); pointer-events: none; display: none; }
+    .map-picker-pin::after { content: ''; position: absolute; left: 50%; top: 50%; width: 6px; height: 6px; border-radius: 999px; background: #fff; transform: translate(-50%, -50%); }
+    .map-picker-footer { padding: 10px 12px; border-top: 1px solid var(--border); color: var(--text-3); font-size: 11px; line-height: 1.35; }
     .map-event-status { display: grid; gap: 10px; }
     .map-event-result { padding: 12px; border-radius: 12px; background: rgba(255,255,255,.025); border: 1px solid var(--border); color: var(--text-2); overflow-wrap: anywhere; }
     .map-event-result b { color: var(--text); }
@@ -2830,11 +2841,28 @@ function renderAdminPanelHtml(token: string) {
                 <div class="form-grid two">
                   <label class="full">Tipo de loot<select id="mapEventLootMode"><option value="rng">Militar</option></select></label>
                   <label class="full">Nome do evento<input id="mapEventName" placeholder="Ex: Container militar PvP" /></label>
-                  <label class="full">Coordenadas<input id="mapEventCoordinates" inputmode="decimal" placeholder="5008.21 / 7418.99" /><small class="field-hint">Cole no formato X / Z. Ex: 5008.21 / 7418.99</small></label>
-                  <label>Safe radius<input id="mapEventSafeRadius" type="number" min="0" step="1" value="500" /></label>
-                  <label>Distance radius<input id="mapEventDistanceRadius" type="number" min="0" step="1" value="500" /></label>
-                  <label>Cleanup radius<input id="mapEventCleanupRadius" type="number" min="0" step="1" value="250" /></label>
-                  <label>Ângulo<input id="mapEventAngle" type="number" step="0.01" value="0" /></label>
+                  <label class="full">Coordenadas<input id="mapEventCoordinates" inputmode="decimal" placeholder="5008.21 / 7418.99" /><small class="field-hint">Clique no mapa abaixo ou cole no formato X / Z. Ex: 5008.21 / 7418.99</small></label>
+                  <div class="map-picker">
+                    <div class="map-picker-toolbar">
+                      <span>Mapa de Chernarus — clique para selecionar a posição</span>
+                      <div class="map-picker-actions">
+                        <button id="mapEventMapZoomOut" type="button" class="ghost-btn">−</button>
+                        <span id="mapEventMapZoomLabel" class="chip">100%</span>
+                        <button id="mapEventMapZoomIn" type="button" class="ghost-btn">+</button>
+                      </div>
+                    </div>
+                    <div id="mapEventMapViewport" class="map-picker-viewport">
+                      <div id="mapEventMapInner" class="map-picker-inner">
+                        <img id="mapEventMapImage" src="/admin-panel/api/map-events/chernarus-map" alt="Mapa de Chernarus" draggable="false" />
+                        <div id="mapEventMapPin" class="map-picker-pin" aria-hidden="true"></div>
+                      </div>
+                    </div>
+                    <div class="map-picker-footer">O primeiro valor é X e o segundo é Z. O pin e o input são atualizados a cada clique.</div>
+                  </div>
+                  <input id="mapEventSafeRadius" type="hidden" value="500" />
+                  <input id="mapEventDistanceRadius" type="hidden" value="500" />
+                  <input id="mapEventCleanupRadius" type="hidden" value="250" />
+                  <input id="mapEventAngle" type="hidden" value="0" />
                   <input id="mapEventQuantity" type="hidden" value="1" />
                   <input id="mapEventLifetime" type="hidden" value="2400" />
                   <input id="mapEventX" type="hidden" />
@@ -2969,7 +2997,7 @@ function renderAdminPanelHtml(token: string) {
     const state = { view: "general", cursor: 0, hasMore: true, loadingMembers: false, memberForceRefresh: false, search: "", filter: "", modal: null, catalogModal: null, selectedDiscordId: null, catalog: null, catalogSearch: "", catalogCategory: "", catalogMode: "categories", catalogDrag: null, catalogJustDragged: false, shopQueue: null, shopTransactions: null, shopHistorySearch: "", shopQueueModeBefore: "categories", itemsCursor: 0, itemsHasMore: true, itemsLoading: false, itemsSearch: "", itemsFilter: "all", dayzItems: [], itemsStats: null, itemModal: null, mapEventPresets: [], selectedMapEventPresetId: "locked_container_blue", mapEventRewardStorageItem: null, mapEventLootItems: [] };
     const els = {
       pageTitle: document.getElementById("pageTitle"), serverName: document.getElementById("serverName"),
-      mapEventPresetGrid: document.getElementById("mapEventPresetGrid"), mapEventSelectedPreset: document.getElementById("mapEventSelectedPreset"), mapEventName: document.getElementById("mapEventName"), mapEventCoordinates: document.getElementById("mapEventCoordinates"), mapEventX: document.getElementById("mapEventX"), mapEventZ: document.getElementById("mapEventZ"), mapEventAngle: document.getElementById("mapEventAngle"), mapEventQuantity: document.getElementById("mapEventQuantity"), mapEventLifetime: document.getElementById("mapEventLifetime"), mapEventSafeRadius: document.getElementById("mapEventSafeRadius"), mapEventDistanceRadius: document.getElementById("mapEventDistanceRadius"), mapEventCleanupRadius: document.getElementById("mapEventCleanupRadius"), mapEventLootMode: document.getElementById("mapEventLootMode"), mapEventRewardStorage: document.getElementById("mapEventRewardStorage"), mapEventRewardStorageSearch: document.getElementById("mapEventRewardStorageSearch"), mapEventRewardStorageSelected: document.getElementById("mapEventRewardStorageSelected"), mapEventRewardStorageAutocomplete: document.getElementById("mapEventRewardStorageAutocomplete"), mapEventRewardStorageWrap: document.getElementById("mapEventRewardStorageWrap"), mapEventGuaranteedItemSearch: document.getElementById("mapEventGuaranteedItemSearch"), mapEventGuaranteedItemAutocomplete: document.getElementById("mapEventGuaranteedItemAutocomplete"), mapEventGuaranteedItemsList: document.getElementById("mapEventGuaranteedItemsList"), mapEventGuaranteedItemsWrap: document.getElementById("mapEventGuaranteedItemsWrap"), mapEventStatus: document.getElementById("mapEventStatus"),
+      mapEventPresetGrid: document.getElementById("mapEventPresetGrid"), mapEventSelectedPreset: document.getElementById("mapEventSelectedPreset"), mapEventName: document.getElementById("mapEventName"), mapEventCoordinates: document.getElementById("mapEventCoordinates"), mapEventX: document.getElementById("mapEventX"), mapEventZ: document.getElementById("mapEventZ"), mapEventAngle: document.getElementById("mapEventAngle"), mapEventQuantity: document.getElementById("mapEventQuantity"), mapEventLifetime: document.getElementById("mapEventLifetime"), mapEventSafeRadius: document.getElementById("mapEventSafeRadius"), mapEventDistanceRadius: document.getElementById("mapEventDistanceRadius"), mapEventCleanupRadius: document.getElementById("mapEventCleanupRadius"), mapEventLootMode: document.getElementById("mapEventLootMode"), mapEventRewardStorage: document.getElementById("mapEventRewardStorage"), mapEventRewardStorageSearch: document.getElementById("mapEventRewardStorageSearch"), mapEventRewardStorageSelected: document.getElementById("mapEventRewardStorageSelected"), mapEventRewardStorageAutocomplete: document.getElementById("mapEventRewardStorageAutocomplete"), mapEventRewardStorageWrap: document.getElementById("mapEventRewardStorageWrap"), mapEventGuaranteedItemSearch: document.getElementById("mapEventGuaranteedItemSearch"), mapEventGuaranteedItemAutocomplete: document.getElementById("mapEventGuaranteedItemAutocomplete"), mapEventGuaranteedItemsList: document.getElementById("mapEventGuaranteedItemsList"), mapEventGuaranteedItemsWrap: document.getElementById("mapEventGuaranteedItemsWrap"), mapEventMapViewport: document.getElementById("mapEventMapViewport"), mapEventMapInner: document.getElementById("mapEventMapInner"), mapEventMapImage: document.getElementById("mapEventMapImage"), mapEventMapPin: document.getElementById("mapEventMapPin"), mapEventMapZoomIn: document.getElementById("mapEventMapZoomIn"), mapEventMapZoomOut: document.getElementById("mapEventMapZoomOut"), mapEventMapZoomLabel: document.getElementById("mapEventMapZoomLabel"), mapEventStatus: document.getElementById("mapEventStatus"),
       memberList: document.getElementById("memberList"), memberLoading: document.getElementById("memberLoading"), memberEmpty: document.getElementById("memberEmpty"),
       modalBackdrop: document.getElementById("modalBackdrop"), modalTitle: document.getElementById("modalTitle"), modalSubtitle: document.getElementById("modalSubtitle"),
       coinAmount: document.getElementById("coinAmount"), coinReason: document.getElementById("coinReason"), toast: document.getElementById("toast"),
@@ -3855,7 +3883,51 @@ function renderAdminPanelHtml(token: string) {
       const parsed = parseMapEventCoordinates(els.mapEventCoordinates?.value || '');
       if (els.mapEventX) els.mapEventX.value = Number.isFinite(parsed.x) ? String(parsed.x) : '';
       if (els.mapEventZ) els.mapEventZ.value = Number.isFinite(parsed.z) ? String(parsed.z) : '';
+      updateMapEventPinFromCoordinates(parsed.x, parsed.z);
       return parsed;
+    }
+    const MAP_EVENT_WORLD_SIZE = 15360;
+    let mapEventMapZoom = 1;
+    function clampMapEventValue(value, min, max) {
+      return Math.max(min, Math.min(max, value));
+    }
+    function formatMapEventCoord(value) {
+      return Number(value).toFixed(2);
+    }
+    function setMapEventCoordinateValue(x, z) {
+      const safeX = clampMapEventValue(Number(x), 0, MAP_EVENT_WORLD_SIZE);
+      const safeZ = clampMapEventValue(Number(z), 0, MAP_EVENT_WORLD_SIZE);
+      if (els.mapEventCoordinates) els.mapEventCoordinates.value = formatMapEventCoord(safeX) + ' / ' + formatMapEventCoord(safeZ);
+      if (els.mapEventX) els.mapEventX.value = String(Number(formatMapEventCoord(safeX)));
+      if (els.mapEventZ) els.mapEventZ.value = String(Number(formatMapEventCoord(safeZ)));
+      updateMapEventPinFromCoordinates(safeX, safeZ);
+    }
+    function updateMapEventPinFromCoordinates(x, z) {
+      if (!els.mapEventMapPin) return;
+      if (!Number.isFinite(Number(x)) || !Number.isFinite(Number(z))) {
+        els.mapEventMapPin.style.display = 'none';
+        return;
+      }
+      const safeX = clampMapEventValue(Number(x), 0, MAP_EVENT_WORLD_SIZE);
+      const safeZ = clampMapEventValue(Number(z), 0, MAP_EVENT_WORLD_SIZE);
+      els.mapEventMapPin.style.left = ((safeX / MAP_EVENT_WORLD_SIZE) * 100) + '%';
+      els.mapEventMapPin.style.top = ((1 - safeZ / MAP_EVENT_WORLD_SIZE) * 100) + '%';
+      els.mapEventMapPin.style.display = 'block';
+    }
+    function setMapEventMapZoom(nextZoom) {
+      mapEventMapZoom = clampMapEventValue(Number(nextZoom) || 1, 1, 4);
+      if (els.mapEventMapInner) els.mapEventMapInner.style.setProperty('--map-zoom', String(mapEventMapZoom));
+      if (els.mapEventMapZoomLabel) els.mapEventMapZoomLabel.textContent = Math.round(mapEventMapZoom * 100) + '%';
+    }
+    function handleMapEventMapClick(event) {
+      if (!els.mapEventMapInner) return;
+      const rect = els.mapEventMapInner.getBoundingClientRect();
+      if (!rect.width || !rect.height) return;
+      const relativeX = clampMapEventValue((event.clientX - rect.left) / rect.width, 0, 1);
+      const relativeY = clampMapEventValue((event.clientY - rect.top) / rect.height, 0, 1);
+      const x = relativeX * MAP_EVENT_WORLD_SIZE;
+      const z = (1 - relativeY) * MAP_EVENT_WORLD_SIZE;
+      setMapEventCoordinateValue(x, z);
     }
     function readMapEventForm() {
       const lootMode = 'rng';
@@ -3963,6 +4035,10 @@ function renderAdminPanelHtml(token: string) {
     if (mapEventsCleanup) mapEventsCleanup.addEventListener("click", cleanupMapEventsAction);
     if (els.mapEventLootMode) els.mapEventLootMode.addEventListener("change", updateMapEventLootModeUi);
     if (els.mapEventCoordinates) els.mapEventCoordinates.addEventListener("input", syncMapEventCoordinatesHiddenFields);
+    if (els.mapEventMapInner) els.mapEventMapInner.addEventListener("click", handleMapEventMapClick);
+    if (els.mapEventMapZoomIn) els.mapEventMapZoomIn.addEventListener("click", () => setMapEventMapZoom(mapEventMapZoom + 0.25));
+    if (els.mapEventMapZoomOut) els.mapEventMapZoomOut.addEventListener("click", () => setMapEventMapZoom(mapEventMapZoom - 0.25));
+    setMapEventMapZoom(1);
     if (els.mapEventRewardStorageSearch) els.mapEventRewardStorageSearch.addEventListener("input", (event) => searchMapEventBaseItems('storage', event.target.value));
     if (els.mapEventGuaranteedItemSearch) els.mapEventGuaranteedItemSearch.addEventListener("input", (event) => searchMapEventBaseItems('item', event.target.value));
     if (els.mapEventRewardStorageAutocomplete) els.mapEventRewardStorageAutocomplete.addEventListener("click", (event) => {
@@ -4492,6 +4568,19 @@ router.delete("/api/catalog/items/:id", async (req, res) => {
   } catch (err) {
     res.status(400).send(String(err));
   }
+});
+
+router.get("/api/map-events/chernarus-map", (req, res) => {
+  if (!requireAdmin(req, res)) return;
+
+  const mapPath = path.resolve(
+    process.cwd(),
+    process.env.SHOP_MAP_IMAGE_PATH || "assets/maps/chernarus-map-pz-bot.png",
+  );
+
+  res.sendFile(mapPath, (err) => {
+    if (err && !res.headersSent) res.status(404).send("Chernarus map image not found");
+  });
 });
 
 router.get("/api/map-events/presets", async (req, res) => {
