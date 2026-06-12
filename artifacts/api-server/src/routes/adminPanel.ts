@@ -3954,11 +3954,7 @@ function renderAdminPanelHtml(token: string) {
       const step = event.ctrlKey || event.metaKey ? 0.15 : 0.25;
       setMapEventMapZoom(mapEventMapZoom + direction * step, event);
     }
-    function handleMapEventMapClick(event) {
-      if (mapEventDragMoved) {
-        mapEventDragMoved = false;
-        return;
-      }
+    function selectMapEventCoordinateFromPoint(event) {
       if (!els.mapEventMapInner) return;
       const rect = els.mapEventMapInner.getBoundingClientRect();
       if (!rect.width || !rect.height) return;
@@ -3967,6 +3963,13 @@ function renderAdminPanelHtml(token: string) {
       const x = relativeX * MAP_EVENT_WORLD_SIZE;
       const z = (1 - relativeY) * MAP_EVENT_WORLD_SIZE;
       setMapEventCoordinateValue(x, z);
+    }
+    function handleMapEventMapClick(event) {
+      if (mapEventDragMoved) {
+        mapEventDragMoved = false;
+        return;
+      }
+      selectMapEventCoordinateFromPoint(event);
     }
     function handleMapEventMapPointerDown(event) {
       if (!els.mapEventMapViewport || mapEventMapZoom <= 1.01) return;
@@ -3991,10 +3994,14 @@ function renderAdminPanelHtml(token: string) {
     }
     function finishMapEventMapDrag(event) {
       if (!mapEventIsDragging) return;
+      const shouldSelectPoint = !mapEventDragMoved && event.type === 'pointerup';
       mapEventIsDragging = false;
       if (els.mapEventMapViewport) {
         els.mapEventMapViewport.classList.remove('dragging');
         try { els.mapEventMapViewport.releasePointerCapture(event.pointerId); } catch (_) {}
+      }
+      if (shouldSelectPoint) {
+        selectMapEventCoordinateFromPoint(event);
       }
       if (mapEventDragMoved) {
         setTimeout(() => { mapEventDragMoved = false; }, 0);
