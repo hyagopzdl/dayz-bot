@@ -1,4 +1,8 @@
-export type MapEventPresetId = "locked_container_red_military" | "locked_container_blue_medical" | "locked_container_yellow_construction" | "locked_container_orange_raid";
+export type MapEventPresetId =
+  | "locked_container_red_military"
+  | "locked_container_blue_medical"
+  | "locked_container_yellow_construction"
+  | "locked_container_orange_raid";
 
 export type MapEventLootMode = "rng" | "guaranteed_container" | "guaranteed_items";
 
@@ -25,6 +29,7 @@ export type MapEventPreset = {
   imageUrl?: string;
   eventTypeLabel?: string;
   lootTypeLabel?: string;
+  colorLabel?: string;
   eventPrefix: string;
   defaultEventName: string;
   nominal: number;

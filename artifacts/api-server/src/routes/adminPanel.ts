@@ -11,6 +11,14 @@ import {
   uninstallLockedContainerSetupNow,
 } from "../lib/mapEvents/mapEventService";
 import {
+  createScheduledMapEvent,
+  deleteScheduledMapEvent,
+  listScheduledMapEvents,
+  runScheduledMapEventNow,
+  startMapEventScheduler,
+  updateScheduledMapEventStatus,
+} from "../lib/mapEvents/mapEventScheduleService";
+import {
   deleteShopCatalogCategory,
   deleteShopCatalogItem,
   ensureShopCatalogLoaded,
@@ -47,6 +55,7 @@ import {
 import { getDiscordClient } from "../lib/discordBot";
 
 const router = Router();
+startMapEventScheduler();
 const TOKEN_COOKIE = "admin_panel_token";
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 50;
@@ -2590,6 +2599,37 @@ function renderAdminPanelHtml(token: string) {
     .map-event-status { display: grid; gap: 10px; }
     .map-event-result { padding: 12px; border-radius: 12px; background: rgba(255,255,255,.025); border: 1px solid var(--border); color: var(--text-2); overflow-wrap: anywhere; }
     .map-event-result b { color: var(--text); }
+
+    .event-builder { display: grid; gap: 14px; }
+    .event-builder-layout { display: grid; gap: 14px; }
+    .event-builder-step { border: 1px solid var(--border); border-radius: 16px; padding: 14px; background: rgba(255,255,255,.025); }
+    .step-kicker { color: var(--text-3); font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; margin-bottom: 10px; }
+    .event-type-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+    .event-type-card { text-align: left; border-radius: 14px; border: 1px solid var(--border); background: rgba(255,255,255,.035); color: var(--text); padding: 14px; cursor: pointer; display: grid; gap: 6px; }
+    .event-type-card b { font-size: 14px; }
+    .event-type-card span { color: var(--text-3); font-size: 12px; line-height: 1.35; }
+    .event-type-card.active { border-color: rgba(124,140,255,.55); background: rgba(124,140,255,.12); }
+    .event-type-card.disabled { opacity: .55; cursor: not-allowed; }
+    .event-subtype-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .schedule-mode-row { display: flex; gap: 8px; flex-wrap: wrap; }
+    .schedule-mode { display: inline-flex; align-items: center; gap: 8px; padding: 10px 13px; border-radius: 999px; border: 1px solid var(--border); background: rgba(255,255,255,.035); color: var(--text-2); cursor: pointer; font-size: 13px; font-weight: 700; }
+    .schedule-mode input { accent-color: #7c8cff; }
+    .schedule-mode.active { border-color: rgba(124,140,255,.55); background: rgba(124,140,255,.12); color: var(--text); }
+    .event-dashboard-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+    .event-kpi { padding: 14px; }
+    .event-kpi span { display: block; color: var(--text-3); font-size: 12px; margin-bottom: 8px; }
+    .event-kpi b { display: block; font-size: 20px; letter-spacing: -.03em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .scheduled-events-list { display: grid; gap: 10px; margin-top: 14px; }
+    .scheduled-event-card { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 14px; border-radius: 14px; border: 1px solid var(--border); background: rgba(255,255,255,.03); }
+    .scheduled-event-main { min-width: 0; display: grid; gap: 6px; }
+    .scheduled-event-title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-weight: 800; }
+    .scheduled-event-meta { color: var(--text-3); font-size: 12px; display: flex; gap: 10px; flex-wrap: wrap; }
+    .scheduled-event-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+    .status-chip { border-radius: 999px; padding: 4px 8px; font-size: 11px; font-weight: 800; background: rgba(255,255,255,.06); color: var(--text-2); border: 1px solid var(--border); }
+    .status-chip.active, .status-chip.scheduled { color: #8befad; border-color: rgba(91,214,138,.25); background: rgba(91,214,138,.10); }
+    .status-chip.failed { color: #ff9a9f; border-color: rgba(255,107,114,.28); background: rgba(255,107,114,.10); }
+    .status-chip.paused { color: #f2d27c; border-color: rgba(242,210,124,.28); background: rgba(242,210,124,.10); }
+    @media (max-width: 760px) { .event-type-grid, .event-subtype-grid, .event-dashboard-grid { grid-template-columns: 1fr; } .scheduled-event-card { grid-template-columns: 1fr; } .scheduled-event-actions { justify-content: flex-start; } }
     @media (max-width: 920px) { .map-events-grid { grid-template-columns: 1fr; } }
     @media (max-width: 520px) { .preset-card { grid-template-columns: 58px minmax(0,1fr); } .preset-card-image { width: 58px; height: 58px; } }
 
@@ -2826,65 +2866,119 @@ function renderAdminPanelHtml(token: string) {
               <div class="section-title">
                 <div>
                   <h2>Eventos do Mapa</h2>
-                  <div class="member-meta">Crie locked containers temporários em events.xml e cfgeventspawns.xml sem interferir na loja.</div>
+                  <div class="member-meta">Gerencie eventos instantâneos, agendados e recorrentes do servidor.</div>
                 </div>
                 <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                  <button id="mapEventsNewToggle" class="primary-btn"><svg class="icon"><use href="#icon-plus"></use></svg>Novo evento</button>
                   <button id="mapEventsRefresh" class="ghost-btn">Refresh</button>
-                  <button id="mapEventsCleanup" class="danger-btn">Limpar eventos</button>
+                  <button id="mapEventsCleanup" class="danger-btn">Limpar eventos ativos</button>
                 </div>
               </div>
-              <div class="catalog-breadcrumb">O suporte a Locked Containers fica em Settings > Eventos. Depois de injetar um evento, faça stop/start completo para o servidor carregar o spawn.</div>
+              <div class="catalog-breadcrumb">A página abre com os eventos agendados. Use + Novo evento para abrir o builder acima da lista. O suporte estrutural fica em Settings > Eventos.</div>
             </div>
-            <div class="map-events-grid">
+
+            <div id="mapEventBuilder" class="event-builder" style="display:none">
               <div class="card">
-                <div class="section-title"><h2>Escolher tema do container</h2><span class="chip">Locked Container</span></div>
-                <div id="mapEventPresetGrid" class="preset-grid"></div>
-              </div>
-              <div class="card">
-                <div class="section-title"><h2>Configurar evento</h2><span id="mapEventSelectedPreset" class="chip">Locked Container</span></div>
-                <div class="form-grid two">
-                  <label class="full">Tipo de evento<select id="mapEventLootMode"><option value="rng">Locked Container por tema/cor</option></select></label>
-                  <label class="full">Nome do evento<input id="mapEventName" placeholder="Ex: Container militar PvP" /></label>
-                  <label class="full">Coordenadas<input id="mapEventCoordinates" inputmode="decimal" placeholder="5008.21 / 7418.99" /><small class="field-hint">Clique no mapa abaixo ou cole no formato X / Z. Ex: 5008.21 / 7418.99</small></label>
-                  <div class="map-picker">
-                    <div class="map-picker-toolbar">
-                      <span>Mapa de Chernarus — clique para selecionar a posição</span>
-                      <div class="map-picker-actions">
-                        <button id="mapEventMapZoomOut" type="button" class="ghost-btn">−</button>
-                        <span id="mapEventMapZoomLabel" class="chip">100%</span>
-                        <button id="mapEventMapZoomIn" type="button" class="ghost-btn">+</button>
-                      </div>
-                    </div>
-                    <div id="mapEventMapViewport" class="map-picker-viewport">
-                      <div id="mapEventMapInner" class="map-picker-inner">
-                        <img id="mapEventMapImage" src="/admin-panel/api/map-events/chernarus-map" alt="Mapa de Chernarus" draggable="false" />
-                        <div id="mapEventMapPin" class="map-picker-pin" aria-hidden="true"></div>
-                      </div>
-                    </div>
-                    <div class="map-picker-footer">O primeiro valor é X e o segundo é Z. O pin e o input são atualizados a cada clique.</div>
-                  </div>
-                  <input id="mapEventSafeRadius" type="hidden" value="500" />
-                  <input id="mapEventDistanceRadius" type="hidden" value="500" />
-                  <input id="mapEventCleanupRadius" type="hidden" value="250" />
-                  <input id="mapEventAngle" type="hidden" value="0" />
-                  <input id="mapEventQuantity" type="hidden" value="1" />
-                  <input id="mapEventLifetime" type="hidden" value="2400" />
-                  <input id="mapEventX" type="hidden" />
-                  <input id="mapEventZ" type="hidden" />
-                  <input id="mapEventRewardStorage" type="hidden" value="" />
-                  <input id="mapEventRewardStorageSearch" type="hidden" value="" />
-                  <div id="mapEventRewardStorageAutocomplete" style="display:none"></div>
-                  <div id="mapEventRewardStorageSelected" style="display:none"></div>
-                  <div id="mapEventRewardStorageWrap" style="display:none"></div>
-                  <input id="mapEventGuaranteedItemSearch" type="hidden" value="" />
-                  <div id="mapEventGuaranteedItemAutocomplete" style="display:none"></div>
-                  <div id="mapEventGuaranteedItemsList" style="display:none"></div>
-                  <div id="mapEventGuaranteedItemsWrap" style="display:none"></div>
+                <div class="section-title">
+                  <div><h2>Novo evento</h2><div class="member-meta">Escolha o tipo, subtipo, localização e execução.</div></div>
+                  <button id="mapEventsBuilderClose" class="ghost-btn">Fechar criação</button>
                 </div>
-                <div class="catalog-breadcrumb" style="margin-top:12px">Cada cor representa um tema fixo: vermelho militar, azul médico, amarelo construção e laranja raid. As chaves ficam fora da aba de eventos e podem ser distribuídas pela loja ou manualmente.</div>
-                <div class="modal-actions" style="padding:14px 0 0"><button id="mapEventsInject" class="primary-btn">Injetar locked container</button></div>
+                <div class="event-builder-layout">
+                  <div class="event-builder-step">
+                    <div class="step-kicker">1. Tipo do evento</div>
+                    <div class="event-type-grid">
+                      <button class="event-type-card active" type="button" data-event-type="locked_container">
+                        <b>Locked Container</b>
+                        <span>Containers trancados com loot temático.</span>
+                      </button>
+                      <button class="event-type-card disabled" type="button" disabled><b>Airdrop</b><span>Em breve</span></button>
+                      <button class="event-type-card disabled" type="button" disabled><b>Zona PvP</b><span>Em breve</span></button>
+                    </div>
+                  </div>
+
+                  <div class="event-builder-step">
+                    <div class="step-kicker">2. Subtipo do evento</div>
+                    <div id="mapEventPresetGrid" class="preset-grid event-subtype-grid"></div>
+                  </div>
+
+                  <div class="event-builder-step">
+                    <div class="step-kicker">3. Localização</div>
+                    <div class="form-grid two">
+                      <label class="full">Nome do evento<input id="mapEventName" placeholder="Ex: Container militar Pavlovo" /></label>
+                      <label class="full">Coordenadas<input id="mapEventCoordinates" inputmode="decimal" placeholder="5008.21 / 7418.99" /><small class="field-hint">Clique no mapa abaixo ou cole no formato X / Z. Ex: 5008.21 / 7418.99</small></label>
+                    </div>
+                    <div class="map-picker">
+                      <div class="map-picker-toolbar">
+                        <span>Mapa de Chernarus — clique para selecionar a posição</span>
+                        <div class="map-picker-actions">
+                          <button id="mapEventMapZoomOut" type="button" class="ghost-btn">−</button>
+                          <span id="mapEventMapZoomLabel" class="chip">100%</span>
+                          <button id="mapEventMapZoomIn" type="button" class="ghost-btn">+</button>
+                        </div>
+                      </div>
+                      <div id="mapEventMapViewport" class="map-picker-viewport">
+                        <div id="mapEventMapInner" class="map-picker-inner">
+                          <img id="mapEventMapImage" src="/admin-panel/api/map-events/chernarus-map" alt="Mapa de Chernarus" draggable="false" />
+                          <div id="mapEventMapPin" class="map-picker-pin" aria-hidden="true"></div>
+                        </div>
+                      </div>
+                      <div class="map-picker-footer">O primeiro valor é X e o segundo é Z. O pin e o input são atualizados a cada clique.</div>
+                    </div>
+                  </div>
+
+                  <div class="event-builder-step">
+                    <div class="step-kicker">4. Execução</div>
+                    <div class="schedule-mode-row">
+                      <label class="schedule-mode active"><input type="radio" name="mapEventExecutionMode" value="now" checked />Agora</label>
+                      <label class="schedule-mode"><input type="radio" name="mapEventExecutionMode" value="scheduled" />Agendar</label>
+                    </div>
+                    <div id="mapEventScheduleFields" class="form-grid two" style="display:none; margin-top:12px">
+                      <label>Data do evento<input id="mapEventDate" type="date" /></label>
+                      <label>Horário<select id="mapEventTime"><option value="now">Agora</option><option value="next_reset">Próximo reset</option><option value="00:00">00:00 reset</option><option value="06:00">06:00 reset</option><option value="12:00">12:00 reset</option><option value="18:00">18:00 reset</option><option value="custom">Personalizado</option></select></label>
+                      <label id="mapEventCustomTimeWrap" style="display:none">Horário personalizado<input id="mapEventCustomTime" type="time" /></label>
+                      <label>Recorrência<select id="mapEventRecurrence"><option value="none" selected>Sem recorrência</option><option value="daily">Diário</option><option value="weekly">Semanal</option><option value="monthly">Mensal</option></select></label>
+                    </div>
+                    <div class="field-hint">Para eventos agendados, o painel prepara o XML no horário definido. O spawn fica visível após o próximo restart/CE reload do servidor.</div>
+                  </div>
+                </div>
+
+                <input id="mapEventSafeRadius" type="hidden" value="500" />
+                <input id="mapEventDistanceRadius" type="hidden" value="500" />
+                <input id="mapEventCleanupRadius" type="hidden" value="250" />
+                <input id="mapEventAngle" type="hidden" value="0" />
+                <input id="mapEventQuantity" type="hidden" value="1" />
+                <input id="mapEventLifetime" type="hidden" value="2400" />
+                <input id="mapEventX" type="hidden" />
+                <input id="mapEventZ" type="hidden" />
+                <select id="mapEventLootMode" style="display:none"><option value="rng">Tema/cor</option></select>
+                <input id="mapEventRewardStorage" type="hidden" value="" />
+                <input id="mapEventRewardStorageSearch" type="hidden" value="" />
+                <div id="mapEventRewardStorageAutocomplete" style="display:none"></div>
+                <div id="mapEventRewardStorageSelected" style="display:none"></div>
+                <div id="mapEventRewardStorageWrap" style="display:none"></div>
+                <input id="mapEventGuaranteedItemSearch" type="hidden" value="" />
+                <div id="mapEventGuaranteedItemAutocomplete" style="display:none"></div>
+                <div id="mapEventGuaranteedItemsList" style="display:none"></div>
+                <div id="mapEventGuaranteedItemsWrap" style="display:none"></div>
+
+                <div class="modal-actions" style="padding:14px 0 0"><button id="mapEventsInject" class="primary-btn">Criar evento agora</button><button id="mapEventsSchedule" class="primary-btn" style="display:none">Agendar evento</button></div>
                 <div id="mapEventStatus" class="map-event-status" style="margin-top:14px"></div>
               </div>
+            </div>
+
+            <div class="event-dashboard-grid">
+              <div class="event-kpi card"><span>Agendados</span><b id="mapEventsScheduledCount">0</b></div>
+              <div class="event-kpi card"><span>Recorrentes</span><b id="mapEventsRecurringCount">0</b></div>
+              <div class="event-kpi card"><span>Próximo evento</span><b id="mapEventsNextRun">—</b></div>
+            </div>
+
+            <div class="card">
+              <div class="section-title">
+                <div><h2>Eventos agendados</h2><div class="member-meta">Acompanhe próximos eventos e recorrências.</div></div>
+                <span id="mapEventsScheduleRuntime" class="chip">Carregando</span>
+              </div>
+              <div id="mapEventsScheduledList" class="scheduled-events-list"></div>
+              <div id="mapEventsScheduledEmpty" class="catalog-empty" style="display:none">Nenhum evento agendado. Clique em + Novo evento para começar.</div>
             </div>
           </div>
         </section>
@@ -3028,10 +3122,10 @@ function renderAdminPanelHtml(token: string) {
   <script>
     const adminToken = ${tokenJson};
     if (adminToken) document.cookie = "${TOKEN_COOKIE}=" + encodeURIComponent(adminToken) + "; path=/admin-panel; SameSite=Lax";
-    const state = { view: "general", cursor: 0, hasMore: true, loadingMembers: false, memberForceRefresh: false, search: "", filter: "", modal: null, catalogModal: null, selectedDiscordId: null, catalog: null, catalogSearch: "", catalogCategory: "", catalogMode: "categories", catalogDrag: null, catalogJustDragged: false, shopQueue: null, shopTransactions: null, shopHistorySearch: "", shopQueueModeBefore: "categories", itemsCursor: 0, itemsHasMore: true, itemsLoading: false, itemsSearch: "", itemsFilter: "all", dayzItems: [], itemsStats: null, itemModal: null, mapEventPresets: [], selectedMapEventPresetId: "locked_container_red_military", mapEventRewardStorageItem: null, mapEventLootItems: [] };
+    const state = { view: "general", cursor: 0, hasMore: true, loadingMembers: false, memberForceRefresh: false, search: "", filter: "", modal: null, catalogModal: null, selectedDiscordId: null, catalog: null, catalogSearch: "", catalogCategory: "", catalogMode: "categories", catalogDrag: null, catalogJustDragged: false, shopQueue: null, shopTransactions: null, shopHistorySearch: "", shopQueueModeBefore: "categories", itemsCursor: 0, itemsHasMore: true, itemsLoading: false, itemsSearch: "", itemsFilter: "all", dayzItems: [], itemsStats: null, itemModal: null, mapEventPresets: [], selectedMapEventPresetId: "locked_container_red_military", mapEventRewardStorageItem: null, mapEventLootItems: [], scheduledMapEvents: [], mapEventBuilderOpen: false };
     const els = {
       pageTitle: document.getElementById("pageTitle"), serverName: document.getElementById("serverName"),
-      mapEventPresetGrid: document.getElementById("mapEventPresetGrid"), mapEventSelectedPreset: document.getElementById("mapEventSelectedPreset"), mapEventName: document.getElementById("mapEventName"), mapEventCoordinates: document.getElementById("mapEventCoordinates"), mapEventX: document.getElementById("mapEventX"), mapEventZ: document.getElementById("mapEventZ"), mapEventAngle: document.getElementById("mapEventAngle"), mapEventQuantity: document.getElementById("mapEventQuantity"), mapEventLifetime: document.getElementById("mapEventLifetime"), mapEventSafeRadius: document.getElementById("mapEventSafeRadius"), mapEventDistanceRadius: document.getElementById("mapEventDistanceRadius"), mapEventCleanupRadius: document.getElementById("mapEventCleanupRadius"), mapEventLootMode: document.getElementById("mapEventLootMode"), mapEventRewardStorage: document.getElementById("mapEventRewardStorage"), mapEventRewardStorageSearch: document.getElementById("mapEventRewardStorageSearch"), mapEventRewardStorageSelected: document.getElementById("mapEventRewardStorageSelected"), mapEventRewardStorageAutocomplete: document.getElementById("mapEventRewardStorageAutocomplete"), mapEventRewardStorageWrap: document.getElementById("mapEventRewardStorageWrap"), mapEventGuaranteedItemSearch: document.getElementById("mapEventGuaranteedItemSearch"), mapEventGuaranteedItemAutocomplete: document.getElementById("mapEventGuaranteedItemAutocomplete"), mapEventGuaranteedItemsList: document.getElementById("mapEventGuaranteedItemsList"), mapEventGuaranteedItemsWrap: document.getElementById("mapEventGuaranteedItemsWrap"), mapEventMapViewport: document.getElementById("mapEventMapViewport"), mapEventMapInner: document.getElementById("mapEventMapInner"), mapEventMapImage: document.getElementById("mapEventMapImage"), mapEventMapPin: document.getElementById("mapEventMapPin"), mapEventMapZoomIn: document.getElementById("mapEventMapZoomIn"), mapEventMapZoomOut: document.getElementById("mapEventMapZoomOut"), mapEventMapZoomLabel: document.getElementById("mapEventMapZoomLabel"), mapEventStatus: document.getElementById("mapEventStatus"),
+      mapEventPresetGrid: document.getElementById("mapEventPresetGrid"), mapEventSelectedPreset: document.getElementById("mapEventSelectedPreset"), mapEventName: document.getElementById("mapEventName"), mapEventCoordinates: document.getElementById("mapEventCoordinates"), mapEventX: document.getElementById("mapEventX"), mapEventZ: document.getElementById("mapEventZ"), mapEventAngle: document.getElementById("mapEventAngle"), mapEventQuantity: document.getElementById("mapEventQuantity"), mapEventLifetime: document.getElementById("mapEventLifetime"), mapEventSafeRadius: document.getElementById("mapEventSafeRadius"), mapEventDistanceRadius: document.getElementById("mapEventDistanceRadius"), mapEventCleanupRadius: document.getElementById("mapEventCleanupRadius"), mapEventLootMode: document.getElementById("mapEventLootMode"), mapEventRewardStorage: document.getElementById("mapEventRewardStorage"), mapEventRewardStorageSearch: document.getElementById("mapEventRewardStorageSearch"), mapEventRewardStorageSelected: document.getElementById("mapEventRewardStorageSelected"), mapEventRewardStorageAutocomplete: document.getElementById("mapEventRewardStorageAutocomplete"), mapEventRewardStorageWrap: document.getElementById("mapEventRewardStorageWrap"), mapEventGuaranteedItemSearch: document.getElementById("mapEventGuaranteedItemSearch"), mapEventGuaranteedItemAutocomplete: document.getElementById("mapEventGuaranteedItemAutocomplete"), mapEventGuaranteedItemsList: document.getElementById("mapEventGuaranteedItemsList"), mapEventGuaranteedItemsWrap: document.getElementById("mapEventGuaranteedItemsWrap"), mapEventMapViewport: document.getElementById("mapEventMapViewport"), mapEventMapInner: document.getElementById("mapEventMapInner"), mapEventMapImage: document.getElementById("mapEventMapImage"), mapEventMapPin: document.getElementById("mapEventMapPin"), mapEventMapZoomIn: document.getElementById("mapEventMapZoomIn"), mapEventMapZoomOut: document.getElementById("mapEventMapZoomOut"), mapEventMapZoomLabel: document.getElementById("mapEventMapZoomLabel"), mapEventStatus: document.getElementById("mapEventStatus"), mapEventBuilder: document.getElementById("mapEventBuilder"), mapEventsNewToggle: document.getElementById("mapEventsNewToggle"), mapEventsBuilderClose: document.getElementById("mapEventsBuilderClose"), mapEventsSchedule: document.getElementById("mapEventsSchedule"), mapEventScheduleFields: document.getElementById("mapEventScheduleFields"), mapEventDate: document.getElementById("mapEventDate"), mapEventTime: document.getElementById("mapEventTime"), mapEventCustomTimeWrap: document.getElementById("mapEventCustomTimeWrap"), mapEventCustomTime: document.getElementById("mapEventCustomTime"), mapEventRecurrence: document.getElementById("mapEventRecurrence"), mapEventsScheduledList: document.getElementById("mapEventsScheduledList"), mapEventsScheduledEmpty: document.getElementById("mapEventsScheduledEmpty"), mapEventsScheduledCount: document.getElementById("mapEventsScheduledCount"), mapEventsRecurringCount: document.getElementById("mapEventsRecurringCount"), mapEventsNextRun: document.getElementById("mapEventsNextRun"), mapEventsScheduleRuntime: document.getElementById("mapEventsScheduleRuntime"),
       memberList: document.getElementById("memberList"), memberLoading: document.getElementById("memberLoading"), memberEmpty: document.getElementById("memberEmpty"),
       modalBackdrop: document.getElementById("modalBackdrop"), modalTitle: document.getElementById("modalTitle"), modalSubtitle: document.getElementById("modalSubtitle"),
       coinAmount: document.getElementById("coinAmount"), coinReason: document.getElementById("coinReason"), toast: document.getElementById("toast"),
@@ -3816,6 +3910,106 @@ function renderAdminPanelHtml(token: string) {
       if ((!state.selectedMapEventPresetId || !state.mapEventPresets.some((preset) => preset.id === state.selectedMapEventPresetId)) && state.mapEventPresets[0]) state.selectedMapEventPresetId = state.mapEventPresets[0].id;
       applyMapEventPresetDefaults(selectedMapEventPreset());
     }
+    function setMapEventBuilderOpen(open) {
+      state.mapEventBuilderOpen = Boolean(open);
+      if (els.mapEventBuilder) els.mapEventBuilder.style.display = open ? '' : 'none';
+      if (els.mapEventsNewToggle) els.mapEventsNewToggle.innerHTML = open ? 'Fechar criação' : '<svg class="icon"><use href="#icon-plus"></use></svg>Novo evento';
+      if (open && els.mapEventDate && !els.mapEventDate.value) els.mapEventDate.value = new Date().toISOString().slice(0, 10);
+      if (open && els.mapEventBuilder) setTimeout(() => els.mapEventBuilder.scrollIntoView({ behavior: 'smooth', block: 'start' }), 40);
+    }
+    function formatScheduleDate(value) {
+      if (!value) return '—';
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return String(value);
+      return date.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+    }
+    function scheduledStatusLabel(status) {
+      return ({ scheduled: 'Agendado', active: 'Ativo', paused: 'Pausado', completed: 'Executado', cancelled: 'Cancelado', failed: 'Falhou' })[status] || status || '—';
+    }
+    function recurrenceLabel(value) {
+      return ({ none: 'Sem recorrência', daily: 'Diário', weekly: 'Semanal', monthly: 'Mensal' })[value] || 'Sem recorrência';
+    }
+    function renderScheduledMapEvents() {
+      const events = state.scheduledMapEvents || [];
+      if (els.mapEventsScheduledCount) els.mapEventsScheduledCount.textContent = String(events.filter((event) => ['scheduled','active'].includes(event.status)).length);
+      if (els.mapEventsRecurringCount) els.mapEventsRecurringCount.textContent = String(events.filter((event) => event.recurrence && event.recurrence !== 'none' && event.status !== 'cancelled').length);
+      const next = events.filter((event) => ['scheduled','active'].includes(event.status) && event.nextRunAt).sort((a,b) => new Date(a.nextRunAt).getTime() - new Date(b.nextRunAt).getTime())[0];
+      if (els.mapEventsNextRun) els.mapEventsNextRun.textContent = next ? formatScheduleDate(next.nextRunAt) : '—';
+      if (els.mapEventsScheduleRuntime) els.mapEventsScheduleRuntime.textContent = events.length + ' evento(s)';
+      if (els.mapEventsScheduledEmpty) els.mapEventsScheduledEmpty.style.display = events.length ? 'none' : '';
+      if (!els.mapEventsScheduledList) return;
+      els.mapEventsScheduledList.innerHTML = events.map((event) => {
+        const preset = (state.mapEventPresets || []).find((item) => item.id === event.presetId) || {};
+        const canPause = event.status === 'active' || event.status === 'scheduled';
+        const canResume = event.status === 'paused' || event.status === 'failed';
+        return '<div class="scheduled-event-card" data-scheduled-event-id="' + escapeHtml(event.id) + '">' +
+          '<div class="scheduled-event-main">' +
+            '<div class="scheduled-event-title"><span>Locked Container · ' + escapeHtml(preset.lootTypeLabel || event.presetId) + '</span><span class="status-chip ' + escapeHtml(event.status || '') + '">' + escapeHtml(scheduledStatusLabel(event.status)) + '</span></div>' +
+            '<div class="scheduled-event-meta"><span>' + escapeHtml(event.name || 'Evento') + '</span><span>' + escapeHtml(Number(event.x).toFixed(2) + ' / ' + Number(event.z).toFixed(2)) + '</span><span>Próxima: ' + escapeHtml(formatScheduleDate(event.nextRunAt || event.executeAt)) + '</span><span>' + escapeHtml(recurrenceLabel(event.recurrence)) + '</span></div>' +
+            (event.lastError ? '<div class="scheduled-event-meta" style="color:#ff9a9f">Erro: ' + escapeHtml(event.lastError) + '</div>' : '') +
+          '</div>' +
+          '<div class="scheduled-event-actions">' +
+            '<button class="ghost-btn" data-scheduled-action="run">Executar agora</button>' +
+            (canPause ? '<button class="ghost-btn" data-scheduled-action="pause">Pausar</button>' : '') +
+            (canResume ? '<button class="ghost-btn" data-scheduled-action="resume">Ativar</button>' : '') +
+            '<button class="danger-btn" data-scheduled-action="delete">Cancelar</button>' +
+          '</div>' +
+        '</div>';
+      }).join('');
+    }
+    async function loadScheduledMapEvents() {
+      if (!els.mapEventsScheduledList) return;
+      const response = await apiFetch('/admin-panel/api/map-events/scheduled');
+      if (!response.ok) { showToast(await response.text()); return; }
+      const payload = await response.json();
+      state.scheduledMapEvents = payload.events || [];
+      renderScheduledMapEvents();
+    }
+    function getScheduledExecuteAt() {
+      const date = els.mapEventDate?.value || new Date().toISOString().slice(0, 10);
+      let time = els.mapEventTime?.value || 'now';
+      if (time === 'now') return new Date().toISOString();
+      if (time === 'next_reset') time = '00:00';
+      if (time === 'custom') time = els.mapEventCustomTime?.value || '';
+      if (!/^\d{2}:\d{2}$/.test(time)) throw new Error('Informe um horário válido.');
+      return new Date(date + 'T' + time + ':00').toISOString();
+    }
+    function updateMapEventExecutionUi() {
+      const mode = document.querySelector('input[name="mapEventExecutionMode"]:checked')?.value || 'now';
+      document.querySelectorAll('.schedule-mode').forEach((label) => label.classList.toggle('active', label.querySelector('input')?.checked));
+      if (els.mapEventScheduleFields) els.mapEventScheduleFields.style.display = mode === 'scheduled' ? '' : 'none';
+      if (els.mapEventsInject) els.mapEventsInject.style.display = mode === 'now' ? '' : 'none';
+      if (els.mapEventsSchedule) els.mapEventsSchedule.style.display = mode === 'scheduled' ? '' : 'none';
+      if (els.mapEventCustomTimeWrap) els.mapEventCustomTimeWrap.style.display = els.mapEventTime?.value === 'custom' ? '' : 'none';
+    }
+    async function scheduleMapEventAction() {
+      const payload = readMapEventForm();
+      if (!Number.isFinite(payload.x) || !Number.isFinite(payload.z) || !payload.x || !payload.z) { showToast('Informe coordenadas no formato X / Z.'); return; }
+      try {
+        const body = { ...payload, executeAt: getScheduledExecuteAt(), recurrence: els.mapEventRecurrence?.value || 'none' };
+        const response = await apiFetch('/admin-panel/api/map-events/scheduled', { method: 'POST', body: JSON.stringify(body) });
+        if (!response.ok) { const text = await response.text(); showToast(text); return; }
+        await response.json();
+        showToast('Evento agendado.');
+        setMapEventBuilderOpen(false);
+        await loadScheduledMapEvents();
+      } catch (err) { showToast(String(err)); }
+    }
+    async function handleScheduledEventAction(eventId, action) {
+      if (!eventId || !action) return;
+      let response;
+      if (action === 'run') response = await apiFetch('/admin-panel/api/map-events/scheduled/' + encodeURIComponent(eventId) + '/run', { method: 'POST', body: JSON.stringify({}) });
+      if (action === 'pause') response = await apiFetch('/admin-panel/api/map-events/scheduled/' + encodeURIComponent(eventId) + '/status', { method: 'PATCH', body: JSON.stringify({ status: 'paused' }) });
+      if (action === 'resume') response = await apiFetch('/admin-panel/api/map-events/scheduled/' + encodeURIComponent(eventId) + '/status', { method: 'PATCH', body: JSON.stringify({ status: 'active' }) });
+      if (action === 'delete') {
+        if (!confirm('Cancelar/remover este evento agendado?')) return;
+        response = await apiFetch('/admin-panel/api/map-events/scheduled/' + encodeURIComponent(eventId), { method: 'DELETE' });
+      }
+      if (!response) return;
+      if (!response.ok) { showToast(await response.text()); return; }
+      showToast(action === 'run' ? 'Evento executado/injetado.' : 'Evento atualizado.');
+      await loadScheduledMapEvents();
+    }
     function mapEventItemThumb(item) {
       if (item && item.imageUrl) return '<div class="map-loot-thumb"><img src="' + escapeHtml(item.imageUrl) + '" alt="" loading="lazy" /></div>';
       return '<div class="map-loot-thumb">' + icon("package", "entity-icon") + '</div>';
@@ -4112,6 +4306,8 @@ function renderAdminPanelHtml(token: string) {
       const result = await response.json();
       setMapEventStatus('<div class="map-event-result"><b>Locked container injetado:</b><br>' + escapeHtml(result.eventName) + '<br><span class="chip">' + escapeHtml(result.lootMode || 'rng') + '</span><br><span class="member-meta">Reinicie o servidor para spawnar. Path: ' + escapeHtml(result.path || '') + '</span></div>');
       showToast('Locked container injetado. Reinicie o servidor.');
+      setMapEventBuilderOpen(false);
+      await loadScheduledMapEvents();
     }
     async function cleanupMapEventsAction() {
       if (!confirm('Remover todos os blocos MAP_EVENT dos XMLs?')) return;
@@ -4129,7 +4325,7 @@ function renderAdminPanelHtml(token: string) {
       if (view === "members" && !els.memberList.children.length) loadMembers(true);
       if (view === "catalog" && !state.catalog) loadCatalog();
       if (view === "items" && !state.dayzItems.length) loadDayzItems(true);
-      if (view === "map-events" && !state.mapEventPresets.length) loadMapEventPresets();
+      if (view === "map-events") { if (!state.mapEventPresets.length) loadMapEventPresets(); loadScheduledMapEvents(); }
       if (view === "settings") checkLockedContainerSetupAction(false);
     }
     function openCoinModal(action, memberCardEl) {
@@ -4153,7 +4349,7 @@ function renderAdminPanelHtml(token: string) {
     if (mobileMenuButton) mobileMenuButton.addEventListener("click", () => setMobileMenuOpen(!(sidebar && sidebar.classList.contains("open"))));
     if (mobileNavBackdrop) mobileNavBackdrop.addEventListener("click", () => setMobileMenuOpen(false));
     window.addEventListener("keydown", (event) => { if (event.key === "Escape") setMobileMenuOpen(false); });
-    document.getElementById("refreshButton").addEventListener("click", async () => { await loadOverview(); if (state.view === "members") await loadMembers(true); if (state.view === "catalog") { if (state.catalogMode === "queue") await loadShopQueue(); else await loadCatalog(); } if (state.view === "items") await loadDayzItems(true); if (state.view === "map-events") await loadMapEventPresets(); if (state.view === "settings") await checkLockedContainerSetupAction(false); showToast("Dados atualizados."); });
+    document.getElementById("refreshButton").addEventListener("click", async () => { await loadOverview(); if (state.view === "members") await loadMembers(true); if (state.view === "catalog") { if (state.catalogMode === "queue") await loadShopQueue(); else await loadCatalog(); } if (state.view === "items") await loadDayzItems(true); if (state.view === "map-events") { await loadMapEventPresets(); await loadScheduledMapEvents(); } if (state.view === "settings") await checkLockedContainerSetupAction(false); showToast("Dados atualizados."); });
     document.getElementById("membersRefresh").addEventListener("click", () => { state.memberForceRefresh = true; loadMembers(true); });
     let searchTimer = null;
     function updateSearch(value) { state.search = value; clearTimeout(searchTimer); searchTimer = setTimeout(() => loadMembers(true), 240); }
@@ -4168,7 +4364,14 @@ function renderAdminPanelHtml(token: string) {
       if (preset) { if (els.mapEventName) els.mapEventName.value = preset.name; applyMapEventPresetDefaults(preset); }
     });
     const mapEventsRefresh = document.getElementById("mapEventsRefresh");
-    if (mapEventsRefresh) mapEventsRefresh.addEventListener("click", loadMapEventPresets);
+    if (mapEventsRefresh) mapEventsRefresh.addEventListener("click", async () => { await loadMapEventPresets(); await loadScheduledMapEvents(); });
+    if (els.mapEventsNewToggle) els.mapEventsNewToggle.addEventListener("click", () => setMapEventBuilderOpen(!state.mapEventBuilderOpen));
+    if (els.mapEventsBuilderClose) els.mapEventsBuilderClose.addEventListener("click", () => setMapEventBuilderOpen(false));
+    if (els.mapEventsSchedule) els.mapEventsSchedule.addEventListener("click", scheduleMapEventAction);
+    document.querySelectorAll('input[name="mapEventExecutionMode"]').forEach((input) => input.addEventListener('change', updateMapEventExecutionUi));
+    if (els.mapEventTime) els.mapEventTime.addEventListener('change', updateMapEventExecutionUi);
+    if (els.mapEventsScheduledList) els.mapEventsScheduledList.addEventListener('click', (event) => { const button = event.target.closest('[data-scheduled-action]'); if (!button) return; const card = button.closest('[data-scheduled-event-id]'); handleScheduledEventAction(card?.getAttribute('data-scheduled-event-id'), button.getAttribute('data-scheduled-action')); });
+    updateMapEventExecutionUi();
     const mapEventsInject = document.getElementById("mapEventsInject");
     if (mapEventsInject) mapEventsInject.addEventListener("click", injectMapEventAction);
     const mapEventsCleanup = document.getElementById("mapEventsCleanup");
@@ -4794,6 +4997,61 @@ router.post("/api/map-events/inject", async (req, res) => {
   try {
     const result = await injectMapEventNow((req.body || {}) as any);
     res.json(result);
+  } catch (err) {
+    res.status(400).send(String(err));
+  }
+});
+
+
+router.get("/api/map-events/scheduled", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+
+  try {
+    res.json(listScheduledMapEvents());
+  } catch (err) {
+    res.status(400).send(String(err));
+  }
+});
+
+router.post("/api/map-events/scheduled", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+
+  try {
+    const result = createScheduledMapEvent((req.body || {}) as any);
+    res.json({ ok: true, event: result });
+  } catch (err) {
+    res.status(400).send(String(err));
+  }
+});
+
+router.post("/api/map-events/scheduled/:id/run", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+
+  try {
+    const result = await runScheduledMapEventNow(String(req.params.id || ""));
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    res.status(400).send(String(err));
+  }
+});
+
+router.patch("/api/map-events/scheduled/:id/status", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+
+  try {
+    const status = String(req.body?.status || "active") as "paused" | "active" | "cancelled";
+    const event = updateScheduledMapEventStatus(String(req.params.id || ""), status);
+    res.json({ ok: true, event });
+  } catch (err) {
+    res.status(400).send(String(err));
+  }
+});
+
+router.delete("/api/map-events/scheduled/:id", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+
+  try {
+    res.json(deleteScheduledMapEvent(String(req.params.id || "")));
   } catch (err) {
     res.status(400).send(String(err));
   }
