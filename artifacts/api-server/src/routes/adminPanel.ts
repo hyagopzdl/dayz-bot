@@ -2577,7 +2577,9 @@ function renderAdminPanelHtml(token: string) {
     .map-picker-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 12px; border-bottom: 1px solid var(--border); color: var(--text-2); font-size: 12px; }
     .map-picker-actions { display: flex; align-items: center; gap: 6px; }
     .map-picker-actions button { min-width: 34px; height: 30px; padding: 0 10px; border-radius: 10px; }
-    .map-picker-viewport { height: min(56vh, 560px); min-height: 360px; overflow: auto; background: #10131b; cursor: crosshair; position: relative; }
+    .map-picker-viewport { height: min(56vh, 560px); min-height: 360px; overflow: auto; background: #10131b; cursor: crosshair; position: relative; overscroll-behavior: contain; scroll-behavior: auto; }
+    .map-picker-viewport.zoomed { cursor: grab; }
+    .map-picker-viewport.dragging { cursor: grabbing; user-select: none; }
     .map-picker-inner { position: relative; width: max(100%, calc(100% * var(--map-zoom, 1))); min-width: 720px; aspect-ratio: 1 / 1; }
     .map-picker-inner img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; display: block; user-select: none; -webkit-user-drag: none; }
     .map-picker-pin { position: absolute; left: 0; top: 0; width: 22px; height: 22px; border-radius: 999px; transform: translate(-50%, -50%); background: #ff5b6e; border: 3px solid #fff; box-shadow: 0 0 0 5px rgba(255,91,110,.22), 0 8px 30px rgba(0,0,0,.45); pointer-events: none; display: none; }
@@ -3914,12 +3916,34 @@ function renderAdminPanelHtml(token: string) {
       els.mapEventMapPin.style.top = ((1 - safeZ / MAP_EVENT_WORLD_SIZE) * 100) + '%';
       els.mapEventMapPin.style.display = 'block';
     }
+    let mapEventIsDragging = false;
+    let mapEventDragMoved = false;
+    let mapEventDragStartX = 0;
+    let mapEventDragStartY = 0;
+    let mapEventDragStartScrollLeft = 0;
+    let mapEventDragStartScrollTop = 0;
     function setMapEventMapZoom(nextZoom) {
+      const previousZoom = mapEventMapZoom;
       mapEventMapZoom = clampMapEventValue(Number(nextZoom) || 1, 1, 4);
       if (els.mapEventMapInner) els.mapEventMapInner.style.setProperty('--map-zoom', String(mapEventMapZoom));
       if (els.mapEventMapZoomLabel) els.mapEventMapZoomLabel.textContent = Math.round(mapEventMapZoom * 100) + '%';
+      if (els.mapEventMapViewport) els.mapEventMapViewport.classList.toggle('zoomed', mapEventMapZoom > 1.01);
+      if (els.mapEventMapViewport && mapEventMapZoom !== previousZoom) {
+        requestAnimationFrame(() => {
+          const viewport = els.mapEventMapViewport;
+          if (!viewport) return;
+          if (mapEventMapZoom <= 1.01) {
+            viewport.scrollLeft = 0;
+            viewport.scrollTop = 0;
+          }
+        });
+      }
     }
     function handleMapEventMapClick(event) {
+      if (mapEventDragMoved) {
+        mapEventDragMoved = false;
+        return;
+      }
       if (!els.mapEventMapInner) return;
       const rect = els.mapEventMapInner.getBoundingClientRect();
       if (!rect.width || !rect.height) return;
@@ -3928,6 +3952,38 @@ function renderAdminPanelHtml(token: string) {
       const x = relativeX * MAP_EVENT_WORLD_SIZE;
       const z = (1 - relativeY) * MAP_EVENT_WORLD_SIZE;
       setMapEventCoordinateValue(x, z);
+    }
+    function handleMapEventMapPointerDown(event) {
+      if (!els.mapEventMapViewport || mapEventMapZoom <= 1.01) return;
+      if (event.button !== undefined && event.button !== 0) return;
+      mapEventIsDragging = true;
+      mapEventDragMoved = false;
+      mapEventDragStartX = event.clientX;
+      mapEventDragStartY = event.clientY;
+      mapEventDragStartScrollLeft = els.mapEventMapViewport.scrollLeft;
+      mapEventDragStartScrollTop = els.mapEventMapViewport.scrollTop;
+      els.mapEventMapViewport.classList.add('dragging');
+      try { els.mapEventMapViewport.setPointerCapture(event.pointerId); } catch (_) {}
+    }
+    function handleMapEventMapPointerMove(event) {
+      if (!mapEventIsDragging || !els.mapEventMapViewport) return;
+      const deltaX = event.clientX - mapEventDragStartX;
+      const deltaY = event.clientY - mapEventDragStartY;
+      if (Math.abs(deltaX) > 3 || Math.abs(deltaY) > 3) mapEventDragMoved = true;
+      els.mapEventMapViewport.scrollLeft = mapEventDragStartScrollLeft - deltaX;
+      els.mapEventMapViewport.scrollTop = mapEventDragStartScrollTop - deltaY;
+      event.preventDefault();
+    }
+    function finishMapEventMapDrag(event) {
+      if (!mapEventIsDragging) return;
+      mapEventIsDragging = false;
+      if (els.mapEventMapViewport) {
+        els.mapEventMapViewport.classList.remove('dragging');
+        try { els.mapEventMapViewport.releasePointerCapture(event.pointerId); } catch (_) {}
+      }
+      if (mapEventDragMoved) {
+        setTimeout(() => { mapEventDragMoved = false; }, 0);
+      }
     }
     function readMapEventForm() {
       const lootMode = 'rng';
@@ -4036,6 +4092,13 @@ function renderAdminPanelHtml(token: string) {
     if (els.mapEventLootMode) els.mapEventLootMode.addEventListener("change", updateMapEventLootModeUi);
     if (els.mapEventCoordinates) els.mapEventCoordinates.addEventListener("input", syncMapEventCoordinatesHiddenFields);
     if (els.mapEventMapInner) els.mapEventMapInner.addEventListener("click", handleMapEventMapClick);
+    if (els.mapEventMapViewport) {
+      els.mapEventMapViewport.addEventListener("pointerdown", handleMapEventMapPointerDown);
+      els.mapEventMapViewport.addEventListener("pointermove", handleMapEventMapPointerMove);
+      els.mapEventMapViewport.addEventListener("pointerup", finishMapEventMapDrag);
+      els.mapEventMapViewport.addEventListener("pointercancel", finishMapEventMapDrag);
+      els.mapEventMapViewport.addEventListener("pointerleave", finishMapEventMapDrag);
+    }
     if (els.mapEventMapZoomIn) els.mapEventMapZoomIn.addEventListener("click", () => setMapEventMapZoom(mapEventMapZoom + 0.25));
     if (els.mapEventMapZoomOut) els.mapEventMapZoomOut.addEventListener("click", () => setMapEventMapZoom(mapEventMapZoom - 0.25));
     setMapEventMapZoom(1);
