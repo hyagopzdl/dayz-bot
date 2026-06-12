@@ -18,6 +18,10 @@ const MAP_EVENT_ECONOMY_CORE_PATH = `${MAP_EVENT_MISSION_DIR}/cfgeconomycore.xml
 const MAP_EVENT_MAPGROUPPROTO_PATH = `${MAP_EVENT_MISSION_DIR}/mapgroupproto.xml`;
 const MAP_EVENT_CUSTOM_TYPES_PATH = `${MAP_EVENT_MISSION_DIR}/custom/locked-container-types.xml`;
 const LOCKED_CONTAINER_TYPES_FILE = "locked-container-types.xml";
+const LOCKED_CONTAINER_FTP_DOWNLOAD_TIMEOUT_MS = 10000;
+const LOCKED_CONTAINER_FTP_UPLOAD_TIMEOUT_MS = 25000;
+
+let lockedContainerSetupOperation: Promise<unknown> | null = null;
 
 const LOCKED_CONTAINER_DEFINITIONS = [
   {
@@ -175,19 +179,15 @@ function injectLockedContainerMapGroups(xml: string) {
   for (const def of LOCKED_CONTAINER_DEFINITIONS) {
     value = removeManagedBlock(value, def.startMarker, def.endMarker);
     if ("legacyStartMarker" in def && "legacyEndMarker" in def) value = removeManagedBlock(value, def.legacyStartMarker, def.legacyEndMarker);
-    const existingGroupPattern = new RegExp(`\s*<group\s+name=["']${escapeRegExp(def.className)}["'][\s\S]*?<\/group>\s*`, "i");
+    const existingGroupPattern = new RegExp(`\\s*<group\\s+name=["']${escapeRegExp(def.className)}["'][\\s\\S]*?<\\/group>\\s*`, "i");
     if (existingGroupPattern.test(value)) {
-      value = value.replace(existingGroupPattern, `
-${buildMapGroupBlock(def)}
-`);
+      value = value.replace(existingGroupPattern, `\n${buildMapGroupBlock(def)}\n`);
     } else {
-      value = value.replace(new RegExp(`${escapeRegExp(closingTag)}\s*$`, "i"), `${buildMapGroupBlock(def)}
-${closingTag}`);
+      value = value.replace(new RegExp(`${escapeRegExp(closingTag)}\\s*$`, "i"), `${buildMapGroupBlock(def)}\n${closingTag}`);
     }
   }
   return value;
 }
-
 function removeLockedContainerMapGroups(xml: string) {
   let value = String(xml || "");
   for (const def of LOCKED_CONTAINER_DEFINITIONS) {
@@ -206,20 +206,49 @@ function hasManagedOrMatchingGroup(xml: string, def: (typeof LOCKED_CONTAINER_DE
   return value.includes(def.startMarker) || new RegExp(`<group\\s+name=["']${escapeRegExp(def.className)}["']`, "i").test(value);
 }
 
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+  let timeout: NodeJS.Timeout | undefined;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeout = setTimeout(() => reject(new Error(`${label} demorou mais de ${Math.round(timeoutMs / 1000)}s.`)), timeoutMs);
+  });
+
+  return Promise.race([promise, timeoutPromise]).finally(() => {
+    if (timeout) clearTimeout(timeout);
+  });
+}
+
+async function downloadLockedContainerTextFile(path: string) {
+  return withTimeout(downloadTextFile(path), LOCKED_CONTAINER_FTP_DOWNLOAD_TIMEOUT_MS, `Download FTP de ${path}`);
+}
+
+async function uploadLockedContainerTextFile(path: string, content: string) {
+  return withTimeout(uploadTextFile(path, content), LOCKED_CONTAINER_FTP_UPLOAD_TIMEOUT_MS, `Upload FTP de ${path}`);
+}
+
 async function tryDownloadTextFile(path: string) {
   try {
-    return await downloadTextFile(path);
+    return await downloadLockedContainerTextFile(path);
   } catch (err) {
     return "";
   }
 }
 
-export async function checkLockedContainerSetupNow() {
-  const [economyCoreXml, mapGroupProtoXml, customTypesXml] = await Promise.all([
-    tryDownloadTextFile(MAP_EVENT_ECONOMY_CORE_PATH),
-    tryDownloadTextFile(MAP_EVENT_MAPGROUPPROTO_PATH),
-    tryDownloadTextFile(MAP_EVENT_CUSTOM_TYPES_PATH),
-  ]);
+async function withLockedContainerSetupLock<T>(operation: () => Promise<T>): Promise<T> {
+  const previous = lockedContainerSetupOperation;
+  if (previous) await previous.catch(() => undefined);
+
+  const current = operation();
+  lockedContainerSetupOperation = current.finally(() => {
+    if (lockedContainerSetupOperation === current) lockedContainerSetupOperation = null;
+  });
+
+  return current;
+}
+
+async function checkLockedContainerSetupUnlocked() {
+  const economyCoreXml = await tryDownloadTextFile(MAP_EVENT_ECONOMY_CORE_PATH);
+  const mapGroupProtoXml = await tryDownloadTextFile(MAP_EVENT_MAPGROUPPROTO_PATH);
+  const customTypesXml = await tryDownloadTextFile(MAP_EVENT_CUSTOM_TYPES_PATH);
 
   const checks = [
     { key: "economyCoreRegistration", label: `cfgeconomycore.xml registra custom/${LOCKED_CONTAINER_TYPES_FILE}`, ok: hasFileRegistration(economyCoreXml), path: MAP_EVENT_ECONOMY_CORE_PATH },
@@ -247,20 +276,44 @@ export async function checkLockedContainerSetupNow() {
   };
 }
 
-export async function ensureLockedContainerSetupNow() {
-  const [economyCoreXml, mapGroupProtoXml] = await Promise.all([
-    downloadTextFile(MAP_EVENT_ECONOMY_CORE_PATH),
-    downloadTextFile(MAP_EVENT_MAPGROUPPROTO_PATH),
-  ]);
+export async function checkLockedContainerSetupNow() {
+  return withLockedContainerSetupLock(checkLockedContainerSetupUnlocked);
+}
+
+async function ensureLockedContainerSetupUnlocked() {
+  const economyCoreXml = await downloadLockedContainerTextFile(MAP_EVENT_ECONOMY_CORE_PATH);
+  const mapGroupProtoXml = await downloadLockedContainerTextFile(MAP_EVENT_MAPGROUPPROTO_PATH);
 
   const nextEconomyCoreXml = injectCustomTypesRegistration(economyCoreXml);
   const nextMapGroupProtoXml = injectLockedContainerMapGroups(mapGroupProtoXml);
 
-  await Promise.all([
-    uploadTextFile(MAP_EVENT_ECONOMY_CORE_PATH, nextEconomyCoreXml),
-    uploadTextFile(MAP_EVENT_CUSTOM_TYPES_PATH, LOCKED_CONTAINER_TYPES_XML),
-    uploadTextFile(MAP_EVENT_MAPGROUPPROTO_PATH, nextMapGroupProtoXml),
-  ]);
+  if (nextEconomyCoreXml !== economyCoreXml) await uploadLockedContainerTextFile(MAP_EVENT_ECONOMY_CORE_PATH, nextEconomyCoreXml);
+  await uploadLockedContainerTextFile(MAP_EVENT_CUSTOM_TYPES_PATH, LOCKED_CONTAINER_TYPES_XML);
+  if (nextMapGroupProtoXml !== mapGroupProtoXml) await uploadLockedContainerTextFile(MAP_EVENT_MAPGROUPPROTO_PATH, nextMapGroupProtoXml);
+
+  return {
+    ok: true as const,
+    paths: [MAP_EVENT_ECONOMY_CORE_PATH, MAP_EVENT_CUSTOM_TYPES_PATH, MAP_EVENT_MAPGROUPPROTO_PATH],
+    changedEconomyCore: nextEconomyCoreXml !== economyCoreXml,
+    changedMapGroupProto: nextMapGroupProtoXml !== mapGroupProtoXml,
+  };
+}
+
+export async function ensureLockedContainerSetupNow() {
+  return withLockedContainerSetupLock(ensureLockedContainerSetupUnlocked);
+}
+
+async function uninstallLockedContainerSetupUnlocked() {
+  const economyCoreXml = await downloadLockedContainerTextFile(MAP_EVENT_ECONOMY_CORE_PATH);
+  const mapGroupProtoXml = await downloadLockedContainerTextFile(MAP_EVENT_MAPGROUPPROTO_PATH);
+
+  const nextEconomyCoreXml = removeCustomTypesRegistration(economyCoreXml);
+  const nextMapGroupProtoXml = removeLockedContainerMapGroups(mapGroupProtoXml);
+  const emptyTypesXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<types>\n</types>\n`;
+
+  if (nextEconomyCoreXml !== economyCoreXml) await uploadLockedContainerTextFile(MAP_EVENT_ECONOMY_CORE_PATH, nextEconomyCoreXml);
+  await uploadLockedContainerTextFile(MAP_EVENT_CUSTOM_TYPES_PATH, emptyTypesXml);
+  if (nextMapGroupProtoXml !== mapGroupProtoXml) await uploadLockedContainerTextFile(MAP_EVENT_MAPGROUPPROTO_PATH, nextMapGroupProtoXml);
 
   return {
     ok: true as const,
@@ -271,27 +324,7 @@ export async function ensureLockedContainerSetupNow() {
 }
 
 export async function uninstallLockedContainerSetupNow() {
-  const [economyCoreXml, mapGroupProtoXml] = await Promise.all([
-    downloadTextFile(MAP_EVENT_ECONOMY_CORE_PATH),
-    downloadTextFile(MAP_EVENT_MAPGROUPPROTO_PATH),
-  ]);
-
-  const nextEconomyCoreXml = removeCustomTypesRegistration(economyCoreXml);
-  const nextMapGroupProtoXml = removeLockedContainerMapGroups(mapGroupProtoXml);
-  const emptyTypesXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<types>\n</types>\n`;
-
-  await Promise.all([
-    uploadTextFile(MAP_EVENT_ECONOMY_CORE_PATH, nextEconomyCoreXml),
-    uploadTextFile(MAP_EVENT_CUSTOM_TYPES_PATH, emptyTypesXml),
-    uploadTextFile(MAP_EVENT_MAPGROUPPROTO_PATH, nextMapGroupProtoXml),
-  ]);
-
-  return {
-    ok: true as const,
-    paths: [MAP_EVENT_ECONOMY_CORE_PATH, MAP_EVENT_CUSTOM_TYPES_PATH, MAP_EVENT_MAPGROUPPROTO_PATH],
-    changedEconomyCore: nextEconomyCoreXml !== economyCoreXml,
-    changedMapGroupProto: nextMapGroupProtoXml !== mapGroupProtoXml,
-  };
+  return withLockedContainerSetupLock(uninstallLockedContainerSetupUnlocked);
 }
 
 export function getMapEventPresetPayload() {
