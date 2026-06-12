@@ -59,11 +59,7 @@ function makeRunId(presetId: string, name: string) {
 }
 
 function makeEventName(prefix: string, id: string) {
-  const safePrefix = sanitizeEventPart(prefix);
-  const idParts = sanitizeEventPart(id).split("_").filter(Boolean);
-  const hashSuffix = idParts[idParts.length - 1] || createHash("sha1").update(id).digest("hex").slice(0, 8);
-
-  return `${safePrefix}_${hashSuffix}`.slice(0, 96);
+  return `${sanitizeEventPart(prefix)}_${sanitizeEventPart(id).slice(-16)}`.slice(0, 96);
 }
 
 function normalizeLootMode(value: unknown): MapEventLootMode {
@@ -149,7 +145,7 @@ export function resolveMapEventRequest(input: MapEventInjectRequest): ResolvedMa
     position: { x, z, a },
     nominal: requestedQuantity,
     min: Math.min(requestedQuantity, Math.max(1, preset.min)),
-    max: preset.max === 0 ? 0 : requestedQuantity,
+    max: Math.max(0, intOrDefault(preset.max, requestedQuantity)),
     lifetime: Math.max(60, intOrDefault(input.lifetime, preset.lifetime)),
     saferadius: intOrDefault(input.safeRadius, preset.saferadius),
     distanceradius: intOrDefault(input.distanceRadius, preset.distanceradius),
@@ -226,7 +222,7 @@ function buildSimpleChildEventBlock(
     `    <event name="${eventName}">`,
     `        <nominal>${quantity}</nominal>`,
     `        <min>${quantity}</min>`,
-    "        <max>0</max>",
+    `        <max>${quantity}</max>`,
     `        <lifetime>${event.lifetime}</lifetime>`,
     "        <restock>0</restock>",
     `        <saferadius>${options.saferadius}</saferadius>`,

@@ -3,6 +3,7 @@ import { Routes } from "discord.js";
 import { getShopRuntimeStatus } from "../lib/shop";
 import {
   cleanupMapEventsNow,
+  ensureLockedContainerSetupNow,
   getMapEventPresetPayload,
   injectMapEventNow,
 } from "../lib/mapEvents/mapEventService";
@@ -2808,10 +2809,11 @@ function renderAdminPanelHtml(token: string) {
                 </div>
                 <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
                   <button id="mapEventsRefresh" class="ghost-btn">Refresh</button>
+                  <button id="mapEventsSetup" class="primary-btn">Instalar setup locked</button>
                   <button id="mapEventsCleanup" class="danger-btn">Limpar eventos</button>
                 </div>
               </div>
-              <div class="catalog-breadcrumb">Use para testes controlados. Após injetar, reinicie o servidor para o evento nascer.</div>
+              <div class="catalog-breadcrumb">Use para testes controlados. Primeiro instale o setup locked uma vez. Depois o painel injeta events.xml e cfgeventspawns.xml. Após injetar, reinicie o servidor para o evento nascer.</div>
             </div>
             <div class="map-events-grid">
               <div class="card">
@@ -2847,7 +2849,7 @@ function renderAdminPanelHtml(token: string) {
                     <div id="mapEventGuaranteedItemsList" class="map-loot-list"></div>
                   </div>
                 </div>
-                <div class="catalog-breadcrumb" style="margin-top:12px">Random usa o loot do container/mapgroupproto. Storage garantido gera cfgspawnabletypes.xml temporário. Itens garantidos cria eventos auxiliares no chão.</div>
+                <div class="catalog-breadcrumb" style="margin-top:12px">Random usa o loot interno do locked container via locked-container-types.xml + mapgroupproto.xml. Storage garantido gera cfgspawnabletypes.xml temporário. Itens garantidos cria eventos auxiliares no chão.</div>
                 <div class="modal-actions" style="padding:14px 0 0"><button id="mapEventsInject" class="primary-btn">Injetar agora</button></div>
                 <div id="mapEventStatus" class="map-event-status" style="margin-top:14px"></div>
               </div>
@@ -3856,29 +3858,26 @@ function renderAdminPanelHtml(token: string) {
     function setMapEventStatus(html) {
       if (els.mapEventStatus) els.mapEventStatus.innerHTML = html;
     }
+    async function installLockedContainerSetupAction() {
+      if (!confirm('Instalar/atualizar setup permanente do container azul? Isso escreve cfgeconomycore.xml, custom/locked-container-types.xml e mapgroupproto.xml. Faça backup antes.')) return;
+      setMapEventStatus('<div class="map-event-result">Instalando setup locked container...</div>');
+      const response = await apiFetch('/admin-panel/api/map-events/setup-locked-container', { method: 'POST', body: JSON.stringify({}) });
+      if (!response.ok) { const text = await response.text(); setMapEventStatus('<div class="map-event-result"><b>Erro:</b> ' + escapeHtml(text) + '</div>'); showToast(text); return; }
+      const result = await response.json();
+      setMapEventStatus('<div class="map-event-result"><b>Setup locked instalado.</b><br><span class="member-meta">Arquivos: ' + escapeHtml((result.paths || []).join(' + ')) + '</span><br><span class="member-meta">Agora injete o evento e faça stop/start completo.</span></div>');
+      showToast('Setup locked instalado.');
+    }
     async function injectMapEventAction() {
       const preset = selectedMapEventPreset();
       if (!preset) { showToast('Selecione um preset.'); return; }
-      if (state.mapEventInjecting) return;
       const payload = readMapEventForm();
       if (!Number.isFinite(payload.x) || !Number.isFinite(payload.z) || !payload.x || !payload.z) { showToast('Informe coordenadas X e Z válidas.'); return; }
-      state.mapEventInjecting = true;
-      const injectButton = document.getElementById('mapEventsInject');
-      if (injectButton) { injectButton.disabled = true; injectButton.textContent = 'Injetando...'; }
       setMapEventStatus('<div class="map-event-result">Injetando evento nos XMLs...</div>');
-      try {
-        const response = await apiFetch('/admin-panel/api/map-events/inject', { method: 'POST', body: JSON.stringify(payload) });
-        if (!response.ok) { const text = await response.text(); setMapEventStatus('<div class="map-event-result"><b>Erro:</b> ' + escapeHtml(text) + '</div>'); showToast(text); return; }
-        const result = await response.json();
-        const companions = Array.isArray(result.companionEventNames) && result.companionEventNames.length
-          ? '<br><span class="member-meta">Companions:<br>' + result.companionEventNames.map((name) => escapeHtml(name)).join('<br>') + '</span>'
-          : '';
-        setMapEventStatus('<div class="map-event-result"><b>Evento injetado e validado:</b><br>' + escapeHtml(result.eventName) + companions + '<br><span class="chip">' + escapeHtml(result.lootMode || 'rng') + '</span><br><span class="member-meta">Reinicie o servidor para spawnar. Path: ' + escapeHtml(result.path || '') + '</span></div>');
-        showToast('Evento do mapa injetado. Reinicie o servidor.');
-      } finally {
-        state.mapEventInjecting = false;
-        if (injectButton) { injectButton.disabled = false; injectButton.textContent = 'Injetar agora'; }
-      }
+      const response = await apiFetch('/admin-panel/api/map-events/inject', { method: 'POST', body: JSON.stringify(payload) });
+      if (!response.ok) { const text = await response.text(); setMapEventStatus('<div class="map-event-result"><b>Erro:</b> ' + escapeHtml(text) + '</div>'); showToast(text); return; }
+      const result = await response.json();
+      setMapEventStatus('<div class="map-event-result"><b>Evento injetado:</b><br>' + escapeHtml(result.eventName) + '<br><span class="chip">' + escapeHtml(result.lootMode || 'rng') + '</span><br><span class="member-meta">Reinicie o servidor para spawnar. Path: ' + escapeHtml(result.path || '') + '</span></div>');
+      showToast('Evento do mapa injetado. Reinicie o servidor.');
     }
     async function cleanupMapEventsAction() {
       if (!confirm('Remover todos os blocos MAP_EVENT dos XMLs?')) return;
@@ -3935,6 +3934,8 @@ function renderAdminPanelHtml(token: string) {
     });
     const mapEventsRefresh = document.getElementById("mapEventsRefresh");
     if (mapEventsRefresh) mapEventsRefresh.addEventListener("click", loadMapEventPresets);
+    const mapEventsSetup = document.getElementById("mapEventsSetup");
+    if (mapEventsSetup) mapEventsSetup.addEventListener("click", installLockedContainerSetupAction);
     const mapEventsInject = document.getElementById("mapEventsInject");
     if (mapEventsInject) mapEventsInject.addEventListener("click", injectMapEventAction);
     const mapEventsCleanup = document.getElementById("mapEventsCleanup");
@@ -4474,6 +4475,17 @@ router.delete("/api/catalog/items/:id", async (req, res) => {
 router.get("/api/map-events/presets", async (req, res) => {
   if (!requireAdmin(req, res)) return;
   res.json(getMapEventPresetPayload());
+});
+
+router.post("/api/map-events/setup-locked-container", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+
+  try {
+    const result = await ensureLockedContainerSetupNow();
+    res.json(result);
+  } catch (err) {
+    res.status(400).send(String(err));
+  }
 });
 
 router.post("/api/map-events/inject", async (req, res) => {
