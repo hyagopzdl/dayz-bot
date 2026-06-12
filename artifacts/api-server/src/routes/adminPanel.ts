@@ -2578,7 +2578,7 @@ function renderAdminPanelHtml(token: string) {
     .map-picker-actions { display: flex; align-items: center; gap: 6px; }
     .map-picker-actions button { min-width: 34px; height: 30px; padding: 0 10px; border-radius: 10px; }
     .map-picker-viewport { width: 100%; aspect-ratio: 1 / 1; overflow: hidden; background: #10131b; cursor: crosshair; position: relative; overscroll-behavior: contain; scroll-behavior: auto; }
-    .map-picker-viewport.zoomed { overflow: auto; cursor: grab; }
+    .map-picker-viewport.zoomed { overflow: auto; cursor: crosshair; }
     .map-picker-viewport.dragging { cursor: grabbing; user-select: none; }
     .map-picker-inner { position: relative; width: calc(100% * var(--map-zoom, 1)); min-width: 0; aspect-ratio: 1 / 1; }
     .map-picker-inner img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; display: block; user-select: none; -webkit-user-drag: none; }
@@ -3931,7 +3931,7 @@ function renderAdminPanelHtml(token: string) {
       const scrollRatioX = viewport && previousZoom > 0 ? (viewport.scrollLeft + anchorX) / previousZoom : 0;
       const scrollRatioY = viewport && previousZoom > 0 ? (viewport.scrollTop + anchorY) / previousZoom : 0;
 
-      mapEventMapZoom = clampMapEventValue(Number(nextZoom) || 1, 1, 4);
+      mapEventMapZoom = clampMapEventValue(Number(nextZoom) || 1, 1, 12);
       if (els.mapEventMapInner) els.mapEventMapInner.style.setProperty('--map-zoom', String(mapEventMapZoom));
       if (els.mapEventMapZoomLabel) els.mapEventMapZoomLabel.textContent = Math.round(mapEventMapZoom * 100) + '%';
       if (viewport) viewport.classList.toggle('zoomed', mapEventMapZoom > 1.01);
