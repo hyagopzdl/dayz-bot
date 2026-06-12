@@ -18,8 +18,8 @@ const MAP_EVENT_ECONOMY_CORE_PATH = `${MAP_EVENT_MISSION_DIR}/cfgeconomycore.xml
 const MAP_EVENT_MAPGROUPPROTO_PATH = `${MAP_EVENT_MISSION_DIR}/mapgroupproto.xml`;
 const MAP_EVENT_CUSTOM_TYPES_PATH = `${MAP_EVENT_MISSION_DIR}/custom/locked-container-types.xml`;
 const LOCKED_CONTAINER_TYPES_FILE = "locked-container-types.xml";
-const LOCKED_CONTAINER_FTP_DOWNLOAD_TIMEOUT_MS = 10000;
-const LOCKED_CONTAINER_FTP_UPLOAD_TIMEOUT_MS = 25000;
+const LOCKED_CONTAINER_FTP_DOWNLOAD_TIMEOUT_MS = 45000;
+const LOCKED_CONTAINER_FTP_UPLOAD_TIMEOUT_MS = 60000;
 
 let lockedContainerSetupOperation: Promise<unknown> | null = null;
 
@@ -209,7 +209,7 @@ function hasManagedOrMatchingGroup(xml: string, def: (typeof LOCKED_CONTAINER_DE
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
   let timeout: NodeJS.Timeout | undefined;
   const timeoutPromise = new Promise<never>((_, reject) => {
-    timeout = setTimeout(() => reject(new Error(`${label} demorou mais de ${Math.round(timeoutMs / 1000)}s.`)), timeoutMs);
+    timeout = setTimeout(() => reject(new Error(`${label} demorou mais de ${Math.round(timeoutMs / 1000)}s. Tente novamente; o FTP da Nitrado pode demorar quando o servidor está sob carga.`)), timeoutMs);
   });
 
   return Promise.race([promise, timeoutPromise]).finally(() => {

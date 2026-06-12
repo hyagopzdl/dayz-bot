@@ -4270,30 +4270,69 @@ function renderAdminPanelHtml(token: string) {
           checks.map((check) => '<div class="ops-card"><div class="ops-icon ' + (check.ok ? 'kpi-green' : 'kpi-red') + '">' + icon(check.ok ? 'check' : 'warning') + '</div><div><b>' + escapeHtml(check.label) + '</b><span class="status-line ' + (check.ok ? 'success' : 'danger') + '">' + (check.ok ? 'OK' : 'Pendente') + '</span></div><small>' + escapeHtml(check.path || '') + '</small></div>').join('');
       }
     }
+    let lockedContainerSetupBusy = false;
+    function setLockedContainerButtonsDisabled(disabled) {
+      ['lockedContainerCheck', 'lockedContainerInstall', 'lockedContainerUninstall'].forEach((key) => {
+        if (els[key]) els[key].disabled = Boolean(disabled);
+      });
+    }
+    async function readApiError(response) {
+      try {
+        const data = await response.json();
+        return data?.error || JSON.stringify(data);
+      } catch (_) {
+        return await response.text();
+      }
+    }
     async function checkLockedContainerSetupAction(showDoneToast = true) {
-      if (els.lockedContainerSetupStatus) els.lockedContainerSetupStatus.innerHTML = '<div class="map-event-result">Verificando suporte a Locked Containers...</div>';
-      const response = await apiFetch('/admin-panel/api/settings/locked-containers/check');
-      if (!response.ok) { const text = await response.text(); if (els.lockedContainerSetupStatus) els.lockedContainerSetupStatus.innerHTML = '<div class="map-event-result"><b>Erro:</b> ' + escapeHtml(text) + '</div>'; showToast(text); return; }
-      const result = await response.json();
-      renderLockedContainerSetupStatus(result);
-      if (showDoneToast) showToast('Instalação verificada.');
+      if (lockedContainerSetupBusy) return;
+      lockedContainerSetupBusy = true;
+      setLockedContainerButtonsDisabled(true);
+      try {
+        if (els.lockedContainerSetupStatus) els.lockedContainerSetupStatus.innerHTML = '<div class="map-event-result">Verificando suporte a Locked Containers...</div>';
+        const response = await apiFetch('/admin-panel/api/settings/locked-containers/check');
+        if (!response.ok) { const text = await readApiError(response); if (els.lockedContainerSetupStatus) els.lockedContainerSetupStatus.innerHTML = '<div class="map-event-result"><b>Erro:</b> ' + escapeHtml(text) + '</div>'; showToast(text); return; }
+        const result = await response.json();
+        renderLockedContainerSetupStatus(result);
+        if (showDoneToast) showToast('Instalação verificada.');
+      } finally {
+        lockedContainerSetupBusy = false;
+        setLockedContainerButtonsDisabled(false);
+      }
     }
     async function installLockedContainerSetupAction() {
+      if (lockedContainerSetupBusy) return;
       if (!confirm('Instalar/reparar suporte a Locked Containers? Isso atualiza cfgeconomycore.xml, custom/locked-container-types.xml e mapgroupproto.xml. Faça backup antes.')) return;
-      if (els.lockedContainerSetupStatus) els.lockedContainerSetupStatus.innerHTML = '<div class="map-event-result">Instalando suporte a Locked Containers...</div>';
-      const response = await apiFetch('/admin-panel/api/settings/locked-containers/install', { method: 'POST', body: JSON.stringify({}) });
-      if (!response.ok) { const text = await response.text(); if (els.lockedContainerSetupStatus) els.lockedContainerSetupStatus.innerHTML = '<div class="map-event-result"><b>Erro:</b> ' + escapeHtml(text) + '</div>'; showToast(text); return; }
-      await checkLockedContainerSetupAction(false);
-      showToast('Suporte a Locked Containers instalado/reparado.');
+      lockedContainerSetupBusy = true;
+      setLockedContainerButtonsDisabled(true);
+      try {
+        if (els.lockedContainerSetupStatus) els.lockedContainerSetupStatus.innerHTML = '<div class="map-event-result">Instalando suporte a Locked Containers... Isso pode levar até 1 minuto se o FTP da Nitrado estiver lento.</div>';
+        const response = await apiFetch('/admin-panel/api/settings/locked-containers/install', { method: 'POST', body: JSON.stringify({}) });
+        if (!response.ok) { const text = await readApiError(response); if (els.lockedContainerSetupStatus) els.lockedContainerSetupStatus.innerHTML = '<div class="map-event-result"><b>Erro:</b> ' + escapeHtml(text) + '</div>'; showToast(text); return; }
+        const result = await response.json();
+        if (els.lockedContainerSetupStatus) els.lockedContainerSetupStatus.innerHTML = '<div class="map-event-result success"><b>Suporte instalado/reparado.</b><br>Use Verificar instalação para conferir os arquivos.</div>';
+        showToast('Suporte a Locked Containers instalado/reparado.');
+      } finally {
+        lockedContainerSetupBusy = false;
+        setLockedContainerButtonsDisabled(false);
+      }
     }
     async function uninstallLockedContainerSetupAction() {
+      if (lockedContainerSetupBusy) return;
       if (!confirm('Desinstalar suporte a Locked Containers? Eventos existentes podem parar de funcionar após o próximo restart.')) return;
       if (!confirm('Confirma mesmo assim? Essa ação remove os blocos gerenciados do mapgroupproto.xml e desregistra o arquivo custom.')) return;
-      if (els.lockedContainerSetupStatus) els.lockedContainerSetupStatus.innerHTML = '<div class="map-event-result">Desinstalando suporte a Locked Containers...</div>';
-      const response = await apiFetch('/admin-panel/api/settings/locked-containers/uninstall', { method: 'POST', body: JSON.stringify({}) });
-      if (!response.ok) { const text = await response.text(); if (els.lockedContainerSetupStatus) els.lockedContainerSetupStatus.innerHTML = '<div class="map-event-result"><b>Erro:</b> ' + escapeHtml(text) + '</div>'; showToast(text); return; }
-      await checkLockedContainerSetupAction(false);
-      showToast('Suporte a Locked Containers desinstalado.');
+      lockedContainerSetupBusy = true;
+      setLockedContainerButtonsDisabled(true);
+      try {
+        if (els.lockedContainerSetupStatus) els.lockedContainerSetupStatus.innerHTML = '<div class="map-event-result">Desinstalando suporte a Locked Containers...</div>';
+        const response = await apiFetch('/admin-panel/api/settings/locked-containers/uninstall', { method: 'POST', body: JSON.stringify({}) });
+        if (!response.ok) { const text = await readApiError(response); if (els.lockedContainerSetupStatus) els.lockedContainerSetupStatus.innerHTML = '<div class="map-event-result"><b>Erro:</b> ' + escapeHtml(text) + '</div>'; showToast(text); return; }
+        if (els.lockedContainerSetupStatus) els.lockedContainerSetupStatus.innerHTML = '<div class="map-event-result success"><b>Suporte desinstalado.</b><br>Use Verificar instalação para conferir os arquivos.</div>';
+        showToast('Suporte a Locked Containers desinstalado.');
+      } finally {
+        lockedContainerSetupBusy = false;
+        setLockedContainerButtonsDisabled(false);
+      }
     }
     async function injectMapEventAction() {
       const preset = selectedMapEventPreset();
