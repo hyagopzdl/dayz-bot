@@ -41,7 +41,7 @@ export const mapEventPresets: MapEventPreset[] = [
     eventPrefix: "StaticContainerLockedBlue",
     defaultEventName: "StaticContainerLockedBlue",
     ...shared,
-    children: [{ type: "Land_ContainerLocked_Blue_DE", min: 1, max: 1, lootmin: 5, lootmax: 12 }],
+    children: [{ type: "Land_ContainerLocked_Blue_DE", min: 1, max: 1, lootmin: 5, lootmax: 10 }],
   },
   {
     id: "locked_container_yellow_construction",
@@ -54,7 +54,7 @@ export const mapEventPresets: MapEventPreset[] = [
     eventPrefix: "StaticContainerLockedYellow",
     defaultEventName: "StaticContainerLockedYellow",
     ...shared,
-    children: [{ type: "Land_ContainerLocked_Yellow_DE", min: 1, max: 1, lootmin: 6, lootmax: 14 }],
+    children: [{ type: "Land_ContainerLocked_Yellow_DE", min: 1, max: 1, lootmin: 6, lootmax: 11 }],
   },
   {
     id: "locked_container_orange_raid",
@@ -67,7 +67,7 @@ export const mapEventPresets: MapEventPreset[] = [
     eventPrefix: "StaticContainerLockedOrange",
     defaultEventName: "StaticContainerLockedOrange",
     ...shared,
-    children: [{ type: "Land_ContainerLocked_Orange_DE", min: 1, max: 1, lootmin: 4, lootmax: 8 }],
+    children: [{ type: "Land_ContainerLocked_Orange_DE", min: 1, max: 1, lootmin: 4, lootmax: 7 }],
   },
 ];
 
