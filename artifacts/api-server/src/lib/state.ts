@@ -230,10 +230,40 @@ export type OnlineActivitySample = {
   online: number;
 };
 
-export type OnlineConnectionEvent = {
-  player: string;
-  playerNormalized: string;
-  at: string;
+
+export type SpawnZonePoint = {
+  id: string;
+  x: number;
+  z: number;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type SpawnZone = {
+  id: string;
+  name: string;
+  color: string;
+  enabled: boolean;
+  points: SpawnZonePoint[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type MapRotationVoteHistory = {
+  id: string;
+  winnerZoneId?: string;
+  winnerName?: string;
+  totalVotes?: number;
+  closedAt: string;
+  appliedAt?: string;
+};
+
+export type MapRotationState = {
+  zones: SpawnZone[];
+  currentZoneId?: string;
+  nextZoneId?: string;
+  voteHistory?: MapRotationVoteHistory[];
+  updatedAt?: string;
 };
 
 export type AppState = {
@@ -243,7 +273,6 @@ export type AppState = {
   onlinePlayers: Record<string, OnlinePlayer>;
   onlineSessions: Record<string, OnlineSession>;
   onlineActivitySamples?: OnlineActivitySample[];
-  onlineConnectionEvents?: OnlineConnectionEvent[];
 
   playerLinks: Record<string, PlayerLink>;
   playerLinksByGamertag: Record<string, string>;
@@ -258,6 +287,7 @@ export type AppState = {
   dayzItems?: DayzItemDefinition[];
   shopResetMonitor?: ShopResetMonitor | null;
   shopAutoDeploy?: ShopAutoDeployState | null;
+  mapRotation?: MapRotationState;
 
   files: Record<string, FileCursor>;
   recentEventIds: string[];
@@ -291,7 +321,6 @@ function defaultState(): AppState {
     onlinePlayers: {},
     onlineSessions: {},
     onlineActivitySamples: [],
-    onlineConnectionEvents: [],
     playerLinks: {},
     playerLinksByGamertag: {},
     wallets: {},
@@ -380,25 +409,6 @@ function migrateLegacyState(data: any): AppState {
   state.lastFileName = data.lastFileName;
 
   state.onlineSessions = data.onlineSessions || {};
-  state.onlineActivitySamples = Array.isArray(data.onlineActivitySamples)
-    ? data.onlineActivitySamples
-        .map((sample: any) => ({
-          bucket: sample.bucket || sample.at || new Date().toISOString(),
-          online: Math.max(0, Math.floor(Number(sample.online || 0))),
-        }))
-        .filter((sample: any) => !Number.isNaN(new Date(sample.bucket).getTime()))
-        .slice(-900)
-    : [];
-  state.onlineConnectionEvents = Array.isArray(data.onlineConnectionEvents)
-    ? data.onlineConnectionEvents
-        .map((event: any) => ({
-          player: String(event.player || "Unknown"),
-          playerNormalized: String(event.playerNormalized || event.player || "unknown").trim().toLowerCase(),
-          at: event.at || new Date().toISOString(),
-        }))
-        .filter((event: any) => !Number.isNaN(new Date(event.at).getTime()))
-        .slice(-5000)
-    : [];
   state.playerLinks = data.playerLinks || {};
   state.playerLinksByGamertag = {};
 
@@ -668,16 +678,6 @@ export async function saveStateAsync(data: AppState) {
     weeklyPlayers: data.weeklyPlayers || {},
     onlinePlayers: data.onlinePlayers || {},
     onlineSessions: data.onlineSessions || {},
-    onlineActivitySamples: Array.isArray(data.onlineActivitySamples)
-      ? data.onlineActivitySamples
-          .filter((sample) => !Number.isNaN(new Date(sample.bucket).getTime()))
-          .slice(-900)
-      : [],
-    onlineConnectionEvents: Array.isArray(data.onlineConnectionEvents)
-      ? data.onlineConnectionEvents
-          .filter((event) => !Number.isNaN(new Date(event.at).getTime()))
-          .slice(-5000)
-      : [],
     playerLinks: data.playerLinks || {},
     playerLinksByGamertag: data.playerLinksByGamertag || {},
     wallets: data.wallets || {},
