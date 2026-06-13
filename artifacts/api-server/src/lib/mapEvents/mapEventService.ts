@@ -155,7 +155,13 @@ const AIRDROP_MILITARY_GROUP_END = "PANEL_AIRDROP_MILITARY_END";
 const AIRDROP_MILITARY_GROUP_XML = `<!-- ${AIRDROP_MILITARY_GROUP_START} -->
 <group name="${AIRDROP_MILITARY_GROUP_NAME}">
     <child type="Land_Container_1Moh_DE" deloot="0" lootmax="0" lootmin="0" x="0" y="0" z="0" a="155.7" />
-    <child type="Wreck_UH1Y" spawnsecondary="false" deloot="0" lootmax="0" lootmin="0" x="0" y="-10" z="0" a="155.7" />
+
+    <!-- Super helicrash smoke triangle -->
+    <child type="Wreck_UH1Y" spawnsecondary="false" deloot="0" lootmax="0" lootmin="0" x="-14" y="-10" z="-10" a="45" />
+    <child type="Wreck_UH1Y" spawnsecondary="false" deloot="0" lootmax="0" lootmin="0" x="14" y="-10" z="-10" a="135" />
+    <child type="Wreck_UH1Y" spawnsecondary="false" deloot="0" lootmax="0" lootmin="0" x="0" y="-10" z="16" a="270" />
+
+    <!-- Physical military loot around the central drop -->
     <child type="M4A1" spawnsecondary="false" x="2.0" y="-0.5" z="1.0" a="0" />
     <child type="AKM" spawnsecondary="false" x="-2.0" y="-0.5" z="1.0" a="0" />
     <child type="FAL" spawnsecondary="false" x="2.2" y="-0.5" z="-1.0" a="0" />

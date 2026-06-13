@@ -4374,14 +4374,14 @@ function renderAdminPanelHtml(token: string) {
         installText: 'Registra custom types, configura mapgroupproto e prepara as quatro cores de containers.',
       },
       'airdrop-military': {
-        title: 'Airdrop Militar',
+        title: 'Super Airdrop Militar',
         description: 'Drop militar físico com container, fumaça de helicrash, loot posicionado por grupo e infected army.',
         imageUrl: 'https://www.dayztools.de/itemdb2/icons/Land_Container_1Moh_DE.png',
         stateKey: 'airdropMilitarySetup',
         checkUrl: '/admin-panel/api/settings/airdrops/military/check',
         installUrl: '/admin-panel/api/settings/airdrops/military/install',
         uninstallUrl: '/admin-panel/api/settings/airdrops/military/uninstall',
-        installText: 'Adiciona o grupo Panel_Airdrop_Military no cfgeventgroups.xml para o builder criar drops com group spawn.',
+        installText: 'Adiciona/atualiza o grupo Panel_Airdrop_Military no cfgeventgroups.xml com três Wreck_UH1Y em triângulo e loot físico central.',
       },
     };
     function integrationStatus(integrationId) {
