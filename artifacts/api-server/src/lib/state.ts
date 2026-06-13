@@ -256,6 +256,23 @@ export type MapRotationVoteHistory = {
   totalVotes?: number;
   closedAt: string;
   appliedAt?: string;
+  source?: string;
+};
+
+export type MapRotationSettings = {
+  pollChannelId?: string;
+  pollQuestion?: string;
+  pollOpenDay?: string;
+  pollOpenTime?: string;
+  pollCloseDay?: string;
+  pollCloseTime?: string;
+  autoCreatePoll?: boolean;
+  autoApplyWinner?: boolean;
+  applyOnNextRestart?: boolean;
+  tiePolicy?: string;
+  minVotes?: number;
+  spawnFilePath?: string;
+  serverAnnouncement?: string;
 };
 
 export type MapRotationState = {
@@ -263,6 +280,7 @@ export type MapRotationState = {
   currentZoneId?: string;
   nextZoneId?: string;
   voteHistory?: MapRotationVoteHistory[];
+  settings?: MapRotationSettings;
   updatedAt?: string;
 };
 
