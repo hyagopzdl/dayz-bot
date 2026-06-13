@@ -275,7 +275,12 @@ function hasManagedOrMatchingGroup(xml: string, def: (typeof LOCKED_CONTAINER_DE
 
   return groups.some((group) => {
     const usages = getUsageNames(group);
-    return def.usages.every((usage) => usages.includes(usage)) && usages.every((usage) => def.usages.includes(usage));
+    const expectedUsages = Array.from(def.usages) as string[];
+
+    return (
+      expectedUsages.every((usage) => usages.includes(usage)) &&
+      usages.every((usage) => expectedUsages.includes(usage))
+    );
   });
 }
 
