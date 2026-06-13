@@ -1520,6 +1520,42 @@ function renderAdminPanelHtml(token: string) {
     .bar-wrap:hover .bar { opacity: 1; }
     .bar-label { color: var(--text-3); font-size: 11px; text-align: center; white-space: nowrap; }
     .settings-list { display: grid; gap: 10px; }
+    .settings-tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 16px; }
+    .settings-tab { border: 1px solid var(--border); background: rgba(255,255,255,.035); color: var(--text-2); border-radius: 999px; padding: 9px 13px; font-size: 12px; font-weight: 650; cursor: pointer; }
+    .settings-tab.active { color: var(--text); border-color: rgba(124,140,255,.55); background: rgba(124,140,255,.13); }
+    .settings-panel { display: none; }
+    .settings-panel.active { display: grid; gap: 16px; }
+    .integration-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; }
+    .integration-card { border: 1px solid var(--border); background: rgba(255,255,255,.035); border-radius: 18px; padding: 16px; display: grid; min-height: 180px; cursor: pointer; transition: transform .16s ease, border-color .16s ease, background .16s ease; text-align: left; color: var(--text); }
+    .integration-card:hover { transform: translateY(-1px); border-color: rgba(124,140,255,.45); background: rgba(255,255,255,.055); }
+    .integration-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+    .integration-icon { width: 48px; height: 48px; border-radius: 15px; display: grid; place-items: center; background: radial-gradient(circle at 30% 20%, rgba(255,145,77,.32), rgba(124,140,255,.14) 52%, rgba(255,255,255,.06)); border: 1px solid rgba(255,255,255,.12); box-shadow: inset 0 1px 0 rgba(255,255,255,.14), 0 10px 28px rgba(0,0,0,.18); overflow: hidden; }
+    .integration-icon img { width: 37px; height: 37px; object-fit: contain; filter: drop-shadow(0 4px 8px rgba(0,0,0,.25)); }
+    .integration-card h3 { margin: 18px 0 6px; font-size: 16px; letter-spacing: -.03em; }
+    .integration-card p { color: var(--text-3); font-size: 12px; line-height: 1.45; margin: 0; }
+    .integration-card-footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 18px; }
+    .integration-action { border: 1px solid var(--border); color: var(--text); background: rgba(255,255,255,.05); border-radius: 999px; padding: 8px 12px; font-size: 12px; font-weight: 650; display: inline-flex; align-items: center; gap: 6px; }
+    .integration-action.installed { color: var(--ok); border-color: rgba(63,210,143,.38); background: rgba(63,210,143,.10); }
+    .settings-empty-note { border: 1px dashed var(--border); border-radius: 16px; padding: 18px; color: var(--text-3); background: rgba(255,255,255,.025); font-size: 13px; }
+    .integration-modal .modal { width: min(1040px, 96vw); max-height: 92vh; overflow: hidden; padding: 0; display: grid; grid-template-rows: auto 1fr auto; }
+    .integration-modal-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 22px 24px; border-bottom: 1px solid var(--border); background: linear-gradient(180deg, rgba(124,140,255,.10), rgba(255,255,255,0)); }
+    .integration-modal-title { display: flex; gap: 14px; align-items: center; }
+    .integration-modal-title h2 { font-size: 22px; margin: 0; }
+    .integration-modal-title p { margin: 5px 0 0; font-size: 13px; color: var(--text-3); }
+    .integration-modal-body { overflow: auto; padding: 22px 24px; display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: 18px; }
+    .integration-modal-section { border: 1px solid var(--border); border-radius: 18px; background: rgba(255,255,255,.035); padding: 16px; }
+    .integration-modal-section h3 { margin: 0 0 10px; font-size: 14px; letter-spacing: -.02em; }
+    .integration-feature-list { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+    .integration-feature-list li { display: flex; gap: 10px; color: var(--text-2); font-size: 13px; line-height: 1.4; }
+    .integration-modal-footer { padding: 16px 24px; border-top: 1px solid var(--border); display: flex; justify-content: space-between; gap: 10px; align-items: center; background: rgba(255,255,255,.025); }
+    .settings-loader { display: grid; gap: 10px; padding: 14px; border: 1px solid var(--border); border-radius: 16px; background: rgba(124,140,255,.08); }
+    .settings-loader-title { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--text); }
+    .spinner { width: 16px; height: 16px; border: 2px solid rgba(255,255,255,.20); border-top-color: var(--accent); border-radius: 999px; animation: spin .8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .progress-bar { height: 7px; border-radius: 999px; background: rgba(255,255,255,.08); overflow: hidden; }
+    .progress-bar span { display: block; width: 36%; height: 100%; border-radius: inherit; background: linear-gradient(90deg, rgba(124,140,255,.2), var(--accent), rgba(124,140,255,.2)); animation: progressSweep 1.1s ease-in-out infinite; }
+    @keyframes progressSweep { 0% { transform: translateX(-110%); } 100% { transform: translateX(310%); } }
+    @media (max-width: 900px) { .integration-modal-body { grid-template-columns: 1fr; } }
     .setting-row {
       display: flex;
       align-items: center;
@@ -2988,26 +3024,58 @@ function renderAdminPanelHtml(token: string) {
               <div class="section-title">
                 <div>
                   <h2>Settings</h2>
-                  <div class="member-meta">Configurações estruturais do servidor e recursos do painel.</div>
+                  <div class="member-meta">Configure recursos estruturais do servidor antes de usar no painel.</div>
                 </div>
-                <button id="settingsRefresh" class="ghost-btn">Verificar tudo</button>
+              </div>
+              <div class="settings-tabs" role="tablist" aria-label="Settings sections">
+                <button class="settings-tab active" type="button" data-settings-tab="server">Server Settings</button>
+                <button class="settings-tab" type="button" data-settings-tab="events">Events Settings</button>
+                <button class="settings-tab" type="button" data-settings-tab="integrations">Integrações</button>
               </div>
             </div>
 
-            <div class="card">
-              <div class="section-title">
-                <div>
-                  <h2>Eventos · Locked Containers</h2>
-                  <div class="member-meta">Prepara o servidor para eventos de container trancado com loot interno por cor/tema.</div>
+            <div id="settingsPanelServer" class="settings-panel active">
+              <div class="card">
+                <div class="section-title">
+                  <div><h2>Server Settings</h2><div class="member-meta">Configurações gerais do servidor aparecerão aqui.</div></div>
                 </div>
-                <span id="lockedContainerSetupBadge" class="chip">Verificando...</span>
+                <div class="settings-empty-note">Nenhuma configuração geral disponível ainda. Use Events Settings para instalar recursos de eventos.</div>
               </div>
-              <div class="catalog-breadcrumb">Instale esse suporte uma vez por missão/servidor. Depois disso, a tela Eventos do Mapa só cria ou remove os spawns temporários.</div>
-              <div id="lockedContainerSetupStatus" class="settings-list" style="margin-top:14px"></div>
-              <div class="modal-actions" style="padding:14px 0 0; gap:8px; flex-wrap:wrap">
-                <button id="lockedContainerCheck" class="ghost-btn">Verificar instalação</button>
-                <button id="lockedContainerInstall" class="primary-btn">Instalar / reparar suporte</button>
-                <button id="lockedContainerUninstall" class="danger-btn">Desinstalar suporte</button>
+            </div>
+
+            <div id="settingsPanelEvents" class="settings-panel">
+              <div class="card">
+                <div class="section-title">
+                  <div>
+                    <h2>Events Settings</h2>
+                    <div class="member-meta">Instale recursos disponíveis para criação de eventos no mapa.</div>
+                  </div>
+                  <button id="lockedContainerCheck" class="ghost-btn">Verificar instalação</button>
+                </div>
+                <div id="lockedContainerSetupStatus" class="settings-list" style="margin-top:14px"></div>
+              </div>
+
+              <div class="card" id="lockedContainerInstalledSection" style="display:none">
+                <div class="section-title">
+                  <div><h2>Instalados</h2><div class="member-meta">Recursos já configurados neste servidor.</div></div>
+                </div>
+                <div id="lockedContainerInstalledGrid" class="integration-grid"></div>
+              </div>
+
+              <div class="card">
+                <div class="section-title">
+                  <div><h2>Eventos disponíveis</h2><div class="member-meta">Clique em um card para ver detalhes, instalar, verificar ou remover suporte.</div></div>
+                </div>
+                <div id="lockedContainerAvailableGrid" class="integration-grid"></div>
+              </div>
+            </div>
+
+            <div id="settingsPanelIntegrations" class="settings-panel">
+              <div class="card">
+                <div class="section-title">
+                  <div><h2>Integrações</h2><div class="member-meta">Conexões externas aparecerão aqui futuramente.</div></div>
+                </div>
+                <div class="settings-empty-note">Nenhuma integração disponível no momento.</div>
               </div>
             </div>
           </div>
@@ -3118,11 +3186,46 @@ function renderAdminPanelHtml(token: string) {
       <div class="modal-actions"><button class="ghost-btn" id="catalogCategoryModalCancel">Cancelar</button><button class="primary-btn" id="catalogCategoryModalConfirm">Criar categoria</button></div>
     </div>
   </div>
+
+  <div id="eventIntegrationModalBackdrop" class="modal-backdrop integration-modal">
+    <div class="modal">
+      <div class="integration-modal-header">
+        <div class="integration-modal-title">
+          <div class="integration-icon"><img src="https://www.dayztools.de/itemdb2/icons/Land_ContainerLocked_Blue_DE.png" alt="" /></div>
+          <div>
+            <h2>Locked Containers</h2>
+            <p>Suporte base para containers trancados com loot temático por cor.</p>
+          </div>
+        </div>
+        <button id="eventIntegrationModalClose" class="ghost-btn">Fechar</button>
+      </div>
+      <div class="integration-modal-body">
+        <div class="integration-modal-section">
+          <h3>O que essa instalação configura</h3>
+          <ul class="integration-feature-list">
+            <li>✓ Registra <b>custom/locked-container-types.xml</b> no cfgeconomycore.xml.</li>
+            <li>✓ Cria pools exclusivos por tema: Militar, Médico, Construção e Raid.</li>
+            <li>✓ Configura mapgroupproto.xml para as quatro cores de container.</li>
+            <li>✓ Mantém a tela Eventos do Mapa focada só na criação/agendamento dos spawns.</li>
+          </ul>
+          <div class="settings-empty-note" style="margin-top:16px">Recomendado fazer backup dos XMLs antes de instalar ou reparar. A operação pode levar até 1 minuto se o FTP estiver lento.</div>
+        </div>
+        <div class="integration-modal-section">
+          <h3>Status da instalação</h3>
+          <div id="lockedContainerModalStatus" class="settings-list"></div>
+        </div>
+      </div>
+      <div class="integration-modal-footer">
+        <button id="lockedContainerUninstall" class="danger-btn">Desinstalar suporte</button>
+        <div class="modal-actions" style="margin:0"><button id="lockedContainerInstall" class="primary-btn">Instalar suporte</button></div>
+      </div>
+    </div>
+  </div>
   <div id="toast" class="toast"></div>
   <script>
     const adminToken = ${tokenJson};
     if (adminToken) document.cookie = "${TOKEN_COOKIE}=" + encodeURIComponent(adminToken) + "; path=/admin-panel; SameSite=Lax";
-    const state = { view: "general", cursor: 0, hasMore: true, loadingMembers: false, memberForceRefresh: false, search: "", filter: "", modal: null, catalogModal: null, selectedDiscordId: null, catalog: null, catalogSearch: "", catalogCategory: "", catalogMode: "categories", catalogDrag: null, catalogJustDragged: false, shopQueue: null, shopTransactions: null, shopHistorySearch: "", shopQueueModeBefore: "categories", itemsCursor: 0, itemsHasMore: true, itemsLoading: false, itemsSearch: "", itemsFilter: "all", dayzItems: [], itemsStats: null, itemModal: null, mapEventPresets: [], selectedMapEventPresetId: "locked_container_red_military", mapEventRewardStorageItem: null, mapEventLootItems: [], scheduledMapEvents: [], mapEventBuilderOpen: false };
+    const state = { view: "general", cursor: 0, hasMore: true, loadingMembers: false, memberForceRefresh: false, search: "", filter: "", modal: null, catalogModal: null, selectedDiscordId: null, catalog: null, catalogSearch: "", catalogCategory: "", catalogMode: "categories", catalogDrag: null, catalogJustDragged: false, shopQueue: null, shopTransactions: null, shopHistorySearch: "", shopQueueModeBefore: "categories", itemsCursor: 0, itemsHasMore: true, itemsLoading: false, itemsSearch: "", itemsFilter: "all", dayzItems: [], itemsStats: null, itemModal: null, mapEventPresets: [], selectedMapEventPresetId: "locked_container_red_military", mapEventRewardStorageItem: null, mapEventLootItems: [], scheduledMapEvents: [], mapEventBuilderOpen: false, settingsTab: "server", lockedContainerSetup: null };
     const els = {
       pageTitle: document.getElementById("pageTitle"), serverName: document.getElementById("serverName"),
       mapEventPresetGrid: document.getElementById("mapEventPresetGrid"), mapEventSelectedPreset: document.getElementById("mapEventSelectedPreset"), mapEventName: document.getElementById("mapEventName"), mapEventCoordinates: document.getElementById("mapEventCoordinates"), mapEventX: document.getElementById("mapEventX"), mapEventZ: document.getElementById("mapEventZ"), mapEventAngle: document.getElementById("mapEventAngle"), mapEventQuantity: document.getElementById("mapEventQuantity"), mapEventLifetime: document.getElementById("mapEventLifetime"), mapEventSafeRadius: document.getElementById("mapEventSafeRadius"), mapEventDistanceRadius: document.getElementById("mapEventDistanceRadius"), mapEventCleanupRadius: document.getElementById("mapEventCleanupRadius"), mapEventLootMode: document.getElementById("mapEventLootMode"), mapEventRewardStorage: document.getElementById("mapEventRewardStorage"), mapEventRewardStorageSearch: document.getElementById("mapEventRewardStorageSearch"), mapEventRewardStorageSelected: document.getElementById("mapEventRewardStorageSelected"), mapEventRewardStorageAutocomplete: document.getElementById("mapEventRewardStorageAutocomplete"), mapEventRewardStorageWrap: document.getElementById("mapEventRewardStorageWrap"), mapEventGuaranteedItemSearch: document.getElementById("mapEventGuaranteedItemSearch"), mapEventGuaranteedItemAutocomplete: document.getElementById("mapEventGuaranteedItemAutocomplete"), mapEventGuaranteedItemsList: document.getElementById("mapEventGuaranteedItemsList"), mapEventGuaranteedItemsWrap: document.getElementById("mapEventGuaranteedItemsWrap"), mapEventMapViewport: document.getElementById("mapEventMapViewport"), mapEventMapInner: document.getElementById("mapEventMapInner"), mapEventMapImage: document.getElementById("mapEventMapImage"), mapEventMapPin: document.getElementById("mapEventMapPin"), mapEventMapZoomIn: document.getElementById("mapEventMapZoomIn"), mapEventMapZoomOut: document.getElementById("mapEventMapZoomOut"), mapEventMapZoomLabel: document.getElementById("mapEventMapZoomLabel"), mapEventStatus: document.getElementById("mapEventStatus"), mapEventBuilder: document.getElementById("mapEventBuilder"), mapEventsNewToggle: document.getElementById("mapEventsNewToggle"), mapEventsBuilderClose: document.getElementById("mapEventsBuilderClose"), mapEventsSchedule: document.getElementById("mapEventsSchedule"), mapEventScheduleFields: document.getElementById("mapEventScheduleFields"), mapEventDate: document.getElementById("mapEventDate"), mapEventTime: document.getElementById("mapEventTime"), mapEventCustomTimeWrap: document.getElementById("mapEventCustomTimeWrap"), mapEventCustomTime: document.getElementById("mapEventCustomTime"), mapEventRecurrence: document.getElementById("mapEventRecurrence"), mapEventsScheduledList: document.getElementById("mapEventsScheduledList"), mapEventsScheduledEmpty: document.getElementById("mapEventsScheduledEmpty"), mapEventsScheduledCount: document.getElementById("mapEventsScheduledCount"), mapEventsRecurringCount: document.getElementById("mapEventsRecurringCount"), mapEventsNextRun: document.getElementById("mapEventsNextRun"), mapEventsScheduleRuntime: document.getElementById("mapEventsScheduleRuntime"),
@@ -3133,7 +3236,7 @@ function renderAdminPanelHtml(token: string) {
       catalogGrid: document.getElementById("catalogGrid"), catalogLoading: document.getElementById("catalogLoading"), catalogEmpty: document.getElementById("catalogEmpty"), catalogSearch: document.getElementById("catalogSearch"), catalogCategoryView: document.getElementById("catalogCategoryView"), catalogItemsView: document.getElementById("catalogItemsView"), catalogCategoryGrid: document.getElementById("catalogCategoryGrid"), catalogCurrentCategoryTitle: document.getElementById("catalogCurrentCategoryTitle"), catalogCurrentCategoryLabel: document.getElementById("catalogCurrentCategoryLabel"), shopQueueView: document.getElementById("shopQueueView"), shopQueueStats: document.getElementById("shopQueueStats"), shopQueueList: document.getElementById("shopQueueList"), shopQueueEmpty: document.getElementById("shopQueueEmpty"), shopQueueRuntime: document.getElementById("shopQueueRuntime"),
       catalogModalBackdrop: document.getElementById("catalogModalBackdrop"), catalogModalTitle: document.getElementById("catalogModalTitle"), catalogModalSubtitle: document.getElementById("catalogModalSubtitle"), catalogItemId: document.getElementById("catalogItemId"), catalogItemAutocomplete: document.getElementById("catalogItemAutocomplete"), catalogItemCategory: document.getElementById("catalogItemCategory"), catalogItemName: document.getElementById("catalogItemName"), catalogItemPrice: document.getElementById("catalogItemPrice"), catalogItemImage: document.getElementById("catalogItemImage"), catalogItemDescription: document.getElementById("catalogItemDescription"), catalogItemEnabled: document.getElementById("catalogItemEnabled"), catalogCategoryModalBackdrop: document.getElementById("catalogCategoryModalBackdrop"), catalogCategoryName: document.getElementById("catalogCategoryName"), catalogCategoryId: document.getElementById("catalogCategoryId"), catalogCategoryDescription: document.getElementById("catalogCategoryDescription"), catalogCategoryEnabled: document.getElementById("catalogCategoryEnabled"),
       itemsList: document.getElementById("itemsList"), itemsLoading: document.getElementById("itemsLoading"), itemsEmpty: document.getElementById("itemsEmpty"), itemsSearch: document.getElementById("itemsSearch"), itemsFilter: document.getElementById("itemsFilter"), itemsRefresh: document.getElementById("itemsRefresh"), itemsSentinel: document.getElementById("itemsSentinel"),
-      lockedContainerSetupBadge: document.getElementById("lockedContainerSetupBadge"), lockedContainerSetupStatus: document.getElementById("lockedContainerSetupStatus"),
+      lockedContainerSetupStatus: document.getElementById("lockedContainerSetupStatus"), lockedContainerModalStatus: document.getElementById("lockedContainerModalStatus"), lockedContainerInstalledSection: document.getElementById("lockedContainerInstalledSection"), lockedContainerInstalledGrid: document.getElementById("lockedContainerInstalledGrid"), lockedContainerAvailableGrid: document.getElementById("lockedContainerAvailableGrid"), eventIntegrationModalBackdrop: document.getElementById("eventIntegrationModalBackdrop"), eventIntegrationModalClose: document.getElementById("eventIntegrationModalClose"),
       itemModalBackdrop: document.getElementById("itemModalBackdrop"), itemModalTitle: document.getElementById("itemModalTitle"), itemModalSubtitle: document.getElementById("itemModalSubtitle"), itemModalPreviewImage: document.getElementById("itemModalPreviewImage"), itemModalPreviewName: document.getElementById("itemModalPreviewName"), itemModalPreviewClass: document.getElementById("itemModalPreviewClass"), itemModalPopularName: document.getElementById("itemModalPopularName"), itemModalImageUrl: document.getElementById("itemModalImageUrl"), itemModalSpawnEventName: document.getElementById("itemModalSpawnEventName"), itemModalEnabled: document.getElementById("itemModalEnabled")
     };
     function apiUrl(path) { const separator = path.includes("?") ? "&" : "?"; return adminToken ? path + separator + "token=" + encodeURIComponent(adminToken) : path; }
@@ -4256,19 +4359,50 @@ function renderAdminPanelHtml(token: string) {
     function setMapEventStatus(html) {
       if (els.mapEventStatus) els.mapEventStatus.innerHTML = html;
     }
-    function renderLockedContainerSetupStatus(result) {
+    function lockedContainerAppStatus() {
+      const status = state.lockedContainerSetup?.status || 'unknown';
+      return {
+        status,
+        installed: status === 'installed',
+        label: status === 'installed' ? 'Instalado' : status === 'partial' ? 'Parcial' : status === 'not_installed' ? 'Não instalado' : 'Não verificado',
+      };
+    }
+    function integrationCardHtml(location) {
+      const current = lockedContainerAppStatus();
+      const installed = current.installed;
+      const action = installed ? icon('check') + ' Instalado' : 'Instalar';
+      return '<button class="integration-card" type="button" data-integration="locked-containers" data-location="' + location + '">' +
+        '<div class="integration-card-head"><div class="integration-icon"><img src="https://www.dayztools.de/itemdb2/icons/Land_ContainerLocked_Blue_DE.png" alt="" /></div>' +
+        '<span class="integration-action ' + (installed ? 'installed' : '') + '">' + action + '</span></div>' +
+        '<div><h3>Locked Containers</h3><p>Containers trancados com temas por cor: vermelho militar, azul médico, amarelo construção e laranja raid.</p></div>' +
+        '<div class="integration-card-footer"><span class="member-meta">Events Settings</span><span class="chip ' + (installed ? 'success' : '') + '">' + escapeHtml(current.label) + '</span></div>' +
+        '</button>';
+    }
+    function renderLockedContainerCards() {
+      const current = lockedContainerAppStatus();
+      if (els.lockedContainerInstalledSection) els.lockedContainerInstalledSection.style.display = current.installed ? '' : 'none';
+      if (els.lockedContainerInstalledGrid) els.lockedContainerInstalledGrid.innerHTML = current.installed ? integrationCardHtml('installed') : '';
+      if (els.lockedContainerAvailableGrid) els.lockedContainerAvailableGrid.innerHTML = current.installed ? '<div class="settings-empty-note">Nenhum evento disponível para instalar agora.</div>' : integrationCardHtml('available');
+    }
+    function setupChecksHtml(result) {
+      const checks = Array.isArray(result?.checks) ? result.checks : [];
+      if (!result) return '<div class="settings-empty-note">Clique em Verificar instalação para ler os XMLs do servidor, ou abra o card para instalar o suporte.</div>';
       const status = result?.status || 'unknown';
       const label = status === 'installed' ? 'Instalado' : status === 'partial' ? 'Parcial' : status === 'not_installed' ? 'Não instalado' : 'Indisponível';
-      const cls = status === 'installed' ? 'success' : status === 'partial' ? 'warning' : 'danger';
-      if (els.lockedContainerSetupBadge) {
-        els.lockedContainerSetupBadge.textContent = label;
-        els.lockedContainerSetupBadge.className = 'chip ' + (status === 'installed' ? 'success' : '');
-      }
-      const checks = Array.isArray(result?.checks) ? result.checks : [];
-      if (els.lockedContainerSetupStatus) {
-        els.lockedContainerSetupStatus.innerHTML = '<div class="alert-pill ' + (status === 'installed' ? 'success' : '') + '">' + icon(status === 'installed' ? 'check' : 'warning') + '<span><b>Status: ' + escapeHtml(label) + '</b><br><span class="member-meta">' + escapeHtml(String(result?.total - result?.missing || 0)) + '/' + escapeHtml(String(result?.total || 0)) + ' verificações OK</span></span></div>' +
-          checks.map((check) => '<div class="ops-card"><div class="ops-icon ' + (check.ok ? 'kpi-green' : 'kpi-red') + '">' + icon(check.ok ? 'check' : 'warning') + '</div><div><b>' + escapeHtml(check.label) + '</b><span class="status-line ' + (check.ok ? 'success' : 'danger') + '">' + (check.ok ? 'OK' : 'Pendente') + '</span></div><small>' + escapeHtml(check.path || '') + '</small></div>').join('');
-      }
+      return '<div class="alert-pill ' + (status === 'installed' ? 'success' : status === 'partial' ? 'warning' : '') + '">' + icon(status === 'installed' ? 'check' : 'warning') + '<span><b>Status: ' + escapeHtml(label) + '</b><br><span class="member-meta">' + escapeHtml(String((result?.total || 0) - (result?.missing || 0))) + '/' + escapeHtml(String(result?.total || 0)) + ' verificações OK</span></span></div>' +
+        checks.map((check) => '<div class="ops-card"><div class="ops-icon ' + (check.ok ? 'kpi-green' : 'kpi-red') + '">' + icon(check.ok ? 'check' : 'warning') + '</div><div><b>' + escapeHtml(check.label) + '</b><span class="status-line ' + (check.ok ? 'success' : 'danger') + '">' + (check.ok ? 'OK' : 'Pendente') + '</span></div><small>' + escapeHtml(check.path || '') + '</small></div>').join('');
+    }
+    function renderLockedContainerSetupStatus(result = state.lockedContainerSetup) {
+      if (result) state.lockedContainerSetup = result;
+      const html = setupChecksHtml(state.lockedContainerSetup);
+      if (els.lockedContainerSetupStatus) els.lockedContainerSetupStatus.innerHTML = html;
+      if (els.lockedContainerModalStatus) els.lockedContainerModalStatus.innerHTML = html;
+      renderLockedContainerCards();
+    }
+    function renderLockedContainerLoading(label, detail) {
+      const html = '<div class="settings-loader"><div class="settings-loader-title"><span class="spinner"></span><span><b>' + escapeHtml(label) + '</b><br><span class="member-meta">' + escapeHtml(detail || 'Isso pode levar até 1 minuto se o FTP da Nitrado estiver lento.') + '</span></span></div><div class="progress-bar"><span></span></div></div>';
+      if (els.lockedContainerSetupStatus) els.lockedContainerSetupStatus.innerHTML = html;
+      if (els.lockedContainerModalStatus) els.lockedContainerModalStatus.innerHTML = html;
     }
     let lockedContainerSetupBusy = false;
     function setLockedContainerButtonsDisabled(disabled) {
@@ -4277,62 +4411,61 @@ function renderAdminPanelHtml(token: string) {
       });
     }
     async function readApiError(response) {
-      try {
-        const data = await response.json();
-        return data?.error || JSON.stringify(data);
-      } catch (_) {
-        return await response.text();
-      }
+      try { const data = await response.json(); return data?.error || JSON.stringify(data); }
+      catch (_) { return await response.text(); }
     }
     async function checkLockedContainerSetupAction(showDoneToast = true) {
       if (lockedContainerSetupBusy) return;
       lockedContainerSetupBusy = true;
       setLockedContainerButtonsDisabled(true);
       try {
-        if (els.lockedContainerSetupStatus) els.lockedContainerSetupStatus.innerHTML = '<div class="map-event-result">Verificando suporte a Locked Containers...</div>';
+        renderLockedContainerLoading('Verificando instalação...', 'Lendo cfgeconomycore.xml, mapgroupproto.xml e locked-container-types.xml.');
         const response = await apiFetch('/admin-panel/api/settings/locked-containers/check');
-        if (!response.ok) { const text = await readApiError(response); if (els.lockedContainerSetupStatus) els.lockedContainerSetupStatus.innerHTML = '<div class="map-event-result"><b>Erro:</b> ' + escapeHtml(text) + '</div>'; showToast(text); return; }
-        const result = await response.json();
-        renderLockedContainerSetupStatus(result);
-        if (showDoneToast) showToast('Instalação verificada.');
-      } finally {
-        lockedContainerSetupBusy = false;
-        setLockedContainerButtonsDisabled(false);
-      }
+        if (!response.ok) { const text = await readApiError(response); const html = '<div class="map-event-result"><b>Erro:</b> ' + escapeHtml(text) + '</div>'; if (els.lockedContainerSetupStatus) els.lockedContainerSetupStatus.innerHTML = html; if (els.lockedContainerModalStatus) els.lockedContainerModalStatus.innerHTML = html; showToast(text); return; }
+        const result = await response.json(); renderLockedContainerSetupStatus(result); if (showDoneToast) showToast('Instalação verificada.');
+      } finally { lockedContainerSetupBusy = false; setLockedContainerButtonsDisabled(false); }
     }
     async function installLockedContainerSetupAction() {
       if (lockedContainerSetupBusy) return;
       if (!confirm('Instalar/reparar suporte a Locked Containers? Isso atualiza cfgeconomycore.xml, custom/locked-container-types.xml e mapgroupproto.xml. Faça backup antes.')) return;
-      lockedContainerSetupBusy = true;
-      setLockedContainerButtonsDisabled(true);
+      lockedContainerSetupBusy = true; setLockedContainerButtonsDisabled(true);
       try {
-        if (els.lockedContainerSetupStatus) els.lockedContainerSetupStatus.innerHTML = '<div class="map-event-result">Instalando suporte a Locked Containers... Isso pode levar até 1 minuto se o FTP da Nitrado estiver lento.</div>';
+        renderLockedContainerLoading('Instalando suporte...', 'Atualizando XMLs base do servidor. Não feche esta tela até terminar.');
         const response = await apiFetch('/admin-panel/api/settings/locked-containers/install', { method: 'POST', body: JSON.stringify({}) });
-        if (!response.ok) { const text = await readApiError(response); if (els.lockedContainerSetupStatus) els.lockedContainerSetupStatus.innerHTML = '<div class="map-event-result"><b>Erro:</b> ' + escapeHtml(text) + '</div>'; showToast(text); return; }
-        const result = await response.json();
-        if (els.lockedContainerSetupStatus) els.lockedContainerSetupStatus.innerHTML = '<div class="map-event-result success"><b>Suporte instalado/reparado.</b><br>Use Verificar instalação para conferir os arquivos.</div>';
-        showToast('Suporte a Locked Containers instalado/reparado.');
-      } finally {
-        lockedContainerSetupBusy = false;
-        setLockedContainerButtonsDisabled(false);
-      }
+        if (!response.ok) { const text = await readApiError(response); const html = '<div class="map-event-result"><b>Erro:</b> ' + escapeHtml(text) + '</div>'; if (els.lockedContainerSetupStatus) els.lockedContainerSetupStatus.innerHTML = html; if (els.lockedContainerModalStatus) els.lockedContainerModalStatus.innerHTML = html; showToast(text); return; }
+        state.lockedContainerSetup = { status: 'installed', total: 0, missing: 0, checks: [] };
+        renderLockedContainerSetupStatus(state.lockedContainerSetup);
+        const html = '<div class="map-event-result success"><b>Suporte instalado/reparado.</b><br>Clique em Verificar instalação para conferir os arquivos.</div>';
+        if (els.lockedContainerSetupStatus) els.lockedContainerSetupStatus.innerHTML = html;
+        if (els.lockedContainerModalStatus) els.lockedContainerModalStatus.innerHTML = html;
+        renderLockedContainerCards(); showToast('Suporte a Locked Containers instalado/reparado.');
+      } finally { lockedContainerSetupBusy = false; setLockedContainerButtonsDisabled(false); }
     }
     async function uninstallLockedContainerSetupAction() {
       if (lockedContainerSetupBusy) return;
       if (!confirm('Desinstalar suporte a Locked Containers? Eventos existentes podem parar de funcionar após o próximo restart.')) return;
       if (!confirm('Confirma mesmo assim? Essa ação remove os blocos gerenciados do mapgroupproto.xml e desregistra o arquivo custom.')) return;
-      lockedContainerSetupBusy = true;
-      setLockedContainerButtonsDisabled(true);
+      lockedContainerSetupBusy = true; setLockedContainerButtonsDisabled(true);
       try {
-        if (els.lockedContainerSetupStatus) els.lockedContainerSetupStatus.innerHTML = '<div class="map-event-result">Desinstalando suporte a Locked Containers...</div>';
+        renderLockedContainerLoading('Desinstalando suporte...', 'Removendo blocos gerenciados dos XMLs base.');
         const response = await apiFetch('/admin-panel/api/settings/locked-containers/uninstall', { method: 'POST', body: JSON.stringify({}) });
-        if (!response.ok) { const text = await readApiError(response); if (els.lockedContainerSetupStatus) els.lockedContainerSetupStatus.innerHTML = '<div class="map-event-result"><b>Erro:</b> ' + escapeHtml(text) + '</div>'; showToast(text); return; }
-        if (els.lockedContainerSetupStatus) els.lockedContainerSetupStatus.innerHTML = '<div class="map-event-result success"><b>Suporte desinstalado.</b><br>Use Verificar instalação para conferir os arquivos.</div>';
-        showToast('Suporte a Locked Containers desinstalado.');
-      } finally {
-        lockedContainerSetupBusy = false;
-        setLockedContainerButtonsDisabled(false);
-      }
+        if (!response.ok) { const text = await readApiError(response); const html = '<div class="map-event-result"><b>Erro:</b> ' + escapeHtml(text) + '</div>'; if (els.lockedContainerSetupStatus) els.lockedContainerSetupStatus.innerHTML = html; if (els.lockedContainerModalStatus) els.lockedContainerModalStatus.innerHTML = html; showToast(text); return; }
+        state.lockedContainerSetup = { status: 'not_installed', total: 0, missing: 0, checks: [] };
+        const html = '<div class="map-event-result success"><b>Suporte desinstalado.</b><br>Use Verificar instalação para conferir os arquivos.</div>';
+        if (els.lockedContainerSetupStatus) els.lockedContainerSetupStatus.innerHTML = html;
+        if (els.lockedContainerModalStatus) els.lockedContainerModalStatus.innerHTML = html;
+        renderLockedContainerCards(); showToast('Suporte a Locked Containers desinstalado.');
+      } finally { lockedContainerSetupBusy = false; setLockedContainerButtonsDisabled(false); }
+    }
+    function openLockedContainerIntegrationModal() { renderLockedContainerSetupStatus(); if (els.eventIntegrationModalBackdrop) els.eventIntegrationModalBackdrop.classList.add('open'); }
+    function switchSettingsTab(tab) {
+      state.settingsTab = tab;
+      document.querySelectorAll('.settings-tab').forEach((button) => button.classList.toggle('active', button.dataset.settingsTab === tab));
+      ['server', 'events', 'integrations'].forEach((key) => {
+        const panel = document.getElementById('settingsPanel' + key.charAt(0).toUpperCase() + key.slice(1));
+        if (panel) panel.classList.toggle('active', key === tab);
+      });
+      if (tab === 'events') renderLockedContainerCards();
     }
     async function injectMapEventAction() {
       const preset = selectedMapEventPreset();
@@ -4365,7 +4498,7 @@ function renderAdminPanelHtml(token: string) {
       if (view === "catalog" && !state.catalog) loadCatalog();
       if (view === "items" && !state.dayzItems.length) loadDayzItems(true);
       if (view === "map-events") { if (!state.mapEventPresets.length) loadMapEventPresets(); loadScheduledMapEvents(); }
-      if (view === "settings") checkLockedContainerSetupAction(false);
+      if (view === "settings") renderLockedContainerCards();
     }
     function openCoinModal(action, memberCardEl) {
       const discordId = memberCardEl.getAttribute("data-discord-id");
@@ -4388,7 +4521,7 @@ function renderAdminPanelHtml(token: string) {
     if (mobileMenuButton) mobileMenuButton.addEventListener("click", () => setMobileMenuOpen(!(sidebar && sidebar.classList.contains("open"))));
     if (mobileNavBackdrop) mobileNavBackdrop.addEventListener("click", () => setMobileMenuOpen(false));
     window.addEventListener("keydown", (event) => { if (event.key === "Escape") setMobileMenuOpen(false); });
-    document.getElementById("refreshButton").addEventListener("click", async () => { await loadOverview(); if (state.view === "members") await loadMembers(true); if (state.view === "catalog") { if (state.catalogMode === "queue") await loadShopQueue(); else await loadCatalog(); } if (state.view === "items") await loadDayzItems(true); if (state.view === "map-events") { await loadMapEventPresets(); await loadScheduledMapEvents(); } if (state.view === "settings") await checkLockedContainerSetupAction(false); showToast("Dados atualizados."); });
+    document.getElementById("refreshButton").addEventListener("click", async () => { await loadOverview(); if (state.view === "members") await loadMembers(true); if (state.view === "catalog") { if (state.catalogMode === "queue") await loadShopQueue(); else await loadCatalog(); } if (state.view === "items") await loadDayzItems(true); if (state.view === "map-events") { await loadMapEventPresets(); await loadScheduledMapEvents(); } if (state.view === "settings") renderLockedContainerCards(); showToast("Dados atualizados."); });
     document.getElementById("membersRefresh").addEventListener("click", () => { state.memberForceRefresh = true; loadMembers(true); });
     let searchTimer = null;
     function updateSearch(value) { state.search = value; clearTimeout(searchTimer); searchTimer = setTimeout(() => loadMembers(true), 240); }
@@ -4418,11 +4551,17 @@ function renderAdminPanelHtml(token: string) {
     const lockedContainerCheck = document.getElementById("lockedContainerCheck");
     const lockedContainerInstall = document.getElementById("lockedContainerInstall");
     const lockedContainerUninstall = document.getElementById("lockedContainerUninstall");
-    const settingsRefresh = document.getElementById("settingsRefresh");
     if (lockedContainerCheck) lockedContainerCheck.addEventListener("click", () => checkLockedContainerSetupAction(true));
     if (lockedContainerInstall) lockedContainerInstall.addEventListener("click", installLockedContainerSetupAction);
     if (lockedContainerUninstall) lockedContainerUninstall.addEventListener("click", uninstallLockedContainerSetupAction);
-    if (settingsRefresh) settingsRefresh.addEventListener("click", () => checkLockedContainerSetupAction(true));
+    if (els.eventIntegrationModalClose) els.eventIntegrationModalClose.addEventListener("click", () => els.eventIntegrationModalBackdrop?.classList.remove("open"));
+    if (els.eventIntegrationModalBackdrop) els.eventIntegrationModalBackdrop.addEventListener("click", (event) => { if (event.target === els.eventIntegrationModalBackdrop) els.eventIntegrationModalBackdrop.classList.remove("open"); });
+    document.querySelectorAll(".settings-tab").forEach((button) => button.addEventListener("click", () => switchSettingsTab(button.dataset.settingsTab || "server")));
+    document.addEventListener("click", (event) => {
+      const card = event.target.closest?.('[data-integration="locked-containers"]');
+      if (card) openLockedContainerIntegrationModal();
+    });
+    renderLockedContainerCards();
     if (els.mapEventLootMode) els.mapEventLootMode.addEventListener("change", updateMapEventLootModeUi);
     if (els.mapEventCoordinates) els.mapEventCoordinates.addEventListener("input", syncMapEventCoordinatesHiddenFields);
     if (els.mapEventMapInner) els.mapEventMapInner.addEventListener("click", handleMapEventMapClick);
