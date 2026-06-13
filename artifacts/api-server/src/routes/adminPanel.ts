@@ -4884,6 +4884,60 @@ function renderAdminPanelHtml(token: string) {
       els.modalBackdrop.classList.remove("open"); showToast("Carteira atualizada com sucesso."); await loadOverview(); await loadMembers(true); if (state.selectedDiscordId) await openMemberDrawer(state.selectedDiscordId);
     }
     document.querySelectorAll(".nav button").forEach((button) => button.addEventListener("click", () => { switchView(button.dataset.view); setMobileMenuOpen(false); }));
+    document.querySelectorAll('[data-spawn-zone-tab]').forEach((button) => {
+      button.addEventListener('click', () => switchSpawnZonesTab(button.getAttribute('data-spawn-zone-tab') || 'rotation'));
+    });
+    if (els.spawnZoneCreate) els.spawnZoneCreate.addEventListener('click', createSpawnZone);
+    if (els.spawnZonesMapInner) {
+      els.spawnZonesMapInner.addEventListener('click', (event) => {
+        if (event.target.closest('[data-spawn-marker]')) return;
+        addSpawnZonePointFromEvent(event);
+      });
+      els.spawnZonesMapInner.addEventListener('mousemove', (event) => {
+        const rect = els.spawnZonesMapInner.getBoundingClientRect();
+        if (!rect.width || !rect.height) return;
+        const relativeX = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
+        const relativeY = Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height));
+        const x = relativeX * SPAWN_ZONE_WORLD_SIZE;
+        const z = (1 - relativeY) * SPAWN_ZONE_WORLD_SIZE;
+        if (els.spawnZonesCursor) els.spawnZonesCursor.textContent = 'X: ' + spawnZoneCoord(x) + ' | Z: ' + spawnZoneCoord(z);
+      });
+      els.spawnZonesMapInner.addEventListener('contextmenu', (event) => {
+        const marker = event.target.closest('[data-spawn-marker]');
+        if (!marker) return;
+        event.preventDefault();
+        const zone = selectedSpawnZone();
+        if (zone) deleteSpawnZonePoint(zone.id, marker.getAttribute('data-spawn-marker'));
+      });
+    }
+    if (els.spawnZoneList) {
+      els.spawnZoneList.addEventListener('click', (event) => {
+        const zoneSelect = event.target.closest('[data-spawn-zone-select]');
+        const zoneDelete = event.target.closest('[data-spawn-zone-delete]');
+        const pointFocus = event.target.closest('[data-spawn-point-focus]');
+        const pointDelete = event.target.closest('[data-spawn-point-delete]');
+        const card = event.target.closest('[data-spawn-zone-id]');
+        if (zoneSelect) { state.selectedSpawnZoneId = zoneSelect.getAttribute('data-spawn-zone-select'); renderSpawnZones(); return; }
+        if (zoneDelete) { event.stopPropagation(); deleteSpawnZone(zoneDelete.getAttribute('data-spawn-zone-delete')); return; }
+        if (pointFocus) { event.stopPropagation(); focusSpawnZonePoint(pointFocus.getAttribute('data-spawn-point-focus')); return; }
+        if (pointDelete) { event.stopPropagation(); const zone = selectedSpawnZone(); if (zone) deleteSpawnZonePoint(zone.id, pointDelete.getAttribute('data-spawn-point-delete')); return; }
+        if (card && !event.target.closest('input,button,label')) { state.selectedSpawnZoneId = card.getAttribute('data-spawn-zone-id'); renderSpawnZones(); }
+      });
+      els.spawnZoneList.addEventListener('change', (event) => {
+        const colorInput = event.target.closest('[data-spawn-zone-color]');
+        const enabledInput = event.target.closest('[data-spawn-zone-enabled]');
+        if (colorInput) updateSpawnZone(colorInput.getAttribute('data-spawn-zone-color'), { color: colorInput.value });
+        if (enabledInput) updateSpawnZone(enabledInput.getAttribute('data-spawn-zone-enabled'), { enabled: Boolean(enabledInput.checked) });
+      });
+      els.spawnZoneList.addEventListener('input', (event) => {
+        const nameInput = event.target.closest('[data-spawn-zone-name]');
+        if (!nameInput) return;
+        clearTimeout(state.spawnZoneNameSaveTimer);
+        const zoneId = nameInput.getAttribute('data-spawn-zone-name');
+        const name = nameInput.value;
+        state.spawnZoneNameSaveTimer = setTimeout(() => updateSpawnZone(zoneId, { name }), 400);
+      });
+    }
     if (mobileMenuButton) mobileMenuButton.addEventListener("click", () => setMobileMenuOpen(!(sidebar && sidebar.classList.contains("open"))));
     if (mobileNavBackdrop) mobileNavBackdrop.addEventListener("click", () => setMobileMenuOpen(false));
     window.addEventListener("keydown", (event) => { if (event.key === "Escape") setMobileMenuOpen(false); });
