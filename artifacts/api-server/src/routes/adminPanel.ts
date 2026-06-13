@@ -137,7 +137,7 @@ function defaultSpawnZone(): SpawnZonePayload {
 }
 
 function getMapRotationState(state: AdminState): MapRotationPayload {
-  const stored = state.mapRotation || {};
+  const stored = (state.mapRotation || {}) as Partial<MapRotationPayload>;
   let zones = Array.isArray(stored.zones) ? stored.zones.map((zone: any, index: number) => normalizeSpawnZone(zone, index)) : [];
   if (zones.length === 0) zones = [defaultSpawnZone()];
   return {
@@ -5504,7 +5504,10 @@ router.patch("/api/spawn-zones/zones/:zoneId", async (req, res) => {
   const state = (await getStateAsync()) as AdminState;
   const rotation = getMapRotationState(state);
   const zone = rotation.zones.find((item) => item.id === req.params.zoneId);
-  if (!zone) return res.status(404).send("Zona não encontrada");
+  if (!zone) {
+    res.status(404).send("Zona não encontrada");
+    return;
+  }
   if (req.body?.name !== undefined) zone.name = normalizeSpawnZoneName(req.body.name) || zone.name;
   if (req.body?.color !== undefined) zone.color = normalizeSpawnZoneColor(req.body.color, zone.color);
   if (req.body?.enabled !== undefined) zone.enabled = Boolean(req.body.enabled);
@@ -5512,6 +5515,7 @@ router.patch("/api/spawn-zones/zones/:zoneId", async (req, res) => {
   zone.updatedAt = new Date().toISOString();
   const saved = await saveMapRotationState(state, rotation);
   res.json(saved);
+  return;
 });
 
 router.delete("/api/spawn-zones/zones/:zoneId", async (req, res) => {
@@ -5523,28 +5527,37 @@ router.delete("/api/spawn-zones/zones/:zoneId", async (req, res) => {
   if (rotation.nextZoneId === req.params.zoneId) rotation.nextZoneId = undefined;
   const saved = await saveMapRotationState(state, rotation);
   res.json(saved);
+  return;
 });
 
 router.post("/api/spawn-zones/zones/:zoneId/points", async (req, res) => {
   const state = (await getStateAsync()) as AdminState;
   const rotation = getMapRotationState(state);
   const zone = rotation.zones.find((item) => item.id === req.params.zoneId);
-  if (!zone) return res.status(404).send("Zona não encontrada");
+  if (!zone) {
+    res.status(404).send("Zona não encontrada");
+    return;
+  }
   zone.points.push(makeSpawnZonePoint(req.body?.x, req.body?.z));
   zone.updatedAt = new Date().toISOString();
   const saved = await saveMapRotationState(state, rotation);
   res.json(saved);
+  return;
 });
 
 router.delete("/api/spawn-zones/zones/:zoneId/points/:pointId", async (req, res) => {
   const state = (await getStateAsync()) as AdminState;
   const rotation = getMapRotationState(state);
   const zone = rotation.zones.find((item) => item.id === req.params.zoneId);
-  if (!zone) return res.status(404).send("Zona não encontrada");
+  if (!zone) {
+    res.status(404).send("Zona não encontrada");
+    return;
+  }
   zone.points = zone.points.filter((point) => point.id !== req.params.pointId);
   zone.updatedAt = new Date().toISOString();
   const saved = await saveMapRotationState(state, rotation);
   res.json(saved);
+  return;
 });
 
 router.get("/api/map-events/chernarus-map", (req, res) => {
