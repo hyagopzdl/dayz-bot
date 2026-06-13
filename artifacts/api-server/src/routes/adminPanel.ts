@@ -4509,6 +4509,7 @@ function renderAdminPanelHtml(token: string) {
     async function addSpawnZonePointFromEvent(event) {
       const zone = selectedSpawnZone();
       if (!zone || !els.spawnZonesMapInner) { showToast('Crie ou selecione uma zona primeiro.'); return; }
+      state.selectedSpawnZoneId = zone.id;
       const rect = els.spawnZonesMapInner.getBoundingClientRect();
       if (!rect.width || !rect.height) return;
       const relativeX = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
@@ -4517,8 +4518,15 @@ function renderAdminPanelHtml(token: string) {
       const z = Number(((1 - relativeY) * SPAWN_ZONE_WORLD_SIZE).toFixed(2));
       setSpawnZonesAutosaveStatus('salvando...');
       const response = await apiFetch('/admin-panel/api/spawn-zones/zones/' + encodeURIComponent(zone.id) + '/points', { method: 'POST', body: JSON.stringify({ x, z }) });
-      if (!response.ok) { showToast(await response.text()); setSpawnZonesAutosaveStatus('erro'); return; }
+      if (!response.ok) {
+        const message = await response.text();
+        if (response.status === 404) await loadSpawnZones();
+        showToast(message || 'Zona não encontrada. Recarreguei a lista de zonas.');
+        setSpawnZonesAutosaveStatus('erro');
+        return;
+      }
       state.spawnZones = await response.json();
+      if (!state.selectedSpawnZoneId || !spawnZoneList().some((item) => item.id === state.selectedSpawnZoneId)) state.selectedSpawnZoneId = zone.id;
       setSpawnZonesAutosaveStatus('salvo'); renderSpawnZones();
     }
     async function deleteSpawnZonePoint(zoneId, pointId) {
@@ -4926,8 +4934,8 @@ function renderAdminPanelHtml(token: string) {
       els.spawnZoneList.addEventListener('change', (event) => {
         const colorInput = event.target.closest('[data-spawn-zone-color]');
         const enabledInput = event.target.closest('[data-spawn-zone-enabled]');
-        if (colorInput) updateSpawnZone(colorInput.getAttribute('data-spawn-zone-color'), { color: colorInput.value });
-        if (enabledInput) updateSpawnZone(enabledInput.getAttribute('data-spawn-zone-enabled'), { enabled: Boolean(enabledInput.checked) });
+        if (colorInput) patchSpawnZone(colorInput.getAttribute('data-spawn-zone-color'), { color: colorInput.value });
+        if (enabledInput) patchSpawnZone(enabledInput.getAttribute('data-spawn-zone-enabled'), { enabled: Boolean(enabledInput.checked) });
       });
       els.spawnZoneList.addEventListener('input', (event) => {
         const nameInput = event.target.closest('[data-spawn-zone-name]');
@@ -4935,7 +4943,7 @@ function renderAdminPanelHtml(token: string) {
         clearTimeout(state.spawnZoneNameSaveTimer);
         const zoneId = nameInput.getAttribute('data-spawn-zone-name');
         const name = nameInput.value;
-        state.spawnZoneNameSaveTimer = setTimeout(() => updateSpawnZone(zoneId, { name }), 400);
+        state.spawnZoneNameSaveTimer = setTimeout(() => patchSpawnZone(zoneId, { name }), 400);
       });
     }
     if (mobileMenuButton) mobileMenuButton.addEventListener("click", () => setMobileMenuOpen(!(sidebar && sidebar.classList.contains("open"))));
