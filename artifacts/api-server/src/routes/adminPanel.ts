@@ -158,6 +158,14 @@ async function saveMapRotationState(state: AdminState, rotation: MapRotationPayl
   return state.mapRotation;
 }
 
+function findReadySpawnZone(rotation: MapRotationPayload, zoneId: unknown) {
+  const zone = rotation.zones.find((item) => item.id === String(zoneId || ""));
+  if (!zone) return { zone: null as SpawnZonePayload | null, error: "Zona não encontrada" };
+  if (zone.enabled === false) return { zone: null as SpawnZonePayload | null, error: "Zona desabilitada" };
+  if (!Array.isArray(zone.points) || zone.points.length === 0) return { zone: null as SpawnZonePayload | null, error: "Zona sem pontos de spawn" };
+  return { zone, error: "" };
+}
+
 type MemberRow = {
   discordId: string;
   discordName: string;
@@ -2745,7 +2753,9 @@ function renderAdminPanelHtml(token: string) {
     .spawn-zone-map-inner { position: relative; width: 100%; aspect-ratio: 1 / 1; }
     .spawn-zone-map-inner img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; display: block; user-select: none; -webkit-user-drag: none; }
     .spawn-zone-marker { position: absolute; left: 0; top: 0; width: 22px; height: 22px; border-radius: 999px; border: 3px solid #fff; box-shadow: 0 0 0 5px rgba(255,255,255,.12), 0 8px 30px rgba(0,0,0,.45); transform: translate(-50%, -50%); cursor: pointer; z-index: 2; }
-    .spawn-zone-marker.highlight { width: 28px; height: 28px; box-shadow: 0 0 0 8px rgba(255,255,255,.16), 0 10px 34px rgba(0,0,0,.5); z-index: 3; }
+    .spawn-zone-marker.other { opacity: .42; width: 18px; height: 18px; border-width: 2px; box-shadow: 0 0 0 4px rgba(255,255,255,.08), 0 6px 20px rgba(0,0,0,.35); }
+    .spawn-zone-marker.disabled { filter: grayscale(1); opacity: .28; }
+    .spawn-zone-marker.highlight { width: 28px; height: 28px; box-shadow: 0 0 0 8px rgba(255,255,255,.16), 0 10px 34px rgba(0,0,0,.5); z-index: 4; opacity: 1; filter: none; }
     .spawn-zone-marker::after { content: ''; position: absolute; inset: 5px; border-radius: 999px; background: rgba(255,255,255,.92); }
     .spawn-zone-map-footer { display: flex; justify-content: space-between; gap: 10px; padding: 10px 14px; border-top: 1px solid var(--border); color: var(--text-3); font-size: 12px; }
     .spawn-zone-sidebar { display: grid; gap: 10px; }
@@ -2768,8 +2778,14 @@ function renderAdminPanelHtml(token: string) {
     .spawn-zone-color-input { width: 28px; height: 28px; padding: 0; border: 0; background: transparent; cursor: pointer; }
     .spawn-zone-empty { border: 1px dashed var(--border); border-radius: 14px; padding: 16px; color: var(--text-3); background: rgba(255,255,255,.025); font-size: 13px; }
     .spawn-zone-summary-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+    .spawn-zone-rotation-grid { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, .9fr); gap: 14px; margin-top: 14px; align-items: start; }
+    .spawn-zone-control-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .spawn-zone-control-row select { flex: 1; min-width: 180px; height: 40px; border-radius: 12px; border: 1px solid var(--border); background: rgba(255,255,255,.04); color: var(--text); padding: 0 10px; }
+    .spawn-zone-history-list { display: grid; gap: 8px; }
+    .spawn-zone-history-item { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; padding: 10px 12px; border: 1px solid var(--border); border-radius: 12px; background: rgba(255,255,255,.025); }
+    .spawn-zone-history-item b { display: block; font-size: 13px; }
     .spawn-zone-setting-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-    @media (max-width: 1100px) { .spawn-zones-editor { grid-template-columns: 1fr; } .spawn-zone-list { max-height: none; } }
+    @media (max-width: 1100px) { .spawn-zones-editor, .spawn-zone-rotation-grid { grid-template-columns: 1fr; } .spawn-zone-list { max-height: none; } }
 
     .map-event-status { display: grid; gap: 10px; }
     .map-event-result { padding: 12px; border-radius: 12px; background: rgba(255,255,255,.025); border: 1px solid var(--border); color: var(--text-2); overflow-wrap: anywhere; }
@@ -3173,18 +3189,29 @@ function renderAdminPanelHtml(token: string) {
                   <button type="button" data-spawn-zone-tab="settings">Settings</button>
                 </div>
               </div>
-              <div class="catalog-breadcrumb">Iteração 1: editor visual de zonas e pontos com auto-save. A automação Discord entra nas próximas iterações.</div>
+              <div class="catalog-breadcrumb">Iteração 2: editor visual, controle manual de rotação e histórico local. Discord Poll entra na próxima iteração.</div>
             </div>
 
             <div id="spawnZonesTabRotation" class="spawn-zone-tab active">
               <div class="spawn-zone-summary-grid">
-                <div class="card"><div class="metric-label">Zona atual</div><div id="spawnZonesCurrentZone" class="metric-value">—</div><div class="metric-hint">Aplicação no servidor entra na próxima iteração</div></div>
-                <div class="card"><div class="metric-label">Próxima zona</div><div id="spawnZonesNextZone" class="metric-value">—</div><div class="metric-hint">Será definida pela votação semanal</div></div>
+                <div class="card"><div class="metric-label">Zona atual</div><div id="spawnZonesCurrentZone" class="metric-value">—</div><div class="metric-hint">Zona marcada como ativa no painel</div></div>
+                <div class="card"><div class="metric-label">Próxima zona</div><div id="spawnZonesNextZone" class="metric-value">—</div><div class="metric-hint">Preparada para a próxima rotação</div></div>
                 <div class="card"><div class="metric-label">Zonas habilitadas</div><div id="spawnZonesEnabledCount" class="metric-value">0</div><div class="metric-hint">Entrarão na votação quando habilitada</div></div>
               </div>
-              <div class="card" style="margin-top:14px">
-                <div class="section-title"><div><h2>Histórico de votações</h2><div class="member-meta">Os resultados das enquetes nativas do Discord aparecerão aqui na iteração 3.</div></div><span class="chip">em breve</span></div>
-                <div id="spawnZonesVoteHistory" class="settings-empty-note">Nenhuma votação registrada ainda.</div>
+              <div class="spawn-zone-rotation-grid">
+                <div class="card">
+                  <div class="section-title"><div><h2>Controle de rotação</h2><div class="member-meta">Escolha uma zona já cadastrada e marque como próxima ou aplique no painel.</div></div><span class="chip">iteração 2</span></div>
+                  <div class="spawn-zone-control-row">
+                    <select id="spawnZonesNextSelect"></select>
+                    <button id="spawnZonesSetNext" type="button" class="secondary-btn">Programar próxima</button>
+                    <button id="spawnZonesApplyNext" type="button" class="primary-btn">Aplicar agora</button>
+                  </div>
+                  <div class="member-meta" style="margin-top:10px">Nesta iteração a aplicação registra a zona atual/próxima e histórico no painel. A troca automática do arquivo de spawn fica preparada para a próxima etapa de integração com o path real.</div>
+                </div>
+                <div class="card">
+                  <div class="section-title"><div><h2>Histórico de rotações</h2><div class="member-meta">Aplicações manuais e futuros resultados de votação ficam aqui.</div></div></div>
+                  <div id="spawnZonesVoteHistory" class="settings-empty-note">Nenhuma rotação registrada ainda.</div>
+                </div>
               </div>
             </div>
 
@@ -3445,7 +3472,7 @@ function renderAdminPanelHtml(token: string) {
       itemsList: document.getElementById("itemsList"), itemsLoading: document.getElementById("itemsLoading"), itemsEmpty: document.getElementById("itemsEmpty"), itemsSearch: document.getElementById("itemsSearch"), itemsFilter: document.getElementById("itemsFilter"), itemsRefresh: document.getElementById("itemsRefresh"), itemsSentinel: document.getElementById("itemsSentinel"),
       lockedContainerSetupStatus: document.getElementById("lockedContainerSetupStatus"), lockedContainerModalStatus: document.getElementById("lockedContainerModalStatus"), lockedContainerInstalledSection: document.getElementById("lockedContainerInstalledSection"), lockedContainerInstalledGrid: document.getElementById("lockedContainerInstalledGrid"), lockedContainerAvailableGrid: document.getElementById("lockedContainerAvailableGrid"), eventIntegrationModalBackdrop: document.getElementById("eventIntegrationModalBackdrop"), eventIntegrationModalClose: document.getElementById("eventIntegrationModalClose"),
       itemModalBackdrop: document.getElementById("itemModalBackdrop"), itemModalTitle: document.getElementById("itemModalTitle"), itemModalSubtitle: document.getElementById("itemModalSubtitle"), itemModalPreviewImage: document.getElementById("itemModalPreviewImage"), itemModalPreviewName: document.getElementById("itemModalPreviewName"), itemModalPreviewClass: document.getElementById("itemModalPreviewClass"), itemModalPopularName: document.getElementById("itemModalPopularName"), itemModalImageUrl: document.getElementById("itemModalImageUrl"), itemModalSpawnEventName: document.getElementById("itemModalSpawnEventName"), itemModalEnabled: document.getElementById("itemModalEnabled"),
-      spawnZonesCurrentZone: document.getElementById("spawnZonesCurrentZone"), spawnZonesNextZone: document.getElementById("spawnZonesNextZone"), spawnZonesEnabledCount: document.getElementById("spawnZonesEnabledCount"), spawnZonesVoteHistory: document.getElementById("spawnZonesVoteHistory"),
+      spawnZonesCurrentZone: document.getElementById("spawnZonesCurrentZone"), spawnZonesNextZone: document.getElementById("spawnZonesNextZone"), spawnZonesEnabledCount: document.getElementById("spawnZonesEnabledCount"), spawnZonesVoteHistory: document.getElementById("spawnZonesVoteHistory"), spawnZonesNextSelect: document.getElementById("spawnZonesNextSelect"), spawnZonesSetNext: document.getElementById("spawnZonesSetNext"), spawnZonesApplyNext: document.getElementById("spawnZonesApplyNext"),
       spawnZonesMapTitle: document.getElementById("spawnZonesMapTitle"), spawnZonesMapHint: document.getElementById("spawnZonesMapHint"), spawnZonesAutosaveStatus: document.getElementById("spawnZonesAutosaveStatus"), spawnZonesMapViewport: document.getElementById("spawnZonesMapViewport"), spawnZonesMapInner: document.getElementById("spawnZonesMapInner"), spawnZonesMarkers: document.getElementById("spawnZonesMarkers"), spawnZonesCursor: document.getElementById("spawnZonesCursor"), spawnZoneCreate: document.getElementById("spawnZoneCreate"), spawnZoneList: document.getElementById("spawnZoneList")
     };
     function apiUrl(path) { const separator = path.includes("?") ? "&" : "?"; return adminToken ? path + separator + "token=" + encodeURIComponent(adminToken) : path; }
@@ -4434,9 +4461,17 @@ function renderAdminPanelHtml(token: string) {
       if (els.spawnZonesCurrentZone) els.spawnZonesCurrentZone.textContent = current ? current.name : '—';
       if (els.spawnZonesNextZone) els.spawnZonesNextZone.textContent = next ? next.name : '—';
       if (els.spawnZonesEnabledCount) els.spawnZonesEnabledCount.textContent = String(zones.filter((zone) => zone.enabled !== false).length);
+      if (els.spawnZonesNextSelect) {
+        const currentValue = els.spawnZonesNextSelect.value || state.spawnZones?.nextZoneId || selectedSpawnZone()?.id || '';
+        els.spawnZonesNextSelect.innerHTML = zones.map((zone) => '<option value="' + escapeHtml(zone.id) + '" ' + (zone.enabled === false ? 'disabled' : '') + '>' + escapeHtml(zone.name || 'Zona') + ' (' + String((zone.points || []).length) + ' pts)' + (zone.enabled === false ? ' · desabilitada' : '') + '</option>').join('');
+        if (zones.some((zone) => zone.id === currentValue)) els.spawnZonesNextSelect.value = currentValue;
+        else if (state.spawnZones?.nextZoneId) els.spawnZonesNextSelect.value = state.spawnZones.nextZoneId;
+      }
       const history = state.spawnZones?.voteHistory || [];
       if (els.spawnZonesVoteHistory) {
-        els.spawnZonesVoteHistory.innerHTML = history.length ? history.map((item) => '<div class="map-event-result"><b>' + escapeHtml(item.winnerName || item.winnerZoneId || 'Zona') + '</b><br><span class="member-meta">' + escapeHtml(item.closedAt || '') + '</span></div>').join('') : 'Nenhuma votação registrada ainda.';
+        els.spawnZonesVoteHistory.classList.toggle('settings-empty-note', !history.length);
+        els.spawnZonesVoteHistory.classList.toggle('spawn-zone-history-list', history.length > 0);
+        els.spawnZonesVoteHistory.innerHTML = history.length ? history.slice().reverse().map((item) => '<div class="spawn-zone-history-item"><div><b>' + escapeHtml(item.winnerName || item.winnerZoneId || 'Zona') + '</b><span class="member-meta">' + escapeHtml(item.appliedAt || item.closedAt || '') + '</span></div><span class="chip">' + escapeHtml(item.source || 'manual') + '</span></div>').join('') : 'Nenhuma rotação registrada ainda.';
       }
     }
     function renderSpawnZones() {
@@ -4467,13 +4502,19 @@ function renderAdminPanelHtml(token: string) {
     function renderSpawnZoneMarkers() {
       if (!els.spawnZonesMarkers) return;
       const selected = selectedSpawnZone();
-      const points = selected?.points || [];
-      els.spawnZonesMarkers.innerHTML = points.map((point) => {
-        const left = Math.max(0, Math.min(100, (Number(point.x || 0) / SPAWN_ZONE_WORLD_SIZE) * 100));
-        const top = Math.max(0, Math.min(100, (1 - Number(point.z || 0) / SPAWN_ZONE_WORLD_SIZE) * 100));
-        const highlight = point.id === state.highlightedSpawnPointId ? ' highlight' : '';
-        return '<button type="button" class="spawn-zone-marker' + highlight + '" data-spawn-marker="' + escapeHtml(point.id) + '" title="' + spawnZoneCoord(point.x) + ', ' + spawnZoneCoord(point.z) + '" style="left:' + left + '%;top:' + top + '%;background:' + escapeHtml(selected?.color || '#e11d48') + '"></button>';
-      }).join('');
+      const markers = [];
+      spawnZoneList().forEach((zone) => {
+        (zone.points || []).forEach((point) => {
+          const left = Math.max(0, Math.min(100, (Number(point.x || 0) / SPAWN_ZONE_WORLD_SIZE) * 100));
+          const top = Math.max(0, Math.min(100, (1 - Number(point.z || 0) / SPAWN_ZONE_WORLD_SIZE) * 100));
+          const classes = ['spawn-zone-marker'];
+          if (zone.id !== selected?.id) classes.push('other');
+          if (zone.enabled === false) classes.push('disabled');
+          if (point.id === state.highlightedSpawnPointId) classes.push('highlight');
+          markers.push('<button type="button" class="' + classes.join(' ') + '" data-spawn-marker="' + escapeHtml(point.id) + '" data-spawn-marker-zone="' + escapeHtml(zone.id) + '" title="' + escapeHtml(zone.name || 'Zona') + ' · ' + spawnZoneCoord(point.x) + ', ' + spawnZoneCoord(point.z) + '" style="left:' + left + '%;top:' + top + '%;background:' + escapeHtml(zone.color || '#e11d48') + '"></button>');
+        });
+      });
+      els.spawnZonesMarkers.innerHTML = markers.join('');
     }
     async function loadSpawnZones() {
       const response = await apiFetch('/admin-panel/api/spawn-zones');
@@ -4536,12 +4577,38 @@ function renderAdminPanelHtml(token: string) {
       state.spawnZones = await response.json(); state.highlightedSpawnPointId = null;
       setSpawnZonesAutosaveStatus('salvo'); renderSpawnZones();
     }
+    async function setNextSpawnZone(zoneId) {
+      if (!zoneId) return;
+      setSpawnZonesAutosaveStatus('salvando...');
+      const response = await apiFetch('/admin-panel/api/spawn-zones/rotation/next', { method: 'POST', body: JSON.stringify({ zoneId }) });
+      if (!response.ok) { showToast(await response.text()); setSpawnZonesAutosaveStatus('erro'); return; }
+      state.spawnZones = await response.json();
+      setSpawnZonesAutosaveStatus('salvo'); renderSpawnZones();
+      showToast('Próxima zona programada.');
+    }
+    async function applySpawnZone(zoneId) {
+      if (!zoneId) return;
+      if (!confirm('Aplicar esta zona como atual no painel?')) return;
+      setSpawnZonesAutosaveStatus('aplicando...');
+      const response = await apiFetch('/admin-panel/api/spawn-zones/rotation/apply', { method: 'POST', body: JSON.stringify({ zoneId }) });
+      if (!response.ok) { showToast(await response.text()); setSpawnZonesAutosaveStatus('erro'); return; }
+      state.spawnZones = await response.json();
+      state.selectedSpawnZoneId = zoneId;
+      setSpawnZonesAutosaveStatus('salvo'); renderSpawnZones();
+      showToast('Zona aplicada no painel.');
+    }
     function focusSpawnZonePoint(pointId) {
-      const zone = selectedSpawnZone();
-      const point = (zone?.points || []).find((item) => item.id === pointId);
+      let foundZone = null;
+      let point = null;
+      spawnZoneList().some((zone) => {
+        const match = (zone.points || []).find((item) => item.id === pointId);
+        if (match) { foundZone = zone; point = match; return true; }
+        return false;
+      });
       if (!point || !els.spawnZonesMapViewport) return;
+      if (foundZone) state.selectedSpawnZoneId = foundZone.id;
       state.highlightedSpawnPointId = pointId;
-      renderSpawnZoneMarkers();
+      renderSpawnZones();
       if (els.spawnZonesCursor) els.spawnZonesCursor.textContent = 'X: ' + spawnZoneCoord(point.x) + ' | Z: ' + spawnZoneCoord(point.z);
       setTimeout(() => { state.highlightedSpawnPointId = null; renderSpawnZoneMarkers(); }, 1600);
     }
@@ -4898,7 +4965,8 @@ function renderAdminPanelHtml(token: string) {
     if (els.spawnZoneCreate) els.spawnZoneCreate.addEventListener('click', createSpawnZone);
     if (els.spawnZonesMapInner) {
       els.spawnZonesMapInner.addEventListener('click', (event) => {
-        if (event.target.closest('[data-spawn-marker]')) return;
+        const marker = event.target.closest('[data-spawn-marker]');
+        if (marker) { focusSpawnZonePoint(marker.getAttribute('data-spawn-marker')); return; }
         addSpawnZonePointFromEvent(event);
       });
       els.spawnZonesMapInner.addEventListener('mousemove', (event) => {
@@ -4914,8 +4982,8 @@ function renderAdminPanelHtml(token: string) {
         const marker = event.target.closest('[data-spawn-marker]');
         if (!marker) return;
         event.preventDefault();
-        const zone = selectedSpawnZone();
-        if (zone) deleteSpawnZonePoint(zone.id, marker.getAttribute('data-spawn-marker'));
+        const zoneId = marker.getAttribute('data-spawn-marker-zone') || selectedSpawnZone()?.id;
+        if (zoneId) deleteSpawnZonePoint(zoneId, marker.getAttribute('data-spawn-marker'));
       });
     }
     if (els.spawnZoneList) {
@@ -5541,6 +5609,48 @@ router.get("/api/spawn-zones", async (req, res) => {
   const rotation = getMapRotationState(state);
   if (!state.mapRotation) await saveMapRotationState(state, rotation);
   res.json(rotation);
+});
+
+
+router.post("/api/spawn-zones/rotation/next", async (req, res) => {
+  const state = (await getStateAsync()) as AdminState;
+  const rotation = getMapRotationState(state);
+  const { zone, error } = findReadySpawnZone(rotation, req.body?.zoneId);
+  if (!zone) {
+    res.status(400).send(error || "Zona inválida");
+    return;
+  }
+  rotation.nextZoneId = zone.id;
+  const saved = await saveMapRotationState(state, rotation);
+  res.json(saved);
+});
+
+router.post("/api/spawn-zones/rotation/apply", async (req, res) => {
+  const state = (await getStateAsync()) as AdminState;
+  const rotation = getMapRotationState(state);
+  const targetZoneId = req.body?.zoneId || rotation.nextZoneId;
+  const { zone, error } = findReadySpawnZone(rotation, targetZoneId);
+  if (!zone) {
+    res.status(400).send(error || "Zona inválida");
+    return;
+  }
+  const now = new Date().toISOString();
+  rotation.currentZoneId = zone.id;
+  if (rotation.nextZoneId === zone.id) rotation.nextZoneId = undefined;
+  rotation.voteHistory = [
+    ...(Array.isArray(rotation.voteHistory) ? rotation.voteHistory : []),
+    {
+      id: crypto.randomUUID(),
+      winnerZoneId: zone.id,
+      winnerName: zone.name,
+      totalVotes: 0,
+      closedAt: now,
+      appliedAt: now,
+      source: "manual",
+    },
+  ].slice(-24);
+  const saved = await saveMapRotationState(state, rotation);
+  res.json(saved);
 });
 
 router.post("/api/spawn-zones/zones", async (req, res) => {
