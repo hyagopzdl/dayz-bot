@@ -237,12 +237,13 @@ function injectLockedContainerMapGroups(xml: string) {
   for (const def of LOCKED_CONTAINER_DEFINITIONS) {
     value = removeManagedBlock(value, def.startMarker, def.endMarker);
     if ("legacyStartMarker" in def && "legacyEndMarker" in def) value = removeManagedBlock(value, def.legacyStartMarker, def.legacyEndMarker);
-    const existingGroupPattern = new RegExp(`\\s*<group\\s+name=["']${escapeRegExp(def.className)}["'][\\s\\S]*?<\\/group>\\s*`, "i");
-    if (existingGroupPattern.test(value)) {
-      value = value.replace(existingGroupPattern, `\n${buildMapGroupBlock(def)}\n`);
-    } else {
-      value = value.replace(new RegExp(`${escapeRegExp(closingTag)}\\s*$`, "i"), `${buildMapGroupBlock(def)}\n${closingTag}`);
-    }
+
+    const existingGroupPattern = new RegExp(`\\s*<group\\s+name=["']${escapeRegExp(def.className)}["'][\\s\\S]*?<\\/group>\\s*`, "gi");
+    // Remove every previous group for this container class, not just the first one.
+    // Leftover groups with broad usages (Military/Special/etc.) can still contaminate
+    // the CE pool and cause wrong loot like vehicles, keys, or medical items.
+    value = value.replace(existingGroupPattern, "\n");
+    value = value.replace(new RegExp(`${escapeRegExp(closingTag)}\\s*$`, "i"), `${buildMapGroupBlock(def)}\n${closingTag}`);
   }
   return value;
 }
@@ -259,9 +260,27 @@ function hasFileRegistration(xml: string) {
   return new RegExp(`<file\\s+name=["']${escapeRegExp(LOCKED_CONTAINER_TYPES_FILE)}["']\\s+type=["']types["']`, "i").test(String(xml || ""));
 }
 
+function getGroupsForClass(xml: string, className: string) {
+  const pattern = new RegExp(`<group\\s+name=["']${escapeRegExp(className)}["'][\\s\\S]*?<\\/group>`, "gi");
+  return String(xml || "").match(pattern) || [];
+}
+
+function getUsageNames(xml: string) {
+  return Array.from(String(xml || "").matchAll(/<usage\s+name=["']([^"']+)["']\s*\/?\s*>/gi)).map((match) => match[1]);
+}
+
 function hasManagedOrMatchingGroup(xml: string, def: (typeof LOCKED_CONTAINER_DEFINITIONS)[number]) {
-  const value = String(xml || "");
-  return value.includes(def.startMarker) || new RegExp(`<group\\s+name=["']${escapeRegExp(def.className)}["']`, "i").test(value);
+  const groups = getGroupsForClass(xml, def.className);
+  if (!groups.length) return false;
+
+  return groups.some((group) => {
+    const usages = getUsageNames(group);
+    return def.usages.every((usage) => usages.includes(usage)) && usages.every((usage) => def.usages.includes(usage));
+  });
+}
+
+function hasDuplicateGroupsForClass(xml: string, className: string) {
+  return getGroupsForClass(xml, className).length > 1;
 }
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
@@ -377,7 +396,8 @@ async function checkLockedContainerSetupUnlocked() {
   const checks = [
     { key: "economyCoreRegistration", label: `cfgeconomycore.xml registra custom/${LOCKED_CONTAINER_TYPES_FILE}`, ok: hasFileRegistration(economyCoreXml), path: MAP_EVENT_ECONOMY_CORE_PATH },
     { key: "customTypesFile", label: `custom/${LOCKED_CONTAINER_TYPES_FILE} existe`, ok: /<types[\s>]/i.test(customTypesXml), path: MAP_EVENT_CUSTOM_TYPES_PATH },
-    ...LOCKED_CONTAINER_DEFINITIONS.map((def) => ({ key: `mapGroup:${def.className}`, label: `mapgroupproto.xml tem ${def.className} (${def.theme})`, ok: hasManagedOrMatchingGroup(mapGroupProtoXml, def), path: MAP_EVENT_MAPGROUPPROTO_PATH })),
+    ...LOCKED_CONTAINER_DEFINITIONS.map((def) => ({ key: `mapGroup:${def.className}`, label: `mapgroupproto.xml tem ${def.className} usando somente ${def.usages.join(", ")}`, ok: hasManagedOrMatchingGroup(mapGroupProtoXml, def), path: MAP_EVENT_MAPGROUPPROTO_PATH })),
+    ...LOCKED_CONTAINER_DEFINITIONS.map((def) => ({ key: `mapGroupDuplicate:${def.className}`, label: `mapgroupproto.xml não tem grupo duplicado para ${def.className}`, ok: !hasDuplicateGroupsForClass(mapGroupProtoXml, def.className), path: MAP_EVENT_MAPGROUPPROTO_PATH })),
     ...LOCKED_CONTAINER_DEFINITIONS.flatMap((def) => [
       { key: `type:${def.className}`, label: `${def.className} declarado no types custom`, ok: customTypesXml.includes(`type name="${def.className}"`) || customTypesXml.includes(`type name='${def.className}'`), path: MAP_EVENT_CUSTOM_TYPES_PATH },
       { key: `type:${def.keyClassName}`, label: `${def.keyClassName} declarado no types custom`, ok: customTypesXml.includes(`type name="${def.keyClassName}"`) || customTypesXml.includes(`type name='${def.keyClassName}'`), path: MAP_EVENT_CUSTOM_TYPES_PATH },

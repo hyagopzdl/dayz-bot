@@ -338,8 +338,19 @@ export function removeMapEventBlocks(xml: string) {
     .replace(/\n{3,}/g, "\n\n");
 }
 
-function injectBeforeClosingTag(xml: string, closingTag: string, block: string) {
-  const cleanXml = removeMapEventBlocks(xml);
+function removeMapEventBlocksById(xml: string, id: string) {
+  const escapedId = id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const pattern = new RegExp(`\\s*<!--\\s*MAP_EVENT_START\\b(?=[^>]*\\bid=["']${escapedId}["'])[^>]*-->[\\s\\S]*?<!--\\s*MAP_EVENT_END\\s*-->\\s*`, "g");
+  return String(xml || "")
+    .replace(pattern, "\n")
+    .replace(/\n{3,}/g, "\n\n");
+}
+
+function injectBeforeClosingTag(xml: string, closingTag: string, block: string, event?: ResolvedMapEvent) {
+  // Do not wipe every MAP_EVENT block here. Multiple scheduled/manual events must be
+  // allowed to coexist. Only replace blocks with the same generated id, which lets a
+  // retry/update remain idempotent without deleting unrelated events.
+  const cleanXml = event ? removeMapEventBlocksById(xml, event.id) : String(xml || "");
   const closingIndex = cleanXml.lastIndexOf(closingTag);
 
   if (closingIndex === -1) {
@@ -355,15 +366,15 @@ function injectBeforeClosingTag(xml: string, closingTag: string, block: string) 
 }
 
 export function injectMapEventIntoEventsXml(xml: string, event: ResolvedMapEvent) {
-  return injectBeforeClosingTag(xml, "</events>", buildMapEventEventsBlock(event));
+  return injectBeforeClosingTag(xml, "</events>", buildMapEventEventsBlock(event), event);
 }
 
 export function injectMapEventIntoEventSpawnsXml(xml: string, event: ResolvedMapEvent) {
-  return injectBeforeClosingTag(xml, "</eventposdef>", buildMapEventSpawnsBlock(event));
+  return injectBeforeClosingTag(xml, "</eventposdef>", buildMapEventSpawnsBlock(event), event);
 }
 
 export function injectMapEventIntoSpawnableTypesXml(xml: string, event: ResolvedMapEvent) {
-  return injectBeforeClosingTag(xml, "</spawnabletypes>", buildMapEventSpawnableTypesBlock(event));
+  return injectBeforeClosingTag(xml, "</spawnabletypes>", buildMapEventSpawnableTypesBlock(event), event);
 }
 
 export function hasMapEventBlock(xml: string) {
