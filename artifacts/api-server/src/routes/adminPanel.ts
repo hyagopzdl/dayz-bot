@@ -4368,9 +4368,9 @@ function renderAdminPanelHtml(token: string) {
         description: 'Containers trancados com temas por cor: vermelho militar, azul médico, amarelo construção e laranja raid.',
         imageUrl: 'https://www.dayztools.de/itemdb2/icons/Land_ContainerLocked_Blue_DE.png',
         stateKey: 'lockedContainerSetup',
-        checkUrl: activeIntegration().checkUrl,
-        installUrl: activeIntegration().installUrl,
-        uninstallUrl: activeIntegration().uninstallUrl,
+        checkUrl: '/admin-panel/api/settings/locked-containers/check',
+        installUrl: '/admin-panel/api/settings/locked-containers/install',
+        uninstallUrl: '/admin-panel/api/settings/locked-containers/uninstall',
         installText: 'Registra custom types, configura mapgroupproto e prepara as quatro cores de containers.',
       },
       'airdrop-military': {
