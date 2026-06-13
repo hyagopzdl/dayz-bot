@@ -145,7 +145,7 @@ export function resolveMapEventRequest(input: MapEventInjectRequest): ResolvedMa
     position: { x, z, a },
     nominal: requestedQuantity,
     min: Math.min(requestedQuantity, Math.max(1, preset.min)),
-    max: Math.max(0, intOrDefault(preset.max, requestedQuantity)),
+    max: Math.max(0, preset.max),
     lifetime: Math.max(60, intOrDefault(input.lifetime, preset.lifetime)),
     saferadius: intOrDefault(input.safeRadius, preset.saferadius),
     distanceradius: intOrDefault(input.distanceRadius, preset.distanceradius),
@@ -166,7 +166,7 @@ export function buildMapEventEventsBlock(event: ResolvedMapEvent) {
     return `            <child lootmax="${lootmax}" lootmin="${lootmin}" max="${child.max}" min="${child.min}" type="${child.type}"/>`;
   });
 
-  blocks.push([
+  const mainBlock = [
     `<!-- MAP_EVENT_START id="${event.id}" name="${event.name}" kind="main" -->`,
     `    <event name="${event.eventName}">`,
     `        <nominal>${event.nominal}</nominal>`,
@@ -177,16 +177,19 @@ export function buildMapEventEventsBlock(event: ResolvedMapEvent) {
     `        <saferadius>${event.saferadius}</saferadius>`,
     `        <distanceradius>${event.distanceradius}</distanceradius>`,
     `        <cleanupradius>${event.cleanupradius}</cleanupradius>`,
+    preset.secondary ? `        <secondary>${preset.secondary}</secondary>` : "",
     `        <flags deletable="${boolAttr(preset.deletable)}" init_random="${boolAttr(preset.initRandom)}" remove_damaged="${boolAttr(preset.removeDamaged)}"/>`,
     `        <position>${preset.position}</position>`,
     `        <limit>${preset.limit}</limit>`,
     "        <active>1</active>",
-    "        <children>",
-    ...childXml,
-    "        </children>",
+    preset.eventGroupName ? "        <children />" : "        <children>",
+    ...(preset.eventGroupName ? [] : childXml),
+    ...(preset.eventGroupName ? [] : ["        </children>"]),
     "    </event>",
     MAP_EVENT_END,
-  ].join("\n"));
+  ].filter(Boolean).join("\n");
+
+  blocks.push(mainBlock);
 
   if (event.lootMode === "guaranteed_container" && event.rewardStorageClass) {
     blocks.push(buildSimpleChildEventBlock(event, `${event.eventName}_RewardStorage`, event.rewardStorageClass, 1, {
@@ -243,7 +246,11 @@ function buildSimpleChildEventBlock(
 export function buildMapEventSpawnsBlock(event: ResolvedMapEvent) {
   const blocks: string[] = [];
 
-  blocks.push(buildSpawnBlock(event, event.eventName, event.position.x, event.position.z, event.position.a ?? 0, "main"));
+  if (event.preset.eventGroupName) {
+    blocks.push(buildEventGroupSpawnBlock(event));
+  } else {
+    blocks.push(buildSpawnBlock(event, event.eventName, event.position.x, event.position.z, event.position.a ?? 0, "main"));
+  }
 
   if (event.lootMode === "guaranteed_container" && event.rewardStorageClass) {
     blocks.push(buildSpawnBlock(event, `${event.eventName}_RewardStorage`, event.position.x + 1.5, event.position.z + 1.5, event.position.a ?? 0, "companion"));
@@ -258,6 +265,17 @@ export function buildMapEventSpawnsBlock(event: ResolvedMapEvent) {
   }
 
   return blocks.join("\n\n");
+}
+
+function buildEventGroupSpawnBlock(event: ResolvedMapEvent) {
+  return [
+    `<!-- MAP_EVENT_START id="${event.id}" name="${event.name}" kind="main" -->`,
+    `    <event name="${event.eventName}">`,
+    `        <zone smin="0" smax="0" dmin="4" dmax="8" r="45" />`,
+    `        <pos x="${formatNumber(event.position.x)}" y="0" z="${formatNumber(event.position.z)}" a="${formatNumber(event.position.a ?? 0)}" group="${event.preset.eventGroupName}" />`,
+    "    </event>",
+    MAP_EVENT_END,
+  ].join("\n");
 }
 
 function buildSpawnBlock(event: ResolvedMapEvent, eventName: string, x: number, z: number, a: number, kind: string) {

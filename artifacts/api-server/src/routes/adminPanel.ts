@@ -3,11 +3,14 @@ import { Router, type Request, type Response } from "express";
 import { Routes } from "discord.js";
 import { getShopRuntimeStatus } from "../lib/shop";
 import {
+  checkAirdropMilitarySetupNow,
   checkLockedContainerSetupNow,
   cleanupMapEventsNow,
+  ensureAirdropMilitarySetupNow,
   ensureLockedContainerSetupNow,
   getMapEventPresetPayload,
   injectMapEventNow,
+  uninstallAirdropMilitarySetupNow,
   uninstallLockedContainerSetupNow,
 } from "../lib/mapEvents/mapEventService";
 import {
@@ -2927,7 +2930,7 @@ function renderAdminPanelHtml(token: string) {
                         <b>Locked Container</b>
                         <span>Containers trancados com loot temático.</span>
                       </button>
-                      <button class="event-type-card disabled" type="button" disabled><b>Airdrop</b><span>Em breve</span></button>
+                      <button class="event-type-card" type="button" data-event-type="airdrop"><b>Airdrop</b><span>Drop militar com fumaça.</span></button>
                       <button class="event-type-card disabled" type="button" disabled><b>Zona PvP</b><span>Em breve</span></button>
                     </div>
                   </div>
@@ -4047,7 +4050,7 @@ function renderAdminPanelHtml(token: string) {
         const canResume = event.status === 'paused' || event.status === 'failed';
         return '<div class="scheduled-event-card" data-scheduled-event-id="' + escapeHtml(event.id) + '">' +
           '<div class="scheduled-event-main">' +
-            '<div class="scheduled-event-title"><span>Locked Container · ' + escapeHtml(preset.lootTypeLabel || event.presetId) + '</span><span class="status-chip ' + escapeHtml(event.status || '') + '">' + escapeHtml(scheduledStatusLabel(event.status)) + '</span></div>' +
+            '<div class="scheduled-event-title"><span>' + escapeHtml(preset.eventTypeLabel || (event.eventType === 'airdrop' ? 'Airdrop' : 'Locked Container')) + ' · ' + escapeHtml(preset.lootTypeLabel || event.presetId) + '</span><span class="status-chip ' + escapeHtml(event.status || '') + '">' + escapeHtml(scheduledStatusLabel(event.status)) + '</span></div>' +
             '<div class="scheduled-event-meta"><span>' + escapeHtml(event.name || 'Evento') + '</span><span>' + escapeHtml(Number(event.x).toFixed(2) + ' / ' + Number(event.z).toFixed(2)) + '</span><span>Próxima: ' + escapeHtml(formatScheduleDate(event.nextRunAt || event.executeAt)) + '</span><span>' + escapeHtml(recurrenceLabel(event.recurrence)) + '</span></div>' +
             (event.lastError ? '<div class="scheduled-event-meta" style="color:#ff9a9f">Erro: ' + escapeHtml(event.lastError) + '</div>' : '') +
           '</div>' +
@@ -4359,30 +4362,57 @@ function renderAdminPanelHtml(token: string) {
     function setMapEventStatus(html) {
       if (els.mapEventStatus) els.mapEventStatus.innerHTML = html;
     }
-    function lockedContainerAppStatus() {
-      const status = state.lockedContainerSetup?.status || 'unknown';
+    const eventIntegrations = {
+      'locked-containers': {
+        title: 'Locked Containers',
+        description: 'Containers trancados com temas por cor: vermelho militar, azul médico, amarelo construção e laranja raid.',
+        imageUrl: 'https://www.dayztools.de/itemdb2/icons/Land_ContainerLocked_Blue_DE.png',
+        stateKey: 'lockedContainerSetup',
+        checkUrl: activeIntegration().checkUrl,
+        installUrl: activeIntegration().installUrl,
+        uninstallUrl: activeIntegration().uninstallUrl,
+        installText: 'Registra custom types, configura mapgroupproto e prepara as quatro cores de containers.',
+      },
+      'airdrop-military': {
+        title: 'Airdrop Militar',
+        description: 'Drop militar físico com container, fumaça de helicrash, loot posicionado por grupo e infected army.',
+        imageUrl: 'https://www.dayztools.de/itemdb2/icons/Land_Container_1Moh_DE.png',
+        stateKey: 'airdropMilitarySetup',
+        checkUrl: '/admin-panel/api/settings/airdrops/military/check',
+        installUrl: '/admin-panel/api/settings/airdrops/military/install',
+        uninstallUrl: '/admin-panel/api/settings/airdrops/military/uninstall',
+        installText: 'Adiciona o grupo Panel_Airdrop_Military no cfgeventgroups.xml para o builder criar drops com group spawn.',
+      },
+    };
+    function integrationStatus(integrationId) {
+      const integration = eventIntegrations[integrationId] || eventIntegrations['locked-containers'];
+      const status = state[integration.stateKey]?.status || 'unknown';
       return {
         status,
         installed: status === 'installed',
         label: status === 'installed' ? 'Instalado' : status === 'partial' ? 'Parcial' : status === 'not_installed' ? 'Não instalado' : 'Não verificado',
       };
     }
-    function integrationCardHtml(location) {
-      const current = lockedContainerAppStatus();
+    function lockedContainerAppStatus() { return integrationStatus('locked-containers'); }
+    function integrationCardHtml(integrationId, location) {
+      const integration = eventIntegrations[integrationId] || eventIntegrations['locked-containers'];
+      const current = integrationStatus(integrationId);
       const installed = current.installed;
       const action = installed ? icon('check') + ' Instalado' : 'Instalar';
-      return '<button class="integration-card" type="button" data-integration="locked-containers" data-location="' + location + '">' +
-        '<div class="integration-card-head"><div class="integration-icon"><img src="https://www.dayztools.de/itemdb2/icons/Land_ContainerLocked_Blue_DE.png" alt="" /></div>' +
+      return '<button class="integration-card" type="button" data-integration="' + escapeHtml(integrationId) + '" data-location="' + location + '">' +
+        '<div class="integration-card-head"><div class="integration-icon"><img src="' + escapeHtml(integration.imageUrl) + '" alt="" /></div>' +
         '<span class="integration-action ' + (installed ? 'installed' : '') + '">' + action + '</span></div>' +
-        '<div><h3>Locked Containers</h3><p>Containers trancados com temas por cor: vermelho militar, azul médico, amarelo construção e laranja raid.</p></div>' +
+        '<div><h3>' + escapeHtml(integration.title) + '</h3><p>' + escapeHtml(integration.description) + '</p></div>' +
         '<div class="integration-card-footer"><span class="member-meta">Events Settings</span><span class="chip ' + (installed ? 'success' : '') + '">' + escapeHtml(current.label) + '</span></div>' +
         '</button>';
     }
     function renderLockedContainerCards() {
-      const current = lockedContainerAppStatus();
-      if (els.lockedContainerInstalledSection) els.lockedContainerInstalledSection.style.display = current.installed ? '' : 'none';
-      if (els.lockedContainerInstalledGrid) els.lockedContainerInstalledGrid.innerHTML = current.installed ? integrationCardHtml('installed') : '';
-      if (els.lockedContainerAvailableGrid) els.lockedContainerAvailableGrid.innerHTML = current.installed ? '<div class="settings-empty-note">Nenhum evento disponível para instalar agora.</div>' : integrationCardHtml('available');
+      const ids = Object.keys(eventIntegrations);
+      const installedIds = ids.filter((id) => integrationStatus(id).installed);
+      const availableIds = ids.filter((id) => !integrationStatus(id).installed);
+      if (els.lockedContainerInstalledSection) els.lockedContainerInstalledSection.style.display = installedIds.length ? '' : 'none';
+      if (els.lockedContainerInstalledGrid) els.lockedContainerInstalledGrid.innerHTML = installedIds.map((id) => integrationCardHtml(id, 'installed')).join('');
+      if (els.lockedContainerAvailableGrid) els.lockedContainerAvailableGrid.innerHTML = availableIds.length ? availableIds.map((id) => integrationCardHtml(id, 'available')).join('') : '<div class="settings-empty-note">Nenhum evento disponível para instalar agora.</div>';
     }
     function setupChecksHtml(result) {
       const checks = Array.isArray(result?.checks) ? result.checks : [];
@@ -4392,9 +4422,12 @@ function renderAdminPanelHtml(token: string) {
       return '<div class="alert-pill ' + (status === 'installed' ? 'success' : status === 'partial' ? 'warning' : '') + '">' + icon(status === 'installed' ? 'check' : 'warning') + '<span><b>Status: ' + escapeHtml(label) + '</b><br><span class="member-meta">' + escapeHtml(String((result?.total || 0) - (result?.missing || 0))) + '/' + escapeHtml(String(result?.total || 0)) + ' verificações OK</span></span></div>' +
         checks.map((check) => '<div class="ops-card"><div class="ops-icon ' + (check.ok ? 'kpi-green' : 'kpi-red') + '">' + icon(check.ok ? 'check' : 'warning') + '</div><div><b>' + escapeHtml(check.label) + '</b><span class="status-line ' + (check.ok ? 'success' : 'danger') + '">' + (check.ok ? 'OK' : 'Pendente') + '</span></div><small>' + escapeHtml(check.path || '') + '</small></div>').join('');
     }
-    function renderLockedContainerSetupStatus(result = state.lockedContainerSetup) {
-      if (result) state.lockedContainerSetup = result;
-      const html = setupChecksHtml(state.lockedContainerSetup);
+    function activeIntegrationId() { return state.activeEventIntegrationId || 'locked-containers'; }
+    function activeIntegration() { return eventIntegrations[activeIntegrationId()] || eventIntegrations['locked-containers']; }
+    function renderLockedContainerSetupStatus(result) {
+      const integration = activeIntegration();
+      if (result) state[integration.stateKey] = result;
+      const html = setupChecksHtml(state[integration.stateKey]);
       if (els.lockedContainerSetupStatus) els.lockedContainerSetupStatus.innerHTML = html;
       if (els.lockedContainerModalStatus) els.lockedContainerModalStatus.innerHTML = html;
       renderLockedContainerCards();
@@ -4420,44 +4453,44 @@ function renderAdminPanelHtml(token: string) {
       setLockedContainerButtonsDisabled(true);
       try {
         renderLockedContainerLoading('Verificando instalação...', 'Lendo cfgeconomycore.xml, mapgroupproto.xml e locked-container-types.xml.');
-        const response = await apiFetch('/admin-panel/api/settings/locked-containers/check');
+        const response = await apiFetch(activeIntegration().checkUrl);
         if (!response.ok) { const text = await readApiError(response); const html = '<div class="map-event-result"><b>Erro:</b> ' + escapeHtml(text) + '</div>'; if (els.lockedContainerSetupStatus) els.lockedContainerSetupStatus.innerHTML = html; if (els.lockedContainerModalStatus) els.lockedContainerModalStatus.innerHTML = html; showToast(text); return; }
         const result = await response.json(); renderLockedContainerSetupStatus(result); if (showDoneToast) showToast('Instalação verificada.');
       } finally { lockedContainerSetupBusy = false; setLockedContainerButtonsDisabled(false); }
     }
     async function installLockedContainerSetupAction() {
       if (lockedContainerSetupBusy) return;
-      if (!confirm('Instalar/reparar suporte a Locked Containers? Isso atualiza cfgeconomycore.xml, custom/locked-container-types.xml e mapgroupproto.xml. Faça backup antes.')) return;
+      if (!confirm('Instalar/reparar ' + activeIntegration().title + '? Faça backup dos XMLs antes.')) return;
       lockedContainerSetupBusy = true; setLockedContainerButtonsDisabled(true);
       try {
         renderLockedContainerLoading('Instalando suporte...', 'Atualizando XMLs base do servidor. Não feche esta tela até terminar.');
-        const response = await apiFetch('/admin-panel/api/settings/locked-containers/install', { method: 'POST', body: JSON.stringify({}) });
+        const response = await apiFetch(activeIntegration().installUrl, { method: 'POST', body: JSON.stringify({}) });
         if (!response.ok) { const text = await readApiError(response); const html = '<div class="map-event-result"><b>Erro:</b> ' + escapeHtml(text) + '</div>'; if (els.lockedContainerSetupStatus) els.lockedContainerSetupStatus.innerHTML = html; if (els.lockedContainerModalStatus) els.lockedContainerModalStatus.innerHTML = html; showToast(text); return; }
-        state.lockedContainerSetup = { status: 'installed', total: 0, missing: 0, checks: [] };
-        renderLockedContainerSetupStatus(state.lockedContainerSetup);
+        state[activeIntegration().stateKey] = { status: 'installed', total: 0, missing: 0, checks: [] };
+        renderLockedContainerSetupStatus(state[activeIntegration().stateKey]);
         const html = '<div class="map-event-result success"><b>Suporte instalado/reparado.</b><br>Clique em Verificar instalação para conferir os arquivos.</div>';
         if (els.lockedContainerSetupStatus) els.lockedContainerSetupStatus.innerHTML = html;
         if (els.lockedContainerModalStatus) els.lockedContainerModalStatus.innerHTML = html;
-        renderLockedContainerCards(); showToast('Suporte a Locked Containers instalado/reparado.');
+        renderLockedContainerCards(); showToast(activeIntegration().title + ' instalado/reparado.');
       } finally { lockedContainerSetupBusy = false; setLockedContainerButtonsDisabled(false); }
     }
     async function uninstallLockedContainerSetupAction() {
       if (lockedContainerSetupBusy) return;
-      if (!confirm('Desinstalar suporte a Locked Containers? Eventos existentes podem parar de funcionar após o próximo restart.')) return;
+      if (!confirm('Desinstalar ' + activeIntegration().title + '? Eventos existentes podem parar de funcionar após o próximo restart.')) return;
       if (!confirm('Confirma mesmo assim? Essa ação remove os blocos gerenciados do mapgroupproto.xml e desregistra o arquivo custom.')) return;
       lockedContainerSetupBusy = true; setLockedContainerButtonsDisabled(true);
       try {
         renderLockedContainerLoading('Desinstalando suporte...', 'Removendo blocos gerenciados dos XMLs base.');
-        const response = await apiFetch('/admin-panel/api/settings/locked-containers/uninstall', { method: 'POST', body: JSON.stringify({}) });
+        const response = await apiFetch(activeIntegration().uninstallUrl, { method: 'POST', body: JSON.stringify({}) });
         if (!response.ok) { const text = await readApiError(response); const html = '<div class="map-event-result"><b>Erro:</b> ' + escapeHtml(text) + '</div>'; if (els.lockedContainerSetupStatus) els.lockedContainerSetupStatus.innerHTML = html; if (els.lockedContainerModalStatus) els.lockedContainerModalStatus.innerHTML = html; showToast(text); return; }
-        state.lockedContainerSetup = { status: 'not_installed', total: 0, missing: 0, checks: [] };
+        state[activeIntegration().stateKey] = { status: 'not_installed', total: 0, missing: 0, checks: [] };
         const html = '<div class="map-event-result success"><b>Suporte desinstalado.</b><br>Use Verificar instalação para conferir os arquivos.</div>';
         if (els.lockedContainerSetupStatus) els.lockedContainerSetupStatus.innerHTML = html;
         if (els.lockedContainerModalStatus) els.lockedContainerModalStatus.innerHTML = html;
-        renderLockedContainerCards(); showToast('Suporte a Locked Containers desinstalado.');
+        renderLockedContainerCards(); showToast(activeIntegration().title + ' desinstalado.');
       } finally { lockedContainerSetupBusy = false; setLockedContainerButtonsDisabled(false); }
     }
-    function openLockedContainerIntegrationModal() { renderLockedContainerSetupStatus(); if (els.eventIntegrationModalBackdrop) els.eventIntegrationModalBackdrop.classList.add('open'); }
+    function openLockedContainerIntegrationModal(integrationId = 'locked-containers') { state.activeEventIntegrationId = integrationId; const integration = activeIntegration(); const title = document.querySelector('.integration-modal-title h2'); const desc = document.querySelector('.integration-modal-title p'); const img = document.querySelector('.integration-modal-title img'); const feature = document.querySelector('.integration-feature-list'); if (title) title.textContent = integration.title; if (desc) desc.textContent = integration.description; if (img) img.src = integration.imageUrl; if (feature) feature.innerHTML = '<li>✓ ' + escapeHtml(integration.installText) + '</li><li>✓ Mantém a criação/agendamento dentro da tela Eventos do Mapa.</li><li>✓ Pode ser verificado, reparado ou desinstalado por esta tela.</li>'; renderLockedContainerSetupStatus(); if (els.eventIntegrationModalBackdrop) els.eventIntegrationModalBackdrop.classList.add('open'); }
     function switchSettingsTab(tab) {
       state.settingsTab = tab;
       document.querySelectorAll('.settings-tab').forEach((button) => button.classList.toggle('active', button.dataset.settingsTab === tab));
@@ -4558,8 +4591,8 @@ function renderAdminPanelHtml(token: string) {
     if (els.eventIntegrationModalBackdrop) els.eventIntegrationModalBackdrop.addEventListener("click", (event) => { if (event.target === els.eventIntegrationModalBackdrop) els.eventIntegrationModalBackdrop.classList.remove("open"); });
     document.querySelectorAll(".settings-tab").forEach((button) => button.addEventListener("click", () => switchSettingsTab(button.dataset.settingsTab || "server")));
     document.addEventListener("click", (event) => {
-      const card = event.target.closest?.('[data-integration="locked-containers"]');
-      if (card) openLockedContainerIntegrationModal();
+      const card = event.target.closest?.('[data-integration]');
+      if (card) openLockedContainerIntegrationModal(card.getAttribute('data-integration') || 'locked-containers');
     });
     renderLockedContainerCards();
     if (els.mapEventLootMode) els.mapEventLootMode.addEventListener("change", updateMapEventLootModeUi);
@@ -5152,6 +5185,40 @@ router.post("/api/settings/locked-containers/uninstall", async (req, res) => {
 
   try {
     const result = await uninstallLockedContainerSetupNow();
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ ok: false, error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+
+router.get("/api/settings/airdrops/military/check", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+
+  try {
+    const result = await checkAirdropMilitarySetupNow();
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ ok: false, error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+router.post("/api/settings/airdrops/military/install", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+
+  try {
+    const result = await ensureAirdropMilitarySetupNow();
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ ok: false, error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+router.post("/api/settings/airdrops/military/uninstall", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+
+  try {
+    const result = await uninstallAirdropMilitarySetupNow();
     res.json(result);
   } catch (err) {
     res.status(400).json({ ok: false, error: err instanceof Error ? err.message : String(err) });

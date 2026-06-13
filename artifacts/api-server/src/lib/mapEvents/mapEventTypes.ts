@@ -2,7 +2,8 @@ export type MapEventPresetId =
   | "locked_container_red_military"
   | "locked_container_blue_medical"
   | "locked_container_yellow_construction"
-  | "locked_container_orange_raid";
+  | "locked_container_orange_raid"
+  | "airdrop_military_smoke";
 
 export type MapEventLootMode = "rng" | "guaranteed_container" | "guaranteed_items";
 
@@ -46,6 +47,9 @@ export type MapEventPreset = {
   position: "fixed" | "player" | "uniform";
   limit: "child" | "mixed";
   children: MapEventChild[];
+  eventGroupName?: string;
+  secondary?: string;
+  usesEventGroup?: boolean;
   notes?: string[];
 };
 

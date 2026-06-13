@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
 import type { MapEventInjectRequest, MapEventPresetId } from "./mapEventTypes";
+import { findMapEventPreset } from "./mapEventPresets";
 import { injectMapEventNow } from "./mapEventService";
 
 export type ScheduledMapEventRecurrence = "none" | "daily" | "weekly" | "monthly";
@@ -8,7 +9,7 @@ export type ScheduledMapEventStatus = "scheduled" | "active" | "paused" | "compl
 
 export type ScheduledMapEvent = {
   id: string;
-  eventType: "locked_container";
+  eventType: "locked_container" | "airdrop";
   presetId: MapEventPresetId;
   name: string;
   x: number;
@@ -115,7 +116,7 @@ export function createScheduledMapEvent(input: Partial<ScheduledMapEvent> & { pr
   const status: ScheduledMapEventStatus = recurrence === "none" ? "scheduled" : "active";
   const event: ScheduledMapEvent = {
     id: safeId(),
-    eventType: "locked_container",
+    eventType: findMapEventPreset(input.presetId)?.eventTypeLabel === "Airdrop" ? "airdrop" : "locked_container",
     presetId: input.presetId,
     name: String(input.name || "Locked Container").trim() || "Locked Container",
     x,

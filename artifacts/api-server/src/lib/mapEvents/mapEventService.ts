@@ -17,6 +17,8 @@ const MAP_EVENT_MISSION_DIR = SHOP_EVENTS_PATH.replace(/\/db\/events\.xml$/i, ""
 const MAP_EVENT_ECONOMY_CORE_PATH = `${MAP_EVENT_MISSION_DIR}/cfgeconomycore.xml`;
 const MAP_EVENT_MAPGROUPPROTO_PATH = `${MAP_EVENT_MISSION_DIR}/mapgroupproto.xml`;
 const MAP_EVENT_CUSTOM_TYPES_PATH = `${MAP_EVENT_MISSION_DIR}/custom/locked-container-types.xml`;
+const MAP_EVENT_GROUPS_PATH = `${MAP_EVENT_MISSION_DIR}/cfgeventgroups.xml`;
+const AIRDROP_MILITARY_GROUP_NAME = "Panel_Airdrop_Military";
 const LOCKED_CONTAINER_TYPES_FILE = "locked-container-types.xml";
 const LOCKED_CONTAINER_FTP_DOWNLOAD_TIMEOUT_MS = 45000;
 const LOCKED_CONTAINER_FTP_UPLOAD_TIMEOUT_MS = 60000;
@@ -147,6 +149,26 @@ ${LOCKED_CONTAINER_DEFINITIONS.map((def) => `    <type name="${def.className}"><
 </types>
 `;
 
+const AIRDROP_MILITARY_GROUP_START = "PANEL_AIRDROP_MILITARY_START";
+const AIRDROP_MILITARY_GROUP_END = "PANEL_AIRDROP_MILITARY_END";
+
+const AIRDROP_MILITARY_GROUP_XML = `<!-- ${AIRDROP_MILITARY_GROUP_START} -->
+<group name="${AIRDROP_MILITARY_GROUP_NAME}">
+    <child type="Land_Container_1Moh_DE" deloot="0" lootmax="0" lootmin="0" x="0" y="0" z="0" a="155.7" />
+    <child type="Wreck_UH1Y" spawnsecondary="false" deloot="0" lootmax="0" lootmin="0" x="0" y="-10" z="0" a="155.7" />
+    <child type="M4A1" spawnsecondary="false" x="2.0" y="-0.5" z="1.0" a="0" />
+    <child type="AKM" spawnsecondary="false" x="-2.0" y="-0.5" z="1.0" a="0" />
+    <child type="FAL" spawnsecondary="false" x="2.2" y="-0.5" z="-1.0" a="0" />
+    <child type="Mag_STANAG_60Rnd" spawnsecondary="false" x="1.2" y="-0.5" z="2.2" a="111.5" />
+    <child type="Mag_AKM_30Rnd" spawnsecondary="false" x="-1.2" y="-0.5" z="2.2" a="17.2" />
+    <child type="Mag_FAL_20Rnd" spawnsecondary="false" x="-0.6" y="-0.5" z="1.4" a="-14.6" />
+    <child type="NVGoggles" spawnsecondary="false" x="0.8" y="-0.5" z="2.0" a="165.7" />
+    <child type="PlateCarrierVest" spawnsecondary="false" x="-2.0" y="-0.5" z="-1.0" a="0" />
+    <child type="AmmoBox" spawnsecondary="false" x="-0.3" y="-0.5" z="3.0" a="10.2" />
+    <child type="GrenadeM67" spawnsecondary="false" x="1.0" y="-0.5" z="-2.0" a="0" />
+</group>
+<!-- ${AIRDROP_MILITARY_GROUP_END} -->`;
+
 function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -273,6 +295,71 @@ async function withLockedContainerSetupLock<T>(operation: () => Promise<T>): Pro
   });
 
   return current;
+}
+
+function getEventGroupsClosingTag(xml: string) {
+  const value = String(xml || "");
+  if (/<\/eventgroups>/i.test(value)) return "</eventgroups>";
+  if (/<\/groups>/i.test(value)) return "</groups>";
+  return "";
+}
+
+function injectAirdropMilitaryGroup(xml: string) {
+  let value = String(xml || "");
+  value = removeManagedBlock(value, AIRDROP_MILITARY_GROUP_START, AIRDROP_MILITARY_GROUP_END);
+  const existingGroupPattern = new RegExp(`\\s*<group\\s+name=["']${escapeRegExp(AIRDROP_MILITARY_GROUP_NAME)}["'][\\s\\S]*?<\\/group>\\s*`, "i");
+  value = value.replace(existingGroupPattern, "\n");
+  const closingTag = getEventGroupsClosingTag(value);
+  if (closingTag) return value.replace(new RegExp(`${escapeRegExp(closingTag)}\\s*$`, "i"), `${AIRDROP_MILITARY_GROUP_XML}\n${closingTag}`);
+  if (!value.trim()) return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<eventgroups>\n${AIRDROP_MILITARY_GROUP_XML}\n</eventgroups>\n`;
+  throw new Error("cfgeventgroups.xml sem tag final suportada: </eventgroups> ou </groups>.");
+}
+
+function removeAirdropMilitaryGroup(xml: string) {
+  let value = removeManagedBlock(String(xml || ""), AIRDROP_MILITARY_GROUP_START, AIRDROP_MILITARY_GROUP_END);
+  const existingGroupPattern = new RegExp(`\\s*<group\\s+name=["']${escapeRegExp(AIRDROP_MILITARY_GROUP_NAME)}["'][\\s\\S]*?<\\/group>\\s*`, "i");
+  return value.replace(existingGroupPattern, "\n");
+}
+
+function hasAirdropMilitaryGroup(xml: string) {
+  const value = String(xml || "");
+  return value.includes(AIRDROP_MILITARY_GROUP_START) || new RegExp(`<group\\s+name=["']${escapeRegExp(AIRDROP_MILITARY_GROUP_NAME)}["']`, "i").test(value);
+}
+
+async function checkAirdropMilitarySetupUnlocked() {
+  const eventGroupsXml = await tryDownloadTextFile(MAP_EVENT_GROUPS_PATH);
+  const checks = [
+    { key: "eventGroup:airdropMilitary", label: `cfgeventgroups.xml tem ${AIRDROP_MILITARY_GROUP_NAME}`, ok: hasAirdropMilitaryGroup(eventGroupsXml), path: MAP_EVENT_GROUPS_PATH },
+  ];
+  const missing = checks.filter((check) => !check.ok).length;
+  const status = missing === 0 ? "installed" : "not_installed";
+  return { ok: true as const, status, installed: status === "installed", missing, total: checks.length, checkedAt: new Date().toISOString(), checks, paths: [MAP_EVENT_GROUPS_PATH] };
+}
+
+export async function checkAirdropMilitarySetupNow() {
+  return withLockedContainerSetupLock(checkAirdropMilitarySetupUnlocked);
+}
+
+async function ensureAirdropMilitarySetupUnlocked() {
+  const eventGroupsXml = await tryDownloadTextFile(MAP_EVENT_GROUPS_PATH);
+  const nextEventGroupsXml = injectAirdropMilitaryGroup(eventGroupsXml);
+  if (nextEventGroupsXml !== eventGroupsXml) await uploadLockedContainerTextFile(MAP_EVENT_GROUPS_PATH, nextEventGroupsXml);
+  return { ok: true as const, paths: [MAP_EVENT_GROUPS_PATH], changedEventGroups: nextEventGroupsXml !== eventGroupsXml };
+}
+
+export async function ensureAirdropMilitarySetupNow() {
+  return withLockedContainerSetupLock(ensureAirdropMilitarySetupUnlocked);
+}
+
+async function uninstallAirdropMilitarySetupUnlocked() {
+  const eventGroupsXml = await downloadLockedContainerTextFile(MAP_EVENT_GROUPS_PATH);
+  const nextEventGroupsXml = removeAirdropMilitaryGroup(eventGroupsXml);
+  if (nextEventGroupsXml !== eventGroupsXml) await uploadLockedContainerTextFile(MAP_EVENT_GROUPS_PATH, nextEventGroupsXml);
+  return { ok: true as const, paths: [MAP_EVENT_GROUPS_PATH], changedEventGroups: nextEventGroupsXml !== eventGroupsXml };
+}
+
+export async function uninstallAirdropMilitarySetupNow() {
+  return withLockedContainerSetupLock(uninstallAirdropMilitarySetupUnlocked);
 }
 
 async function checkLockedContainerSetupUnlocked() {
