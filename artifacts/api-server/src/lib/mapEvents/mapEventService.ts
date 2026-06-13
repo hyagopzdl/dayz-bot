@@ -301,6 +301,7 @@ function getEventGroupsClosingTag(xml: string) {
   const value = String(xml || "");
   if (/<\/eventgroups>/i.test(value)) return "</eventgroups>";
   if (/<\/groups>/i.test(value)) return "</groups>";
+  if (/<\/eventgroupdef>/i.test(value)) return "</eventgroupdef>";
   return "";
 }
 
@@ -311,8 +312,8 @@ function injectAirdropMilitaryGroup(xml: string) {
   value = value.replace(existingGroupPattern, "\n");
   const closingTag = getEventGroupsClosingTag(value);
   if (closingTag) return value.replace(new RegExp(`${escapeRegExp(closingTag)}\\s*$`, "i"), `${AIRDROP_MILITARY_GROUP_XML}\n${closingTag}`);
-  if (!value.trim()) return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<eventgroups>\n${AIRDROP_MILITARY_GROUP_XML}\n</eventgroups>\n`;
-  throw new Error("cfgeventgroups.xml sem tag final suportada: </eventgroups> ou </groups>.");
+  if (!value.trim()) return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<eventgroupdef>\n${AIRDROP_MILITARY_GROUP_XML}\n</eventgroupdef>\n`;
+  throw new Error("cfgeventgroups.xml sem tag final suportada: </eventgroupdef>, </eventgroups> ou </groups>.");
 }
 
 function removeAirdropMilitaryGroup(xml: string) {
