@@ -2897,22 +2897,23 @@ function renderAdminPanelHtml(token: string) {
     .spawn-zone-tab.active { display: block; }
     .spawn-zones-editor { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 14px; align-items: start; }
     .spawn-zone-map-card { padding: 0; overflow: hidden; }
-    .spawn-zone-map-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--border); }
-    .spawn-zone-map-actions { display: inline-flex; align-items: center; gap: 6px; }
-    .spawn-zone-map-actions .ghost-btn { height: 30px; min-width: 34px; padding: 0 9px; border-radius: 9px; }
-    .spawn-zone-map-title { display: grid; gap: 3px; }
-    .spawn-zone-map-title b { font-size: 14px; }
-    .spawn-zone-map-title span { color: var(--text-3); font-size: 12px; }
-    .spawn-zone-map-viewport { width: 100%; aspect-ratio: 1 / 1; overflow: auto; background: #10131b; cursor: crosshair; position: relative; overscroll-behavior: contain; }
+    .spawn-zone-map-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px; border-bottom: 1px solid var(--border); }
+    .spawn-zone-map-actions { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+    .spawn-zone-map-actions .ghost-btn { height: 28px; min-width: 32px; padding: 0 8px; border-radius: 9px; }
+    .spawn-zone-map-title { display: grid; gap: 2px; min-width: 0; }
+    .spawn-zone-map-title b { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .spawn-zone-map-title span { color: var(--text-3); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .spawn-zone-map-viewport { width: 100%; aspect-ratio: 1 / 1; overflow: auto; background: #10131b; cursor: crosshair; position: relative; overscroll-behavior: contain; scrollbar-width: thin; }
     .spawn-zone-map-viewport.is-dragging { cursor: grabbing; }
     .spawn-zone-map-inner { position: relative; width: calc(100% * var(--spawn-map-zoom, 1)); min-width: 100%; aspect-ratio: 1 / 1; transform-origin: top left; }
     .spawn-zone-map-inner img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; display: block; user-select: none; -webkit-user-drag: none; }
     .spawn-zone-marker { position: absolute; left: 0; top: 0; width: 22px; height: 22px; border-radius: 999px; border: 3px solid #fff; box-shadow: 0 0 0 5px rgba(255,255,255,.12), 0 8px 30px rgba(0,0,0,.45); transform: translate(-50%, -50%); cursor: pointer; z-index: 2; }
-    .spawn-zone-marker.other { opacity: .9; width: 19px; height: 19px; border-width: 2px; box-shadow: 0 0 0 4px rgba(255,255,255,.10), 0 6px 20px rgba(0,0,0,.35); }
-    .spawn-zone-marker.disabled { filter: grayscale(1); opacity: .5; }
+    .spawn-zone-marker.other { opacity: 1; width: 19px; height: 19px; border-width: 2px; box-shadow: 0 0 0 4px rgba(255,255,255,.10), 0 6px 20px rgba(0,0,0,.35); }
+    .spawn-zone-marker.disabled { filter: grayscale(.8); opacity: .68; }
     .spawn-zone-marker.highlight { width: 28px; height: 28px; box-shadow: 0 0 0 8px rgba(255,255,255,.16), 0 10px 34px rgba(0,0,0,.5); z-index: 4; opacity: 1; filter: none; }
     .spawn-zone-marker::after { content: ''; position: absolute; inset: 5px; border-radius: 999px; background: rgba(255,255,255,.92); }
-    .spawn-zone-map-footer { display: flex; justify-content: space-between; gap: 10px; padding: 10px 14px; border-top: 1px solid var(--border); color: var(--text-3); font-size: 12px; }
+    .spawn-zone-map-footer { display: flex; justify-content: space-between; gap: 10px; padding: 8px 12px; border-top: 1px solid var(--border); color: var(--text-3); font-size: 11px; }
+    .spawn-zone-map-footer span:last-child { display: none; }
     .spawn-zone-sidebar { display: grid; gap: 10px; }
     .spawn-zone-create { width: 100%; height: 46px; border-radius: 14px; font-size: 14px; }
     .spawn-zone-list { display: grid; gap: 8px; max-height: 70vh; overflow: auto; padding-right: 3px; }
@@ -2927,6 +2928,7 @@ function renderAdminPanelHtml(token: string) {
     .spawn-zone-actions { display: flex; align-items: center; gap: 6px; }
     .spawn-zone-mini-btn { width: 28px; height: 28px; border-radius: 9px; display: grid; place-items: center; background: rgba(255,255,255,.04); color: var(--text-2); cursor: pointer; border: 1px solid var(--border); }
     .spawn-zone-mini-btn:hover { background: rgba(255,255,255,.08); color: var(--text); }
+    .spawn-zone-card:not(:hover) .spawn-zone-actions .spawn-zone-mini-btn { opacity: .55; }
     .spawn-zone-points { display: none; padding: 0 12px 12px 42px; gap: 5px; }
     .spawn-zone-card.selected .spawn-zone-points { display: grid; }
     .spawn-zone-point-row { display: grid; grid-template-columns: 1fr 28px; align-items: center; gap: 6px; color: var(--text-3); font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 12px; }
@@ -3379,8 +3381,8 @@ function renderAdminPanelHtml(token: string) {
               <div class="spawn-zones-editor">
                 <div class="card spawn-zone-map-card">
                   <div class="spawn-zone-map-toolbar">
-                    <div class="spawn-zone-map-title"><b id="spawnZonesMapTitle">Selecione uma zona</b><span id="spawnZonesMapHint">Clique no mapa para adicionar pontos. Clique direito em um ponto para remover.</span></div>
-                    <div class="spawn-zone-map-actions"><button id="spawnZonesMapZoomOut" type="button" class="ghost-btn">−</button><span id="spawnZonesMapZoomLabel" class="chip">100%</span><button id="spawnZonesMapZoomIn" type="button" class="ghost-btn">+</button><span id="spawnZonesAutosaveStatus" class="chip">auto-save</span></div>
+                    <div class="spawn-zone-map-title"><b id="spawnZonesMapTitle">Selecione uma zona</b><span id="spawnZonesMapHint">Clique para adicionar · botão direito remove · scroll dá zoom · arraste para mover</span></div>
+                    <div class="spawn-zone-map-actions"><button id="spawnZonesMapZoomOut" type="button" class="ghost-btn" title="Diminuir zoom">−</button><span id="spawnZonesMapZoomLabel" class="chip">100%</span><button id="spawnZonesMapZoomIn" type="button" class="ghost-btn" title="Aumentar zoom">+</button><span id="spawnZonesAutosaveStatus" class="chip">salvo</span></div>
                   </div>
                   <div id="spawnZonesMapViewport" class="spawn-zone-map-viewport">
                     <div id="spawnZonesMapInner" class="spawn-zone-map-inner">
@@ -4622,7 +4624,7 @@ function renderAdminPanelHtml(token: string) {
     function spawnZoneCoord(value) { return Number(value || 0).toFixed(1); }
     function setSpawnZonesAutosaveStatus(text) { if (els.spawnZonesAutosaveStatus) els.spawnZonesAutosaveStatus.textContent = text || 'auto-save'; }
     function setSpawnZoneMapZoom(value) {
-      state.spawnZoneMapZoom = Math.max(1, Math.min(4, Number(value || 1)));
+      state.spawnZoneMapZoom = Math.max(1, Math.min(20, Number(value || 1)));
       if (els.spawnZonesMapInner) els.spawnZonesMapInner.style.setProperty('--spawn-map-zoom', String(state.spawnZoneMapZoom));
       if (els.spawnZonesMapZoomLabel) els.spawnZonesMapZoomLabel.textContent = Math.round(state.spawnZoneMapZoom * 100) + '%';
     }
@@ -4698,7 +4700,7 @@ function renderAdminPanelHtml(token: string) {
       if (!state.selectedSpawnZoneId && zones[0]) state.selectedSpawnZoneId = zones[0].id;
       const selected = selectedSpawnZone();
       if (els.spawnZonesMapTitle) els.spawnZonesMapTitle.textContent = selected ? selected.name : 'Selecione uma zona';
-      if (els.spawnZonesMapHint) els.spawnZonesMapHint.textContent = selected ? 'Clique no mapa para adicionar pontos em ' + selected.name + '. Clique direito em um ponto para remover.' : 'Crie uma zona para começar.';
+      if (els.spawnZonesMapHint) els.spawnZonesMapHint.textContent = selected ? 'Clique para adicionar em ' + selected.name + ' · scroll dá zoom · arraste para mover' : 'Crie uma zona para começar.';
       if (els.spawnZoneList) {
         els.spawnZoneList.innerHTML = zones.length ? zones.map((zone) => {
           const selectedClass = zone.id === state.selectedSpawnZoneId ? ' selected' : '';
@@ -5220,8 +5222,8 @@ function renderAdminPanelHtml(token: string) {
     if (els.spawnZonesApplyServer) els.spawnZonesApplyServer.addEventListener('click', () => applySpawnZoneOnServer(els.spawnZonesNextSelect?.value || selectedSpawnZone()?.id));
     if (els.spawnZonesCreatePoll) els.spawnZonesCreatePoll.addEventListener('click', createSpawnZonePollNow);
     if (els.spawnZonesRefreshPoll) els.spawnZonesRefreshPoll.addEventListener('click', refreshSpawnZonePoll);
-    if (els.spawnZonesMapZoomIn) els.spawnZonesMapZoomIn.addEventListener('click', () => setSpawnZoneMapZoom((state.spawnZoneMapZoom || 1) + 0.25));
-    if (els.spawnZonesMapZoomOut) els.spawnZonesMapZoomOut.addEventListener('click', () => setSpawnZoneMapZoom((state.spawnZoneMapZoom || 1) - 0.25));
+    if (els.spawnZonesMapZoomIn) els.spawnZonesMapZoomIn.addEventListener('click', () => setSpawnZoneMapZoom((state.spawnZoneMapZoom || 1) + 0.5));
+    if (els.spawnZonesMapZoomOut) els.spawnZonesMapZoomOut.addEventListener('click', () => setSpawnZoneMapZoom((state.spawnZoneMapZoom || 1) - 0.5));
     if (els.spawnZonesMapInner) {
       els.spawnZonesMapInner.addEventListener('click', (event) => {
         if (state.spawnZoneMapSuppressClick) { state.spawnZoneMapSuppressClick = false; return; }
@@ -5229,6 +5231,21 @@ function renderAdminPanelHtml(token: string) {
         if (marker) { focusSpawnZonePoint(marker.getAttribute('data-spawn-marker')); return; }
         addSpawnZonePointFromEvent(event);
       });
+      els.spawnZonesMapViewport?.addEventListener('wheel', (event) => {
+        if (!els.spawnZonesMapViewport || !els.spawnZonesMapInner) return;
+        event.preventDefault();
+        const previousZoom = state.spawnZoneMapZoom || 1;
+        const rect = els.spawnZonesMapViewport.getBoundingClientRect();
+        const pointerX = event.clientX - rect.left;
+        const pointerY = event.clientY - rect.top;
+        const mapX = (els.spawnZonesMapViewport.scrollLeft + pointerX) / previousZoom;
+        const mapY = (els.spawnZonesMapViewport.scrollTop + pointerY) / previousZoom;
+        const zoomFactor = event.deltaY < 0 ? 1.18 : 1 / 1.18;
+        setSpawnZoneMapZoom(previousZoom * zoomFactor);
+        const nextZoom = state.spawnZoneMapZoom || 1;
+        els.spawnZonesMapViewport.scrollLeft = Math.max(0, (mapX * nextZoom) - pointerX);
+        els.spawnZonesMapViewport.scrollTop = Math.max(0, (mapY * nextZoom) - pointerY);
+      }, { passive: false });
       els.spawnZonesMapInner.addEventListener('mousedown', (event) => {
         if (event.button !== 0 || event.target.closest('[data-spawn-marker]')) return;
         if ((state.spawnZoneMapZoom || 1) <= 1) return;
