@@ -72,8 +72,9 @@ type SpawnZonePointPayload = { id: string; x: number; z: number; createdAt?: str
 type SpawnZonePayload = { id: string; name: string; color: string; enabled: boolean; points: SpawnZonePointPayload[]; createdAt: string; updatedAt: string };
 type MapRotationSettingsPayload = { pollChannelId?: string; pollQuestion?: string; pollOpenDay?: string; pollOpenTime?: string; pollCloseDay?: string; pollCloseTime?: string; autoCreatePoll?: boolean; autoApplyWinner?: boolean; applyOnNextRestart?: boolean; tiePolicy?: string; minVotes?: number; spawnFilePath?: string; serverAnnouncement?: string };
 type MapRotationPollOptionPayload = { zoneId: string; name: string; answerId?: number; votes?: number };
-type MapRotationActivePollPayload = { id: string; channelId: string; messageId: string; question: string; status: string; createdAt: string; closesAt?: string; options: MapRotationPollOptionPayload[]; totalVotes?: number; winnerZoneId?: string; winnerName?: string; lastFetchedAt?: string; rawUrl?: string };
-type MapRotationPayload = { zones: SpawnZonePayload[]; currentZoneId?: string; nextZoneId?: string; voteHistory: any[]; settings: MapRotationSettingsPayload; activePoll?: MapRotationActivePollPayload; updatedAt: string };
+type MapRotationActivePollPayload = { id: string; channelId: string; messageId: string; question: string; status: string; createdAt: string; closesAt?: string; options: MapRotationPollOptionPayload[]; totalVotes?: number; winnerZoneId?: string; winnerName?: string; lastFetchedAt?: string; finalizedAt?: string; appliedAt?: string; finalReason?: string; rawUrl?: string };
+type MapRotationAutomationPayload = { lastPollWindowId?: string; lastCloseWindowId?: string; lastCheckedAt?: string; lastAction?: string; lastError?: string };
+type MapRotationPayload = { zones: SpawnZonePayload[]; currentZoneId?: string; nextZoneId?: string; voteHistory: any[]; settings: MapRotationSettingsPayload; activePoll?: MapRotationActivePollPayload; automation?: MapRotationAutomationPayload; updatedAt: string };
 
 const SPAWN_ZONE_FILE_PATH = SHOP_EVENTS_PATH.replace(/\/db\/events\.xml$/i, "/cfgplayerspawnpoints.xml");
 
@@ -261,6 +262,175 @@ async function fetchDiscordSpawnZonePoll(activePoll: MapRotationActivePollPayloa
   return extractDiscordPollCounts(message, activePoll);
 }
 
+function previousWeekdayDate(day: unknown, time: unknown, from = new Date()) {
+  const targetDay = SPAWN_ZONE_WEEKDAY_INDEX[String(day || "monday")] ?? 1;
+  const [hourRaw, minuteRaw] = String(time || "12:00").split(":");
+  const hour = Math.max(0, Math.min(23, Number(hourRaw || 0)));
+  const minute = Math.max(0, Math.min(59, Number(minuteRaw || 0)));
+  const previous = new Date(from);
+  previous.setHours(hour, minute, 0, 0);
+  const diff = (previous.getDay() - targetDay + 7) % 7;
+  previous.setDate(previous.getDate() - diff);
+  if (previous.getTime() > from.getTime()) previous.setDate(previous.getDate() - 7);
+  return previous;
+}
+
+function getMapRotationScheduleWindow(settings: MapRotationSettingsPayload, from = new Date()) {
+  const openAt = previousWeekdayDate(settings.pollOpenDay, settings.pollOpenTime, from);
+  let closeAt = nextWeekdayDate(settings.pollCloseDay, settings.pollCloseTime, openAt);
+  if (closeAt.getTime() <= openAt.getTime()) closeAt = new Date(closeAt.getTime() + 7 * 24 * 60 * 60 * 1000);
+  const id = `${openAt.toISOString().slice(0, 10)}_${closeAt.toISOString().slice(0, 10)}`;
+  return { id, openAt, closeAt, isOpen: from.getTime() >= openAt.getTime() && from.getTime() < closeAt.getTime(), isClosed: from.getTime() >= closeAt.getTime() };
+}
+
+function chooseSpawnZonePollWinner(rotation: MapRotationPayload, activePoll: MapRotationActivePollPayload) {
+  const settings = normalizeMapRotationSettings(rotation.settings);
+  const options = Array.isArray(activePoll.options) ? activePoll.options : [];
+  const totalVotes = Number(activePoll.totalVotes || 0);
+  if (settings.minVotes && totalVotes < settings.minVotes) {
+    return { zone: null as SpawnZonePayload | null, reason: `Votação fechada sem mínimo de votos (${totalVotes}/${settings.minVotes}).` };
+  }
+  const maxVotes = Math.max(-1, ...options.map((option) => Number(option.votes || 0)));
+  if (maxVotes <= 0) return { zone: null as SpawnZonePayload | null, reason: "Votação fechada sem votos." };
+  const winners = options.filter((option) => Number(option.votes || 0) === maxVotes);
+  if (winners.length === 1) {
+    const zone = rotation.zones.find((item) => item.id === winners[0].zoneId) || null;
+    return { zone, reason: zone ? "winner" : "Zona vencedora não encontrada." };
+  }
+  if (settings.tiePolicy === "keep_current" && rotation.currentZoneId) {
+    const zone = rotation.zones.find((item) => item.id === rotation.currentZoneId) || null;
+    return { zone, reason: zone ? "Empate: mantida a zona atual." : "Empate sem zona atual válida." };
+  }
+  if (settings.tiePolicy === "random") {
+    const option = winners[crypto.randomInt(0, winners.length)];
+    const zone = rotation.zones.find((item) => item.id === option.zoneId) || null;
+    return { zone, reason: zone ? "Empate: vencedor sorteado." : "Empate sem zona sorteada válida." };
+  }
+  return { zone: null as SpawnZonePayload | null, reason: "Empate: resolução manual necessária." };
+}
+
+async function postSpawnZonePollResult(settings: MapRotationSettingsPayload, content: string) {
+  const channelId = String(settings.pollChannelId || "").trim();
+  if (!channelId) return;
+  const client = getDiscordClient();
+  const route = Routes.channelMessages(channelId) as `/${string}`;
+  await client.rest.post(route, { body: { content, allowed_mentions: { parse: [] } } });
+}
+
+async function applySpawnZoneToServer(rotation: MapRotationPayload, zone: SpawnZonePayload, source: string, totalVotes = 0) {
+  const settings = normalizeMapRotationSettings(rotation.settings);
+  const filePath = settings.spawnFilePath || SPAWN_ZONE_FILE_PATH;
+  const currentXml = await downloadTextFile(filePath);
+  const nextXml = replaceFreshSpawnPointsXml(currentXml, zone);
+  await uploadTextFile(filePath, nextXml);
+  const now = new Date().toISOString();
+  rotation.currentZoneId = zone.id;
+  if (rotation.nextZoneId === zone.id) rotation.nextZoneId = undefined;
+  rotation.settings = settings;
+  rotation.voteHistory = [
+    ...(Array.isArray(rotation.voteHistory) ? rotation.voteHistory : []),
+    {
+      id: crypto.randomUUID(),
+      winnerZoneId: zone.id,
+      winnerName: zone.name,
+      totalVotes,
+      closedAt: now,
+      appliedAt: now,
+      source,
+    },
+  ].slice(-24);
+  return filePath;
+}
+
+async function finalizeSpawnZonePoll(rotation: MapRotationPayload, options: { apply?: boolean; source?: string } = {}) {
+  if (!rotation.activePoll) throw new Error("Nenhuma enquete ativa para finalizar.");
+  const settings = normalizeMapRotationSettings(rotation.settings);
+  let activePoll = await fetchDiscordSpawnZonePoll(rotation.activePoll);
+  activePoll.status = "closed";
+  const { zone, reason } = chooseSpawnZonePollWinner(rotation, activePoll);
+  const now = new Date().toISOString();
+  activePoll.finalizedAt = now;
+  activePoll.finalReason = reason;
+  if (!zone) {
+    rotation.activePoll = activePoll;
+    rotation.voteHistory = [
+      ...(Array.isArray(rotation.voteHistory) ? rotation.voteHistory : []),
+      { id: crypto.randomUUID(), winnerName: "Sem vencedor", totalVotes: activePoll.totalVotes || 0, closedAt: now, source: options.source || "poll", reason },
+    ].slice(-24);
+    await postSpawnZonePollResult(settings, `🗳️ Votação encerrada sem vencedor automático. ${reason}`);
+    return { zone: null as SpawnZonePayload | null, path: "", reason, activePoll };
+  }
+
+  rotation.nextZoneId = zone.id;
+  let path = "";
+  if (options.apply) {
+    if (settings.applyOnNextRestart === false) {
+      path = await applySpawnZoneToServer(rotation, zone, options.source || "poll-auto", activePoll.totalVotes || 0);
+      activePoll.appliedAt = new Date().toISOString();
+    } else {
+      rotation.voteHistory = [
+        ...(Array.isArray(rotation.voteHistory) ? rotation.voteHistory : []),
+        { id: crypto.randomUUID(), winnerZoneId: zone.id, winnerName: zone.name, totalVotes: activePoll.totalVotes || 0, closedAt: now, source: options.source || "poll-scheduled", scheduled: true },
+      ].slice(-24);
+    }
+  } else {
+    rotation.voteHistory = [
+      ...(Array.isArray(rotation.voteHistory) ? rotation.voteHistory : []),
+      { id: crypto.randomUUID(), winnerZoneId: zone.id, winnerName: zone.name, totalVotes: activePoll.totalVotes || 0, closedAt: now, source: options.source || "poll" },
+    ].slice(-24);
+  }
+  rotation.activePoll = activePoll;
+  await postSpawnZonePollResult(settings, `🏆 Votação encerrada. Zona vencedora: **${zone.name}** com ${activePoll.totalVotes || 0} votos.${options.apply ? (settings.applyOnNextRestart === false ? " Aplicada no servidor." : " Programada para o próximo restart.") : ""}`);
+  return { zone, path, reason, activePoll };
+}
+
+async function runSpawnZoneAutomationNow() {
+  const state = (await getStateAsync()) as AdminState;
+  const rotation = getMapRotationState(state);
+  const settings = normalizeMapRotationSettings(rotation.settings);
+  const automation = rotation.automation || {};
+  const now = new Date();
+  const windowInfo = getMapRotationScheduleWindow(settings, now);
+  automation.lastCheckedAt = now.toISOString();
+  automation.lastError = "";
+
+  try {
+    if (settings.autoCreatePoll && windowInfo.isOpen && automation.lastPollWindowId !== windowInfo.id && (!rotation.activePoll || rotation.activePoll.status === "closed")) {
+      rotation.activePoll = await createDiscordSpawnZonePoll(rotation);
+      automation.lastPollWindowId = windowInfo.id;
+      automation.lastAction = "created_poll";
+    }
+
+    if (rotation.activePoll && rotation.activePoll.status !== "closed") {
+      rotation.activePoll = await fetchDiscordSpawnZonePoll(rotation.activePoll);
+      const closesAt = rotation.activePoll.closesAt ? new Date(rotation.activePoll.closesAt) : windowInfo.closeAt;
+      if (now.getTime() >= closesAt.getTime() && automation.lastCloseWindowId !== windowInfo.id) {
+        await finalizeSpawnZonePoll(rotation, { apply: Boolean(settings.autoApplyWinner), source: settings.autoApplyWinner ? "poll-auto" : "poll" });
+        automation.lastCloseWindowId = windowInfo.id;
+        automation.lastAction = settings.autoApplyWinner ? "finalized_and_applied" : "finalized_poll";
+      }
+    }
+  } catch (err) {
+    automation.lastError = err instanceof Error ? err.message : String(err);
+    automation.lastAction = "error";
+  }
+
+  rotation.settings = settings;
+  rotation.automation = automation;
+  return saveMapRotationState(state, rotation);
+}
+
+let spawnZoneAutomationStarted = false;
+function startSpawnZoneAutomationScheduler() {
+  if (spawnZoneAutomationStarted) return;
+  spawnZoneAutomationStarted = true;
+  const intervalMs = Math.max(60_000, Number(process.env.SPAWN_ZONE_AUTOMATION_INTERVAL_MS || 300_000));
+  const timer = setInterval(() => {
+    runSpawnZoneAutomationNow().catch((err) => console.error("spawn zones automation failed", err));
+  }, intervalMs);
+  if (typeof (timer as any).unref === "function") (timer as any).unref();
+}
+
 function renderSpawnPointXml(points: SpawnZonePointPayload[]) {
   return points
     .map((point) => `\t\t\t<pos x="${Number(point.x || 0).toFixed(2)}" z="${Number(point.z || 0).toFixed(2)}" />`)
@@ -297,6 +467,7 @@ function getMapRotationState(state: AdminState): MapRotationPayload {
     voteHistory: Array.isArray(stored.voteHistory) ? stored.voteHistory : [],
     settings: normalizeMapRotationSettings(stored.settings),
     activePoll: stored.activePoll && typeof stored.activePoll === "object" ? stored.activePoll as MapRotationActivePollPayload : undefined,
+    automation: stored.automation && typeof stored.automation === "object" ? stored.automation as MapRotationAutomationPayload : {},
     updatedAt: stored.updatedAt || new Date().toISOString(),
   };
 }
@@ -309,6 +480,8 @@ async function saveMapRotationState(state: AdminState, rotation: MapRotationPayl
   await saveStateAsync(state);
   return state.mapRotation;
 }
+
+startSpawnZoneAutomationScheduler();
 
 function findReadySpawnZone(rotation: MapRotationPayload, zoneId: unknown) {
   const zone = rotation.zones.find((item) => item.id === String(zoneId || ""));
@@ -3351,7 +3524,7 @@ function renderAdminPanelHtml(token: string) {
                   <button type="button" data-spawn-zone-tab="settings">Settings</button>
                 </div>
               </div>
-              <div class="catalog-breadcrumb">Iteração 4: editor visual refinado, aplicação do arquivo de spawn e criação/leitura de enquete nativa do Discord.</div>
+              <div class="catalog-breadcrumb">Iteração 5: automação semanal, fechamento de votação, aplicação do vencedor e histórico completo.</div>
             </div>
 
             <div id="spawnZonesTabRotation" class="spawn-zone-tab active">
@@ -3362,13 +3535,13 @@ function renderAdminPanelHtml(token: string) {
               </div>
               <div class="spawn-zone-rotation-grid">
                 <div class="card">
-                  <div class="section-title"><div><h2>Controle de rotação</h2><div class="member-meta">Escolha uma zona, aplique os pontos no servidor ou crie a enquete nativa do Discord com as zonas habilitadas.</div></div><span class="chip">iteração 4</span></div>
+                  <div class="section-title"><div><h2>Controle de rotação</h2><div class="member-meta">Escolha uma zona, aplique os pontos no servidor, crie/finalize a enquete e rode a automação semanal.</div></div><span class="chip">iteração 5</span></div>
                   <div class="spawn-zone-control-row">
                     <select id="spawnZonesNextSelect"></select>
                     <button id="spawnZonesSetNext" type="button" class="secondary-btn">Programar próxima</button>
-                    <button id="spawnZonesApplyNext" type="button" class="secondary-btn">Aplicar no painel</button><button id="spawnZonesApplyServer" type="button" class="primary-btn">Aplicar no servidor</button><button id="spawnZonesCreatePoll" type="button" class="secondary-btn">Criar enquete</button><button id="spawnZonesRefreshPoll" type="button" class="ghost-btn">Atualizar votos</button>
+                    <button id="spawnZonesApplyNext" type="button" class="secondary-btn">Aplicar no painel</button><button id="spawnZonesApplyServer" type="button" class="primary-btn">Aplicar no servidor</button><button id="spawnZonesCreatePoll" type="button" class="secondary-btn">Criar enquete</button><button id="spawnZonesRefreshPoll" type="button" class="ghost-btn">Atualizar votos</button><button id="spawnZonesFinalizePoll" type="button" class="ghost-btn">Finalizar votação</button><button id="spawnZonesRunAutomation" type="button" class="ghost-btn">Rodar automação</button>
                   </div>
-                  <div class="member-meta" style="margin-top:10px">Aplicar no servidor substitui apenas o bloco <generator_posbubbles> dentro de <fresh>, preservando spawn_params, generator_params, hop e travel.</div><div id="spawnZonesActivePoll" class="settings-empty-note" style="margin-top:12px">Nenhuma enquete ativa.</div>
+                  <div class="member-meta" style="margin-top:10px">Aplicar no servidor substitui apenas o bloco <generator_posbubbles> dentro de <fresh>, preservando spawn_params, generator_params, hop e travel.</div><div id="spawnZonesAutomationStatus" class="settings-empty-note" style="margin-top:12px">Automação ainda não executada.</div><div id="spawnZonesActivePoll" class="settings-empty-note" style="margin-top:12px">Nenhuma enquete ativa.</div>
                 </div>
                 <div class="card">
                   <div class="section-title"><div><h2>Histórico de rotações</h2><div class="member-meta">Aplicações manuais e futuros resultados de votação ficam aqui.</div></div></div>
@@ -3402,7 +3575,7 @@ function renderAdminPanelHtml(token: string) {
             <div id="spawnZonesTabSettings" class="spawn-zone-tab">
               <div class="spawn-zone-setting-grid">
                 <div class="card">
-                  <div class="section-title"><div><h2>Discord Poll</h2><div class="member-meta">Base das configurações da enquete nativa. A criação/leitura automática da Poll entra na integração final.</div></div><span class="chip">settings</span></div>
+                  <div class="section-title"><div><h2>Discord Poll</h2><div class="member-meta">Configura a enquete nativa, a criação automática e a aplicação semanal do vencedor.</div></div><span class="chip">settings</span></div>
                   <div class="form-grid">
                     <label>Canal da enquete<input id="spawnZonesPollChannel" placeholder="ID do canal Discord" /></label>
                     <label>Pergunta da enquete<input id="spawnZonesPollQuestion" placeholder="Escolha a zona da próxima semana" /></label>
@@ -3650,7 +3823,7 @@ function renderAdminPanelHtml(token: string) {
       itemsList: document.getElementById("itemsList"), itemsLoading: document.getElementById("itemsLoading"), itemsEmpty: document.getElementById("itemsEmpty"), itemsSearch: document.getElementById("itemsSearch"), itemsFilter: document.getElementById("itemsFilter"), itemsRefresh: document.getElementById("itemsRefresh"), itemsSentinel: document.getElementById("itemsSentinel"),
       lockedContainerSetupStatus: document.getElementById("lockedContainerSetupStatus"), lockedContainerModalStatus: document.getElementById("lockedContainerModalStatus"), lockedContainerInstalledSection: document.getElementById("lockedContainerInstalledSection"), lockedContainerInstalledGrid: document.getElementById("lockedContainerInstalledGrid"), lockedContainerAvailableGrid: document.getElementById("lockedContainerAvailableGrid"), eventIntegrationModalBackdrop: document.getElementById("eventIntegrationModalBackdrop"), eventIntegrationModalClose: document.getElementById("eventIntegrationModalClose"),
       itemModalBackdrop: document.getElementById("itemModalBackdrop"), itemModalTitle: document.getElementById("itemModalTitle"), itemModalSubtitle: document.getElementById("itemModalSubtitle"), itemModalPreviewImage: document.getElementById("itemModalPreviewImage"), itemModalPreviewName: document.getElementById("itemModalPreviewName"), itemModalPreviewClass: document.getElementById("itemModalPreviewClass"), itemModalPopularName: document.getElementById("itemModalPopularName"), itemModalImageUrl: document.getElementById("itemModalImageUrl"), itemModalSpawnEventName: document.getElementById("itemModalSpawnEventName"), itemModalEnabled: document.getElementById("itemModalEnabled"),
-      spawnZonesCurrentZone: document.getElementById("spawnZonesCurrentZone"), spawnZonesNextZone: document.getElementById("spawnZonesNextZone"), spawnZonesEnabledCount: document.getElementById("spawnZonesEnabledCount"), spawnZonesVoteHistory: document.getElementById("spawnZonesVoteHistory"), spawnZonesActivePoll: document.getElementById("spawnZonesActivePoll"), spawnZonesNextSelect: document.getElementById("spawnZonesNextSelect"), spawnZonesSetNext: document.getElementById("spawnZonesSetNext"), spawnZonesApplyNext: document.getElementById("spawnZonesApplyNext"), spawnZonesApplyServer: document.getElementById("spawnZonesApplyServer"), spawnZonesCreatePoll: document.getElementById("spawnZonesCreatePoll"), spawnZonesRefreshPoll: document.getElementById("spawnZonesRefreshPoll"),
+      spawnZonesCurrentZone: document.getElementById("spawnZonesCurrentZone"), spawnZonesNextZone: document.getElementById("spawnZonesNextZone"), spawnZonesEnabledCount: document.getElementById("spawnZonesEnabledCount"), spawnZonesVoteHistory: document.getElementById("spawnZonesVoteHistory"), spawnZonesActivePoll: document.getElementById("spawnZonesActivePoll"), spawnZonesNextSelect: document.getElementById("spawnZonesNextSelect"), spawnZonesSetNext: document.getElementById("spawnZonesSetNext"), spawnZonesApplyNext: document.getElementById("spawnZonesApplyNext"), spawnZonesApplyServer: document.getElementById("spawnZonesApplyServer"), spawnZonesCreatePoll: document.getElementById("spawnZonesCreatePoll"), spawnZonesRefreshPoll: document.getElementById("spawnZonesRefreshPoll"), spawnZonesFinalizePoll: document.getElementById("spawnZonesFinalizePoll"), spawnZonesRunAutomation: document.getElementById("spawnZonesRunAutomation"), spawnZonesAutomationStatus: document.getElementById("spawnZonesAutomationStatus"),
       spawnZonesMapTitle: document.getElementById("spawnZonesMapTitle"), spawnZonesMapHint: document.getElementById("spawnZonesMapHint"), spawnZonesAutosaveStatus: document.getElementById("spawnZonesAutosaveStatus"), spawnZonesMapViewport: document.getElementById("spawnZonesMapViewport"), spawnZonesMapInner: document.getElementById("spawnZonesMapInner"), spawnZonesMarkers: document.getElementById("spawnZonesMarkers"), spawnZonesMapZoomIn: document.getElementById("spawnZonesMapZoomIn"), spawnZonesMapZoomOut: document.getElementById("spawnZonesMapZoomOut"), spawnZonesMapZoomLabel: document.getElementById("spawnZonesMapZoomLabel"), spawnZonesCursor: document.getElementById("spawnZonesCursor"), spawnZoneCreate: document.getElementById("spawnZoneCreate"), spawnZoneList: document.getElementById("spawnZoneList"), spawnZonesPollChannel: document.getElementById("spawnZonesPollChannel"), spawnZonesPollQuestion: document.getElementById("spawnZonesPollQuestion"), spawnZonesPollOpenDay: document.getElementById("spawnZonesPollOpenDay"), spawnZonesPollOpenTime: document.getElementById("spawnZonesPollOpenTime"), spawnZonesPollCloseDay: document.getElementById("spawnZonesPollCloseDay"), spawnZonesPollCloseTime: document.getElementById("spawnZonesPollCloseTime"), spawnZonesMinVotes: document.getElementById("spawnZonesMinVotes"), spawnZonesTiePolicy: document.getElementById("spawnZonesTiePolicy"), spawnZonesAutoCreatePoll: document.getElementById("spawnZonesAutoCreatePoll"), spawnZonesAutoApplyWinner: document.getElementById("spawnZonesAutoApplyWinner"), spawnZonesApplyOnNextRestart: document.getElementById("spawnZonesApplyOnNextRestart"), spawnZonesSpawnFilePath: document.getElementById("spawnZonesSpawnFilePath"), spawnZonesServerAnnouncement: document.getElementById("spawnZonesServerAnnouncement")
     };
     function apiUrl(path) { const separator = path.includes("?") ? "&" : "?"; return adminToken ? path + separator + "token=" + encodeURIComponent(adminToken) : path; }
@@ -4658,6 +4831,13 @@ function renderAdminPanelHtml(token: string) {
         if (zones.some((zone) => zone.id === currentValue)) els.spawnZonesNextSelect.value = currentValue;
         else if (state.spawnZones?.nextZoneId) els.spawnZonesNextSelect.value = state.spawnZones.nextZoneId;
       }
+      const automation = state.spawnZones?.automation || {};
+      if (els.spawnZonesAutomationStatus) {
+        const lastChecked = automation.lastCheckedAt ? ('Última execução: ' + automation.lastCheckedAt) : 'Automação ainda não executada.';
+        const action = automation.lastAction ? (' · ação: ' + automation.lastAction) : '';
+        const error = automation.lastError ? (' · erro: ' + automation.lastError) : '';
+        els.spawnZonesAutomationStatus.textContent = lastChecked + action + error;
+      }
       const activePoll = state.spawnZones?.activePoll;
       if (els.spawnZonesActivePoll) {
         if (!activePoll) {
@@ -4667,7 +4847,7 @@ function renderAdminPanelHtml(token: string) {
           const rows = (activePoll.options || []).map((option) => '<div class="spawn-zone-poll-row"><div><b>' + escapeHtml(option.name || 'Zona') + '</b><span>' + escapeHtml(option.zoneId || '') + '</span></div><strong>' + String(Number(option.votes || 0)) + '</strong></div>').join('');
           const link = activePoll.rawUrl ? '<a class="chip" href="' + escapeHtml(activePoll.rawUrl) + '" target="_blank" rel="noreferrer">Abrir no Discord</a>' : '';
           els.spawnZonesActivePoll.className = 'spawn-zone-poll-result';
-          els.spawnZonesActivePoll.innerHTML = '<div class="member-meta"><b>Enquete ativa:</b> ' + escapeHtml(activePoll.question || 'Map vote') + ' · ' + String(Number(activePoll.totalVotes || 0)) + ' votos ' + link + '</div>' + rows + (activePoll.winnerName ? '<div class="member-meta">Vencedor parcial: <b>' + escapeHtml(activePoll.winnerName) + '</b></div>' : '');
+          els.spawnZonesActivePoll.innerHTML = '<div class="member-meta"><b>Enquete ' + escapeHtml(activePoll.status === 'closed' ? 'fechada' : 'ativa') + ':</b> ' + escapeHtml(activePoll.question || 'Map vote') + ' · ' + String(Number(activePoll.totalVotes || 0)) + ' votos ' + link + '</div>' + rows + (activePoll.winnerName ? '<div class="member-meta">Vencedor: <b>' + escapeHtml(activePoll.winnerName) + '</b></div>' : '') + (activePoll.finalReason ? '<div class="member-meta">' + escapeHtml(activePoll.finalReason) + '</div>' : '');
         }
       }
       const history = state.spawnZones?.voteHistory || [];
@@ -5193,6 +5373,23 @@ function renderAdminPanelHtml(token: string) {
       setSpawnZonesAutosaveStatus('salvo'); renderSpawnZones();
       showToast('Votos atualizados.');
     }
+    async function finalizeSpawnZonePollNow() {
+      if (!confirm('Finalizar a votação atual e registrar o vencedor conforme as regras configuradas?')) return;
+      setSpawnZonesAutosaveStatus('finalizando...');
+      const response = await apiFetch('/admin-panel/api/spawn-zones/poll/finalize', { method: 'POST', body: JSON.stringify({ apply: true }) });
+      if (!response.ok) { showToast(await response.text()); setSpawnZonesAutosaveStatus('erro'); return; }
+      state.spawnZones = await response.json();
+      setSpawnZonesAutosaveStatus('salvo'); renderSpawnZones();
+      showToast('Votação finalizada.');
+    }
+    async function runSpawnZoneAutomationNow() {
+      setSpawnZonesAutosaveStatus('rodando automação...');
+      const response = await apiFetch('/admin-panel/api/spawn-zones/automation/run', { method: 'POST', body: JSON.stringify({}) });
+      if (!response.ok) { showToast(await response.text()); setSpawnZonesAutosaveStatus('erro'); return; }
+      state.spawnZones = await response.json();
+      setSpawnZonesAutosaveStatus('salvo'); renderSpawnZones();
+      showToast('Automação executada.');
+    }
     async function applySpawnZoneOnServer(zoneId) {
       if (!zoneId) return;
       if (!confirm('Aplicar esta zona no arquivo de spawn do servidor? Isso substitui os pontos fresh/generator_posbubbles.')) return;
@@ -5222,6 +5419,8 @@ function renderAdminPanelHtml(token: string) {
     if (els.spawnZonesApplyServer) els.spawnZonesApplyServer.addEventListener('click', () => applySpawnZoneOnServer(els.spawnZonesNextSelect?.value || selectedSpawnZone()?.id));
     if (els.spawnZonesCreatePoll) els.spawnZonesCreatePoll.addEventListener('click', createSpawnZonePollNow);
     if (els.spawnZonesRefreshPoll) els.spawnZonesRefreshPoll.addEventListener('click', refreshSpawnZonePoll);
+    if (els.spawnZonesFinalizePoll) els.spawnZonesFinalizePoll.addEventListener('click', finalizeSpawnZonePollNow);
+    if (els.spawnZonesRunAutomation) els.spawnZonesRunAutomation.addEventListener('click', runSpawnZoneAutomationNow);
     if (els.spawnZonesMapZoomIn) els.spawnZonesMapZoomIn.addEventListener('click', () => setSpawnZoneMapZoom((state.spawnZoneMapZoom || 1) + 0.5));
     if (els.spawnZonesMapZoomOut) els.spawnZonesMapZoomOut.addEventListener('click', () => setSpawnZoneMapZoom((state.spawnZoneMapZoom || 1) - 0.5));
     if (els.spawnZonesMapInner) {
@@ -5992,28 +6191,8 @@ router.post("/api/spawn-zones/rotation/apply-server", async (req, res) => {
     res.status(400).send(error || "Zona inválida");
     return;
   }
-  const settings = normalizeMapRotationSettings(rotation.settings);
-  const filePath = settings.spawnFilePath || SPAWN_ZONE_FILE_PATH;
   try {
-    const currentXml = await downloadTextFile(filePath);
-    const nextXml = replaceFreshSpawnPointsXml(currentXml, zone);
-    await uploadTextFile(filePath, nextXml);
-    const now = new Date().toISOString();
-    rotation.currentZoneId = zone.id;
-    if (rotation.nextZoneId === zone.id) rotation.nextZoneId = undefined;
-    rotation.settings = settings;
-    rotation.voteHistory = [
-      ...(Array.isArray(rotation.voteHistory) ? rotation.voteHistory : []),
-      {
-        id: crypto.randomUUID(),
-        winnerZoneId: zone.id,
-        winnerName: zone.name,
-        totalVotes: 0,
-        closedAt: now,
-        appliedAt: now,
-        source: "server",
-      },
-    ].slice(-24);
+    const filePath = await applySpawnZoneToServer(rotation, zone, "server", 0);
     const saved = await saveMapRotationState(state, rotation);
     res.json({ ok: true, path: filePath, rotation: saved });
     return;
@@ -6048,6 +6227,32 @@ router.post("/api/spawn-zones/poll/refresh", async (req, res) => {
   try {
     rotation.activePoll = await fetchDiscordSpawnZonePoll(rotation.activePoll);
     const saved = await saveMapRotationState(state, rotation);
+    res.json(saved);
+    return;
+  } catch (err) {
+    res.status(400).send(err instanceof Error ? err.message : String(err));
+    return;
+  }
+});
+
+router.post("/api/spawn-zones/poll/finalize", async (req, res) => {
+  const state = (await getStateAsync()) as AdminState;
+  const rotation = getMapRotationState(state);
+  try {
+    const settings = normalizeMapRotationSettings(rotation.settings);
+    await finalizeSpawnZonePoll(rotation, { apply: Boolean(req.body?.apply ?? settings.autoApplyWinner), source: req.body?.source || "poll-manual" });
+    const saved = await saveMapRotationState(state, rotation);
+    res.json(saved);
+    return;
+  } catch (err) {
+    res.status(400).send(err instanceof Error ? err.message : String(err));
+    return;
+  }
+});
+
+router.post("/api/spawn-zones/automation/run", async (req, res) => {
+  try {
+    const saved = await runSpawnZoneAutomationNow();
     res.json(saved);
     return;
   } catch (err) {

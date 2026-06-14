@@ -269,6 +269,9 @@ export type MapRotationActivePoll = {
   winnerZoneId?: string;
   winnerName?: string;
   lastFetchedAt?: string;
+  finalizedAt?: string;
+  appliedAt?: string;
+  finalReason?: string;
   rawUrl?: string;
 };
 
@@ -298,6 +301,14 @@ export type MapRotationSettings = {
   serverAnnouncement?: string;
 };
 
+export type MapRotationAutomationState = {
+  lastPollWindowId?: string;
+  lastCloseWindowId?: string;
+  lastCheckedAt?: string;
+  lastAction?: string;
+  lastError?: string;
+};
+
 export type MapRotationState = {
   zones: SpawnZone[];
   currentZoneId?: string;
@@ -305,6 +316,7 @@ export type MapRotationState = {
   voteHistory?: MapRotationVoteHistory[];
   settings?: MapRotationSettings;
   activePoll?: MapRotationActivePoll;
+  automation?: MapRotationAutomationState;
   updatedAt?: string;
 };
 
