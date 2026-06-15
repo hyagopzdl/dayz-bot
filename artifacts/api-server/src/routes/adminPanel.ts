@@ -5606,20 +5606,38 @@ function renderAdminPanelHtml(token: string) {
       els.modalBackdrop.classList.remove("open"); showToast("Carteira atualizada com sucesso."); await loadOverview(); await loadMembers(true); if (state.selectedDiscordId) await openMemberDrawer(state.selectedDiscordId);
     }
     async function createMapVoteWelcomeNow() {
+      const settingsSnapshot = readSpawnZoneSettingsForm();
+      if (!settingsSnapshot.pollChannelId) {
+        showToast('Informe e salve o ID do canal da enquete antes de criar as boas-vindas.');
+        if (els.spawnZonesPollChannel) els.spawnZonesPollChannel.focus();
+        return;
+      }
       if (!confirm('Criar ou atualizar a mensagem de boas-vindas no canal da enquete?')) return;
       setSpawnZonesAutosaveStatus('criando boas-vindas...');
-      const response = await apiFetch('/admin-panel/api/spawn-zones/welcome/create', { method: 'POST', body: JSON.stringify({}) });
-      if (!response.ok) { showToast(await response.text()); setSpawnZonesAutosaveStatus('erro'); return; }
+      setSpawnZoneSettingsStatus('Salvando canal antes de criar boas-vindas...', 'saving');
+      await saveSpawnZonesSettingsNow(settingsSnapshot, { render: false });
+      const response = await apiFetch('/admin-panel/api/spawn-zones/welcome/create', { method: 'POST', body: JSON.stringify({ settings: settingsSnapshot }) });
+      if (!response.ok) { showToast(await response.text()); setSpawnZonesAutosaveStatus('erro'); setSpawnZoneSettingsStatus('Erro ao criar boas-vindas.', 'error'); return; }
       state.spawnZones = await response.json();
+      setSpawnZoneSettingsStatus('Boas-vindas criada/atualizada.', 'saved');
       setSpawnZonesAutosaveStatus('salvo'); renderSpawnZones(); switchSpawnZonesTab('settings');
       showToast('Mensagem de boas-vindas criada/atualizada.');
     }
     async function createSpawnZonePollNow() {
+      const settingsSnapshot = readSpawnZoneSettingsForm();
+      if (!settingsSnapshot.pollChannelId) {
+        showToast('Informe e salve o ID do canal da enquete antes de criar a enquete.');
+        if (els.spawnZonesPollChannel) els.spawnZonesPollChannel.focus();
+        return;
+      }
       if (!confirm('Criar uma enquete nativa do Discord com as zonas habilitadas?')) return;
       setSpawnZonesAutosaveStatus('criando enquete...');
-      const response = await apiFetch('/admin-panel/api/spawn-zones/poll/create', { method: 'POST', body: JSON.stringify({}) });
-      if (!response.ok) { showToast(await response.text()); setSpawnZonesAutosaveStatus('erro'); return; }
+      setSpawnZoneSettingsStatus('Salvando canal antes de criar enquete...', 'saving');
+      await saveSpawnZonesSettingsNow(settingsSnapshot, { render: false });
+      const response = await apiFetch('/admin-panel/api/spawn-zones/poll/create', { method: 'POST', body: JSON.stringify({ settings: settingsSnapshot }) });
+      if (!response.ok) { showToast(await response.text()); setSpawnZonesAutosaveStatus('erro'); setSpawnZoneSettingsStatus('Erro ao criar enquete.', 'error'); return; }
       state.spawnZones = await response.json();
+      setSpawnZoneSettingsStatus('Enquete criada.', 'saved');
       setSpawnZonesAutosaveStatus('salvo'); renderSpawnZones(); switchSpawnZonesTab('rotation');
       showToast('Enquete criada no Discord.');
     }
@@ -5662,8 +5680,10 @@ function renderAdminPanelHtml(token: string) {
     }
     let spawnZoneSettingsSaveTimer = null;
     let spawnZoneSettingsSaveSeq = 0;
-    async function saveSpawnZonesSettingsNow(extraPatch) {
+    async function saveSpawnZonesSettingsNow(extraPatch, options) {
       const snapshot = { ...readSpawnZoneSettingsForm(), ...(extraPatch || {}) };
+      const shouldRender = !options || options.render !== false;
+      clearTimeout(spawnZoneSettingsSaveTimer);
       state.spawnZones = state.spawnZones || {};
       state.spawnZones.settings = { ...(state.spawnZones.settings || {}), ...snapshot };
       updateSpawnZoneSettingsUx();
@@ -5683,8 +5703,10 @@ function renderAdminPanelHtml(token: string) {
         state.spawnZones = saved;
         setSpawnZoneSettingsStatus('Configurações salvas automaticamente.', 'saved');
         setSpawnZonesAutosaveStatus('salvo');
-        renderSpawnZonesSummary();
-        renderSpawnZonesSettings();
+        if (shouldRender) {
+          renderSpawnZonesSummary();
+          renderSpawnZonesSettings();
+        }
       }
     }
     function scheduleSpawnZonesSettingsSave(delay) {
@@ -6521,6 +6543,10 @@ router.post("/api/spawn-zones/welcome/create", async (req, res) => {
   try {
     const state = (await getStateAsync()) as AdminState;
     const rotation = getMapRotationState(state);
+    const incomingSettings = req.body?.settings && typeof req.body.settings === "object" ? req.body.settings : req.body;
+    if (incomingSettings && typeof incomingSettings === "object") {
+      rotation.settings = normalizeMapRotationSettings({ ...(rotation.settings || {}), ...incomingSettings });
+    }
     await createOrUpdateMapVoteWelcomeMessage(rotation);
     const saved = await saveMapRotationState(state, rotation);
     res.json(saved);
@@ -6533,6 +6559,10 @@ router.post("/api/spawn-zones/welcome/create", async (req, res) => {
 router.post("/api/spawn-zones/poll/create", async (req, res) => {
   const state = (await getStateAsync()) as AdminState;
   const rotation = getMapRotationState(state);
+  const incomingSettings = req.body?.settings && typeof req.body.settings === "object" ? req.body.settings : req.body;
+  if (incomingSettings && typeof incomingSettings === "object") {
+    rotation.settings = normalizeMapRotationSettings({ ...(rotation.settings || {}), ...incomingSettings });
+  }
   try {
     rotation.activePoll = await createDiscordSpawnZonePoll(rotation);
     const saved = await saveMapRotationState(state, rotation);
