@@ -43,29 +43,21 @@ export function buildMapVotePublicWelcomePayload() {
   const embed = buildSystemEmbed({
     title: "🗺️ Weekly Arena Vote",
     description: [
-      "Welcome to the server. Choose your language to see how the weekly arena vote works.",
+      "Welcome to the server. Choose your language below to see how the weekly arena vote works.",
       "",
-      "Bem-vindo ao servidor. Escolha seu idioma para ver como funciona a votação semanal de arena.",
+      "Bem-vindo ao servidor. Escolha seu idioma abaixo para ver como funciona a votação semanal de arena.",
       "",
-      "Bienvenido al servidor. Elige tu idioma para ver cómo funciona la votación semanal de arena.",
+      "Bienvenido al servidor. Elige tu idioma abajo para ver cómo funciona la votación semanal de arena.",
       "",
-      "The active poll is posted below when voting is open.",
+      "After you choose a language, this message updates and the active poll is posted below when voting is open.",
     ].join("\n"),
     footerSuffix: "map-vote",
   });
 
-  const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
-    new ButtonBuilder()
-      .setCustomId(buildMapVoteStartCustomId())
-      .setEmoji("🌐")
-      .setLabel("Choose language")
-      .setStyle(ButtonStyle.Primary),
-  );
-
   return {
     content: "",
     embeds: [embed],
-    components: [row],
+    components: [languageButtons()],
     allowed_mentions: { parse: [] },
   };
 }

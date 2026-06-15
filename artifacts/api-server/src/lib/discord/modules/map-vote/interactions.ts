@@ -1,7 +1,11 @@
+import { Routes } from "discord.js";
+import crypto from "node:crypto";
 import { setPlayerLocale } from "../../../playerLinks";
 import {
   buildMapVoteExplanationPayload,
   buildMapVoteLanguagePromptPayload,
+  buildMapVotePollContent,
+  buildMapVotePollQuestion,
   type MapVoteLocale,
 } from "./ui";
 
@@ -19,6 +23,79 @@ function normalizeMapVoteLocale(locale?: string | null): MapVoteLocale {
 function ensureMapVoteUserLocales(state: any) {
   state.mapVoteUserLocales = state.mapVoteUserLocales || {};
   return state.mapVoteUserLocales as Record<string, { locale: MapVoteLocale; updatedAt: string }>;
+}
+
+function getMapRotationState(state: any) {
+  state.mapRotation = state.mapRotation && typeof state.mapRotation === "object" ? state.mapRotation : {};
+  state.mapRotation.zones = Array.isArray(state.mapRotation.zones) ? state.mapRotation.zones : [];
+  state.mapRotation.settings = state.mapRotation.settings && typeof state.mapRotation.settings === "object" ? state.mapRotation.settings : {};
+  return state.mapRotation;
+}
+
+function nextWeekdayDate(day: unknown, time: unknown, from = new Date()) {
+  const weekdays: Record<string, number> = { sunday: 0, monday: 1, tuesday: 2, wednesday: 3, thursday: 4, friday: 5, saturday: 6 };
+  const targetDay = weekdays[String(day || "sunday")] ?? 0;
+  const [hourRaw, minuteRaw] = String(time || "23:59").split(":");
+  const hour = Math.max(0, Math.min(23, Number(hourRaw || 0)));
+  const minute = Math.max(0, Math.min(59, Number(minuteRaw || 0)));
+  const next = new Date(from);
+  next.setHours(hour, minute, 0, 0);
+  const diff = (targetDay - next.getDay() + 7) % 7;
+  next.setDate(next.getDate() + diff);
+  if (next.getTime() <= from.getTime()) next.setDate(next.getDate() + 7);
+  return next;
+}
+
+async function ensureMapVotePoll(interaction: any, state: any) {
+  const rotation = getMapRotationState(state);
+  if (rotation.activePoll?.messageId) return false;
+
+  const settings = rotation.settings || {};
+  const channelId = String(settings.pollChannelId || interaction.channelId || "").trim();
+  if (!channelId) return false;
+
+  const zones = (Array.isArray(rotation.zones) ? rotation.zones : [])
+    .filter((zone: any) => zone?.enabled !== false && Array.isArray(zone?.points) && zone.points.length > 0)
+    .slice(0, 10);
+  if (zones.length < 2) return false;
+
+  const closeAt = nextWeekdayDate(settings.pollCloseDay, settings.pollCloseTime);
+  const durationHours = Math.max(1, Math.min(168, Math.ceil((closeAt.getTime() - Date.now()) / 36e5)));
+  const question = String(settings.pollQuestion || buildMapVotePollQuestion()).trim() || buildMapVotePollQuestion();
+
+  const body = {
+    content: buildMapVotePollContent(),
+    poll: {
+      question: { text: question },
+      answers: zones.map((zone: any) => ({ poll_media: { text: String(zone.name || "Zona") } })),
+      duration: durationHours,
+      allow_multiselect: false,
+      layout_type: 1,
+    },
+    allowed_mentions: { parse: [] },
+  };
+
+  const client = interaction.client;
+  const route = Routes.channelMessages(channelId) as `/${string}`;
+  const message = (await client.rest.post(route, { body })) as any;
+  const messageId = String(message?.id || "");
+  if (!messageId) return false;
+
+  rotation.settings = { ...settings, pollChannelId: channelId };
+  rotation.activePoll = {
+    id: crypto.randomUUID(),
+    channelId,
+    messageId,
+    question,
+    status: "active",
+    createdAt: new Date().toISOString(),
+    closesAt: closeAt.toISOString(),
+    options: zones.map((zone: any, index: number) => ({ zoneId: String(zone.id || ""), name: String(zone.name || "Zona"), answerId: index + 1, votes: 0 })),
+    totalVotes: 0,
+    rawUrl: `https://discord.com/channels/${process.env.DISCORD_SERVER_ID || process.env.DISCORD_GUILD_ID || "@me"}/${channelId}/${messageId}`,
+  };
+
+  return true;
 }
 
 async function safeReply(interaction: any, payload: any) {
@@ -41,6 +118,14 @@ async function safeUpdate(interaction: any, payload: any) {
   await interaction.reply({ ...payload, ephemeral: true });
 }
 
+async function safeFollowUp(interaction: any, payload: any) {
+  try {
+    if (interaction.followUp) await interaction.followUp(payload);
+  } catch {
+    // Ignore follow-up failures. The language selection itself already succeeded.
+  }
+}
+
 export async function handleMapVoteComponentInteraction(interaction: any, ctx: MapVoteInteractionContext) {
   if (!interaction.isButton?.()) return false;
 
@@ -61,8 +146,21 @@ export async function handleMapVoteComponentInteraction(interaction: any, ctx: M
       // The map-vote flow can be used before /link. Store the map-vote preference even if no link exists yet.
     }
 
-    await ctx.saveState(state);
     await safeUpdate(interaction, buildMapVoteExplanationPayload(locale));
+
+    try {
+      const createdPoll = await ensureMapVotePoll(interaction, state);
+      await ctx.saveState(state);
+      if (!createdPoll) return true;
+    } catch (err) {
+      await ctx.saveState(state);
+      await safeFollowUp(interaction, {
+        content: `⚠️ ${String((err as Error)?.message || err).slice(0, 1500)}`,
+        ephemeral: true,
+      });
+      return true;
+    }
+
     return true;
   }
 
