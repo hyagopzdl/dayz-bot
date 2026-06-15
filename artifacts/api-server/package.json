@@ -8,7 +8,8 @@
     "start": "tsx src/index.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "seed:shop-catalog": "tsx src/scripts/seedShopCatalogToNeon.ts",
-    "seed:dayz-items": "tsx src/scripts/seedDayzItemsToNeon.ts"
+    "seed:dayz-items": "tsx src/scripts/seedDayzItemsToNeon.ts",
+    "cache:spawn-zone-tiles": "tsx src/scripts/cacheXamMapTiles.ts --min-zoom=2 --max-zoom=8 --concurrency=2"
   },
   "dependencies": {
     "@workspace/api-zod": "workspace:*",

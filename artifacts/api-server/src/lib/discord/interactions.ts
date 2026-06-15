@@ -12,6 +12,7 @@ import { deferEphemeral, respondEphemeral } from "./responses";
 import { assertAdmin } from "./permissions";
 import { handleShopInteraction } from "./modules/shop/interactions";
 import { handleLinkAutocomplete, handleLinkCommand, handleLinkComponentInteraction } from "./modules/link/interactions";
+import { handleMapVoteComponentInteraction } from "./modules/map-vote/interactions";
 import { handleEconomyCommand } from "./modules/economy/interactions";
 import { handleEconomyAdminAutocomplete, handleEconomyAdminCommand } from "./modules/economy-admin/interactions";
 import {
@@ -75,6 +76,7 @@ export function registerInteractionHandlers(ctx: RegisterInteractionHandlersCont
     if (await handleLinkAutocomplete(interaction, { getState, saveState })) return;
     if (await handleEconomyAdminAutocomplete(interaction, { getState, saveState })) return;
     if (await handleLinkComponentInteraction(interaction, { getState, saveState })) return;
+    if (await handleMapVoteComponentInteraction(interaction, { getState, saveState })) return;
     if (await handleShopInteraction(interaction, { getState, saveState })) return;
 
     if (!interaction.isChatInputCommand()) return;

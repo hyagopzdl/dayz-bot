@@ -15,7 +15,9 @@ export type LinkPayloadOptions = {
 };
 
 function languageName(locale: Locale) {
-  return locale === "pt" ? "Português" : "English";
+  if (locale === "pt") return "Português";
+  if (locale === "es") return "Español";
+  return "English";
 }
 
 export function buildLanguageSelectCustomId(discordId: string) {
@@ -60,6 +62,12 @@ export function buildLinkSetupPayload(link: PlayerLink, _options?: LinkPayloadOp
           value: "pt",
           emoji: "🇧🇷",
           default: locale === "pt",
+        },
+        {
+          label: t(locale, "common.languageSpanish"),
+          value: "es",
+          emoji: "🇪🇸",
+          default: locale === "es",
         },
       ),
   );

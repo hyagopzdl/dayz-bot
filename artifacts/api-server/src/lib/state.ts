@@ -230,96 +230,6 @@ export type OnlineActivitySample = {
   online: number;
 };
 
-
-export type SpawnZonePoint = {
-  id: string;
-  x: number;
-  z: number;
-  createdAt?: string;
-  updatedAt?: string;
-};
-
-export type SpawnZone = {
-  id: string;
-  name: string;
-  color: string;
-  enabled: boolean;
-  points: SpawnZonePoint[];
-  createdAt: string;
-  updatedAt: string;
-};
-
-export type MapRotationPollOption = {
-  zoneId: string;
-  name: string;
-  answerId?: number;
-  votes?: number;
-};
-
-export type MapRotationActivePoll = {
-  id: string;
-  channelId: string;
-  messageId: string;
-  question: string;
-  status: string;
-  createdAt: string;
-  closesAt?: string;
-  options: MapRotationPollOption[];
-  totalVotes?: number;
-  winnerZoneId?: string;
-  winnerName?: string;
-  lastFetchedAt?: string;
-  finalizedAt?: string;
-  appliedAt?: string;
-  finalReason?: string;
-  rawUrl?: string;
-};
-
-export type MapRotationVoteHistory = {
-  id: string;
-  winnerZoneId?: string;
-  winnerName?: string;
-  totalVotes?: number;
-  closedAt: string;
-  appliedAt?: string;
-  source?: string;
-};
-
-export type MapRotationSettings = {
-  pollChannelId?: string;
-  pollQuestion?: string;
-  pollOpenDay?: string;
-  pollOpenTime?: string;
-  pollCloseDay?: string;
-  pollCloseTime?: string;
-  autoCreatePoll?: boolean;
-  autoApplyWinner?: boolean;
-  applyOnNextRestart?: boolean;
-  tiePolicy?: string;
-  minVotes?: number;
-  spawnFilePath?: string;
-  serverAnnouncement?: string;
-};
-
-export type MapRotationAutomationState = {
-  lastPollWindowId?: string;
-  lastCloseWindowId?: string;
-  lastCheckedAt?: string;
-  lastAction?: string;
-  lastError?: string;
-};
-
-export type MapRotationState = {
-  zones: SpawnZone[];
-  currentZoneId?: string;
-  nextZoneId?: string;
-  voteHistory?: MapRotationVoteHistory[];
-  settings?: MapRotationSettings;
-  activePoll?: MapRotationActivePoll;
-  automation?: MapRotationAutomationState;
-  updatedAt?: string;
-};
-
 export type AppState = {
   players: Record<string, PlayerStats>;
   dailyPlayers: Record<string, PlayerStats>;
@@ -341,7 +251,6 @@ export type AppState = {
   dayzItems?: DayzItemDefinition[];
   shopResetMonitor?: ShopResetMonitor | null;
   shopAutoDeploy?: ShopAutoDeployState | null;
-  mapRotation?: MapRotationState;
 
   files: Record<string, FileCursor>;
   recentEventIds: string[];
@@ -365,6 +274,9 @@ export type AppState = {
 
   lastLine?: number;
   lastFileName?: string;
+
+  mapRotation?: any;
+  mapVoteUserLocales?: Record<string, { locale: Locale; updatedAt: string }>;
 };
 
 function defaultState(): AppState {
@@ -394,6 +306,8 @@ function defaultState(): AppState {
     killStreakEvents: [],
     discordMessageIds: {},
     activeMatch: null,
+    mapRotation: undefined,
+    mapVoteUserLocales: {},
     lastDailyReset: "",
     lastWeeklyReset: "",
   };
@@ -479,7 +393,7 @@ function migrateLegacyState(data: any): AppState {
       discordId: String(existing.discordId || discordId),
       gamertag,
       gamertagNormalized: normalized,
-      locale: existing.locale === "pt" ? "pt" : "en",
+      locale: existing.locale === "pt" ? "pt" : existing.locale === "es" ? "es" : "en",
       linkedAt: existing.linkedAt || existing.createdAt || new Date().toISOString(),
       updatedAt: existing.updatedAt || existing.linkedAt || new Date().toISOString(),
     };
@@ -520,6 +434,8 @@ function migrateLegacyState(data: any): AppState {
   state.dayzItems = Array.isArray(data.dayzItems) ? data.dayzItems : undefined;
   state.shopResetMonitor = data.shopResetMonitor || null;
   state.shopAutoDeploy = data.shopAutoDeploy || null;
+  state.mapRotation = data.mapRotation;
+  state.mapVoteUserLocales = data.mapVoteUserLocales && typeof data.mapVoteUserLocales === "object" ? data.mapVoteUserLocales : {};
 
   const rawOnlinePlayers = data.onlinePlayers || {};
   const now = new Date().toISOString();
@@ -743,7 +659,6 @@ export async function saveStateAsync(data: AppState) {
     dayzItems: Array.isArray(data.dayzItems) ? data.dayzItems : undefined,
     shopResetMonitor: data.shopResetMonitor || null,
     shopAutoDeploy: data.shopAutoDeploy || null,
-    mapRotation: data.mapRotation || undefined,
     files: data.files || {},
     recentEventIds: (data.recentEventIds || []).slice(-3000),
     killFeedEvents: (data.killFeedEvents || []).slice(-60),
