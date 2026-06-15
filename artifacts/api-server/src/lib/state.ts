@@ -659,6 +659,8 @@ export async function saveStateAsync(data: AppState) {
     dayzItems: Array.isArray(data.dayzItems) ? data.dayzItems : undefined,
     shopResetMonitor: data.shopResetMonitor || null,
     shopAutoDeploy: data.shopAutoDeploy || null,
+    mapRotation: data.mapRotation || undefined,
+    mapVoteUserLocales: data.mapVoteUserLocales && typeof data.mapVoteUserLocales === "object" ? data.mapVoteUserLocales : {},
     files: data.files || {},
     recentEventIds: (data.recentEventIds || []).slice(-3000),
     killFeedEvents: (data.killFeedEvents || []).slice(-60),
