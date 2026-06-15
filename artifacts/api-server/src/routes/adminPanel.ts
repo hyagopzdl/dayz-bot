@@ -1,5 +1,7 @@
 import path from "path";
+import fs from "fs/promises";
 import crypto from "crypto";
+import sharp from "sharp";
 import { Router, type Request, type Response } from "express";
 import { Routes } from "discord.js";
 import { getShopRuntimeStatus, SHOP_EVENTS_PATH } from "../lib/shop";
@@ -80,6 +82,15 @@ const SPAWN_ZONE_FILE_PATH = SHOP_EVENTS_PATH.replace(/\/db\/events\.xml$/i, "/c
 
 const SPAWN_ZONE_COLORS = ["#e11d48", "#3b82f6", "#22c55e", "#f59e0b", "#8b5cf6", "#ec4899", "#06b6d4", "#f97316"];
 const SPAWN_ZONE_WORLD_SIZE = 15360;
+const SPAWN_ZONE_MAP_TILE_SIZE = 512;
+const SPAWN_ZONE_MAP_TILE_MAX_ZOOM = 5;
+
+function resolveChernarusMapPath() {
+  return path.resolve(
+    process.cwd(),
+    process.env.SHOP_MAP_IMAGE_PATH || "assets/maps/chernarus-map-pz-bot.png",
+  );
+}
 
 function normalizeSpawnZoneName(value: unknown) {
   const name = String(value || "").trim().replace(/\s+/g, " ");
@@ -3096,9 +3107,11 @@ function renderAdminPanelHtml(token: string) {
     .spawn-zone-map-title span { color: var(--text-3); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .spawn-zone-map-viewport { width: 100%; aspect-ratio: 1 / 1; overflow: auto; background: #10131b; cursor: crosshair; position: relative; overscroll-behavior: contain; scrollbar-width: thin; }
     .spawn-zone-map-viewport.is-dragging { cursor: grabbing; }
-    .spawn-zone-map-inner { position: relative; width: calc(100% * var(--spawn-map-zoom, 1)); min-width: 100%; aspect-ratio: 1 / 1; transform-origin: top left; }
-    .spawn-zone-map-inner img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; display: block; user-select: none; -webkit-user-drag: none; }
-    .spawn-zone-marker { position: absolute; left: 0; top: 0; width: 22px; height: 22px; border-radius: 999px; border: 3px solid #fff; box-shadow: 0 0 0 5px rgba(255,255,255,.12), 0 8px 30px rgba(0,0,0,.45); transform: translate(-50%, -50%); cursor: pointer; z-index: 2; }
+    .spawn-zone-map-inner { position: relative; width: calc(100% * var(--spawn-map-zoom, 1)); min-width: 100%; aspect-ratio: 1 / 1; transform-origin: top left; overflow: hidden; }
+    .spawn-zone-map-inner > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; display: block; user-select: none; -webkit-user-drag: none; }
+    .spawn-zone-map-tile-layer { position: absolute; inset: 0; z-index: 1; pointer-events: none; }
+    .spawn-zone-map-tile { position: absolute; display: block; width: auto; height: auto; object-fit: cover; user-select: none; -webkit-user-drag: none; }
+    .spawn-zone-marker { position: absolute; left: 0; top: 0; width: 22px; height: 22px; border-radius: 999px; border: 3px solid #fff; box-shadow: 0 0 0 5px rgba(255,255,255,.12), 0 8px 30px rgba(0,0,0,.45); transform: translate(-50%, -50%); cursor: pointer; z-index: 3; }
     .spawn-zone-marker.other { opacity: 1; width: 19px; height: 19px; border-width: 2px; box-shadow: 0 0 0 4px rgba(255,255,255,.10), 0 6px 20px rgba(0,0,0,.35); }
     .spawn-zone-marker.disabled { filter: grayscale(.8); opacity: .68; }
     .spawn-zone-marker.highlight { width: 28px; height: 28px; box-shadow: 0 0 0 8px rgba(255,255,255,.16), 0 10px 34px rgba(0,0,0,.5); z-index: 4; opacity: 1; filter: none; }
@@ -3578,6 +3591,7 @@ function renderAdminPanelHtml(token: string) {
                   <div id="spawnZonesMapViewport" class="spawn-zone-map-viewport">
                     <div id="spawnZonesMapInner" class="spawn-zone-map-inner">
                       <img src="/admin-panel/api/map-events/chernarus-map" alt="Mapa de Chernarus" draggable="false" />
+                      <div id="spawnZonesMapTiles" class="spawn-zone-map-tile-layer"></div>
                       <div id="spawnZonesMarkers"></div>
                     </div>
                   </div>
@@ -3844,7 +3858,7 @@ function renderAdminPanelHtml(token: string) {
       lockedContainerSetupStatus: document.getElementById("lockedContainerSetupStatus"), lockedContainerModalStatus: document.getElementById("lockedContainerModalStatus"), lockedContainerInstalledSection: document.getElementById("lockedContainerInstalledSection"), lockedContainerInstalledGrid: document.getElementById("lockedContainerInstalledGrid"), lockedContainerAvailableGrid: document.getElementById("lockedContainerAvailableGrid"), eventIntegrationModalBackdrop: document.getElementById("eventIntegrationModalBackdrop"), eventIntegrationModalClose: document.getElementById("eventIntegrationModalClose"),
       itemModalBackdrop: document.getElementById("itemModalBackdrop"), itemModalTitle: document.getElementById("itemModalTitle"), itemModalSubtitle: document.getElementById("itemModalSubtitle"), itemModalPreviewImage: document.getElementById("itemModalPreviewImage"), itemModalPreviewName: document.getElementById("itemModalPreviewName"), itemModalPreviewClass: document.getElementById("itemModalPreviewClass"), itemModalPopularName: document.getElementById("itemModalPopularName"), itemModalImageUrl: document.getElementById("itemModalImageUrl"), itemModalSpawnEventName: document.getElementById("itemModalSpawnEventName"), itemModalEnabled: document.getElementById("itemModalEnabled"),
       spawnZonesCurrentZone: document.getElementById("spawnZonesCurrentZone"), spawnZonesNextZone: document.getElementById("spawnZonesNextZone"), spawnZonesEnabledCount: document.getElementById("spawnZonesEnabledCount"), spawnZonesVoteHistory: document.getElementById("spawnZonesVoteHistory"), spawnZonesActivePoll: document.getElementById("spawnZonesActivePoll"), spawnZonesNextSelect: document.getElementById("spawnZonesNextSelect"), spawnZonesSetNext: document.getElementById("spawnZonesSetNext"), spawnZonesApplyNext: document.getElementById("spawnZonesApplyNext"), spawnZonesApplyServer: document.getElementById("spawnZonesApplyServer"), spawnZonesCreatePoll: document.getElementById("spawnZonesCreatePoll"), spawnZonesRefreshPoll: document.getElementById("spawnZonesRefreshPoll"), spawnZonesFinalizePoll: document.getElementById("spawnZonesFinalizePoll"), spawnZonesRunAutomation: document.getElementById("spawnZonesRunAutomation"), spawnZonesAutomationStatus: document.getElementById("spawnZonesAutomationStatus"),
-      spawnZonesMapTitle: document.getElementById("spawnZonesMapTitle"), spawnZonesMapHint: document.getElementById("spawnZonesMapHint"), spawnZonesAutosaveStatus: document.getElementById("spawnZonesAutosaveStatus"), spawnZonesMapViewport: document.getElementById("spawnZonesMapViewport"), spawnZonesMapInner: document.getElementById("spawnZonesMapInner"), spawnZonesMarkers: document.getElementById("spawnZonesMarkers"), spawnZonesMapZoomIn: document.getElementById("spawnZonesMapZoomIn"), spawnZonesMapZoomOut: document.getElementById("spawnZonesMapZoomOut"), spawnZonesMapZoomLabel: document.getElementById("spawnZonesMapZoomLabel"), spawnZonesCursor: document.getElementById("spawnZonesCursor"), spawnZoneCreate: document.getElementById("spawnZoneCreate"), spawnZoneImport: document.getElementById("spawnZoneImport"), spawnZoneImportFile: document.getElementById("spawnZoneImportFile"), spawnZoneList: document.getElementById("spawnZoneList"), spawnZonesPollChannel: document.getElementById("spawnZonesPollChannel"), spawnZonesPollQuestion: document.getElementById("spawnZonesPollQuestion"), spawnZonesPollOpenDay: document.getElementById("spawnZonesPollOpenDay"), spawnZonesPollOpenTime: document.getElementById("spawnZonesPollOpenTime"), spawnZonesPollCloseDay: document.getElementById("spawnZonesPollCloseDay"), spawnZonesPollCloseTime: document.getElementById("spawnZonesPollCloseTime"), spawnZonesMinVotes: document.getElementById("spawnZonesMinVotes"), spawnZonesTiePolicy: document.getElementById("spawnZonesTiePolicy"), spawnZonesAutoCreatePoll: document.getElementById("spawnZonesAutoCreatePoll"), spawnZonesAutoApplyWinner: document.getElementById("spawnZonesAutoApplyWinner"), spawnZonesApplyOnNextRestart: document.getElementById("spawnZonesApplyOnNextRestart"), spawnZonesSpawnFilePath: document.getElementById("spawnZonesSpawnFilePath"), spawnZonesServerAnnouncement: document.getElementById("spawnZonesServerAnnouncement")
+      spawnZonesMapTitle: document.getElementById("spawnZonesMapTitle"), spawnZonesMapHint: document.getElementById("spawnZonesMapHint"), spawnZonesAutosaveStatus: document.getElementById("spawnZonesAutosaveStatus"), spawnZonesMapViewport: document.getElementById("spawnZonesMapViewport"), spawnZonesMapInner: document.getElementById("spawnZonesMapInner"), spawnZonesMarkers: document.getElementById("spawnZonesMarkers"), spawnZonesMapTiles: document.getElementById("spawnZonesMapTiles"), spawnZonesMapZoomIn: document.getElementById("spawnZonesMapZoomIn"), spawnZonesMapZoomOut: document.getElementById("spawnZonesMapZoomOut"), spawnZonesMapZoomLabel: document.getElementById("spawnZonesMapZoomLabel"), spawnZonesCursor: document.getElementById("spawnZonesCursor"), spawnZoneCreate: document.getElementById("spawnZoneCreate"), spawnZoneImport: document.getElementById("spawnZoneImport"), spawnZoneImportFile: document.getElementById("spawnZoneImportFile"), spawnZoneList: document.getElementById("spawnZoneList"), spawnZonesPollChannel: document.getElementById("spawnZonesPollChannel"), spawnZonesPollQuestion: document.getElementById("spawnZonesPollQuestion"), spawnZonesPollOpenDay: document.getElementById("spawnZonesPollOpenDay"), spawnZonesPollOpenTime: document.getElementById("spawnZonesPollOpenTime"), spawnZonesPollCloseDay: document.getElementById("spawnZonesPollCloseDay"), spawnZonesPollCloseTime: document.getElementById("spawnZonesPollCloseTime"), spawnZonesMinVotes: document.getElementById("spawnZonesMinVotes"), spawnZonesTiePolicy: document.getElementById("spawnZonesTiePolicy"), spawnZonesAutoCreatePoll: document.getElementById("spawnZonesAutoCreatePoll"), spawnZonesAutoApplyWinner: document.getElementById("spawnZonesAutoApplyWinner"), spawnZonesApplyOnNextRestart: document.getElementById("spawnZonesApplyOnNextRestart"), spawnZonesSpawnFilePath: document.getElementById("spawnZonesSpawnFilePath"), spawnZonesServerAnnouncement: document.getElementById("spawnZonesServerAnnouncement")
     };
     function apiUrl(path) { const separator = path.includes("?") ? "&" : "?"; return adminToken ? path + separator + "token=" + encodeURIComponent(adminToken) : path; }
     async function apiFetch(path, options) { const headers = Object.assign({ "Content-Type": "application/json" }, (options && options.headers) || {}); if (adminToken) headers["x-admin-token"] = adminToken; return fetch(apiUrl(path), Object.assign({}, options || {}, { headers, credentials: "same-origin" })); }
@@ -4812,14 +4826,63 @@ function renderAdminPanelHtml(token: string) {
     }
 
     const SPAWN_ZONE_WORLD_SIZE = 15360;
+const SPAWN_ZONE_MAP_TILE_SIZE = 512;
+const SPAWN_ZONE_MAP_TILE_MAX_ZOOM = 5;
+
+function resolveChernarusMapPath() {
+  return path.resolve(
+    process.cwd(),
+    process.env.SHOP_MAP_IMAGE_PATH || "assets/maps/chernarus-map-pz-bot.png",
+  );
+}
     function spawnZoneList() { return state.spawnZones?.zones || []; }
     function selectedSpawnZone() { return spawnZoneList().find((zone) => zone.id === state.selectedSpawnZoneId) || spawnZoneList()[0] || null; }
     function spawnZoneCoord(value) { return Number(value || 0).toFixed(1); }
     function setSpawnZonesAutosaveStatus(text) { if (els.spawnZonesAutosaveStatus) els.spawnZonesAutosaveStatus.textContent = text || 'auto-save'; }
+    const SPAWN_ZONE_TILE_SIZE = 512;
+    const SPAWN_ZONE_TILE_MAX_Z = 5;
+    function spawnZoneTileLevel() {
+      const zoom = Math.max(1, Number(state.spawnZoneMapZoom || 1));
+      return Math.max(2, Math.min(SPAWN_ZONE_TILE_MAX_Z, Math.ceil(Math.log2(zoom)) + 2));
+    }
+    function scheduleSpawnZoneTileRender() {
+      if (state.spawnZoneTileRenderFrame) return;
+      state.spawnZoneTileRenderFrame = requestAnimationFrame(() => {
+        state.spawnZoneTileRenderFrame = null;
+        renderSpawnZoneTiles();
+      });
+    }
+    function renderSpawnZoneTiles() {
+      if (!els.spawnZonesMapTiles || !els.spawnZonesMapViewport || !els.spawnZonesMapInner) return;
+      const innerWidth = els.spawnZonesMapInner.clientWidth || els.spawnZonesMapInner.getBoundingClientRect().width;
+      if (!innerWidth) return;
+      const z = spawnZoneTileLevel();
+      const tileCount = Math.pow(2, z);
+      const tileSize = innerWidth / tileCount;
+      const scrollLeft = els.spawnZonesMapViewport.scrollLeft || 0;
+      const scrollTop = els.spawnZonesMapViewport.scrollTop || 0;
+      const viewWidth = els.spawnZonesMapViewport.clientWidth || innerWidth;
+      const viewHeight = els.spawnZonesMapViewport.clientHeight || innerWidth;
+      const pad = 1;
+      const startX = Math.max(0, Math.floor(scrollLeft / tileSize) - pad);
+      const endX = Math.min(tileCount - 1, Math.floor((scrollLeft + viewWidth) / tileSize) + pad);
+      const startY = Math.max(0, Math.floor(scrollTop / tileSize) - pad);
+      const endY = Math.min(tileCount - 1, Math.floor((scrollTop + viewHeight) / tileSize) + pad);
+      const tiles = [];
+      for (let y = startY; y <= endY; y += 1) {
+        for (let x = startX; x <= endX; x += 1) {
+          const left = x * tileSize;
+          const top = y * tileSize;
+          tiles.push('<img class="spawn-zone-map-tile" src="/admin-panel/api/spawn-zones/chernarus-map-tile/' + z + '/' + x + '/' + y + '.webp" draggable="false" loading="lazy" style="left:' + left + 'px;top:' + top + 'px;width:' + Math.ceil(tileSize + 1) + 'px;height:' + Math.ceil(tileSize + 1) + 'px" />');
+        }
+      }
+      els.spawnZonesMapTiles.innerHTML = tiles.join('');
+    }
     function setSpawnZoneMapZoom(value) {
       state.spawnZoneMapZoom = Math.max(1, Math.min(20, Number(value || 1)));
       if (els.spawnZonesMapInner) els.spawnZonesMapInner.style.setProperty('--spawn-map-zoom', String(state.spawnZoneMapZoom));
       if (els.spawnZonesMapZoomLabel) els.spawnZonesMapZoomLabel.textContent = Math.round(state.spawnZoneMapZoom * 100) + '%';
+      scheduleSpawnZoneTileRender();
     }
     function spawnZoneEventCoords(event) {
       if (!els.spawnZonesMapInner) return null;
@@ -4919,6 +4982,7 @@ function renderAdminPanelHtml(token: string) {
       }
       setSpawnZoneMapZoom(state.spawnZoneMapZoom || 1);
       renderSpawnZoneMarkers();
+      scheduleSpawnZoneTileRender();
     }
     function renderSpawnZoneMarkers() {
       if (!els.spawnZonesMarkers) return;
@@ -5487,7 +5551,9 @@ function renderAdminPanelHtml(token: string) {
         const nextZoom = state.spawnZoneMapZoom || 1;
         els.spawnZonesMapViewport.scrollLeft = Math.max(0, (mapX * nextZoom) - pointerX);
         els.spawnZonesMapViewport.scrollTop = Math.max(0, (mapY * nextZoom) - pointerY);
+        scheduleSpawnZoneTileRender();
       }, { passive: false });
+      els.spawnZonesMapViewport?.addEventListener('scroll', scheduleSpawnZoneTileRender, { passive: true });
       els.spawnZonesMapInner.addEventListener('mousedown', (event) => {
         if (event.button !== 0 || event.target.closest('[data-spawn-marker]')) return;
         if ((state.spawnZoneMapZoom || 1) <= 1) return;
@@ -5504,6 +5570,7 @@ function renderAdminPanelHtml(token: string) {
         if (Math.abs(dx) > 3 || Math.abs(dy) > 3) state.spawnZoneMapSuppressClick = true;
         els.spawnZonesMapViewport.scrollLeft = state.spawnZoneMapDragging.left - dx;
         els.spawnZonesMapViewport.scrollTop = state.spawnZoneMapDragging.top - dy;
+        scheduleSpawnZoneTileRender();
       });
       window.addEventListener('mouseup', () => { state.spawnZoneMapDragging = null; if (els.spawnZonesMapViewport) els.spawnZonesMapViewport.classList.remove('is-dragging'); });
       els.spawnZonesMapInner.addEventListener('contextmenu', (event) => {
@@ -6412,14 +6479,58 @@ router.delete("/api/spawn-zones/zones/:zoneId/points/:pointId", async (req, res)
 router.get("/api/map-events/chernarus-map", (req, res) => {
   if (!requireAdmin(req, res)) return;
 
-  const mapPath = path.resolve(
-    process.cwd(),
-    process.env.SHOP_MAP_IMAGE_PATH || "assets/maps/chernarus-map-pz-bot.png",
-  );
+  const mapPath = resolveChernarusMapPath();
 
   res.sendFile(mapPath, (err) => {
     if (err && !res.headersSent) res.status(404).send("Chernarus map image not found");
   });
+});
+
+router.get("/api/spawn-zones/chernarus-map-tile/:z/:x/:y.webp", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+
+  const z = Number.parseInt(String(req.params.z || ""), 10);
+  const x = Number.parseInt(String(req.params.x || ""), 10);
+  const y = Number.parseInt(String(req.params.y || ""), 10);
+  if (!Number.isInteger(z) || z < 0 || z > SPAWN_ZONE_MAP_TILE_MAX_ZOOM) {
+    res.status(400).send("Invalid tile zoom");
+    return;
+  }
+  const tileCount = 2 ** z;
+  if (!Number.isInteger(x) || !Number.isInteger(y) || x < 0 || y < 0 || x >= tileCount || y >= tileCount) {
+    res.status(400).send("Invalid tile coordinates");
+    return;
+  }
+
+  const cachePath = path.resolve(process.cwd(), "data", "map-tiles", "chernarus", String(z), String(x), `${y}.webp`);
+  const sendCachedTile = () => {
+    res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+    res.sendFile(cachePath, (err) => {
+      if (err && !res.headersSent) res.status(404).send("Chernarus tile not found");
+    });
+  };
+
+  try {
+    await fs.access(cachePath);
+    sendCachedTile();
+    return;
+  } catch (_) {
+    // Generate on demand below.
+  }
+
+  try {
+    await fs.mkdir(path.dirname(cachePath), { recursive: true });
+    const outputSize = SPAWN_ZONE_MAP_TILE_SIZE * tileCount;
+    await sharp(resolveChernarusMapPath())
+      .resize(outputSize, outputSize, { fit: "fill", kernel: "lanczos3" })
+      .extract({ left: x * SPAWN_ZONE_MAP_TILE_SIZE, top: y * SPAWN_ZONE_MAP_TILE_SIZE, width: SPAWN_ZONE_MAP_TILE_SIZE, height: SPAWN_ZONE_MAP_TILE_SIZE })
+      .webp({ quality: 84, effort: 4 })
+      .toFile(cachePath);
+    sendCachedTile();
+  } catch (err) {
+    console.error("Failed to generate Chernarus map tile", err);
+    if (!res.headersSent) res.status(500).send("Failed to generate Chernarus map tile");
+  }
 });
 
 router.get("/api/map-events/presets", async (req, res) => {
