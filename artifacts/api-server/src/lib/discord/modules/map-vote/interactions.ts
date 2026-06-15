@@ -46,18 +46,38 @@ function nextWeekdayDate(day: unknown, time: unknown, from = new Date()) {
   return next;
 }
 
-async function ensureMapVotePoll(interaction: any, state: any) {
+async function activePollMessageExists(client: any, activePoll: any) {
+  const channelId = String(activePoll?.channelId || "").trim();
+  const messageId = String(activePoll?.messageId || "").trim();
+  if (!channelId || !messageId) return false;
+
+  try {
+    const route = Routes.channelMessage(channelId, messageId) as `/${string}`;
+    await client.rest.get(route);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function ensureMapVotePoll(interaction: any, state: any): Promise<{ created: boolean; reason?: string }> {
   const rotation = getMapRotationState(state);
-  if (rotation.activePoll?.messageId) return false;
+  const client = interaction.client;
+
+  if (rotation.activePoll?.messageId) {
+    const exists = await activePollMessageExists(client, rotation.activePoll);
+    if (exists) return { created: false, reason: "active_poll_exists" };
+    rotation.activePoll = undefined;
+  }
 
   const settings = rotation.settings || {};
   const channelId = String(settings.pollChannelId || interaction.channelId || "").trim();
-  if (!channelId) return false;
+  if (!channelId) return { created: false, reason: "Configure o canal da enquete em Spawn Zones > Settings." };
 
   const zones = (Array.isArray(rotation.zones) ? rotation.zones : [])
     .filter((zone: any) => zone?.enabled !== false && Array.isArray(zone?.points) && zone.points.length > 0)
     .slice(0, 10);
-  if (zones.length < 2) return false;
+  if (zones.length < 2) return { created: false, reason: "Crie pelo menos 2 zonas habilitadas com pontos para gerar a enquete." };
 
   const closeAt = nextWeekdayDate(settings.pollCloseDay, settings.pollCloseTime);
   const durationHours = Math.max(1, Math.min(168, Math.ceil((closeAt.getTime() - Date.now()) / 36e5)));
@@ -75,11 +95,10 @@ async function ensureMapVotePoll(interaction: any, state: any) {
     allowed_mentions: { parse: [] },
   };
 
-  const client = interaction.client;
   const route = Routes.channelMessages(channelId) as `/${string}`;
   const message = (await client.rest.post(route, { body })) as any;
   const messageId = String(message?.id || "");
-  if (!messageId) return false;
+  if (!messageId) return { created: false, reason: "Discord não retornou o ID da mensagem da enquete." };
 
   rotation.settings = { ...settings, pollChannelId: channelId };
   rotation.activePoll = {
@@ -95,7 +114,7 @@ async function ensureMapVotePoll(interaction: any, state: any) {
     rawUrl: `https://discord.com/channels/${process.env.DISCORD_SERVER_ID || process.env.DISCORD_GUILD_ID || "@me"}/${channelId}/${messageId}`,
   };
 
-  return true;
+  return { created: true };
 }
 
 async function safeReply(interaction: any, payload: any) {
@@ -149,9 +168,12 @@ export async function handleMapVoteComponentInteraction(interaction: any, ctx: M
     await safeUpdate(interaction, buildMapVoteExplanationPayload(locale));
 
     try {
-      const createdPoll = await ensureMapVotePoll(interaction, state);
+      const pollResult = await ensureMapVotePoll(interaction, state);
       await ctx.saveState(state);
-      if (!createdPoll) return true;
+      if (!pollResult.created && pollResult.reason && pollResult.reason !== "active_poll_exists") {
+        await safeFollowUp(interaction, { content: `⚠️ ${pollResult.reason}`, ephemeral: true });
+      }
+      return true;
     } catch (err) {
       await ctx.saveState(state);
       await safeFollowUp(interaction, {
