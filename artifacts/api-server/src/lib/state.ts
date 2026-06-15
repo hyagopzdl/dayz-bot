@@ -483,6 +483,21 @@ function migrateLegacyState(data: any): AppState {
 }
 
 
+
+
+function hasPersistedSpawnZones(value: any) {
+  return Boolean(value && typeof value === "object" && Array.isArray(value.zones) && value.zones.length > 0);
+}
+
+function parseLastPersistedState(): Partial<AppState> | null {
+  if (!lastPersistedJson) return null;
+  try {
+    return JSON.parse(lastPersistedJson) as Partial<AppState>;
+  } catch {
+    return null;
+  }
+}
+
 function serializeState(data: AppState): string {
   return JSON.stringify(data);
 }
@@ -642,6 +657,9 @@ export async function getStateAsync(): Promise<AppState> {
 }
 
 export async function saveStateAsync(data: AppState) {
+  const persistedState = parseLastPersistedState();
+  const shouldProtectMapRotation = !data.mapRotation && hasPersistedSpawnZones(persistedState?.mapRotation);
+
   const safeData: AppState = {
     players: data.players || {},
     dailyPlayers: data.dailyPlayers || {},
@@ -659,7 +677,7 @@ export async function saveStateAsync(data: AppState) {
     dayzItems: Array.isArray(data.dayzItems) ? data.dayzItems : undefined,
     shopResetMonitor: data.shopResetMonitor || null,
     shopAutoDeploy: data.shopAutoDeploy || null,
-    mapRotation: data.mapRotation || undefined,
+    mapRotation: shouldProtectMapRotation ? persistedState?.mapRotation : data.mapRotation || undefined,
     mapVoteUserLocales: data.mapVoteUserLocales && typeof data.mapVoteUserLocales === "object" ? data.mapVoteUserLocales : {},
     files: data.files || {},
     recentEventIds: (data.recentEventIds || []).slice(-3000),

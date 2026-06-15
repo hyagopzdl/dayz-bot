@@ -54,6 +54,7 @@ import {
 import {
   getStateAsync,
   saveStateAsync,
+  flushStateAsync,
   type AppState,
   type PlayerLink,
   type Wallet,
@@ -193,6 +194,36 @@ function normalizeMapRotationSettings(value: unknown): MapRotationSettingsPayloa
     serverAnnouncement: String(input.serverAnnouncement || "Vote next week arena: discord.gg/SEUCONVITE").trim().slice(0, 240),
     mapVoteWelcomeMessageId: String(input.mapVoteWelcomeMessageId || "").trim(),
   };
+}
+
+
+function mergeMapRotationClientSnapshot(rotation: MapRotationPayload, snapshot: unknown) {
+  if (!snapshot || typeof snapshot !== "object") return rotation;
+  const input = snapshot as Partial<MapRotationPayload>;
+  if (Array.isArray(input.zones) && input.zones.length > 0) {
+    const zones = input.zones.map((zone: any, index: number) => normalizeSpawnZone(zone, index));
+    rotation.zones = zones;
+    if (!zones.some((zone) => zone.id === rotation.currentZoneId)) {
+      rotation.currentZoneId = zones.some((zone) => zone.id === input.currentZoneId) ? input.currentZoneId : rotation.currentZoneId;
+    }
+    if (!zones.some((zone) => zone.id === rotation.currentZoneId)) rotation.currentZoneId = zones[0]?.id;
+    if (!zones.some((zone) => zone.id === rotation.nextZoneId)) {
+      rotation.nextZoneId = zones.some((zone) => zone.id === input.nextZoneId) ? input.nextZoneId : undefined;
+    }
+  }
+  if (input.currentZoneId && rotation.zones.some((zone) => zone.id === input.currentZoneId)) rotation.currentZoneId = input.currentZoneId;
+  if (input.nextZoneId && rotation.zones.some((zone) => zone.id === input.nextZoneId)) rotation.nextZoneId = input.nextZoneId;
+  if (Array.isArray(input.voteHistory) && input.voteHistory.length > 0) rotation.voteHistory = input.voteHistory.slice(-24);
+  if (input.settings && typeof input.settings === "object") {
+    rotation.settings = normalizeMapRotationSettings({ ...(rotation.settings || {}), ...input.settings });
+  }
+  return rotation;
+}
+
+function mergeSpawnZonesRequestSnapshot(rotation: MapRotationPayload, body: any) {
+  if (body?.rotation && typeof body.rotation === "object") mergeMapRotationClientSnapshot(rotation, body.rotation);
+  if (body?.spawnZones && typeof body.spawnZones === "object") mergeMapRotationClientSnapshot(rotation, body.spawnZones);
+  return rotation;
 }
 
 
@@ -542,6 +573,7 @@ async function saveMapRotationState(state: AdminState, rotation: MapRotationPayl
     updatedAt: new Date().toISOString(),
   };
   await saveStateAsync(state);
+  await flushStateAsync();
   return state.mapRotation;
 }
 
@@ -5071,6 +5103,27 @@ function renderAdminPanelHtml(token: string) {
         mapVoteWelcomeMessageId: current.mapVoteWelcomeMessageId || '',
       };
     }
+    function buildSpawnZonesClientSnapshot() {
+      const current = state.spawnZones || {};
+      return {
+        zones: Array.isArray(current.zones) ? current.zones.map((zone) => ({
+          id: zone.id,
+          name: zone.name,
+          color: zone.color,
+          enabled: zone.enabled !== false,
+          points: Array.isArray(zone.points) ? zone.points.map((point) => ({ id: point.id, x: Number(point.x || 0), z: Number(point.z || 0), createdAt: point.createdAt, updatedAt: point.updatedAt })) : [],
+          createdAt: zone.createdAt,
+          updatedAt: zone.updatedAt,
+        })) : [],
+        currentZoneId: current.currentZoneId,
+        nextZoneId: current.nextZoneId,
+        voteHistory: current.voteHistory || [],
+        activePoll: current.activePoll,
+        automation: current.automation,
+        settings: readSpawnZoneSettingsForm(),
+        updatedAt: current.updatedAt,
+      };
+    }
     function updateSpawnZoneSettingsUx() {
       const tiePolicy = els.spawnZonesTiePolicy ? els.spawnZonesTiePolicy.value : (state.spawnZones?.settings?.tiePolicy || 'manual');
       const tieHelp = {
@@ -5617,12 +5670,12 @@ function renderAdminPanelHtml(token: string) {
       setSpawnZonesAutosaveStatus('criando boas-vindas...');
       setSpawnZoneSettingsStatus('Salvando canal antes de criar boas-vindas...', 'saving');
       await saveSpawnZonesSettingsNow(settingsSnapshot, { render: false });
-      const response = await apiFetch('/admin-panel/api/spawn-zones/welcome/create', { method: 'POST', body: JSON.stringify({ settings: settingsSnapshot }) });
+      const response = await apiFetch('/admin-panel/api/spawn-zones/welcome/create', { method: 'POST', body: JSON.stringify({ settings: settingsSnapshot, rotation: buildSpawnZonesClientSnapshot(), createPoll: true }) });
       if (!response.ok) { showToast(await response.text()); setSpawnZonesAutosaveStatus('erro'); setSpawnZoneSettingsStatus('Erro ao criar boas-vindas.', 'error'); return; }
       state.spawnZones = await response.json();
       setSpawnZoneSettingsStatus('Boas-vindas criada/atualizada.', 'saved');
       setSpawnZonesAutosaveStatus('salvo'); renderSpawnZones(); switchSpawnZonesTab('settings');
-      showToast('Mensagem de boas-vindas criada/atualizada.');
+      showToast(state.spawnZones?.activePoll ? 'Boas-vindas e enquete prontas no Discord.' : 'Mensagem de boas-vindas criada/atualizada.');
     }
     async function createSpawnZonePollNow() {
       const settingsSnapshot = readSpawnZoneSettingsForm();
@@ -5635,7 +5688,7 @@ function renderAdminPanelHtml(token: string) {
       setSpawnZonesAutosaveStatus('criando enquete...');
       setSpawnZoneSettingsStatus('Salvando canal antes de criar enquete...', 'saving');
       await saveSpawnZonesSettingsNow(settingsSnapshot, { render: false });
-      const response = await apiFetch('/admin-panel/api/spawn-zones/poll/create', { method: 'POST', body: JSON.stringify({ settings: settingsSnapshot }) });
+      const response = await apiFetch('/admin-panel/api/spawn-zones/poll/create', { method: 'POST', body: JSON.stringify({ settings: settingsSnapshot, rotation: buildSpawnZonesClientSnapshot() }) });
       if (!response.ok) { showToast(await response.text()); setSpawnZonesAutosaveStatus('erro'); setSpawnZoneSettingsStatus('Erro ao criar enquete.', 'error'); return; }
       state.spawnZones = await response.json();
       setSpawnZoneSettingsStatus('Enquete criada.', 'saved');
@@ -5691,7 +5744,7 @@ function renderAdminPanelHtml(token: string) {
       setSpawnZoneSettingsStatus('Salvando configurações...', 'saving');
       setSpawnZonesAutosaveStatus('salvando...');
       const seq = ++spawnZoneSettingsSaveSeq;
-      const response = await apiFetch('/admin-panel/api/spawn-zones/settings', { method: 'PATCH', body: JSON.stringify(snapshot) });
+      const response = await apiFetch('/admin-panel/api/spawn-zones/settings', { method: 'PATCH', body: JSON.stringify({ ...snapshot, settings: snapshot, rotation: buildSpawnZonesClientSnapshot() }) });
       if (!response.ok) {
         const message = await response.text();
         showToast(message);
@@ -6510,9 +6563,11 @@ router.post("/api/spawn-zones/rotation/apply", async (req, res) => {
 router.patch("/api/spawn-zones/settings", async (req, res) => {
   const state = (await getStateAsync()) as AdminState;
   const rotation = getMapRotationState(state);
+  mergeSpawnZonesRequestSnapshot(rotation, req.body);
+  const incomingSettings = req.body?.settings && typeof req.body.settings === "object" ? req.body.settings : req.body;
   rotation.settings = normalizeMapRotationSettings({
     ...(rotation.settings || {}),
-    ...(req.body && typeof req.body === "object" ? req.body : {}),
+    ...(incomingSettings && typeof incomingSettings === "object" ? incomingSettings : {}),
   });
   const saved = await saveMapRotationState(state, rotation);
   res.json(saved);
@@ -6544,11 +6599,27 @@ router.post("/api/spawn-zones/welcome/create", async (req, res) => {
   try {
     const state = (await getStateAsync()) as AdminState;
     const rotation = getMapRotationState(state);
+    mergeSpawnZonesRequestSnapshot(rotation, req.body);
     const incomingSettings = req.body?.settings && typeof req.body.settings === "object" ? req.body.settings : req.body;
     if (incomingSettings && typeof incomingSettings === "object") {
       rotation.settings = normalizeMapRotationSettings({ ...(rotation.settings || {}), ...incomingSettings });
     }
     await createOrUpdateMapVoteWelcomeMessage(rotation);
+    const shouldCreatePoll = req.body?.createPoll !== false && !rotation.activePoll;
+    if (shouldCreatePoll) {
+      const readyZones = rotation.zones.filter((zone) => zone.enabled !== false && Array.isArray(zone.points) && zone.points.length > 0);
+      if (readyZones.length >= 2) {
+        try {
+          rotation.activePoll = await createDiscordSpawnZonePoll(rotation);
+        } catch (err) {
+          rotation.automation = {
+            ...(rotation.automation || {}),
+            lastError: `Boas-vindas criada, mas a enquete não foi criada: ${err instanceof Error ? err.message : String(err)}`,
+            lastCheckedAt: new Date().toISOString(),
+          };
+        }
+      }
+    }
     const saved = await saveMapRotationState(state, rotation);
     res.json(saved);
   } catch (err) {
@@ -6560,6 +6631,7 @@ router.post("/api/spawn-zones/welcome/create", async (req, res) => {
 router.post("/api/spawn-zones/poll/create", async (req, res) => {
   const state = (await getStateAsync()) as AdminState;
   const rotation = getMapRotationState(state);
+  mergeSpawnZonesRequestSnapshot(rotation, req.body);
   const incomingSettings = req.body?.settings && typeof req.body.settings === "object" ? req.body.settings : req.body;
   if (incomingSettings && typeof incomingSettings === "object") {
     rotation.settings = normalizeMapRotationSettings({ ...(rotation.settings || {}), ...incomingSettings });
