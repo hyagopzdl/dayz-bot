@@ -521,12 +521,13 @@ function replaceFreshSpawnPointsXml(xml: string, zone: SpawnZonePayload) {
 
 function getMapRotationState(state: AdminState): MapRotationPayload {
   const stored = (state.mapRotation || {}) as Partial<MapRotationPayload>;
-  let zones = Array.isArray(stored.zones) ? stored.zones.map((zone: any, index: number) => normalizeSpawnZone(zone, index)) : [];
-  if (zones.length === 0) zones = [defaultSpawnZone()];
+  const zones = Array.isArray(stored.zones) ? stored.zones.map((zone: any, index: number) => normalizeSpawnZone(zone, index)) : [];
+  const currentZoneId = zones.some((zone) => zone.id === stored.currentZoneId) ? stored.currentZoneId : undefined;
+  const nextZoneId = zones.some((zone) => zone.id === stored.nextZoneId) ? stored.nextZoneId : undefined;
   return {
     zones,
-    currentZoneId: stored.currentZoneId || zones[0]?.id,
-    nextZoneId: stored.nextZoneId,
+    currentZoneId,
+    nextZoneId,
     voteHistory: Array.isArray(stored.voteHistory) ? stored.voteHistory : [],
     settings: normalizeMapRotationSettings(stored.settings),
     activePoll: stored.activePoll && typeof stored.activePoll === "object" ? stored.activePoll as MapRotationActivePollPayload : undefined,
@@ -6684,8 +6685,12 @@ router.patch("/api/spawn-zones/zones/:zoneId", async (req, res) => {
 router.delete("/api/spawn-zones/zones/:zoneId", async (req, res) => {
   const state = (await getStateAsync()) as AdminState;
   const rotation = getMapRotationState(state);
+  const zone = rotation.zones.find((item) => item.id === req.params.zoneId);
+  if (!zone) {
+    res.status(404).send("Zona não encontrada");
+    return;
+  }
   rotation.zones = rotation.zones.filter((item) => item.id !== req.params.zoneId);
-  if (rotation.zones.length === 0) rotation.zones = [defaultSpawnZone()];
   if (rotation.currentZoneId === req.params.zoneId) rotation.currentZoneId = rotation.zones[0]?.id;
   if (rotation.nextZoneId === req.params.zoneId) rotation.nextZoneId = undefined;
   const saved = await saveMapRotationState(state, rotation);
