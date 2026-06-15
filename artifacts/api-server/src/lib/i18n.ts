@@ -1,4 +1,4 @@
-export type Locale = "en" | "pt" | "es";
+export type Locale = "en" | "pt";
 
 export const DEFAULT_LOCALE: Locale = "en";
 
@@ -9,7 +9,6 @@ const messages = {
       cancel: "Cancel",
       languageEnglish: "English",
       languagePortuguese: "Português",
-      languageSpanish: "Español",
     },
     link: {
       commandDescription: "Link your Discord account to your DayZ gamertag.",
@@ -87,7 +86,6 @@ const messages = {
       cancel: "Cancelar",
       languageEnglish: "English",
       languagePortuguese: "Português",
-      languageSpanish: "Español",
     },
     link: {
       commandDescription: "Vincule sua conta do Discord à sua gamertag do DayZ.",
@@ -159,50 +157,12 @@ const messages = {
       processingDescription: "Este checkout já está sendo processado. Aguarde um momento.",
     },
   },
-
-  es: {
-    common: {
-      confirm: "Confirmar",
-      cancel: "Cancelar",
-      languageEnglish: "English",
-      languagePortuguese: "Português",
-      languageSpanish: "Español",
-    },
-    link: {
-      commandDescription: "Vincula tu cuenta de Discord a tu gamertag de DayZ.",
-      gamertagOptionDescription: "Tu gamertag de DayZ / consola.",
-      unlinkDescription: "Desvincula tu cuenta de Discord de tu gamertag de DayZ.",
-      linkedTitle: "Cuenta vinculada",
-      linkedDescription: "Tu gamertag se ha vinculado correctamente.",
-      chooseLanguage: "Elige el idioma del bot antes de confirmar.",
-      languageLabel: "Idioma",
-      gamertagLabel: "Gamertag",
-      confirmTitle: "Configuración completada",
-      confirmDescription: "Tu cuenta de Discord ya está vinculada a tu gamertag de DayZ.",
-      commandsTitle: "Comandos disponibles",
-      shopCommand: "/shop — Abrir la tienda de ítems",
-      bankCommand: "/bank — Ver tu saldo de monedas",
-      selectPlaceholder: "Selecciona tu idioma",
-      notYourSetup: "Esta configuración pertenece a otro usuario.",
-      noLinkFound: "Aún no tienes una gamertag vinculada. Usa /link primero.",
-      alreadyUsedGamertag: "Esta gamertag ya está vinculada a otra cuenta de Discord.",
-      invalidGamertag: "Gamertag inválida. Usa de 2 a 32 caracteres visibles.",
-      unknownGamertag: "Gamertag no encontrada en los registros del servidor. Entra al servidor al menos una vez e inténtalo de nuevo.",
-      unlinked: "Tu gamertag ha sido desvinculada.",
-      unlinkedTitle: "Cuenta desvinculada",
-      errorTitle: "Vinculación no disponible",
-    },
-    economy: {},
-    shop: {},
-  },
 } as const;
 
 export type MessageKey = `${keyof typeof messages.en}.${string}`;
 
 export function normalizeLocale(locale?: string | null): Locale {
-  if (locale === "pt" || locale === "pt-BR" || locale === "pt_BR") return "pt";
-  if (locale === "es" || locale === "es-ES" || locale === "es_ES" || locale === "es-LA") return "es";
-  return "en";
+  return locale === "pt" ? "pt" : "en";
 }
 
 function readPath(source: any, path: string): string | undefined {
