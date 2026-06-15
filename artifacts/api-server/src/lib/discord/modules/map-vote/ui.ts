@@ -135,7 +135,8 @@ export function buildMapVoteExplanationPayload(locale?: string | null) {
 
   return {
     embeds: [embed],
-    components: [languageButtons()],
+    components: [],
+    allowed_mentions: { parse: [] },
   };
 }
 
