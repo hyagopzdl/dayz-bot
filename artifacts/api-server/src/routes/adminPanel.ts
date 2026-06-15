@@ -108,6 +108,24 @@ function makeSpawnZonePoint(x: unknown, z: unknown): SpawnZonePointPayload {
   };
 }
 
+function extractFreshSpawnPointsFromCfg(xml: unknown): SpawnZonePointPayload[] {
+  const value = String(xml || "");
+  const freshMatch = value.match(/<fresh>[\s\S]*?<\/fresh>/i);
+  if (!freshMatch) throw new Error("cfgplayerspawnpoints.xml sem bloco <fresh> suportado.");
+  const bubblesMatch = freshMatch[0].match(/<generator_posbubbles>[\s\S]*?<\/generator_posbubbles>/i);
+  if (!bubblesMatch) throw new Error("cfgplayerspawnpoints.xml sem bloco <fresh>/<generator_posbubbles> suportado.");
+  const points: SpawnZonePointPayload[] = [];
+  const regex = /<pos\b[^>]*\bx=["']([^"']+)["'][^>]*\bz=["']([^"']+)["'][^>]*\/?>(?:<\/pos>)?/gi;
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(bubblesMatch[0]))) {
+    const x = Number(String(match[1] || "").replace(",", "."));
+    const z = Number(String(match[2] || "").replace(",", "."));
+    if (Number.isFinite(x) && Number.isFinite(z)) points.push(makeSpawnZonePoint(x, z));
+  }
+  if (!points.length) throw new Error("Nenhuma coordenada <pos x=... z=...> encontrada em fresh/generator_posbubbles.");
+  return points;
+}
+
 function normalizeSpawnZone(zone: any, index = 0): SpawnZonePayload {
   const now = new Date().toISOString();
   const points = Array.isArray(zone?.points)
@@ -3567,6 +3585,8 @@ function renderAdminPanelHtml(token: string) {
                 </div>
                 <aside class="spawn-zone-sidebar">
                   <button id="spawnZoneCreate" class="primary-btn spawn-zone-create"><svg class="icon"><use href="#icon-plus"></use></svg>Nova zona</button>
+                  <button id="spawnZoneImport" class="secondary-btn spawn-zone-create" type="button"><svg class="icon"><use href="#icon-upload"></use></svg>Importar cfgplayerspawnpoints.xml</button>
+                  <input id="spawnZoneImportFile" type="file" accept=".xml,text/xml" style="display:none" />
                   <div id="spawnZoneList" class="spawn-zone-list"></div>
                 </aside>
               </div>
@@ -3824,7 +3844,7 @@ function renderAdminPanelHtml(token: string) {
       lockedContainerSetupStatus: document.getElementById("lockedContainerSetupStatus"), lockedContainerModalStatus: document.getElementById("lockedContainerModalStatus"), lockedContainerInstalledSection: document.getElementById("lockedContainerInstalledSection"), lockedContainerInstalledGrid: document.getElementById("lockedContainerInstalledGrid"), lockedContainerAvailableGrid: document.getElementById("lockedContainerAvailableGrid"), eventIntegrationModalBackdrop: document.getElementById("eventIntegrationModalBackdrop"), eventIntegrationModalClose: document.getElementById("eventIntegrationModalClose"),
       itemModalBackdrop: document.getElementById("itemModalBackdrop"), itemModalTitle: document.getElementById("itemModalTitle"), itemModalSubtitle: document.getElementById("itemModalSubtitle"), itemModalPreviewImage: document.getElementById("itemModalPreviewImage"), itemModalPreviewName: document.getElementById("itemModalPreviewName"), itemModalPreviewClass: document.getElementById("itemModalPreviewClass"), itemModalPopularName: document.getElementById("itemModalPopularName"), itemModalImageUrl: document.getElementById("itemModalImageUrl"), itemModalSpawnEventName: document.getElementById("itemModalSpawnEventName"), itemModalEnabled: document.getElementById("itemModalEnabled"),
       spawnZonesCurrentZone: document.getElementById("spawnZonesCurrentZone"), spawnZonesNextZone: document.getElementById("spawnZonesNextZone"), spawnZonesEnabledCount: document.getElementById("spawnZonesEnabledCount"), spawnZonesVoteHistory: document.getElementById("spawnZonesVoteHistory"), spawnZonesActivePoll: document.getElementById("spawnZonesActivePoll"), spawnZonesNextSelect: document.getElementById("spawnZonesNextSelect"), spawnZonesSetNext: document.getElementById("spawnZonesSetNext"), spawnZonesApplyNext: document.getElementById("spawnZonesApplyNext"), spawnZonesApplyServer: document.getElementById("spawnZonesApplyServer"), spawnZonesCreatePoll: document.getElementById("spawnZonesCreatePoll"), spawnZonesRefreshPoll: document.getElementById("spawnZonesRefreshPoll"), spawnZonesFinalizePoll: document.getElementById("spawnZonesFinalizePoll"), spawnZonesRunAutomation: document.getElementById("spawnZonesRunAutomation"), spawnZonesAutomationStatus: document.getElementById("spawnZonesAutomationStatus"),
-      spawnZonesMapTitle: document.getElementById("spawnZonesMapTitle"), spawnZonesMapHint: document.getElementById("spawnZonesMapHint"), spawnZonesAutosaveStatus: document.getElementById("spawnZonesAutosaveStatus"), spawnZonesMapViewport: document.getElementById("spawnZonesMapViewport"), spawnZonesMapInner: document.getElementById("spawnZonesMapInner"), spawnZonesMarkers: document.getElementById("spawnZonesMarkers"), spawnZonesMapZoomIn: document.getElementById("spawnZonesMapZoomIn"), spawnZonesMapZoomOut: document.getElementById("spawnZonesMapZoomOut"), spawnZonesMapZoomLabel: document.getElementById("spawnZonesMapZoomLabel"), spawnZonesCursor: document.getElementById("spawnZonesCursor"), spawnZoneCreate: document.getElementById("spawnZoneCreate"), spawnZoneList: document.getElementById("spawnZoneList"), spawnZonesPollChannel: document.getElementById("spawnZonesPollChannel"), spawnZonesPollQuestion: document.getElementById("spawnZonesPollQuestion"), spawnZonesPollOpenDay: document.getElementById("spawnZonesPollOpenDay"), spawnZonesPollOpenTime: document.getElementById("spawnZonesPollOpenTime"), spawnZonesPollCloseDay: document.getElementById("spawnZonesPollCloseDay"), spawnZonesPollCloseTime: document.getElementById("spawnZonesPollCloseTime"), spawnZonesMinVotes: document.getElementById("spawnZonesMinVotes"), spawnZonesTiePolicy: document.getElementById("spawnZonesTiePolicy"), spawnZonesAutoCreatePoll: document.getElementById("spawnZonesAutoCreatePoll"), spawnZonesAutoApplyWinner: document.getElementById("spawnZonesAutoApplyWinner"), spawnZonesApplyOnNextRestart: document.getElementById("spawnZonesApplyOnNextRestart"), spawnZonesSpawnFilePath: document.getElementById("spawnZonesSpawnFilePath"), spawnZonesServerAnnouncement: document.getElementById("spawnZonesServerAnnouncement")
+      spawnZonesMapTitle: document.getElementById("spawnZonesMapTitle"), spawnZonesMapHint: document.getElementById("spawnZonesMapHint"), spawnZonesAutosaveStatus: document.getElementById("spawnZonesAutosaveStatus"), spawnZonesMapViewport: document.getElementById("spawnZonesMapViewport"), spawnZonesMapInner: document.getElementById("spawnZonesMapInner"), spawnZonesMarkers: document.getElementById("spawnZonesMarkers"), spawnZonesMapZoomIn: document.getElementById("spawnZonesMapZoomIn"), spawnZonesMapZoomOut: document.getElementById("spawnZonesMapZoomOut"), spawnZonesMapZoomLabel: document.getElementById("spawnZonesMapZoomLabel"), spawnZonesCursor: document.getElementById("spawnZonesCursor"), spawnZoneCreate: document.getElementById("spawnZoneCreate"), spawnZoneImport: document.getElementById("spawnZoneImport"), spawnZoneImportFile: document.getElementById("spawnZoneImportFile"), spawnZoneList: document.getElementById("spawnZoneList"), spawnZonesPollChannel: document.getElementById("spawnZonesPollChannel"), spawnZonesPollQuestion: document.getElementById("spawnZonesPollQuestion"), spawnZonesPollOpenDay: document.getElementById("spawnZonesPollOpenDay"), spawnZonesPollOpenTime: document.getElementById("spawnZonesPollOpenTime"), spawnZonesPollCloseDay: document.getElementById("spawnZonesPollCloseDay"), spawnZonesPollCloseTime: document.getElementById("spawnZonesPollCloseTime"), spawnZonesMinVotes: document.getElementById("spawnZonesMinVotes"), spawnZonesTiePolicy: document.getElementById("spawnZonesTiePolicy"), spawnZonesAutoCreatePoll: document.getElementById("spawnZonesAutoCreatePoll"), spawnZonesAutoApplyWinner: document.getElementById("spawnZonesAutoApplyWinner"), spawnZonesApplyOnNextRestart: document.getElementById("spawnZonesApplyOnNextRestart"), spawnZonesSpawnFilePath: document.getElementById("spawnZonesSpawnFilePath"), spawnZonesServerAnnouncement: document.getElementById("spawnZonesServerAnnouncement")
     };
     function apiUrl(path) { const separator = path.includes("?") ? "&" : "?"; return adminToken ? path + separator + "token=" + encodeURIComponent(adminToken) : path; }
     async function apiFetch(path, options) { const headers = Object.assign({ "Content-Type": "application/json" }, (options && options.headers) || {}); if (adminToken) headers["x-admin-token"] = adminToken; return fetch(apiUrl(path), Object.assign({}, options || {}, { headers, credentials: "same-origin" })); }
@@ -4932,6 +4952,27 @@ function renderAdminPanelHtml(token: string) {
       state.selectedSpawnZoneId = spawnZoneList()[spawnZoneList().length - 1]?.id || state.selectedSpawnZoneId;
       setSpawnZonesAutosaveStatus('salvo'); renderSpawnZones();
     }
+    async function importSpawnZoneXmlFile(file) {
+      if (!file) return;
+      const suggestedName = String(file.name || 'Spawn importado').replace(/\.xml$/i, '').replace(/[_-]+/g, ' ').trim() || 'Spawn importado';
+      const zoneName = prompt('Nome da nova zona importada:', suggestedName);
+      if (zoneName === null) { if (els.spawnZoneImportFile) els.spawnZoneImportFile.value = ''; return; }
+      setSpawnZonesAutosaveStatus('importando...');
+      try {
+        const xml = await file.text();
+        const response = await apiFetch('/admin-panel/api/spawn-zones/import', { method: 'POST', body: JSON.stringify({ name: zoneName, xml }) });
+        if (!response.ok) { showToast(await response.text()); setSpawnZonesAutosaveStatus('erro'); return; }
+        state.spawnZones = await response.json();
+        state.selectedSpawnZoneId = spawnZoneList()[spawnZoneList().length - 1]?.id || state.selectedSpawnZoneId;
+        setSpawnZonesAutosaveStatus('salvo'); renderSpawnZones();
+        showToast('Zona importada do cfgplayerspawnpoints.xml.');
+      } catch (err) {
+        showToast(err && err.message ? err.message : String(err));
+        setSpawnZonesAutosaveStatus('erro');
+      } finally {
+        if (els.spawnZoneImportFile) els.spawnZoneImportFile.value = '';
+      }
+    }
     async function patchSpawnZone(zoneId, patch) {
       setSpawnZonesAutosaveStatus('salvando...');
       const response = await apiFetch('/admin-panel/api/spawn-zones/zones/' + encodeURIComponent(zoneId), { method: 'PATCH', body: JSON.stringify(patch || {}) });
@@ -5414,6 +5455,8 @@ function renderAdminPanelHtml(token: string) {
       button.addEventListener('click', () => switchSpawnZonesTab(button.getAttribute('data-spawn-zone-tab') || 'rotation'));
     });
     if (els.spawnZoneCreate) els.spawnZoneCreate.addEventListener('click', createSpawnZone);
+    if (els.spawnZoneImport) els.spawnZoneImport.addEventListener('click', () => els.spawnZoneImportFile?.click());
+    if (els.spawnZoneImportFile) els.spawnZoneImportFile.addEventListener('change', (event) => importSpawnZoneXmlFile(event.target.files && event.target.files[0]));
     if (els.spawnZonesSetNext) els.spawnZonesSetNext.addEventListener('click', () => setNextSpawnZone(els.spawnZonesNextSelect?.value || selectedSpawnZone()?.id));
     if (els.spawnZonesApplyNext) els.spawnZonesApplyNext.addEventListener('click', () => applySpawnZone(els.spawnZonesNextSelect?.value || selectedSpawnZone()?.id));
     if (els.spawnZonesApplyServer) els.spawnZonesApplyServer.addEventListener('click', () => applySpawnZoneOnServer(els.spawnZonesNextSelect?.value || selectedSpawnZone()?.id));
@@ -6253,6 +6296,32 @@ router.post("/api/spawn-zones/poll/finalize", async (req, res) => {
 router.post("/api/spawn-zones/automation/run", async (req, res) => {
   try {
     const saved = await runSpawnZoneAutomationNow();
+    res.json(saved);
+    return;
+  } catch (err) {
+    res.status(400).send(err instanceof Error ? err.message : String(err));
+    return;
+  }
+});
+
+router.post("/api/spawn-zones/import", async (req, res) => {
+  const state = (await getStateAsync()) as AdminState;
+  const rotation = getMapRotationState(state);
+  try {
+    const now = new Date().toISOString();
+    const points = extractFreshSpawnPointsFromCfg(req.body?.xml);
+    const zone = normalizeSpawnZone({
+      id: crypto.randomUUID(),
+      name: normalizeSpawnZoneName(req.body?.name) || `Importado ${rotation.zones.length + 1}`,
+      color: SPAWN_ZONE_COLORS[rotation.zones.length % SPAWN_ZONE_COLORS.length],
+      enabled: true,
+      points,
+      createdAt: now,
+      updatedAt: now,
+    }, rotation.zones.length);
+    rotation.zones.push(zone);
+    if (!rotation.currentZoneId) rotation.currentZoneId = zone.id;
+    const saved = await saveMapRotationState(state, rotation);
     res.json(saved);
     return;
   } catch (err) {
