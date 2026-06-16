@@ -74,10 +74,10 @@ type AdminState = AppState & Record<string, any>;
 
 type SpawnZonePointPayload = { id: string; x: number; z: number; createdAt?: string; updatedAt?: string };
 type SpawnZonePayload = { id: string; name: string; color: string; enabled: boolean; points: SpawnZonePointPayload[]; createdAt: string; updatedAt: string };
-type MapRotationSettingsPayload = { pollChannelId?: string; pollQuestion?: string; pollOpenDay?: string; pollOpenTime?: string; pollCloseDay?: string; pollCloseTime?: string; autoCreatePoll?: boolean; autoApplyWinner?: boolean; applyOnNextRestart?: boolean; tiePolicy?: string; minVotes?: number; spawnFilePath?: string; serverName?: string; mapVoteWelcomeMessageId?: string };
+type MapRotationSettingsPayload = { pollChannelId?: string; pollQuestion?: string; pollOpenDay?: string; pollOpenTime?: string; pollCloseDay?: string; pollCloseTime?: string; pollTimezone?: string; autoCreatePoll?: boolean; autoApplyWinner?: boolean; applyOnNextRestart?: boolean; tiePolicy?: string; minVotes?: number; spawnFilePath?: string; serverName?: string; mapVoteWelcomeMessageId?: string };
 type MapRotationPollOptionPayload = { zoneId: string; name: string; answerId?: number; votes?: number };
 type MapRotationActivePollPayload = { id: string; channelId: string; messageId: string; question: string; status: string; createdAt: string; closesAt?: string; options: MapRotationPollOptionPayload[]; totalVotes?: number; winnerZoneId?: string; winnerName?: string; lastFetchedAt?: string; finalizedAt?: string; appliedAt?: string; finalReason?: string; rawUrl?: string };
-type MapRotationAutomationPayload = { lastPollWindowId?: string; lastCloseWindowId?: string; lastCheckedAt?: string; lastAction?: string; lastError?: string };
+type MapRotationAutomationPayload = { lastPollWindowId?: string; lastCloseWindowId?: string; lastCheckedAt?: string; lastAction?: string; lastError?: string; currentWindowId?: string; currentWindowOpenAt?: string; currentWindowCloseAt?: string; nextWindowOpenAt?: string; nextWindowCloseAt?: string; schedulerIntervalMs?: number };
 type MapRotationPayload = { zones: SpawnZonePayload[]; currentZoneId?: string; nextZoneId?: string; voteHistory: any[]; settings: MapRotationSettingsPayload; activePoll?: MapRotationActivePollPayload; automation?: MapRotationAutomationPayload; updatedAt: string };
 
 const SPAWN_ZONE_FILE_PATH = SHOP_EVENTS_PATH.replace(/\/db\/events\.xml$/i, "/cfgplayerspawnpoints.xml");
@@ -175,6 +175,17 @@ function defaultSpawnZone(): SpawnZonePayload {
 }
 
 
+function normalizeMapVoteTimezone(value: unknown) {
+  const fallback = process.env.MAP_VOTE_TIMEZONE || process.env.SHOP_RESTART_TIMEZONE || "America/Sao_Paulo";
+  const candidate = String(value || fallback).trim() || fallback;
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: candidate }).format(new Date());
+    return candidate;
+  } catch {
+    return fallback;
+  }
+}
+
 function normalizeMapRotationSettings(value: unknown): MapRotationSettingsPayload {
   const input = (value && typeof value === "object" ? value : {}) as Record<string, unknown>;
   const minVotes = Number(input.minVotes ?? 0);
@@ -186,6 +197,7 @@ function normalizeMapRotationSettings(value: unknown): MapRotationSettingsPayloa
     pollOpenTime: String(input.pollOpenTime || "12:00").slice(0, 5),
     pollCloseDay: String(input.pollCloseDay || "sunday"),
     pollCloseTime: String(input.pollCloseTime || "23:59").slice(0, 5),
+    pollTimezone: normalizeMapVoteTimezone(input.pollTimezone),
     autoCreatePoll: Boolean(input.autoCreatePoll),
     autoApplyWinner: Boolean(input.autoApplyWinner),
     applyOnNextRestart: input.applyOnNextRestart === true,
@@ -229,16 +241,62 @@ function mergeSpawnZonesRequestSnapshot(rotation: MapRotationPayload, body: any)
 
 const SPAWN_ZONE_WEEKDAY_INDEX: Record<string, number> = { sunday: 0, monday: 1, tuesday: 2, wednesday: 3, thursday: 4, friday: 5, saturday: 6 };
 
-function nextWeekdayDate(day: unknown, time: unknown, from = new Date()) {
-  const targetDay = SPAWN_ZONE_WEEKDAY_INDEX[String(day || "sunday")] ?? 0;
-  const [hourRaw, minuteRaw] = String(time || "23:59").split(":");
+function getZonedDateParts(date: Date, timeZone: string) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
+  const byType = new Map(parts.map((part) => [part.type, part.value]));
+  const year = Number(byType.get("year"));
+  const month = Number(byType.get("month"));
+  const day = Number(byType.get("day"));
+  const hour = Number(byType.get("hour"));
+  const minute = Number(byType.get("minute"));
+  const weekday = new Date(Date.UTC(year, month - 1, day)).getUTCDay();
+  return { year, month, day, hour, minute, weekday };
+}
+
+function addCalendarDays(parts: Pick<ReturnType<typeof getZonedDateParts>, "year" | "month" | "day">, days: number) {
+  const date = new Date(Date.UTC(parts.year, parts.month - 1, parts.day + days, 12, 0, 0, 0));
+  return { year: date.getUTCFullYear(), month: date.getUTCMonth() + 1, day: date.getUTCDate() };
+}
+
+function zonedLocalDateTimeToDate(year: number, month: number, day: number, hour: number, minute: number, timeZone: string) {
+  let date = new Date(Date.UTC(year, month - 1, day, hour, minute, 0, 0));
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const parts = getZonedDateParts(date, timeZone);
+    const expected = Date.UTC(year, month - 1, day, hour, minute, 0, 0);
+    const actual = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, 0, 0);
+    const diff = expected - actual;
+    if (diff === 0) break;
+    date = new Date(date.getTime() + diff);
+  }
+  return date;
+}
+
+function parseSpawnZoneTime(time: unknown, fallback: string) {
+  const [hourRaw, minuteRaw] = String(time || fallback).split(":");
   const hour = Math.max(0, Math.min(23, Number(hourRaw || 0)));
   const minute = Math.max(0, Math.min(59, Number(minuteRaw || 0)));
-  const next = new Date(from);
-  next.setHours(hour, minute, 0, 0);
-  const diff = (targetDay - next.getDay() + 7) % 7;
-  next.setDate(next.getDate() + diff);
-  if (next.getTime() <= from.getTime()) next.setDate(next.getDate() + 7);
+  return { hour, minute };
+}
+
+function nextWeekdayDate(day: unknown, time: unknown, from = new Date(), timeZone = "America/Sao_Paulo") {
+  const targetDay = SPAWN_ZONE_WEEKDAY_INDEX[String(day || "sunday")] ?? 0;
+  const { hour, minute } = parseSpawnZoneTime(time, "23:59");
+  const localNow = getZonedDateParts(from, timeZone);
+  const diff = (targetDay - localNow.weekday + 7) % 7;
+  let localDate = addCalendarDays(localNow, diff);
+  let next = zonedLocalDateTimeToDate(localDate.year, localDate.month, localDate.day, hour, minute, timeZone);
+  if (next.getTime() <= from.getTime()) {
+    localDate = addCalendarDays(localDate, 7);
+    next = zonedLocalDateTimeToDate(localDate.year, localDate.month, localDate.day, hour, minute, timeZone);
+  }
   return next;
 }
 
@@ -290,7 +348,7 @@ async function createDiscordSpawnZonePoll(rotation: MapRotationPayload) {
   const scheduleWindow = getMapRotationScheduleWindow(settings, now);
   let closeAt = scheduleWindow.closeAt;
   if (closeAt.getTime() <= now.getTime()) {
-    closeAt = nextWeekdayDate(settings.pollCloseDay, settings.pollCloseTime, now);
+    closeAt = nextWeekdayDate(settings.pollCloseDay, settings.pollCloseTime, now, normalizeMapVoteTimezone(settings.pollTimezone));
   }
   const requestedDurationHours = Math.ceil((closeAt.getTime() - now.getTime()) / 36e5);
   const durationHours = Math.max(1, Math.min(168, requestedDurationHours));
@@ -336,25 +394,35 @@ async function expireDiscordSpawnZonePoll(activePoll: MapRotationActivePollPaylo
   return extractDiscordPollCounts(message, activePoll);
 }
 
-function previousWeekdayDate(day: unknown, time: unknown, from = new Date()) {
+function previousWeekdayDate(day: unknown, time: unknown, from = new Date(), timeZone = "America/Sao_Paulo") {
   const targetDay = SPAWN_ZONE_WEEKDAY_INDEX[String(day || "monday")] ?? 1;
-  const [hourRaw, minuteRaw] = String(time || "12:00").split(":");
-  const hour = Math.max(0, Math.min(23, Number(hourRaw || 0)));
-  const minute = Math.max(0, Math.min(59, Number(minuteRaw || 0)));
-  const previous = new Date(from);
-  previous.setHours(hour, minute, 0, 0);
-  const diff = (previous.getDay() - targetDay + 7) % 7;
-  previous.setDate(previous.getDate() - diff);
-  if (previous.getTime() > from.getTime()) previous.setDate(previous.getDate() - 7);
+  const { hour, minute } = parseSpawnZoneTime(time, "12:00");
+  const localNow = getZonedDateParts(from, timeZone);
+  const diff = (localNow.weekday - targetDay + 7) % 7;
+  let localDate = addCalendarDays(localNow, -diff);
+  let previous = zonedLocalDateTimeToDate(localDate.year, localDate.month, localDate.day, hour, minute, timeZone);
+  if (previous.getTime() > from.getTime()) {
+    localDate = addCalendarDays(localDate, -7);
+    previous = zonedLocalDateTimeToDate(localDate.year, localDate.month, localDate.day, hour, minute, timeZone);
+  }
   return previous;
 }
 
 function getMapRotationScheduleWindow(settings: MapRotationSettingsPayload, from = new Date()) {
-  const openAt = previousWeekdayDate(settings.pollOpenDay, settings.pollOpenTime, from);
-  let closeAt = nextWeekdayDate(settings.pollCloseDay, settings.pollCloseTime, openAt);
+  const timeZone = normalizeMapVoteTimezone(settings.pollTimezone);
+  const openAt = previousWeekdayDate(settings.pollOpenDay, settings.pollOpenTime, from, timeZone);
+  let closeAt = nextWeekdayDate(settings.pollCloseDay, settings.pollCloseTime, openAt, timeZone);
   if (closeAt.getTime() <= openAt.getTime()) closeAt = new Date(closeAt.getTime() + 7 * 24 * 60 * 60 * 1000);
-  const id = `${String(settings.pollOpenDay || "monday")}_${String(settings.pollOpenTime || "12:00")}_${String(settings.pollCloseDay || "sunday")}_${String(settings.pollCloseTime || "23:59")}_${openAt.toISOString()}_${closeAt.toISOString()}`;
-  return { id, openAt, closeAt, isOpen: from.getTime() >= openAt.getTime() && from.getTime() < closeAt.getTime(), isClosed: from.getTime() >= closeAt.getTime() };
+  const id = `${String(settings.pollOpenDay || "monday")}_${String(settings.pollOpenTime || "12:00")}_${String(settings.pollCloseDay || "sunday")}_${String(settings.pollCloseTime || "23:59")}_${timeZone}_${openAt.toISOString()}_${closeAt.toISOString()}`;
+  return { id, openAt, closeAt, timeZone, isOpen: from.getTime() >= openAt.getTime() && from.getTime() < closeAt.getTime(), isClosed: from.getTime() >= closeAt.getTime() };
+}
+
+function getNextMapRotationScheduleWindow(settings: MapRotationSettingsPayload, from = new Date()) {
+  const timeZone = normalizeMapVoteTimezone(settings.pollTimezone);
+  const nextOpenAt = nextWeekdayDate(settings.pollOpenDay, settings.pollOpenTime, from, timeZone);
+  let nextCloseAt = nextWeekdayDate(settings.pollCloseDay, settings.pollCloseTime, nextOpenAt, timeZone);
+  if (nextCloseAt.getTime() <= nextOpenAt.getTime()) nextCloseAt = new Date(nextCloseAt.getTime() + 7 * 24 * 60 * 60 * 1000);
+  return { openAt: nextOpenAt, closeAt: nextCloseAt, timeZone };
 }
 
 
@@ -511,8 +579,15 @@ async function runSpawnZoneAutomationNow() {
   const automation = rotation.automation || {};
   const now = new Date();
   const windowInfo = getMapRotationScheduleWindow(settings, now);
+  const nextWindowInfo = getNextMapRotationScheduleWindow(settings, now);
   automation.lastCheckedAt = now.toISOString();
   automation.lastError = "";
+  automation.currentWindowId = windowInfo.id;
+  automation.currentWindowOpenAt = windowInfo.openAt.toISOString();
+  automation.currentWindowCloseAt = windowInfo.closeAt.toISOString();
+  automation.nextWindowOpenAt = nextWindowInfo.openAt.toISOString();
+  automation.nextWindowCloseAt = nextWindowInfo.closeAt.toISOString();
+  automation.schedulerIntervalMs = getSpawnZoneAutomationIntervalMs();
 
   try {
     if (settings.autoCreatePoll && windowInfo.isOpen && rotation.activePoll && rotation.activePoll.status !== "closed" && !isActivePollInScheduleWindow(rotation.activePoll, windowInfo)) {
@@ -530,7 +605,13 @@ async function runSpawnZoneAutomationNow() {
       rotation.activePoll.closesAt = windowInfo.closeAt.toISOString();
     }
 
-    if (settings.autoCreatePoll && windowInfo.isOpen && automation.lastPollWindowId !== windowInfo.id && (!rotation.activePoll || rotation.activePoll.status === "closed")) {
+    const canCreatePollForOpenWindow =
+      settings.autoCreatePoll &&
+      windowInfo.isOpen &&
+      automation.lastPollWindowId !== windowInfo.id &&
+      (!rotation.activePoll || rotation.activePoll.status === "closed");
+
+    if (canCreatePollForOpenWindow) {
       rotation.activePoll = await createDiscordSpawnZonePoll(rotation);
       automation.lastPollWindowId = windowInfo.id;
       automation.lastAction = "created_poll";
@@ -538,14 +619,19 @@ async function runSpawnZoneAutomationNow() {
 
     if (rotation.activePoll && rotation.activePoll.status !== "closed") {
       rotation.activePoll = await fetchDiscordSpawnZonePoll(rotation.activePoll);
-      const configuredCloseAt = windowInfo.closeAt;
+      const pollWindowInfo = isActivePollInScheduleWindow(rotation.activePoll, windowInfo)
+        ? windowInfo
+        : getMapRotationScheduleWindow(settings, new Date(rotation.activePoll.createdAt || now));
+      const configuredCloseAt = pollWindowInfo.closeAt;
       const activeCloseAt = rotation.activePoll.closesAt ? new Date(rotation.activePoll.closesAt) : configuredCloseAt;
       const closesAt = configuredCloseAt.getTime() < activeCloseAt.getTime() ? configuredCloseAt : activeCloseAt;
-      if (now.getTime() >= closesAt.getTime() && automation.lastCloseWindowId !== windowInfo.id) {
+      if (now.getTime() >= closesAt.getTime() && automation.lastCloseWindowId !== pollWindowInfo.id) {
         await finalizeSpawnZonePoll(rotation, { apply: Boolean(settings.autoApplyWinner), source: settings.autoApplyWinner ? "poll-auto" : "poll" });
-        automation.lastCloseWindowId = windowInfo.id;
+        automation.lastCloseWindowId = pollWindowInfo.id;
         automation.lastAction = settings.autoApplyWinner ? "finalized_and_applied" : "finalized_poll";
       }
+    } else if (settings.autoCreatePoll && windowInfo.isClosed && automation.lastPollWindowId !== windowInfo.id) {
+      automation.lastAction = "missed_closed_window";
     }
   } catch (err) {
     automation.lastError = err instanceof Error ? err.message : String(err);
@@ -557,14 +643,19 @@ async function runSpawnZoneAutomationNow() {
   return saveMapRotationState(state, rotation);
 }
 
+function getSpawnZoneAutomationIntervalMs() {
+  return Math.max(60_000, Number(process.env.SPAWN_ZONE_AUTOMATION_INTERVAL_MS || 300_000));
+}
+
 let spawnZoneAutomationStarted = false;
 function startSpawnZoneAutomationScheduler() {
   if (spawnZoneAutomationStarted) return;
   spawnZoneAutomationStarted = true;
-  const intervalMs = Math.max(60_000, Number(process.env.SPAWN_ZONE_AUTOMATION_INTERVAL_MS || 300_000));
-  const timer = setInterval(() => {
-    runSpawnZoneAutomationNow().catch((err) => console.error("spawn zones automation failed", err));
-  }, intervalMs);
+  const intervalMs = getSpawnZoneAutomationIntervalMs();
+  const run = () => runSpawnZoneAutomationNow().catch((err) => console.error("spawn zones automation failed", err));
+  const initialTimer = setTimeout(run, 5_000);
+  const timer = setInterval(run, intervalMs);
+  if (typeof (initialTimer as any).unref === "function") (initialTimer as any).unref();
   if (typeof (timer as any).unref === "function") (timer as any).unref();
 }
 
@@ -3766,6 +3857,7 @@ function renderAdminPanelHtml(token: string) {
                     <label>Horário abertura<input id="spawnZonesPollOpenTime" type="time" /></label>
                     <label>Fechamento<select id="spawnZonesPollCloseDay"><option value="monday">Segunda</option><option value="tuesday">Terça</option><option value="wednesday">Quarta</option><option value="thursday">Quinta</option><option value="friday">Sexta</option><option value="saturday">Sábado</option><option value="sunday">Domingo</option></select></label>
                     <label>Horário fechamento<input id="spawnZonesPollCloseTime" type="time" /></label>
+                    <label>Timezone<input id="spawnZonesPollTimezone" type="text" placeholder="America/Sao_Paulo" /></label>
                   </div>
                   <div class="spawn-zone-setting-stack">
                     <div class="spawn-zone-switch-row">
@@ -4041,7 +4133,7 @@ function renderAdminPanelHtml(token: string) {
       lockedContainerSetupStatus: document.getElementById("lockedContainerSetupStatus"), lockedContainerModalStatus: document.getElementById("lockedContainerModalStatus"), lockedContainerInstalledSection: document.getElementById("lockedContainerInstalledSection"), lockedContainerInstalledGrid: document.getElementById("lockedContainerInstalledGrid"), lockedContainerAvailableGrid: document.getElementById("lockedContainerAvailableGrid"), eventIntegrationModalBackdrop: document.getElementById("eventIntegrationModalBackdrop"), eventIntegrationModalClose: document.getElementById("eventIntegrationModalClose"),
       itemModalBackdrop: document.getElementById("itemModalBackdrop"), itemModalTitle: document.getElementById("itemModalTitle"), itemModalSubtitle: document.getElementById("itemModalSubtitle"), itemModalPreviewImage: document.getElementById("itemModalPreviewImage"), itemModalPreviewName: document.getElementById("itemModalPreviewName"), itemModalPreviewClass: document.getElementById("itemModalPreviewClass"), itemModalPopularName: document.getElementById("itemModalPopularName"), itemModalImageUrl: document.getElementById("itemModalImageUrl"), itemModalSpawnEventName: document.getElementById("itemModalSpawnEventName"), itemModalEnabled: document.getElementById("itemModalEnabled"),
       spawnZonesCurrentZone: document.getElementById("spawnZonesCurrentZone"), spawnZonesNextZone: document.getElementById("spawnZonesNextZone"), spawnZonesEnabledCount: document.getElementById("spawnZonesEnabledCount"), spawnZonesVoteHistory: document.getElementById("spawnZonesVoteHistory"), spawnZonesActivePoll: document.getElementById("spawnZonesActivePoll"), spawnZonesNextSelect: document.getElementById("spawnZonesNextSelect"), spawnZonesSetNext: document.getElementById("spawnZonesSetNext"), spawnZonesApplyNext: document.getElementById("spawnZonesApplyNext"), spawnZonesApplyServer: document.getElementById("spawnZonesApplyServer"), spawnZonesCreatePoll: document.getElementById("spawnZonesCreatePoll"), spawnZonesRefreshPoll: document.getElementById("spawnZonesRefreshPoll"), spawnZonesFinalizePoll: document.getElementById("spawnZonesFinalizePoll"), spawnZonesRunAutomation: document.getElementById("spawnZonesRunAutomation"), spawnZonesAutomationStatus: document.getElementById("spawnZonesAutomationStatus"), spawnZonesWelcomeMessage: document.getElementById("spawnZonesWelcomeMessage"), spawnZonesWelcomeStatus: document.getElementById("spawnZonesWelcomeStatus"),
-      spawnZonesMapTitle: document.getElementById("spawnZonesMapTitle"), spawnZonesMapHint: document.getElementById("spawnZonesMapHint"), spawnZonesAutosaveStatus: document.getElementById("spawnZonesAutosaveStatus"), spawnZonesMapViewport: document.getElementById("spawnZonesMapViewport"), spawnZonesMapInner: document.getElementById("spawnZonesMapInner"), spawnZonesMarkers: document.getElementById("spawnZonesMarkers"), spawnZonesMapTiles: document.getElementById("spawnZonesMapTiles"), spawnZonesMapZoomIn: document.getElementById("spawnZonesMapZoomIn"), spawnZonesMapZoomOut: document.getElementById("spawnZonesMapZoomOut"), spawnZonesMapZoomLabel: document.getElementById("spawnZonesMapZoomLabel"), spawnZonesCursor: document.getElementById("spawnZonesCursor"), spawnZoneCreate: document.getElementById("spawnZoneCreate"), spawnZoneImport: document.getElementById("spawnZoneImport"), spawnZoneImportFile: document.getElementById("spawnZoneImportFile"), spawnZoneList: document.getElementById("spawnZoneList"), spawnZonesPollChannel: document.getElementById("spawnZonesPollChannel"), spawnZonesPollQuestion: document.getElementById("spawnZonesPollQuestion"), spawnZonesPollOpenDay: document.getElementById("spawnZonesPollOpenDay"), spawnZonesPollOpenTime: document.getElementById("spawnZonesPollOpenTime"), spawnZonesPollCloseDay: document.getElementById("spawnZonesPollCloseDay"), spawnZonesPollCloseTime: document.getElementById("spawnZonesPollCloseTime"), spawnZonesMinVotes: document.getElementById("spawnZonesMinVotes"), spawnZonesTiePolicy: document.getElementById("spawnZonesTiePolicy"), spawnZonesAutoCreatePoll: document.getElementById("spawnZonesAutoCreatePoll"), spawnZonesAutoApplyWinner: document.getElementById("spawnZonesAutoApplyWinner"), spawnZonesApplyOnNextRestart: document.getElementById("spawnZonesApplyOnNextRestart"), spawnZonesSpawnFilePath: document.getElementById("spawnZonesSpawnFilePath"), spawnZonesServerName: document.getElementById("spawnZonesServerName"), spawnZonesSettingsStatus: document.getElementById("spawnZonesSettingsStatus"), spawnZonesTiePolicyHelp: document.getElementById("spawnZonesTiePolicyHelp"), spawnZonesApplyOnNextRestartRow: document.getElementById("spawnZonesApplyOnNextRestartRow")
+      spawnZonesMapTitle: document.getElementById("spawnZonesMapTitle"), spawnZonesMapHint: document.getElementById("spawnZonesMapHint"), spawnZonesAutosaveStatus: document.getElementById("spawnZonesAutosaveStatus"), spawnZonesMapViewport: document.getElementById("spawnZonesMapViewport"), spawnZonesMapInner: document.getElementById("spawnZonesMapInner"), spawnZonesMarkers: document.getElementById("spawnZonesMarkers"), spawnZonesMapTiles: document.getElementById("spawnZonesMapTiles"), spawnZonesMapZoomIn: document.getElementById("spawnZonesMapZoomIn"), spawnZonesMapZoomOut: document.getElementById("spawnZonesMapZoomOut"), spawnZonesMapZoomLabel: document.getElementById("spawnZonesMapZoomLabel"), spawnZonesCursor: document.getElementById("spawnZonesCursor"), spawnZoneCreate: document.getElementById("spawnZoneCreate"), spawnZoneImport: document.getElementById("spawnZoneImport"), spawnZoneImportFile: document.getElementById("spawnZoneImportFile"), spawnZoneList: document.getElementById("spawnZoneList"), spawnZonesPollChannel: document.getElementById("spawnZonesPollChannel"), spawnZonesPollQuestion: document.getElementById("spawnZonesPollQuestion"), spawnZonesPollOpenDay: document.getElementById("spawnZonesPollOpenDay"), spawnZonesPollOpenTime: document.getElementById("spawnZonesPollOpenTime"), spawnZonesPollCloseDay: document.getElementById("spawnZonesPollCloseDay"), spawnZonesPollCloseTime: document.getElementById("spawnZonesPollCloseTime"), spawnZonesPollTimezone: document.getElementById("spawnZonesPollTimezone"), spawnZonesMinVotes: document.getElementById("spawnZonesMinVotes"), spawnZonesTiePolicy: document.getElementById("spawnZonesTiePolicy"), spawnZonesAutoCreatePoll: document.getElementById("spawnZonesAutoCreatePoll"), spawnZonesAutoApplyWinner: document.getElementById("spawnZonesAutoApplyWinner"), spawnZonesApplyOnNextRestart: document.getElementById("spawnZonesApplyOnNextRestart"), spawnZonesSpawnFilePath: document.getElementById("spawnZonesSpawnFilePath"), spawnZonesServerName: document.getElementById("spawnZonesServerName"), spawnZonesSettingsStatus: document.getElementById("spawnZonesSettingsStatus"), spawnZonesTiePolicyHelp: document.getElementById("spawnZonesTiePolicyHelp"), spawnZonesApplyOnNextRestartRow: document.getElementById("spawnZonesApplyOnNextRestartRow")
     };
     function apiUrl(path) { const separator = path.includes("?") ? "&" : "?"; return adminToken ? path + separator + "token=" + encodeURIComponent(adminToken) : path; }
     async function apiFetch(path, options) { const headers = Object.assign({ "Content-Type": "application/json" }, (options && options.headers) || {}); if (adminToken) headers["x-admin-token"] = adminToken; return fetch(apiUrl(path), Object.assign({}, options || {}, { headers, credentials: "same-origin" })); }
@@ -5093,10 +5185,14 @@ function renderAdminPanelHtml(token: string) {
       }
       const automation = state.spawnZones?.automation || {};
       if (els.spawnZonesAutomationStatus) {
-        const lastChecked = automation.lastCheckedAt ? ('Última execução: ' + automation.lastCheckedAt) : 'Automação ainda não executada.';
+        const intervalMinutes = automation.schedulerIntervalMs ? Math.round(Number(automation.schedulerIntervalMs || 0) / 60000) : 5;
+        const lastChecked = automation.lastCheckedAt ? ('Último scheduler: ' + relativeDate(automation.lastCheckedAt) + ' (' + automation.lastCheckedAt + ')') : 'Automação ainda não executada.';
+        const currentWindow = automation.currentWindowOpenAt && automation.currentWindowCloseAt ? (' · janela atual: ' + automation.currentWindowOpenAt + ' → ' + automation.currentWindowCloseAt) : '';
+        const nextWindow = automation.nextWindowOpenAt && automation.nextWindowCloseAt ? (' · próxima: ' + automation.nextWindowOpenAt + ' → ' + automation.nextWindowCloseAt) : '';
         const action = automation.lastAction ? (' · ação: ' + automation.lastAction) : '';
+        const interval = ' · intervalo: ' + String(intervalMinutes) + ' min';
         const error = automation.lastError ? (' · erro: ' + automation.lastError) : '';
-        els.spawnZonesAutomationStatus.textContent = lastChecked + action + error;
+        els.spawnZonesAutomationStatus.textContent = lastChecked + interval + currentWindow + nextWindow + action + error;
       }
       const activePoll = state.spawnZones?.activePoll;
       if (els.spawnZonesActivePoll) {
@@ -5136,6 +5232,7 @@ function renderAdminPanelHtml(token: string) {
         pollOpenTime: els.spawnZonesPollOpenTime ? els.spawnZonesPollOpenTime.value : (current.pollOpenTime || '12:00'),
         pollCloseDay: els.spawnZonesPollCloseDay ? els.spawnZonesPollCloseDay.value : (current.pollCloseDay || 'sunday'),
         pollCloseTime: els.spawnZonesPollCloseTime ? els.spawnZonesPollCloseTime.value : (current.pollCloseTime || '23:59'),
+        pollTimezone: els.spawnZonesPollTimezone ? String(els.spawnZonesPollTimezone.value || '').trim() : (current.pollTimezone || 'America/Sao_Paulo'),
         minVotes: els.spawnZonesMinVotes ? Number(els.spawnZonesMinVotes.value || 0) : Number(current.minVotes || 0),
         tiePolicy: els.spawnZonesTiePolicy ? els.spawnZonesTiePolicy.value : (current.tiePolicy || 'manual'),
         autoCreatePoll: els.spawnZonesAutoCreatePoll ? Boolean(els.spawnZonesAutoCreatePoll.checked) : Boolean(current.autoCreatePoll),
@@ -5188,6 +5285,7 @@ function renderAdminPanelHtml(token: string) {
       setFormElementValue(els.spawnZonesPollOpenTime, settings.pollOpenTime || '12:00');
       setFormElementValue(els.spawnZonesPollCloseDay, settings.pollCloseDay || 'sunday');
       setFormElementValue(els.spawnZonesPollCloseTime, settings.pollCloseTime || '23:59');
+      setFormElementValue(els.spawnZonesPollTimezone, settings.pollTimezone || 'America/Sao_Paulo');
       setFormElementValue(els.spawnZonesMinVotes, String(settings.minVotes || 0));
       setFormElementValue(els.spawnZonesTiePolicy, settings.tiePolicy || 'manual');
       if (els.spawnZonesAutoCreatePoll && document.activeElement !== els.spawnZonesAutoCreatePoll) els.spawnZonesAutoCreatePoll.checked = Boolean(settings.autoCreatePoll);
@@ -5953,7 +6051,7 @@ function renderAdminPanelHtml(token: string) {
       element.addEventListener('change', () => saveSpawnZonesSettingsNow());
       element.addEventListener('blur', () => saveSpawnZonesSettingsNow());
     });
-    ['spawnZonesPollOpenDay', 'spawnZonesPollOpenTime', 'spawnZonesPollCloseDay', 'spawnZonesPollCloseTime', 'spawnZonesTiePolicy'].forEach((elementKey) => {
+    ['spawnZonesPollOpenDay', 'spawnZonesPollOpenTime', 'spawnZonesPollCloseDay', 'spawnZonesPollCloseTime', 'spawnZonesPollTimezone', 'spawnZonesTiePolicy'].forEach((elementKey) => {
       const element = els[elementKey];
       if (!element) return;
       element.addEventListener('change', () => { updateSpawnZoneSettingsUx(); saveSpawnZonesSettingsNow(); });
@@ -6613,6 +6711,10 @@ router.patch("/api/spawn-zones/settings", async (req, res) => {
     ...(incomingSettings && typeof incomingSettings === "object" ? incomingSettings : {}),
   });
   const saved = await saveMapRotationState(state, rotation);
+  const runTimer = setTimeout(() => {
+    runSpawnZoneAutomationNow().catch((err) => console.error("spawn zones automation after settings update failed", err));
+  }, 0);
+  if (typeof (runTimer as any).unref === "function") (runTimer as any).unref();
   res.json(saved);
   return;
 });
