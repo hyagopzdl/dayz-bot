@@ -60,7 +60,7 @@ import {
   type Wallet,
 } from "../lib/state";
 import { getDiscordClient } from "../lib/discordBot";
-import { buildMapVotePollContent, buildMapVotePollOptionText, buildMapVotePollQuestion, buildMapVotePublicWelcomePayload } from "../lib/discord/modules/map-vote/ui";
+import { buildMapVotePollOptionText, buildMapVotePollQuestion, buildMapVotePublicWelcomePayload } from "../lib/discord/modules/map-vote/ui";
 import { downloadTextFile, uploadTextFile } from "../lib/nitradoFtp";
 
 const router = Router();
@@ -286,11 +286,16 @@ async function createDiscordSpawnZonePoll(rotation: MapRotationPayload) {
   const options = rotation.zones.filter((zone) => zone.enabled !== false && (zone.points || []).length > 0).slice(0, 10);
   if (options.length < 2) throw new Error("Crie pelo menos 2 zonas habilitadas com pontos para gerar a enquete.");
   const client = getDiscordClient();
-  const closeAt = nextWeekdayDate(settings.pollCloseDay, settings.pollCloseTime);
-  const durationHours = Math.max(1, Math.min(168, Math.ceil((closeAt.getTime() - Date.now()) / 36e5)));
+  const now = new Date();
+  const scheduleWindow = getMapRotationScheduleWindow(settings, now);
+  let closeAt = scheduleWindow.closeAt;
+  if (closeAt.getTime() <= now.getTime()) {
+    closeAt = nextWeekdayDate(settings.pollCloseDay, settings.pollCloseTime, now);
+  }
+  const requestedDurationHours = Math.ceil((closeAt.getTime() - now.getTime()) / 36e5);
+  const durationHours = Math.max(1, Math.min(168, requestedDurationHours));
   const question = settings.pollQuestion || buildMapVotePollQuestion();
   const body = {
-    content: buildMapVotePollContent(),
     poll: {
       question: { text: question },
       answers: options.map((zone) => ({ poll_media: { text: buildMapVotePollOptionText(zone, rotation.currentZoneId) } })),
