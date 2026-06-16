@@ -188,7 +188,7 @@ function normalizeMapRotationSettings(value: unknown): MapRotationSettingsPayloa
     pollCloseTime: String(input.pollCloseTime || "23:59").slice(0, 5),
     autoCreatePoll: Boolean(input.autoCreatePoll),
     autoApplyWinner: Boolean(input.autoApplyWinner),
-    applyOnNextRestart: input.applyOnNextRestart !== false,
+    applyOnNextRestart: input.applyOnNextRestart === true,
     tiePolicy: ["manual", "keep_current", "random"].includes(String(input.tiePolicy || "")) ? String(input.tiePolicy) : "manual",
     minVotes: Number.isFinite(minVotes) && minVotes > 0 ? Math.floor(minVotes) : 0,
     spawnFilePath: String(input.spawnFilePath || SPAWN_ZONE_FILE_PATH).trim() || SPAWN_ZONE_FILE_PATH,
@@ -483,7 +483,8 @@ async function finalizeSpawnZonePoll(rotation: MapRotationPayload, options: { ap
   rotation.nextZoneId = zone.id;
   let path = "";
   if (options.apply) {
-    if (settings.applyOnNextRestart === false) {
+    const shouldApplyImmediately = options.source === "poll-auto" || settings.applyOnNextRestart === false;
+    if (shouldApplyImmediately) {
       path = await applySpawnZoneToServer(rotation, zone, options.source || "poll-auto", activePoll.totalVotes || 0);
       activePoll.appliedAt = new Date().toISOString();
     } else {
@@ -499,7 +500,7 @@ async function finalizeSpawnZonePoll(rotation: MapRotationPayload, options: { ap
     ].slice(-24);
   }
   rotation.activePoll = activePoll;
-  await postSpawnZonePollResult(settings, `🏆 Votação encerrada. Zona vencedora: **${zone.name}** com ${activePoll.totalVotes || 0} votos.${options.apply ? (settings.applyOnNextRestart === false ? " Aplicada no servidor." : " Programada para o próximo restart.") : ""}`);
+  await postSpawnZonePollResult(settings, `🏆 Votação encerrada. Zona vencedora: **${zone.name}** com ${activePoll.totalVotes || 0} votos.${options.apply ? (activePoll.appliedAt ? " Aplicada no servidor." : " Programada para o próximo restart.") : ""}`);
   return { zone, path, reason, activePoll };
 }
 
@@ -5139,7 +5140,7 @@ function renderAdminPanelHtml(token: string) {
         tiePolicy: els.spawnZonesTiePolicy ? els.spawnZonesTiePolicy.value : (current.tiePolicy || 'manual'),
         autoCreatePoll: els.spawnZonesAutoCreatePoll ? Boolean(els.spawnZonesAutoCreatePoll.checked) : Boolean(current.autoCreatePoll),
         autoApplyWinner: els.spawnZonesAutoApplyWinner ? Boolean(els.spawnZonesAutoApplyWinner.checked) : Boolean(current.autoApplyWinner),
-        applyOnNextRestart: els.spawnZonesApplyOnNextRestart ? Boolean(els.spawnZonesApplyOnNextRestart.checked) : current.applyOnNextRestart !== false,
+        applyOnNextRestart: els.spawnZonesApplyOnNextRestart ? Boolean(els.spawnZonesApplyOnNextRestart.checked) : current.applyOnNextRestart === true,
         spawnFilePath: els.spawnZonesSpawnFilePath ? String(els.spawnZonesSpawnFilePath.value || '').trim() : (current.spawnFilePath || ''),
         serverName: els.spawnZonesServerName ? String(els.spawnZonesServerName.value || '').trim() : (current.serverName || 'DayZ Server'),
         mapVoteWelcomeMessageId: current.mapVoteWelcomeMessageId || '',
@@ -5191,7 +5192,7 @@ function renderAdminPanelHtml(token: string) {
       setFormElementValue(els.spawnZonesTiePolicy, settings.tiePolicy || 'manual');
       if (els.spawnZonesAutoCreatePoll && document.activeElement !== els.spawnZonesAutoCreatePoll) els.spawnZonesAutoCreatePoll.checked = Boolean(settings.autoCreatePoll);
       if (els.spawnZonesAutoApplyWinner && document.activeElement !== els.spawnZonesAutoApplyWinner) els.spawnZonesAutoApplyWinner.checked = Boolean(settings.autoApplyWinner);
-      if (els.spawnZonesApplyOnNextRestart && document.activeElement !== els.spawnZonesApplyOnNextRestart) els.spawnZonesApplyOnNextRestart.checked = settings.applyOnNextRestart !== false;
+      if (els.spawnZonesApplyOnNextRestart && document.activeElement !== els.spawnZonesApplyOnNextRestart) els.spawnZonesApplyOnNextRestart.checked = settings.applyOnNextRestart === true;
       setFormElementValue(els.spawnZonesSpawnFilePath, settings.spawnFilePath || '');
       setFormElementValue(els.spawnZonesServerName, settings.serverName || 'DayZ Server');
       updateSpawnZoneSettingsUx();
