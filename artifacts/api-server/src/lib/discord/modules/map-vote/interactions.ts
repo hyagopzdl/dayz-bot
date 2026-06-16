@@ -6,6 +6,7 @@ import {
   buildMapVoteLanguagePromptPayload,
   buildMapVotePollContent,
   buildMapVotePollQuestion,
+  getMapVoteServerName,
   type MapVoteLocale,
 } from "./ui";
 
@@ -125,18 +126,6 @@ async function safeReply(interaction: any, payload: any) {
   await interaction.reply(payload);
 }
 
-async function safeUpdate(interaction: any, payload: any) {
-  if (interaction.deferred || interaction.replied) {
-    await interaction.editReply(payload);
-    return;
-  }
-  if (interaction.update) {
-    await interaction.update(payload);
-    return;
-  }
-  await interaction.reply({ ...payload, ephemeral: true });
-}
-
 async function safeFollowUp(interaction: any, payload: any) {
   try {
     if (interaction.followUp) await interaction.followUp(payload);
@@ -165,7 +154,11 @@ export async function handleMapVoteComponentInteraction(interaction: any, ctx: M
       // The map-vote flow can be used before /link. Store the map-vote preference even if no link exists yet.
     }
 
-    await safeUpdate(interaction, buildMapVoteExplanationPayload(locale));
+    const playerLabel = interaction.user?.id ? `<@${interaction.user.id}>` : interaction.user?.username;
+    await safeReply(interaction, buildMapVoteExplanationPayload(locale, {
+      playerLabel,
+      serverName: getMapVoteServerName(),
+    }));
 
     try {
       const pollResult = await ensureMapVotePoll(interaction, state);

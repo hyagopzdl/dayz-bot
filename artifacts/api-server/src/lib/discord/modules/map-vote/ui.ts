@@ -19,6 +19,10 @@ function normalizeMapVoteLocale(locale?: string | null): MapVoteLocale {
   return "en";
 }
 
+export function getMapVoteServerName() {
+  return String(process.env.ADMIN_PANEL_SERVER_NAME || process.env.SERVER_NAME || "DayZ Server").trim() || "DayZ Server";
+}
+
 export function buildMapVoteStartCustomId() {
   return "map-vote-start";
 }
@@ -40,16 +44,15 @@ function languageButtons() {
 }
 
 export function buildMapVotePublicWelcomePayload() {
+  const serverName = getMapVoteServerName();
   const embed = buildSystemEmbed({
-    title: "🗺️ Weekly Arena Vote",
+    title: `👋 Welcome to ${serverName}`,
     description: [
-      "Welcome to the server. Choose your language below to see how the weekly arena vote works.",
+      "To get started, choose your language below.",
       "",
-      "Bem-vindo ao servidor. Escolha seu idioma abaixo para ver como funciona a votação semanal de arena.",
+      `🇧🇷 Bem-vindo ao **${serverName}**. Para começar, escolha seu idioma abaixo.`,
       "",
-      "Bienvenido al servidor. Elige tu idioma abajo para ver cómo funciona la votación semanal de arena.",
-      "",
-      "After you choose a language, this message updates and the active poll is posted below when voting is open.",
+      `🇪🇸 Bienvenido a **${serverName}**. Para empezar, elige tu idioma abajo.`,
     ].join("\n"),
     footerSuffix: "map-vote",
   });
@@ -63,14 +66,15 @@ export function buildMapVotePublicWelcomePayload() {
 }
 
 export function buildMapVoteLanguagePromptPayload() {
+  const serverName = getMapVoteServerName();
   const embed = buildSystemEmbed({
-    title: "🌐 Choose your language",
+    title: `👋 Welcome to ${serverName}`,
     description: [
-      "Pick your preferred language for bot messages about the weekly arena vote.",
+      "To get started, choose your language below.",
       "",
-      "Escolha seu idioma preferido para as mensagens do bot sobre a votação semanal de arena.",
+      `🇧🇷 Bem-vindo ao **${serverName}**. Para começar, escolha seu idioma abaixo.`,
       "",
-      "Elige tu idioma preferido para los mensajes del bot sobre la votación semanal de arena.",
+      `🇪🇸 Bienvenido a **${serverName}**. Para empezar, elige tu idioma abajo.`,
     ].join("\n"),
     footerSuffix: "map-vote",
   });
@@ -79,63 +83,79 @@ export function buildMapVoteLanguagePromptPayload() {
     embeds: [embed],
     components: [languageButtons()],
     ephemeral: true,
+    allowed_mentions: { parse: [] },
   };
 }
 
-const explanationCopy: Record<MapVoteLocale, { title: string; description: string }> = {
+type ExplanationOptions = {
+  playerLabel?: string | null;
+  serverName?: string | null;
+};
+
+function playerGreeting(locale: MapVoteLocale, playerLabel?: string | null, serverName?: string | null) {
+  const player = String(playerLabel || "").trim();
+  const server = String(serverName || getMapVoteServerName()).trim() || "DayZ Server";
+
+  if (locale === "pt") return player ? `Olá, ${player}! Bem-vindo ao **${server}**.` : `Bem-vindo ao **${server}**.`;
+  if (locale === "es") return player ? `¡Hola, ${player}! Bienvenido a **${server}**.` : `Bienvenido a **${server}**.`;
+  return player ? `Hi, ${player}! Welcome to **${server}**.` : `Welcome to **${server}**.`;
+}
+
+const explanationCopy: Record<MapVoteLocale, { title: string; lines: string[] }> = {
   en: {
     title: "🗺️ Next Week Arena Vote",
-    description: [
-      "Every week, the community chooses the next deathmatch rotation.",
+    lines: [
+      "Every week, the community chooses the next server arena.",
       "",
-      "Vote in the poll below to choose the next **arena/spawn zone**.",
-      "Voting closes every **Sunday at 11:59 PM**.",
+      "Vote in the public poll below to choose the next **spawn/deathmatch zone**.",
+      "Voting closes every **Sunday at 11:59 PM**, and the winning arena goes live after the **Monday 12:00 AM reset**.",
       "",
-      "The winning arena goes live after the **Monday 12:00 AM server reset**, and a new vote starts for the following week.",
-      "",
-      "✅ One vote per player.\n🔁 New rotation every week.\n🎯 Your vote decides where the next deathmatch happens.",
-    ].join("\n"),
+      "✅ One vote per player",
+      "🔁 New vote every week",
+      "🎯 Your vote decides the next arena",
+    ],
   },
   pt: {
     title: "🗺️ Votação da Arena da Próxima Semana",
-    description: [
-      "Toda semana a comunidade escolhe a próxima rotação do servidor.",
+    lines: [
+      "Toda semana a comunidade escolhe a próxima arena do servidor.",
       "",
-      "Vote na enquete abaixo para escolher a próxima **arena/zona de spawn**.",
-      "A votação encerra todo **domingo às 23:59**.",
+      "Vote na enquete pública abaixo para escolher a próxima **zona de spawn/deathmatch**.",
+      "A votação encerra todo **domingo às 23:59**, e a arena vencedora entra no **reset de segunda às 00:00**.",
       "",
-      "A arena vencedora entra no **reset de segunda às 00:00**, e uma nova votação começa para a semana seguinte.",
-      "",
-      "✅ Um voto por player.\n🔁 Nova rotação toda semana.\n🎯 Seu voto decide onde será o próximo deathmatch.",
-    ].join("\n"),
+      "✅ Um voto por player",
+      "🔁 Nova votação toda semana",
+      "🎯 Seu voto decide a próxima arena",
+    ],
   },
   es: {
     title: "🗺️ Votación de la Arena de la Próxima Semana",
-    description: [
-      "Cada semana la comunidad elige la próxima rotación del servidor.",
+    lines: [
+      "Cada semana la comunidad elige la próxima arena del servidor.",
       "",
-      "Vota en la encuesta de abajo para elegir la próxima **arena/zona de spawn**.",
-      "La votación termina todos los **domingos a las 23:59**.",
+      "Vota en la encuesta pública de abajo para elegir la próxima **zona de spawn/deathmatch**.",
+      "La votación termina todos los **domingos a las 23:59**, y la arena ganadora entra después del **reinicio del lunes a las 00:00**.",
       "",
-      "La arena ganadora entra después del **reinicio del lunes a las 00:00**, y empieza una nueva votación para la semana siguiente.",
-      "",
-      "✅ Un voto por jugador.\n🔁 Nueva rotación cada semana.\n🎯 Tu voto decide dónde será el próximo deathmatch.",
-    ].join("\n"),
+      "✅ Un voto por jugador",
+      "🔁 Nueva votación cada semana",
+      "🎯 Tu voto decide la próxima arena",
+    ],
   },
 };
 
-export function buildMapVoteExplanationPayload(locale?: string | null) {
+export function buildMapVoteExplanationPayload(locale?: string | null, options: ExplanationOptions = {}) {
   const normalized = normalizeMapVoteLocale(locale);
   const copy = explanationCopy[normalized];
   const embed = buildSuccessEmbed({
     title: copy.title,
-    description: copy.description,
+    description: [playerGreeting(normalized, options.playerLabel, options.serverName), "", ...copy.lines].join("\n"),
     footerSuffix: "map-vote",
   });
 
   return {
     embeds: [embed],
     components: [],
+    ephemeral: true,
     allowed_mentions: { parse: [] },
   };
 }
