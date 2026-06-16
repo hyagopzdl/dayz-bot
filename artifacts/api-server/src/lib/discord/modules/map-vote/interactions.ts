@@ -5,6 +5,7 @@ import {
   buildMapVoteExplanationPayload,
   buildMapVoteLanguagePromptPayload,
   buildMapVotePollContent,
+  buildMapVotePollOptionText,
   buildMapVotePollQuestion,
   getMapVoteServerName,
   type MapVoteLocale,
@@ -88,7 +89,7 @@ async function ensureMapVotePoll(interaction: any, state: any): Promise<{ create
     content: buildMapVotePollContent(),
     poll: {
       question: { text: question },
-      answers: zones.map((zone: any) => ({ poll_media: { text: String(zone.name || "Zona") } })),
+      answers: zones.map((zone: any) => ({ poll_media: { text: buildMapVotePollOptionText(zone, rotation.currentZoneId) } })),
       duration: durationHours,
       allow_multiselect: false,
       layout_type: 1,
@@ -145,6 +146,7 @@ export async function handleMapVoteComponentInteraction(interaction: any, ctx: M
   if (String(interaction.customId || "").startsWith("map-vote-language:")) {
     const locale = normalizeMapVoteLocale(String(interaction.customId || "").split(":")[1]);
     const state = await ctx.getState();
+    const rotation = getMapRotationState(state);
     const preferences = ensureMapVoteUserLocales(state);
     preferences[interaction.user.id] = { locale, updatedAt: new Date().toISOString() };
 
@@ -157,7 +159,7 @@ export async function handleMapVoteComponentInteraction(interaction: any, ctx: M
     const playerLabel = interaction.user?.id ? `<@${interaction.user.id}>` : interaction.user?.username;
     await safeReply(interaction, buildMapVoteExplanationPayload(locale, {
       playerLabel,
-      serverName: getMapVoteServerName(),
+      serverName: getMapVoteServerName(rotation.settings?.serverName),
     }));
 
     try {

@@ -19,8 +19,8 @@ function normalizeMapVoteLocale(locale?: string | null): MapVoteLocale {
   return "en";
 }
 
-export function getMapVoteServerName() {
-  return String(process.env.ADMIN_PANEL_SERVER_NAME || process.env.SERVER_NAME || "DayZ Server").trim() || "DayZ Server";
+export function getMapVoteServerName(value?: string | null) {
+  return String(value || process.env.ADMIN_PANEL_SERVER_NAME || process.env.SERVER_NAME || "DayZ Server").trim() || "DayZ Server";
 }
 
 export function buildMapVoteStartCustomId() {
@@ -43,8 +43,8 @@ function languageButtons() {
   );
 }
 
-export function buildMapVotePublicWelcomePayload() {
-  const serverName = getMapVoteServerName();
+export function buildMapVotePublicWelcomePayload(serverNameInput?: string | null) {
+  const serverName = getMapVoteServerName(serverNameInput);
   const embed = buildSystemEmbed({
     title: `👋 Welcome to ${serverName}`,
     description: [
@@ -65,8 +65,8 @@ export function buildMapVotePublicWelcomePayload() {
   };
 }
 
-export function buildMapVoteLanguagePromptPayload() {
-  const serverName = getMapVoteServerName();
+export function buildMapVoteLanguagePromptPayload(serverNameInput?: string | null) {
+  const serverName = getMapVoteServerName(serverNameInput);
   const embed = buildSystemEmbed({
     title: `👋 Welcome to ${serverName}`,
     description: [
@@ -94,7 +94,7 @@ type ExplanationOptions = {
 
 function playerGreeting(locale: MapVoteLocale, playerLabel?: string | null, serverName?: string | null) {
   const player = String(playerLabel || "").trim();
-  const server = String(serverName || getMapVoteServerName()).trim() || "DayZ Server";
+  const server = getMapVoteServerName(serverName);
 
   if (locale === "pt") return player ? `Olá, ${player}! Bem-vindo ao **${server}**.` : `Bem-vindo ao **${server}**.`;
   if (locale === "es") return player ? `¡Hola, ${player}! Bienvenido a **${server}**.` : `Bienvenido a **${server}**.`;
@@ -161,12 +161,14 @@ export function buildMapVoteExplanationPayload(locale?: string | null, options: 
 }
 
 export function buildMapVotePollQuestion() {
-  return "Next Week Arena / Arena da Próxima Semana / Arena de la Próxima Semana";
+  return "Which arena do you want to play next week?";
+}
+
+export function buildMapVotePollOptionText(zone: { id?: unknown; name?: unknown }, currentZoneId?: string | null) {
+  const name = String(zone?.name || "Arena").trim() || "Arena";
+  return String(zone?.id || "") === String(currentZoneId || "") ? `${name} [Actual]` : name;
 }
 
 export function buildMapVotePollContent() {
-  return [
-    "🗳️ **Next Week Arena / Arena da Próxima Semana / Arena de la Próxima Semana**",
-    "Voting closes Sunday 23:59. Winner goes live after Monday 00:00 reset.",
-  ].join("\n");
+  return "";
 }

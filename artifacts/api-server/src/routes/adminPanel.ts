@@ -60,7 +60,7 @@ import {
   type Wallet,
 } from "../lib/state";
 import { getDiscordClient } from "../lib/discordBot";
-import { buildMapVotePollContent, buildMapVotePollQuestion, buildMapVotePublicWelcomePayload } from "../lib/discord/modules/map-vote/ui";
+import { buildMapVotePollContent, buildMapVotePollOptionText, buildMapVotePollQuestion, buildMapVotePublicWelcomePayload } from "../lib/discord/modules/map-vote/ui";
 import { downloadTextFile, uploadTextFile } from "../lib/nitradoFtp";
 
 const router = Router();
@@ -74,7 +74,7 @@ type AdminState = AppState & Record<string, any>;
 
 type SpawnZonePointPayload = { id: string; x: number; z: number; createdAt?: string; updatedAt?: string };
 type SpawnZonePayload = { id: string; name: string; color: string; enabled: boolean; points: SpawnZonePointPayload[]; createdAt: string; updatedAt: string };
-type MapRotationSettingsPayload = { pollChannelId?: string; pollQuestion?: string; pollOpenDay?: string; pollOpenTime?: string; pollCloseDay?: string; pollCloseTime?: string; autoCreatePoll?: boolean; autoApplyWinner?: boolean; applyOnNextRestart?: boolean; tiePolicy?: string; minVotes?: number; spawnFilePath?: string; serverAnnouncement?: string; mapVoteWelcomeMessageId?: string };
+type MapRotationSettingsPayload = { pollChannelId?: string; pollQuestion?: string; pollOpenDay?: string; pollOpenTime?: string; pollCloseDay?: string; pollCloseTime?: string; autoCreatePoll?: boolean; autoApplyWinner?: boolean; applyOnNextRestart?: boolean; tiePolicy?: string; minVotes?: number; spawnFilePath?: string; serverName?: string; mapVoteWelcomeMessageId?: string };
 type MapRotationPollOptionPayload = { zoneId: string; name: string; answerId?: number; votes?: number };
 type MapRotationActivePollPayload = { id: string; channelId: string; messageId: string; question: string; status: string; createdAt: string; closesAt?: string; options: MapRotationPollOptionPayload[]; totalVotes?: number; winnerZoneId?: string; winnerName?: string; lastFetchedAt?: string; finalizedAt?: string; appliedAt?: string; finalReason?: string; rawUrl?: string };
 type MapRotationAutomationPayload = { lastPollWindowId?: string; lastCloseWindowId?: string; lastCheckedAt?: string; lastAction?: string; lastError?: string };
@@ -181,6 +181,7 @@ function normalizeMapRotationSettings(value: unknown): MapRotationSettingsPayloa
   return {
     pollChannelId: String(input.pollChannelId || "").trim(),
     pollQuestion: String(input.pollQuestion || buildMapVotePollQuestion()).trim().slice(0, 240),
+    serverName: String(input.serverName || process.env.ADMIN_PANEL_SERVER_NAME || process.env.SERVER_NAME || "DayZ Server").trim().slice(0, 80) || "DayZ Server",
     pollOpenDay: String(input.pollOpenDay || "monday"),
     pollOpenTime: String(input.pollOpenTime || "12:00").slice(0, 5),
     pollCloseDay: String(input.pollCloseDay || "sunday"),
@@ -191,7 +192,6 @@ function normalizeMapRotationSettings(value: unknown): MapRotationSettingsPayloa
     tiePolicy: ["manual", "keep_current", "random"].includes(String(input.tiePolicy || "")) ? String(input.tiePolicy) : "manual",
     minVotes: Number.isFinite(minVotes) && minVotes > 0 ? Math.floor(minVotes) : 0,
     spawnFilePath: String(input.spawnFilePath || SPAWN_ZONE_FILE_PATH).trim() || SPAWN_ZONE_FILE_PATH,
-    serverAnnouncement: String(input.serverAnnouncement || "Vote next week arena: discord.gg/SEUCONVITE").trim().slice(0, 240),
     mapVoteWelcomeMessageId: String(input.mapVoteWelcomeMessageId || "").trim(),
   };
 }
@@ -293,7 +293,7 @@ async function createDiscordSpawnZonePoll(rotation: MapRotationPayload) {
     content: buildMapVotePollContent(),
     poll: {
       question: { text: question },
-      answers: options.map((zone) => ({ poll_media: { text: zone.name } })),
+      answers: options.map((zone) => ({ poll_media: { text: buildMapVotePollOptionText(zone, rotation.currentZoneId) } })),
       duration: durationHours,
       allow_multiselect: false,
       layout_type: 1,
@@ -376,7 +376,7 @@ async function createOrUpdateMapVoteWelcomeMessage(rotation: MapRotationPayload)
   const channelId = String(settings.pollChannelId || "").trim();
   if (!channelId) throw new Error("Configure o canal da enquete em Spawn Zones > Settings.");
   const client = getDiscordClient();
-  const payload = JSON.parse(JSON.stringify(buildMapVotePublicWelcomePayload()));
+  const payload = JSON.parse(JSON.stringify(buildMapVotePublicWelcomePayload(settings.serverName)));
   let messageId = String(settings.mapVoteWelcomeMessageId || "").trim();
 
   if (messageId) {
@@ -3700,9 +3700,9 @@ function renderAdminPanelHtml(token: string) {
                   </div>
                   <div class="form-grid">
                     <label>Canal da enquete<input id="spawnZonesPollChannel" placeholder="ID do canal 🗺️│map-vote" /></label>
-                    <label>Pergunta da enquete<input id="spawnZonesPollQuestion" placeholder="Next Week Arena / Arena da Próxima Semana / Arena de la Próxima Semana" /></label>
+                    <label>Enunciado da enquete<input id="spawnZonesPollQuestion" placeholder="Which arena do you want to play next week?" /></label>
                   </div>
-                  <div class="spawn-zone-setting-help">Use o ID do canal do Discord. As zonas habilitadas em <strong>Spawn Points</strong> viram as opções da enquete.</div>
+                  <div class="spawn-zone-setting-help">Use o ID do canal do Discord. As zonas habilitadas em <strong>Spawn Points</strong> viram as opções da enquete; a zona atual recebe <strong>[Actual]</strong>.</div>
                   <div class="spawn-zone-settings-actions">
                     <button id="spawnZonesWelcomeMessage" type="button" class="secondary-btn">Criar/atualizar boas-vindas</button>
                     <span id="spawnZonesWelcomeStatus" class="spawn-zone-settings-status">Mensagem de entrada ainda não criada.</span>
@@ -3761,13 +3761,13 @@ function renderAdminPanelHtml(token: string) {
                   <div class="section-title">
                     <div>
                       <h2>Aplicação no servidor</h2>
-                      <div class="member-meta">Arquivo ativo de spawn e mensagem curta para divulgar a votação dentro do jogo.</div>
+                      <div class="member-meta">Arquivo ativo de spawn e nome usado no onboarding público do Discord.</div>
                     </div>
                     <span class="chip">server</span>
                   </div>
                   <div class="form-grid">
                     <label>Arquivo ativo de spawn<input id="spawnZonesSpawnFilePath" placeholder="dayzps_missions/dayzOffline.chernarusplus/cfgplayerspawnpoints.xml" /></label>
-                    <label>Mensagem in-game<input id="spawnZonesServerAnnouncement" placeholder="Vote na arena da próxima semana: discord.gg/..." /></label>
+                    <label>Nome do servidor<input id="spawnZonesServerName" placeholder="Nome do servidor" /></label>
                   </div>
                   <div class="spawn-zone-setting-help">A aplicação troca somente os <strong>&lt;pos&gt;</strong> dentro de <strong>fresh/generator_posbubbles</strong> e preserva spawn_params, generator_params, hop e travel.</div>
                   <div id="spawnZonesSettingsStatus" class="spawn-zone-settings-status saved">Configurações salvas automaticamente.</div>
@@ -3998,7 +3998,7 @@ function renderAdminPanelHtml(token: string) {
       lockedContainerSetupStatus: document.getElementById("lockedContainerSetupStatus"), lockedContainerModalStatus: document.getElementById("lockedContainerModalStatus"), lockedContainerInstalledSection: document.getElementById("lockedContainerInstalledSection"), lockedContainerInstalledGrid: document.getElementById("lockedContainerInstalledGrid"), lockedContainerAvailableGrid: document.getElementById("lockedContainerAvailableGrid"), eventIntegrationModalBackdrop: document.getElementById("eventIntegrationModalBackdrop"), eventIntegrationModalClose: document.getElementById("eventIntegrationModalClose"),
       itemModalBackdrop: document.getElementById("itemModalBackdrop"), itemModalTitle: document.getElementById("itemModalTitle"), itemModalSubtitle: document.getElementById("itemModalSubtitle"), itemModalPreviewImage: document.getElementById("itemModalPreviewImage"), itemModalPreviewName: document.getElementById("itemModalPreviewName"), itemModalPreviewClass: document.getElementById("itemModalPreviewClass"), itemModalPopularName: document.getElementById("itemModalPopularName"), itemModalImageUrl: document.getElementById("itemModalImageUrl"), itemModalSpawnEventName: document.getElementById("itemModalSpawnEventName"), itemModalEnabled: document.getElementById("itemModalEnabled"),
       spawnZonesCurrentZone: document.getElementById("spawnZonesCurrentZone"), spawnZonesNextZone: document.getElementById("spawnZonesNextZone"), spawnZonesEnabledCount: document.getElementById("spawnZonesEnabledCount"), spawnZonesVoteHistory: document.getElementById("spawnZonesVoteHistory"), spawnZonesActivePoll: document.getElementById("spawnZonesActivePoll"), spawnZonesNextSelect: document.getElementById("spawnZonesNextSelect"), spawnZonesSetNext: document.getElementById("spawnZonesSetNext"), spawnZonesApplyNext: document.getElementById("spawnZonesApplyNext"), spawnZonesApplyServer: document.getElementById("spawnZonesApplyServer"), spawnZonesCreatePoll: document.getElementById("spawnZonesCreatePoll"), spawnZonesRefreshPoll: document.getElementById("spawnZonesRefreshPoll"), spawnZonesFinalizePoll: document.getElementById("spawnZonesFinalizePoll"), spawnZonesRunAutomation: document.getElementById("spawnZonesRunAutomation"), spawnZonesAutomationStatus: document.getElementById("spawnZonesAutomationStatus"), spawnZonesWelcomeMessage: document.getElementById("spawnZonesWelcomeMessage"), spawnZonesWelcomeStatus: document.getElementById("spawnZonesWelcomeStatus"),
-      spawnZonesMapTitle: document.getElementById("spawnZonesMapTitle"), spawnZonesMapHint: document.getElementById("spawnZonesMapHint"), spawnZonesAutosaveStatus: document.getElementById("spawnZonesAutosaveStatus"), spawnZonesMapViewport: document.getElementById("spawnZonesMapViewport"), spawnZonesMapInner: document.getElementById("spawnZonesMapInner"), spawnZonesMarkers: document.getElementById("spawnZonesMarkers"), spawnZonesMapTiles: document.getElementById("spawnZonesMapTiles"), spawnZonesMapZoomIn: document.getElementById("spawnZonesMapZoomIn"), spawnZonesMapZoomOut: document.getElementById("spawnZonesMapZoomOut"), spawnZonesMapZoomLabel: document.getElementById("spawnZonesMapZoomLabel"), spawnZonesCursor: document.getElementById("spawnZonesCursor"), spawnZoneCreate: document.getElementById("spawnZoneCreate"), spawnZoneImport: document.getElementById("spawnZoneImport"), spawnZoneImportFile: document.getElementById("spawnZoneImportFile"), spawnZoneList: document.getElementById("spawnZoneList"), spawnZonesPollChannel: document.getElementById("spawnZonesPollChannel"), spawnZonesPollQuestion: document.getElementById("spawnZonesPollQuestion"), spawnZonesPollOpenDay: document.getElementById("spawnZonesPollOpenDay"), spawnZonesPollOpenTime: document.getElementById("spawnZonesPollOpenTime"), spawnZonesPollCloseDay: document.getElementById("spawnZonesPollCloseDay"), spawnZonesPollCloseTime: document.getElementById("spawnZonesPollCloseTime"), spawnZonesMinVotes: document.getElementById("spawnZonesMinVotes"), spawnZonesTiePolicy: document.getElementById("spawnZonesTiePolicy"), spawnZonesAutoCreatePoll: document.getElementById("spawnZonesAutoCreatePoll"), spawnZonesAutoApplyWinner: document.getElementById("spawnZonesAutoApplyWinner"), spawnZonesApplyOnNextRestart: document.getElementById("spawnZonesApplyOnNextRestart"), spawnZonesSpawnFilePath: document.getElementById("spawnZonesSpawnFilePath"), spawnZonesServerAnnouncement: document.getElementById("spawnZonesServerAnnouncement"), spawnZonesSettingsStatus: document.getElementById("spawnZonesSettingsStatus"), spawnZonesTiePolicyHelp: document.getElementById("spawnZonesTiePolicyHelp"), spawnZonesApplyOnNextRestartRow: document.getElementById("spawnZonesApplyOnNextRestartRow")
+      spawnZonesMapTitle: document.getElementById("spawnZonesMapTitle"), spawnZonesMapHint: document.getElementById("spawnZonesMapHint"), spawnZonesAutosaveStatus: document.getElementById("spawnZonesAutosaveStatus"), spawnZonesMapViewport: document.getElementById("spawnZonesMapViewport"), spawnZonesMapInner: document.getElementById("spawnZonesMapInner"), spawnZonesMarkers: document.getElementById("spawnZonesMarkers"), spawnZonesMapTiles: document.getElementById("spawnZonesMapTiles"), spawnZonesMapZoomIn: document.getElementById("spawnZonesMapZoomIn"), spawnZonesMapZoomOut: document.getElementById("spawnZonesMapZoomOut"), spawnZonesMapZoomLabel: document.getElementById("spawnZonesMapZoomLabel"), spawnZonesCursor: document.getElementById("spawnZonesCursor"), spawnZoneCreate: document.getElementById("spawnZoneCreate"), spawnZoneImport: document.getElementById("spawnZoneImport"), spawnZoneImportFile: document.getElementById("spawnZoneImportFile"), spawnZoneList: document.getElementById("spawnZoneList"), spawnZonesPollChannel: document.getElementById("spawnZonesPollChannel"), spawnZonesPollQuestion: document.getElementById("spawnZonesPollQuestion"), spawnZonesPollOpenDay: document.getElementById("spawnZonesPollOpenDay"), spawnZonesPollOpenTime: document.getElementById("spawnZonesPollOpenTime"), spawnZonesPollCloseDay: document.getElementById("spawnZonesPollCloseDay"), spawnZonesPollCloseTime: document.getElementById("spawnZonesPollCloseTime"), spawnZonesMinVotes: document.getElementById("spawnZonesMinVotes"), spawnZonesTiePolicy: document.getElementById("spawnZonesTiePolicy"), spawnZonesAutoCreatePoll: document.getElementById("spawnZonesAutoCreatePoll"), spawnZonesAutoApplyWinner: document.getElementById("spawnZonesAutoApplyWinner"), spawnZonesApplyOnNextRestart: document.getElementById("spawnZonesApplyOnNextRestart"), spawnZonesSpawnFilePath: document.getElementById("spawnZonesSpawnFilePath"), spawnZonesServerName: document.getElementById("spawnZonesServerName"), spawnZonesSettingsStatus: document.getElementById("spawnZonesSettingsStatus"), spawnZonesTiePolicyHelp: document.getElementById("spawnZonesTiePolicyHelp"), spawnZonesApplyOnNextRestartRow: document.getElementById("spawnZonesApplyOnNextRestartRow")
     };
     function apiUrl(path) { const separator = path.includes("?") ? "&" : "?"; return adminToken ? path + separator + "token=" + encodeURIComponent(adminToken) : path; }
     async function apiFetch(path, options) { const headers = Object.assign({ "Content-Type": "application/json" }, (options && options.headers) || {}); if (adminToken) headers["x-admin-token"] = adminToken; return fetch(apiUrl(path), Object.assign({}, options || {}, { headers, credentials: "same-origin" })); }
@@ -5099,7 +5099,7 @@ function renderAdminPanelHtml(token: string) {
         autoApplyWinner: els.spawnZonesAutoApplyWinner ? Boolean(els.spawnZonesAutoApplyWinner.checked) : Boolean(current.autoApplyWinner),
         applyOnNextRestart: els.spawnZonesApplyOnNextRestart ? Boolean(els.spawnZonesApplyOnNextRestart.checked) : current.applyOnNextRestart !== false,
         spawnFilePath: els.spawnZonesSpawnFilePath ? String(els.spawnZonesSpawnFilePath.value || '').trim() : (current.spawnFilePath || ''),
-        serverAnnouncement: els.spawnZonesServerAnnouncement ? String(els.spawnZonesServerAnnouncement.value || '').trim() : (current.serverAnnouncement || ''),
+        serverName: els.spawnZonesServerName ? String(els.spawnZonesServerName.value || '').trim() : (current.serverName || 'DayZ Server'),
         mapVoteWelcomeMessageId: current.mapVoteWelcomeMessageId || '',
       };
     }
@@ -5139,7 +5139,7 @@ function renderAdminPanelHtml(token: string) {
     function renderSpawnZonesSettings() {
       const settings = state.spawnZones?.settings || {};
       setFormElementValue(els.spawnZonesPollChannel, settings.pollChannelId || '');
-      setFormElementValue(els.spawnZonesPollQuestion, settings.pollQuestion || 'Next Week Arena / Arena da Próxima Semana / Arena de la Próxima Semana');
+      setFormElementValue(els.spawnZonesPollQuestion, settings.pollQuestion || 'Which arena do you want to play next week?');
       if (els.spawnZonesWelcomeStatus) els.spawnZonesWelcomeStatus.textContent = settings.mapVoteWelcomeMessageId ? ('Mensagem criada: ' + settings.mapVoteWelcomeMessageId) : 'Mensagem de entrada ainda não criada.';
       setFormElementValue(els.spawnZonesPollOpenDay, settings.pollOpenDay || 'monday');
       setFormElementValue(els.spawnZonesPollOpenTime, settings.pollOpenTime || '12:00');
@@ -5151,7 +5151,7 @@ function renderAdminPanelHtml(token: string) {
       if (els.spawnZonesAutoApplyWinner && document.activeElement !== els.spawnZonesAutoApplyWinner) els.spawnZonesAutoApplyWinner.checked = Boolean(settings.autoApplyWinner);
       if (els.spawnZonesApplyOnNextRestart && document.activeElement !== els.spawnZonesApplyOnNextRestart) els.spawnZonesApplyOnNextRestart.checked = settings.applyOnNextRestart !== false;
       setFormElementValue(els.spawnZonesSpawnFilePath, settings.spawnFilePath || '');
-      setFormElementValue(els.spawnZonesServerAnnouncement, settings.serverAnnouncement || '');
+      setFormElementValue(els.spawnZonesServerName, settings.serverName || 'DayZ Server');
       updateSpawnZoneSettingsUx();
     }
     function renderSpawnZones() {
@@ -5902,7 +5902,7 @@ function renderAdminPanelHtml(token: string) {
         renderSpawnZoneMarkers();
       });
     }
-    const spawnZoneTextSettingInputs = ['spawnZonesPollChannel', 'spawnZonesPollQuestion', 'spawnZonesMinVotes', 'spawnZonesSpawnFilePath', 'spawnZonesServerAnnouncement'];
+    const spawnZoneTextSettingInputs = ['spawnZonesPollChannel', 'spawnZonesPollQuestion', 'spawnZonesMinVotes', 'spawnZonesSpawnFilePath', 'spawnZonesServerName'];
     spawnZoneTextSettingInputs.forEach((elementKey) => {
       const element = els[elementKey];
       if (!element) return;
