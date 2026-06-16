@@ -575,13 +575,27 @@ async function updateMapVoteCategoryName(rotation: MapRotationPayload, zone?: Sp
   const zoneName = sanitizeDiscordChannelNamePart(zone?.name || rotation.zones.find((item) => item.id === rotation.currentZoneId)?.name || "");
   const name = `━━━〔 MAP ROTATION: ${zoneName} 〕━━━`.slice(0, 100);
   const client = getDiscordClient();
-  const route = Routes.channel(categoryId) as `/${string}`;
-  await client.rest.patch(route, { body: { name } });
-  rotation.automation = {
-    ...(rotation.automation || {}),
-    lastCategoryUpdateAt: new Date().toISOString(),
-    lastCategoryName: name,
-  };
+
+  try {
+    const channel = await client.channels.fetch(categoryId).catch(() => null);
+    const editableChannel = channel as unknown as { name?: string; setName?: (name: string, reason?: string) => Promise<unknown> };
+    if (editableChannel?.setName) {
+      if (editableChannel.name !== name) {
+        await editableChannel.setName(name, `Map rotation winner: ${zoneName}`);
+      }
+    } else {
+      const route = Routes.channel(categoryId) as `/${string}`;
+      await client.rest.patch(route, { body: { name } });
+    }
+  } catch (err) {
+    const route = Routes.channel(categoryId) as `/${string}`;
+    await client.rest.patch(route, { body: { name } });
+  }
+
+  const automation = rotation.automation || {};
+  rotation.automation = automation;
+  automation.lastCategoryUpdateAt = new Date().toISOString();
+  automation.lastCategoryName = name;
 }
 
 function getActivePollDurationMs(activePoll: MapRotationActivePollPayload) {
@@ -597,11 +611,10 @@ function scheduleRecurringMapVote(rotation: MapRotationPayload, activePoll: MapR
   const settings = normalizeMapRotationSettings(rotation.settings);
   if (!settings.recurringPollAfterFinish || !activePoll.appliedAt) return;
   const now = new Date();
-  rotation.automation = {
-    ...(rotation.automation || {}),
-    nextRecurringPollAt: new Date(now.getTime() + 10 * 60 * 1000).toISOString(),
-    recurringPollDurationMs: getActivePollDurationMs(activePoll),
-  };
+  const automation = rotation.automation || {};
+  rotation.automation = automation;
+  automation.nextRecurringPollAt = new Date(now.getTime() + 10 * 60 * 1000).toISOString();
+  automation.recurringPollDurationMs = getActivePollDurationMs(activePoll);
 }
 
 async function postSpawnZonePollResult(settings: MapRotationSettingsPayload, content: string) {
@@ -698,6 +711,7 @@ async function runSpawnZoneAutomationNow() {
   const rotation = getMapRotationState(state);
   const settings = normalizeMapRotationSettings(rotation.settings);
   const automation = rotation.automation || {};
+  rotation.automation = automation;
   const now = new Date();
   const windowInfo = getMapRotationScheduleWindow(settings, now);
   const nextWindowInfo = getNextMapRotationScheduleWindow(settings, now);
@@ -778,7 +792,7 @@ async function runSpawnZoneAutomationNow() {
   }
 
   rotation.settings = settings;
-  rotation.automation = automation;
+  rotation.automation = { ...automation, ...(rotation.automation || {}) };
   return saveMapRotationState(state, rotation);
 }
 
