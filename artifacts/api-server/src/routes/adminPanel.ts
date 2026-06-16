@@ -329,6 +329,13 @@ async function fetchDiscordSpawnZonePoll(activePoll: MapRotationActivePollPayloa
   return extractDiscordPollCounts(message, activePoll);
 }
 
+async function expireDiscordSpawnZonePoll(activePoll: MapRotationActivePollPayload) {
+  const client = getDiscordClient();
+  const route = `/channels/${activePoll.channelId}/polls/${activePoll.messageId}/expire` as `/${string}`;
+  const message = await client.rest.post(route, { body: {} }) as any;
+  return extractDiscordPollCounts(message, activePoll);
+}
+
 function previousWeekdayDate(day: unknown, time: unknown, from = new Date()) {
   const targetDay = SPAWN_ZONE_WEEKDAY_INDEX[String(day || "monday")] ?? 1;
   const [hourRaw, minuteRaw] = String(time || "12:00").split(":");
@@ -346,8 +353,15 @@ function getMapRotationScheduleWindow(settings: MapRotationSettingsPayload, from
   const openAt = previousWeekdayDate(settings.pollOpenDay, settings.pollOpenTime, from);
   let closeAt = nextWeekdayDate(settings.pollCloseDay, settings.pollCloseTime, openAt);
   if (closeAt.getTime() <= openAt.getTime()) closeAt = new Date(closeAt.getTime() + 7 * 24 * 60 * 60 * 1000);
-  const id = `${openAt.toISOString().slice(0, 10)}_${closeAt.toISOString().slice(0, 10)}`;
+  const id = `${String(settings.pollOpenDay || "monday")}_${String(settings.pollOpenTime || "12:00")}_${String(settings.pollCloseDay || "sunday")}_${String(settings.pollCloseTime || "23:59")}_${openAt.toISOString()}_${closeAt.toISOString()}`;
   return { id, openAt, closeAt, isOpen: from.getTime() >= openAt.getTime() && from.getTime() < closeAt.getTime(), isClosed: from.getTime() >= closeAt.getTime() };
+}
+
+
+function isActivePollInScheduleWindow(activePoll: MapRotationActivePollPayload | undefined, windowInfo: ReturnType<typeof getMapRotationScheduleWindow>) {
+  if (!activePoll || !activePoll.createdAt) return false;
+  const createdAt = new Date(activePoll.createdAt);
+  return createdAt.getTime() >= windowInfo.openAt.getTime() && createdAt.getTime() < windowInfo.closeAt.getTime();
 }
 
 function chooseSpawnZonePollWinner(rotation: MapRotationPayload, activePoll: MapRotationActivePollPayload) {
@@ -444,7 +458,13 @@ async function applySpawnZoneToServer(rotation: MapRotationPayload, zone: SpawnZ
 async function finalizeSpawnZonePoll(rotation: MapRotationPayload, options: { apply?: boolean; source?: string } = {}) {
   if (!rotation.activePoll) throw new Error("Nenhuma enquete ativa para finalizar.");
   const settings = normalizeMapRotationSettings(rotation.settings);
-  let activePoll = await fetchDiscordSpawnZonePoll(rotation.activePoll);
+  let activePoll: MapRotationActivePollPayload;
+  try {
+    activePoll = await expireDiscordSpawnZonePoll(rotation.activePoll);
+  } catch (err) {
+    console.warn("spawn zone poll expire failed, using fetched counts", err);
+    activePoll = await fetchDiscordSpawnZonePoll(rotation.activePoll);
+  }
   activePoll.status = "closed";
   const { zone, reason } = chooseSpawnZonePollWinner(rotation, activePoll);
   const now = new Date().toISOString();
@@ -494,6 +514,21 @@ async function runSpawnZoneAutomationNow() {
   automation.lastError = "";
 
   try {
+    if (settings.autoCreatePoll && windowInfo.isOpen && rotation.activePoll && rotation.activePoll.status !== "closed" && !isActivePollInScheduleWindow(rotation.activePoll, windowInfo)) {
+      try {
+        const expiredPoll = await expireDiscordSpawnZonePoll(rotation.activePoll);
+        rotation.activePoll = { ...expiredPoll, status: "closed", finalizedAt: now.toISOString(), finalReason: "Substituida por nova janela de automação." };
+      } catch (err) {
+        console.warn("spawn zone stale poll expire failed", err);
+        rotation.activePoll = { ...rotation.activePoll, status: "closed", finalizedAt: now.toISOString(), finalReason: "Substituida por nova janela de automação." };
+      }
+      automation.lastAction = "closed_stale_poll";
+    }
+
+    if (rotation.activePoll && rotation.activePoll.status !== "closed" && windowInfo.isOpen && isActivePollInScheduleWindow(rotation.activePoll, windowInfo)) {
+      rotation.activePoll.closesAt = windowInfo.closeAt.toISOString();
+    }
+
     if (settings.autoCreatePoll && windowInfo.isOpen && automation.lastPollWindowId !== windowInfo.id && (!rotation.activePoll || rotation.activePoll.status === "closed")) {
       rotation.activePoll = await createDiscordSpawnZonePoll(rotation);
       automation.lastPollWindowId = windowInfo.id;
@@ -502,7 +537,9 @@ async function runSpawnZoneAutomationNow() {
 
     if (rotation.activePoll && rotation.activePoll.status !== "closed") {
       rotation.activePoll = await fetchDiscordSpawnZonePoll(rotation.activePoll);
-      const closesAt = rotation.activePoll.closesAt ? new Date(rotation.activePoll.closesAt) : windowInfo.closeAt;
+      const configuredCloseAt = windowInfo.closeAt;
+      const activeCloseAt = rotation.activePoll.closesAt ? new Date(rotation.activePoll.closesAt) : configuredCloseAt;
+      const closesAt = configuredCloseAt.getTime() < activeCloseAt.getTime() ? configuredCloseAt : activeCloseAt;
       if (now.getTime() >= closesAt.getTime() && automation.lastCloseWindowId !== windowInfo.id) {
         await finalizeSpawnZonePoll(rotation, { apply: Boolean(settings.autoApplyWinner), source: settings.autoApplyWinner ? "poll-auto" : "poll" });
         automation.lastCloseWindowId = windowInfo.id;
