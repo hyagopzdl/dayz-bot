@@ -74,10 +74,10 @@ type AdminState = AppState & Record<string, any>;
 
 type SpawnZonePointPayload = { id: string; x: number; z: number; createdAt?: string; updatedAt?: string };
 type SpawnZonePayload = { id: string; name: string; color: string; enabled: boolean; points: SpawnZonePointPayload[]; createdAt: string; updatedAt: string };
-type MapRotationSettingsPayload = { pollChannelId?: string; pollQuestion?: string; pollOpenDay?: string; pollOpenTime?: string; pollCloseDay?: string; pollCloseTime?: string; pollTimezone?: string; autoCreatePoll?: boolean; autoApplyWinner?: boolean; applyOnNextRestart?: boolean; tiePolicy?: string; minVotes?: number; spawnFilePath?: string; serverName?: string; mapVoteWelcomeMessageId?: string };
+type MapRotationSettingsPayload = { pollChannelId?: string; pollCategoryId?: string; pollQuestion?: string; pollOpenDay?: string; pollOpenTime?: string; pollCloseDay?: string; pollCloseTime?: string; pollTimezone?: string; autoCreatePoll?: boolean; recurringPollAfterFinish?: boolean; autoApplyWinner?: boolean; applyOnNextRestart?: boolean; tiePolicy?: string; minVotes?: number; spawnFilePath?: string; serverName?: string; mapVoteWelcomeMessageId?: string };
 type MapRotationPollOptionPayload = { zoneId: string; name: string; answerId?: number; votes?: number };
-type MapRotationActivePollPayload = { id: string; channelId: string; messageId: string; question: string; status: string; createdAt: string; closesAt?: string; options: MapRotationPollOptionPayload[]; totalVotes?: number; winnerZoneId?: string; winnerName?: string; lastFetchedAt?: string; finalizedAt?: string; appliedAt?: string; finalReason?: string; rawUrl?: string };
-type MapRotationAutomationPayload = { lastPollWindowId?: string; lastCloseWindowId?: string; lastCheckedAt?: string; lastAction?: string; lastError?: string; currentWindowId?: string; currentWindowOpenAt?: string; currentWindowCloseAt?: string; nextWindowOpenAt?: string; nextWindowCloseAt?: string; schedulerIntervalMs?: number };
+type MapRotationActivePollPayload = { id: string; channelId: string; messageId: string; question: string; status: string; createdAt: string; openAt?: string; closesAt?: string; windowId?: string; durationMs?: number; recurring?: boolean; options: MapRotationPollOptionPayload[]; totalVotes?: number; winnerZoneId?: string; winnerName?: string; lastFetchedAt?: string; finalizedAt?: string; appliedAt?: string; finalReason?: string; rawUrl?: string };
+type MapRotationAutomationPayload = { lastPollWindowId?: string; lastCloseWindowId?: string; lastCheckedAt?: string; lastAction?: string; lastError?: string; currentWindowId?: string; currentWindowOpenAt?: string; currentWindowCloseAt?: string; nextWindowOpenAt?: string; nextWindowCloseAt?: string; nextRecurringPollAt?: string; recurringPollDurationMs?: number; lastRecurringPollAt?: string; lastCategoryUpdateAt?: string; lastCategoryName?: string; schedulerIntervalMs?: number };
 type MapRotationPayload = { zones: SpawnZonePayload[]; currentZoneId?: string; nextZoneId?: string; voteHistory: any[]; settings: MapRotationSettingsPayload; activePoll?: MapRotationActivePollPayload; automation?: MapRotationAutomationPayload; updatedAt: string };
 
 const SPAWN_ZONE_FILE_PATH = SHOP_EVENTS_PATH.replace(/\/db\/events\.xml$/i, "/cfgplayerspawnpoints.xml");
@@ -191,6 +191,7 @@ function normalizeMapRotationSettings(value: unknown): MapRotationSettingsPayloa
   const minVotes = Number(input.minVotes ?? 0);
   return {
     pollChannelId: String(input.pollChannelId || "").trim(),
+    pollCategoryId: String(input.pollCategoryId || process.env.MAP_VOTE_CATEGORY_ID || "1515944927257825341").trim(),
     pollQuestion: String(input.pollQuestion || buildMapVotePollQuestion()).trim().slice(0, 240),
     serverName: String(input.serverName || process.env.ADMIN_PANEL_SERVER_NAME || process.env.SERVER_NAME || "DayZ Server").trim().slice(0, 80) || "DayZ Server",
     pollOpenDay: String(input.pollOpenDay || "monday"),
@@ -199,6 +200,7 @@ function normalizeMapRotationSettings(value: unknown): MapRotationSettingsPayloa
     pollCloseTime: String(input.pollCloseTime || "23:59").slice(0, 5),
     pollTimezone: normalizeMapVoteTimezone(input.pollTimezone),
     autoCreatePoll: Boolean(input.autoCreatePoll),
+    recurringPollAfterFinish: Boolean(input.recurringPollAfterFinish),
     autoApplyWinner: Boolean(input.autoApplyWinner),
     applyOnNextRestart: input.applyOnNextRestart === true,
     tiePolicy: ["manual", "keep_current", "random"].includes(String(input.tiePolicy || "")) ? String(input.tiePolicy) : "manual",
@@ -337,7 +339,7 @@ function extractDiscordPollCounts(message: any, activePoll: MapRotationActivePol
   };
 }
 
-async function createDiscordSpawnZonePoll(rotation: MapRotationPayload) {
+async function createDiscordSpawnZonePoll(rotation: MapRotationPayload, optionsOverride: { openAt?: Date; closeAt?: Date; windowId?: string; recurring?: boolean } = {}) {
   const settings = normalizeMapRotationSettings(rotation.settings);
   const channelId = String(settings.pollChannelId || "").trim();
   if (!channelId) throw new Error("Configure o canal da enquete em Spawn Zones > Settings.");
@@ -345,13 +347,14 @@ async function createDiscordSpawnZonePoll(rotation: MapRotationPayload) {
   if (options.length < 2) throw new Error("Crie pelo menos 2 zonas habilitadas com pontos para gerar a enquete.");
   const client = getDiscordClient();
   const now = new Date();
+  const openAt = optionsOverride.openAt || now;
   const scheduleWindow = getMapRotationScheduleWindow(settings, now);
-  let closeAt = scheduleWindow.closeAt;
+  let closeAt = optionsOverride.closeAt || scheduleWindow.closeAt;
   if (closeAt.getTime() <= now.getTime()) {
-    closeAt = nextWeekdayDate(settings.pollCloseDay, settings.pollCloseTime, now, normalizeMapVoteTimezone(settings.pollTimezone));
+    closeAt = new Date(now.getTime() + Math.max(60 * 60 * 1000, Number(optionsOverride.closeAt ? 0 : scheduleWindow.closeAt.getTime() - scheduleWindow.openAt.getTime())));
   }
-  const requestedDurationHours = Math.ceil((closeAt.getTime() - now.getTime()) / 36e5);
-  const durationHours = Math.max(1, Math.min(168, requestedDurationHours));
+  const durationMs = Math.max(60 * 60 * 1000, closeAt.getTime() - now.getTime());
+  const durationHours = Math.max(1, Math.min(168, Math.ceil(durationMs / 36e5)));
   const question = settings.pollQuestion || buildMapVotePollQuestion();
   const body = {
     poll: {
@@ -366,6 +369,7 @@ async function createDiscordSpawnZonePoll(rotation: MapRotationPayload) {
   const message = (await client.rest.post(route, { body })) as any;
   const messageId = String(message?.id || "");
   if (!messageId) throw new Error("Discord não retornou o ID da mensagem da enquete.");
+  const windowId = optionsOverride.windowId || scheduleWindow.id;
   return {
     id: crypto.randomUUID(),
     channelId,
@@ -373,7 +377,11 @@ async function createDiscordSpawnZonePoll(rotation: MapRotationPayload) {
     question,
     status: "active",
     createdAt: new Date().toISOString(),
+    openAt: openAt.toISOString(),
     closesAt: closeAt.toISOString(),
+    windowId,
+    durationMs: Math.max(60 * 60 * 1000, closeAt.getTime() - openAt.getTime()),
+    recurring: Boolean(optionsOverride.recurring),
     options: options.map((zone, index) => ({ zoneId: zone.id, name: zone.name, answerId: index + 1, votes: 0 })),
     totalVotes: 0,
     rawUrl: `https://discord.com/channels/${process.env.DISCORD_SERVER_ID || process.env.DISCORD_GUILD_ID || "@me"}/${channelId}/${messageId}`,
@@ -490,6 +498,112 @@ async function createOrUpdateMapVoteWelcomeMessage(rotation: MapRotationPayload)
   return messageId;
 }
 
+
+type MapVoteAnnouncementLocale = "en" | "pt" | "es";
+
+function normalizeMapVoteAnnouncementLocale(value: unknown): MapVoteAnnouncementLocale {
+  const locale = String(value || "").trim().toLowerCase();
+  if (locale === "pt" || locale === "pt-br" || locale === "pt_br") return "pt";
+  if (locale === "es" || locale === "es-es" || locale === "es_es" || locale === "es-la") return "es";
+  return "en";
+}
+
+function getMapVoteAnnouncementLocale(state?: AdminState): MapVoteAnnouncementLocale {
+  const forced = process.env.MAP_VOTE_RESULT_LOCALE || process.env.ADMIN_PANEL_DEFAULT_LOCALE;
+  if (forced) return normalizeMapVoteAnnouncementLocale(forced);
+  const preferences = state?.mapVoteUserLocales && typeof state.mapVoteUserLocales === "object" ? state.mapVoteUserLocales : {};
+  const counts: Record<MapVoteAnnouncementLocale, number> = { en: 0, pt: 0, es: 0 };
+  for (const entry of Object.values(preferences) as any[]) {
+    const locale = normalizeMapVoteAnnouncementLocale(entry?.locale);
+    counts[locale] += 1;
+  }
+  const best = (Object.entries(counts) as Array<[MapVoteAnnouncementLocale, number]>).sort((a, b) => b[1] - a[1])[0];
+  return best && best[1] > 0 ? best[0] : "en";
+}
+
+function getNextRestartLabel(settings: MapRotationSettingsPayload) {
+  const raw = String(process.env.SHOP_RESTART_TIMES || process.env.SERVER_RESTART_TIMES || "00:00").trim();
+  const timeZone = normalizeMapVoteTimezone(settings.pollTimezone);
+  const now = new Date();
+  const localNow = getZonedDateParts(now, timeZone);
+  const candidates = raw.split(/[;,]/).map((item) => item.trim()).filter(Boolean);
+  let best: Date | null = null;
+  let bestLabel = "00:00";
+  for (const candidate of candidates.length ? candidates : ["00:00"]) {
+    const { hour, minute } = parseSpawnZoneTime(candidate, "00:00");
+    let reset = zonedLocalDateTimeToDate(localNow.year, localNow.month, localNow.day, hour, minute, timeZone);
+    if (reset.getTime() <= now.getTime()) {
+      const nextDay = addCalendarDays(localNow, 1);
+      reset = zonedLocalDateTimeToDate(nextDay.year, nextDay.month, nextDay.day, hour, minute, timeZone);
+    }
+    if (!best || reset.getTime() < best.getTime()) {
+      best = reset;
+      bestLabel = `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+    }
+  }
+  return bestLabel;
+}
+
+function buildSpawnZoneWinnerMessage(settings: MapRotationSettingsPayload, zone: SpawnZonePayload, votes: number, locale: MapVoteAnnouncementLocale) {
+  const voteLabel = Math.max(0, Number(votes || 0));
+  const resetLabel = getNextRestartLabel(settings);
+  if (locale === "pt") return `🏆 Votação encerrada. A zona **${zone.name}** venceu a enquete com ${voteLabel} ${voteLabel === 1 ? "voto" : "votos"} e começará no próximo reset das ${resetLabel}.`;
+  if (locale === "es") return `🏆 Votación cerrada. La zona **${zone.name}** ganó la encuesta con ${voteLabel} ${voteLabel === 1 ? "voto" : "votos"} y comenzará en el próximo reinicio de las ${resetLabel}.`;
+  return `🏆 Voting closed. Zone **${zone.name}** won the poll with ${voteLabel} ${voteLabel === 1 ? "vote" : "votes"} and will start after the next ${resetLabel} reset.`;
+}
+
+function buildSpawnZoneNoWinnerMessage(reason: string, locale: MapVoteAnnouncementLocale) {
+  if (locale === "pt") return `🗳️ Votação encerrada sem vencedor automático. ${reason}`;
+  if (locale === "es") return `🗳️ Votación cerrada sin ganador automático. ${reason}`;
+  return `🗳️ Voting closed without an automatic winner. ${reason}`;
+}
+
+function sanitizeDiscordChannelNamePart(value: unknown) {
+  return String(value || "")
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9 _-]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 36) || "ZONE";
+}
+
+async function updateMapVoteCategoryName(rotation: MapRotationPayload, zone?: SpawnZonePayload | null) {
+  const settings = normalizeMapRotationSettings(rotation.settings);
+  const categoryId = String(settings.pollCategoryId || "").trim();
+  if (!categoryId) return;
+  const zoneName = sanitizeDiscordChannelNamePart(zone?.name || rotation.zones.find((item) => item.id === rotation.currentZoneId)?.name || "");
+  const name = `━━━〔 MAP ROTATION: ${zoneName} 〕━━━`.slice(0, 100);
+  const client = getDiscordClient();
+  const route = Routes.channel(categoryId) as `/${string}`;
+  await client.rest.patch(route, { body: { name } });
+  rotation.automation = {
+    ...(rotation.automation || {}),
+    lastCategoryUpdateAt: new Date().toISOString(),
+    lastCategoryName: name,
+  };
+}
+
+function getActivePollDurationMs(activePoll: MapRotationActivePollPayload) {
+  const explicit = Number(activePoll.durationMs || 0);
+  if (Number.isFinite(explicit) && explicit > 0) return explicit;
+  const createdAt = new Date(activePoll.openAt || activePoll.createdAt || Date.now()).getTime();
+  const closesAt = new Date(activePoll.closesAt || Date.now()).getTime();
+  const calculated = closesAt - createdAt;
+  return Number.isFinite(calculated) && calculated > 0 ? calculated : 7 * 24 * 60 * 60 * 1000;
+}
+
+function scheduleRecurringMapVote(rotation: MapRotationPayload, activePoll: MapRotationActivePollPayload) {
+  const settings = normalizeMapRotationSettings(rotation.settings);
+  if (!settings.recurringPollAfterFinish || !activePoll.appliedAt) return;
+  const now = new Date();
+  rotation.automation = {
+    ...(rotation.automation || {}),
+    nextRecurringPollAt: new Date(now.getTime() + 10 * 60 * 1000).toISOString(),
+    recurringPollDurationMs: getActivePollDurationMs(activePoll),
+  };
+}
+
 async function postSpawnZonePollResult(settings: MapRotationSettingsPayload, content: string) {
   const channelId = String(settings.pollChannelId || "").trim();
   if (!channelId) return;
@@ -523,7 +637,7 @@ async function applySpawnZoneToServer(rotation: MapRotationPayload, zone: SpawnZ
   return filePath;
 }
 
-async function finalizeSpawnZonePoll(rotation: MapRotationPayload, options: { apply?: boolean; source?: string } = {}) {
+async function finalizeSpawnZonePoll(rotation: MapRotationPayload, options: { apply?: boolean; source?: string; state?: AdminState } = {}) {
   if (!rotation.activePoll) throw new Error("Nenhuma enquete ativa para finalizar.");
   const settings = normalizeMapRotationSettings(rotation.settings);
   let activePoll: MapRotationActivePollPayload;
@@ -544,7 +658,7 @@ async function finalizeSpawnZonePoll(rotation: MapRotationPayload, options: { ap
       ...(Array.isArray(rotation.voteHistory) ? rotation.voteHistory : []),
       { id: crypto.randomUUID(), winnerName: "Sem vencedor", totalVotes: activePoll.totalVotes || 0, closedAt: now, source: options.source || "poll", reason },
     ].slice(-24);
-    await postSpawnZonePollResult(settings, `🗳️ Votação encerrada sem vencedor automático. ${reason}`);
+    await postSpawnZonePollResult(settings, buildSpawnZoneNoWinnerMessage(reason, getMapVoteAnnouncementLocale(options.state)));
     return { zone: null as SpawnZonePayload | null, path: "", reason, activePoll };
   }
 
@@ -555,6 +669,12 @@ async function finalizeSpawnZonePoll(rotation: MapRotationPayload, options: { ap
     if (shouldApplyImmediately) {
       path = await applySpawnZoneToServer(rotation, zone, options.source || "poll-auto", activePoll.totalVotes || 0);
       activePoll.appliedAt = new Date().toISOString();
+      try {
+        await updateMapVoteCategoryName(rotation, zone);
+      } catch (err) {
+        console.warn("map vote category rename failed", err);
+        rotation.automation = { ...(rotation.automation || {}), lastError: `Categoria Discord: ${err instanceof Error ? err.message : String(err)}` };
+      }
     } else {
       rotation.voteHistory = [
         ...(Array.isArray(rotation.voteHistory) ? rotation.voteHistory : []),
@@ -568,7 +688,8 @@ async function finalizeSpawnZonePoll(rotation: MapRotationPayload, options: { ap
     ].slice(-24);
   }
   rotation.activePoll = activePoll;
-  await postSpawnZonePollResult(settings, `🏆 Votação encerrada. Zona vencedora: **${zone.name}** com ${activePoll.totalVotes || 0} votos.${options.apply ? (activePoll.appliedAt ? " Aplicada no servidor." : " Programada para o próximo restart.") : ""}`);
+  scheduleRecurringMapVote(rotation, activePoll);
+  await postSpawnZonePollResult(settings, buildSpawnZoneWinnerMessage(settings, zone, activePoll.totalVotes || 0, getMapVoteAnnouncementLocale(options.state)));
   return { zone, path, reason, activePoll };
 }
 
@@ -590,7 +711,7 @@ async function runSpawnZoneAutomationNow() {
   automation.schedulerIntervalMs = getSpawnZoneAutomationIntervalMs();
 
   try {
-    if (settings.autoCreatePoll && windowInfo.isOpen && rotation.activePoll && rotation.activePoll.status !== "closed" && !isActivePollInScheduleWindow(rotation.activePoll, windowInfo)) {
+    if (settings.autoCreatePoll && windowInfo.isOpen && rotation.activePoll && rotation.activePoll.status !== "closed" && !rotation.activePoll.recurring && !isActivePollInScheduleWindow(rotation.activePoll, windowInfo)) {
       try {
         const expiredPoll = await expireDiscordSpawnZonePoll(rotation.activePoll);
         rotation.activePoll = { ...expiredPoll, status: "closed", finalizedAt: now.toISOString(), finalReason: "Substituida por nova janela de automação." };
@@ -605,14 +726,33 @@ async function runSpawnZoneAutomationNow() {
       rotation.activePoll.closesAt = windowInfo.closeAt.toISOString();
     }
 
+    const recurringPollAt = automation.nextRecurringPollAt ? new Date(automation.nextRecurringPollAt) : null;
+    const canCreateRecurringPoll =
+      settings.autoCreatePoll &&
+      settings.recurringPollAfterFinish &&
+      recurringPollAt &&
+      now.getTime() >= recurringPollAt.getTime() &&
+      (!rotation.activePoll || rotation.activePoll.status === "closed");
+
+    if (canCreateRecurringPoll && recurringPollAt) {
+      const durationMs = Math.max(60 * 60 * 1000, Number(automation.recurringPollDurationMs || 0) || (windowInfo.closeAt.getTime() - windowInfo.openAt.getTime()));
+      const closeAt = new Date(now.getTime() + durationMs);
+      const windowId = `recurring_${recurringPollAt.toISOString()}_${closeAt.toISOString()}`;
+      rotation.activePoll = await createDiscordSpawnZonePoll(rotation, { openAt: now, closeAt, windowId, recurring: true });
+      automation.lastRecurringPollAt = now.toISOString();
+      automation.nextRecurringPollAt = undefined;
+      automation.lastAction = "created_recurring_poll";
+    }
+
     const canCreatePollForOpenWindow =
       settings.autoCreatePoll &&
+      !canCreateRecurringPoll &&
       windowInfo.isOpen &&
       automation.lastPollWindowId !== windowInfo.id &&
       (!rotation.activePoll || rotation.activePoll.status === "closed");
 
     if (canCreatePollForOpenWindow) {
-      rotation.activePoll = await createDiscordSpawnZonePoll(rotation);
+      rotation.activePoll = await createDiscordSpawnZonePoll(rotation, { windowId: windowInfo.id, openAt: windowInfo.openAt, closeAt: windowInfo.closeAt });
       automation.lastPollWindowId = windowInfo.id;
       automation.lastAction = "created_poll";
     }
@@ -622,12 +762,11 @@ async function runSpawnZoneAutomationNow() {
       const pollWindowInfo = isActivePollInScheduleWindow(rotation.activePoll, windowInfo)
         ? windowInfo
         : getMapRotationScheduleWindow(settings, new Date(rotation.activePoll.createdAt || now));
-      const configuredCloseAt = pollWindowInfo.closeAt;
-      const activeCloseAt = rotation.activePoll.closesAt ? new Date(rotation.activePoll.closesAt) : configuredCloseAt;
-      const closesAt = configuredCloseAt.getTime() < activeCloseAt.getTime() ? configuredCloseAt : activeCloseAt;
-      if (now.getTime() >= closesAt.getTime() && automation.lastCloseWindowId !== pollWindowInfo.id) {
-        await finalizeSpawnZonePoll(rotation, { apply: Boolean(settings.autoApplyWinner), source: settings.autoApplyWinner ? "poll-auto" : "poll" });
-        automation.lastCloseWindowId = pollWindowInfo.id;
+      const closeWindowId = rotation.activePoll.windowId || pollWindowInfo.id;
+      const closesAt = rotation.activePoll.closesAt ? new Date(rotation.activePoll.closesAt) : pollWindowInfo.closeAt;
+      if (now.getTime() >= closesAt.getTime() && automation.lastCloseWindowId !== closeWindowId) {
+        await finalizeSpawnZonePoll(rotation, { apply: Boolean(settings.autoApplyWinner), source: settings.autoApplyWinner ? "poll-auto" : "poll", state });
+        automation.lastCloseWindowId = closeWindowId;
         automation.lastAction = settings.autoApplyWinner ? "finalized_and_applied" : "finalized_poll";
       }
     } else if (settings.autoCreatePoll && windowInfo.isClosed && automation.lastPollWindowId !== windowInfo.id) {
@@ -3834,6 +3973,7 @@ function renderAdminPanelHtml(token: string) {
                   </div>
                   <div class="form-grid">
                     <label>Canal da enquete<input id="spawnZonesPollChannel" placeholder="ID do canal 🗺️│map-vote" /></label>
+                    <label>Categoria Map Rotation<input id="spawnZonesPollCategory" placeholder="1515944927257825341" /></label>
                     <label>Enunciado da enquete<input id="spawnZonesPollQuestion" placeholder="Which arena do you want to play next week?" /></label>
                   </div>
                   <div class="spawn-zone-setting-help">Use o ID do canal do Discord. As zonas habilitadas em <strong>Spawn Points</strong> viram as opções da enquete; a zona atual recebe <strong>[Actual]</strong>.</div>
@@ -3863,6 +4003,10 @@ function renderAdminPanelHtml(token: string) {
                     <div class="spawn-zone-switch-row">
                       <div><b>Criar enquete automaticamente</b><span>O bot cria a enquete semanal no canal configurado usando as zonas habilitadas.</span></div>
                       <label class="switch"><input id="spawnZonesAutoCreatePoll" type="checkbox" /><span class="switch-slider"></span></label>
+                    </div>
+                    <div class="spawn-zone-switch-row">
+                      <div><b>Recorrência após finalizar</b><span>Quando a enquete for encerrada e aplicada no servidor, cria uma nova enquete 10 minutos depois com a mesma duração da anterior.</span></div>
+                      <label class="switch"><input id="spawnZonesRecurringPollAfterFinish" type="checkbox" /><span class="switch-slider"></span></label>
                     </div>
                   </div>
                 </div>
@@ -4133,7 +4277,7 @@ function renderAdminPanelHtml(token: string) {
       lockedContainerSetupStatus: document.getElementById("lockedContainerSetupStatus"), lockedContainerModalStatus: document.getElementById("lockedContainerModalStatus"), lockedContainerInstalledSection: document.getElementById("lockedContainerInstalledSection"), lockedContainerInstalledGrid: document.getElementById("lockedContainerInstalledGrid"), lockedContainerAvailableGrid: document.getElementById("lockedContainerAvailableGrid"), eventIntegrationModalBackdrop: document.getElementById("eventIntegrationModalBackdrop"), eventIntegrationModalClose: document.getElementById("eventIntegrationModalClose"),
       itemModalBackdrop: document.getElementById("itemModalBackdrop"), itemModalTitle: document.getElementById("itemModalTitle"), itemModalSubtitle: document.getElementById("itemModalSubtitle"), itemModalPreviewImage: document.getElementById("itemModalPreviewImage"), itemModalPreviewName: document.getElementById("itemModalPreviewName"), itemModalPreviewClass: document.getElementById("itemModalPreviewClass"), itemModalPopularName: document.getElementById("itemModalPopularName"), itemModalImageUrl: document.getElementById("itemModalImageUrl"), itemModalSpawnEventName: document.getElementById("itemModalSpawnEventName"), itemModalEnabled: document.getElementById("itemModalEnabled"),
       spawnZonesCurrentZone: document.getElementById("spawnZonesCurrentZone"), spawnZonesNextZone: document.getElementById("spawnZonesNextZone"), spawnZonesEnabledCount: document.getElementById("spawnZonesEnabledCount"), spawnZonesVoteHistory: document.getElementById("spawnZonesVoteHistory"), spawnZonesActivePoll: document.getElementById("spawnZonesActivePoll"), spawnZonesNextSelect: document.getElementById("spawnZonesNextSelect"), spawnZonesSetNext: document.getElementById("spawnZonesSetNext"), spawnZonesApplyNext: document.getElementById("spawnZonesApplyNext"), spawnZonesApplyServer: document.getElementById("spawnZonesApplyServer"), spawnZonesCreatePoll: document.getElementById("spawnZonesCreatePoll"), spawnZonesRefreshPoll: document.getElementById("spawnZonesRefreshPoll"), spawnZonesFinalizePoll: document.getElementById("spawnZonesFinalizePoll"), spawnZonesRunAutomation: document.getElementById("spawnZonesRunAutomation"), spawnZonesAutomationStatus: document.getElementById("spawnZonesAutomationStatus"), spawnZonesWelcomeMessage: document.getElementById("spawnZonesWelcomeMessage"), spawnZonesWelcomeStatus: document.getElementById("spawnZonesWelcomeStatus"),
-      spawnZonesMapTitle: document.getElementById("spawnZonesMapTitle"), spawnZonesMapHint: document.getElementById("spawnZonesMapHint"), spawnZonesAutosaveStatus: document.getElementById("spawnZonesAutosaveStatus"), spawnZonesMapViewport: document.getElementById("spawnZonesMapViewport"), spawnZonesMapInner: document.getElementById("spawnZonesMapInner"), spawnZonesMarkers: document.getElementById("spawnZonesMarkers"), spawnZonesMapTiles: document.getElementById("spawnZonesMapTiles"), spawnZonesMapZoomIn: document.getElementById("spawnZonesMapZoomIn"), spawnZonesMapZoomOut: document.getElementById("spawnZonesMapZoomOut"), spawnZonesMapZoomLabel: document.getElementById("spawnZonesMapZoomLabel"), spawnZonesCursor: document.getElementById("spawnZonesCursor"), spawnZoneCreate: document.getElementById("spawnZoneCreate"), spawnZoneImport: document.getElementById("spawnZoneImport"), spawnZoneImportFile: document.getElementById("spawnZoneImportFile"), spawnZoneList: document.getElementById("spawnZoneList"), spawnZonesPollChannel: document.getElementById("spawnZonesPollChannel"), spawnZonesPollQuestion: document.getElementById("spawnZonesPollQuestion"), spawnZonesPollOpenDay: document.getElementById("spawnZonesPollOpenDay"), spawnZonesPollOpenTime: document.getElementById("spawnZonesPollOpenTime"), spawnZonesPollCloseDay: document.getElementById("spawnZonesPollCloseDay"), spawnZonesPollCloseTime: document.getElementById("spawnZonesPollCloseTime"), spawnZonesPollTimezone: document.getElementById("spawnZonesPollTimezone"), spawnZonesMinVotes: document.getElementById("spawnZonesMinVotes"), spawnZonesTiePolicy: document.getElementById("spawnZonesTiePolicy"), spawnZonesAutoCreatePoll: document.getElementById("spawnZonesAutoCreatePoll"), spawnZonesAutoApplyWinner: document.getElementById("spawnZonesAutoApplyWinner"), spawnZonesApplyOnNextRestart: document.getElementById("spawnZonesApplyOnNextRestart"), spawnZonesSpawnFilePath: document.getElementById("spawnZonesSpawnFilePath"), spawnZonesServerName: document.getElementById("spawnZonesServerName"), spawnZonesSettingsStatus: document.getElementById("spawnZonesSettingsStatus"), spawnZonesTiePolicyHelp: document.getElementById("spawnZonesTiePolicyHelp"), spawnZonesApplyOnNextRestartRow: document.getElementById("spawnZonesApplyOnNextRestartRow")
+      spawnZonesMapTitle: document.getElementById("spawnZonesMapTitle"), spawnZonesMapHint: document.getElementById("spawnZonesMapHint"), spawnZonesAutosaveStatus: document.getElementById("spawnZonesAutosaveStatus"), spawnZonesMapViewport: document.getElementById("spawnZonesMapViewport"), spawnZonesMapInner: document.getElementById("spawnZonesMapInner"), spawnZonesMarkers: document.getElementById("spawnZonesMarkers"), spawnZonesMapTiles: document.getElementById("spawnZonesMapTiles"), spawnZonesMapZoomIn: document.getElementById("spawnZonesMapZoomIn"), spawnZonesMapZoomOut: document.getElementById("spawnZonesMapZoomOut"), spawnZonesMapZoomLabel: document.getElementById("spawnZonesMapZoomLabel"), spawnZonesCursor: document.getElementById("spawnZonesCursor"), spawnZoneCreate: document.getElementById("spawnZoneCreate"), spawnZoneImport: document.getElementById("spawnZoneImport"), spawnZoneImportFile: document.getElementById("spawnZoneImportFile"), spawnZoneList: document.getElementById("spawnZoneList"), spawnZonesPollChannel: document.getElementById("spawnZonesPollChannel"), spawnZonesPollCategory: document.getElementById("spawnZonesPollCategory"), spawnZonesPollQuestion: document.getElementById("spawnZonesPollQuestion"), spawnZonesPollOpenDay: document.getElementById("spawnZonesPollOpenDay"), spawnZonesPollOpenTime: document.getElementById("spawnZonesPollOpenTime"), spawnZonesPollCloseDay: document.getElementById("spawnZonesPollCloseDay"), spawnZonesPollCloseTime: document.getElementById("spawnZonesPollCloseTime"), spawnZonesPollTimezone: document.getElementById("spawnZonesPollTimezone"), spawnZonesMinVotes: document.getElementById("spawnZonesMinVotes"), spawnZonesTiePolicy: document.getElementById("spawnZonesTiePolicy"), spawnZonesAutoCreatePoll: document.getElementById("spawnZonesAutoCreatePoll"), spawnZonesRecurringPollAfterFinish: document.getElementById("spawnZonesRecurringPollAfterFinish"), spawnZonesAutoApplyWinner: document.getElementById("spawnZonesAutoApplyWinner"), spawnZonesApplyOnNextRestart: document.getElementById("spawnZonesApplyOnNextRestart"), spawnZonesSpawnFilePath: document.getElementById("spawnZonesSpawnFilePath"), spawnZonesServerName: document.getElementById("spawnZonesServerName"), spawnZonesSettingsStatus: document.getElementById("spawnZonesSettingsStatus"), spawnZonesTiePolicyHelp: document.getElementById("spawnZonesTiePolicyHelp"), spawnZonesApplyOnNextRestartRow: document.getElementById("spawnZonesApplyOnNextRestartRow")
     };
     function apiUrl(path) { const separator = path.includes("?") ? "&" : "?"; return adminToken ? path + separator + "token=" + encodeURIComponent(adminToken) : path; }
     async function apiFetch(path, options) { const headers = Object.assign({ "Content-Type": "application/json" }, (options && options.headers) || {}); if (adminToken) headers["x-admin-token"] = adminToken; return fetch(apiUrl(path), Object.assign({}, options || {}, { headers, credentials: "same-origin" })); }
@@ -5189,10 +5333,12 @@ function renderAdminPanelHtml(token: string) {
         const lastChecked = automation.lastCheckedAt ? ('Último scheduler: ' + relativeDate(automation.lastCheckedAt) + ' (' + automation.lastCheckedAt + ')') : 'Automação ainda não executada.';
         const currentWindow = automation.currentWindowOpenAt && automation.currentWindowCloseAt ? (' · janela atual: ' + automation.currentWindowOpenAt + ' → ' + automation.currentWindowCloseAt) : '';
         const nextWindow = automation.nextWindowOpenAt && automation.nextWindowCloseAt ? (' · próxima: ' + automation.nextWindowOpenAt + ' → ' + automation.nextWindowCloseAt) : '';
+        const recurring = automation.nextRecurringPollAt ? (' · próxima recorrência: ' + automation.nextRecurringPollAt) : '';
+        const category = automation.lastCategoryName ? (' · categoria: ' + automation.lastCategoryName) : '';
         const action = automation.lastAction ? (' · ação: ' + automation.lastAction) : '';
         const interval = ' · intervalo: ' + String(intervalMinutes) + ' min';
         const error = automation.lastError ? (' · erro: ' + automation.lastError) : '';
-        els.spawnZonesAutomationStatus.textContent = lastChecked + interval + currentWindow + nextWindow + action + error;
+        els.spawnZonesAutomationStatus.textContent = lastChecked + interval + currentWindow + nextWindow + recurring + category + action + error;
       }
       const activePoll = state.spawnZones?.activePoll;
       if (els.spawnZonesActivePoll) {
@@ -5227,6 +5373,7 @@ function renderAdminPanelHtml(token: string) {
       const current = state.spawnZones?.settings || {};
       return {
         pollChannelId: els.spawnZonesPollChannel ? String(els.spawnZonesPollChannel.value || '').trim() : (current.pollChannelId || ''),
+        pollCategoryId: els.spawnZonesPollCategory ? String(els.spawnZonesPollCategory.value || '').trim() : (current.pollCategoryId || ''),
         pollQuestion: els.spawnZonesPollQuestion ? String(els.spawnZonesPollQuestion.value || '').trim() : (current.pollQuestion || ''),
         pollOpenDay: els.spawnZonesPollOpenDay ? els.spawnZonesPollOpenDay.value : (current.pollOpenDay || 'monday'),
         pollOpenTime: els.spawnZonesPollOpenTime ? els.spawnZonesPollOpenTime.value : (current.pollOpenTime || '12:00'),
@@ -5236,6 +5383,7 @@ function renderAdminPanelHtml(token: string) {
         minVotes: els.spawnZonesMinVotes ? Number(els.spawnZonesMinVotes.value || 0) : Number(current.minVotes || 0),
         tiePolicy: els.spawnZonesTiePolicy ? els.spawnZonesTiePolicy.value : (current.tiePolicy || 'manual'),
         autoCreatePoll: els.spawnZonesAutoCreatePoll ? Boolean(els.spawnZonesAutoCreatePoll.checked) : Boolean(current.autoCreatePoll),
+        recurringPollAfterFinish: els.spawnZonesRecurringPollAfterFinish ? Boolean(els.spawnZonesRecurringPollAfterFinish.checked) : Boolean(current.recurringPollAfterFinish),
         autoApplyWinner: els.spawnZonesAutoApplyWinner ? Boolean(els.spawnZonesAutoApplyWinner.checked) : Boolean(current.autoApplyWinner),
         applyOnNextRestart: els.spawnZonesApplyOnNextRestart ? Boolean(els.spawnZonesApplyOnNextRestart.checked) : current.applyOnNextRestart === true,
         spawnFilePath: els.spawnZonesSpawnFilePath ? String(els.spawnZonesSpawnFilePath.value || '').trim() : (current.spawnFilePath || ''),
@@ -5279,6 +5427,7 @@ function renderAdminPanelHtml(token: string) {
     function renderSpawnZonesSettings() {
       const settings = state.spawnZones?.settings || {};
       setFormElementValue(els.spawnZonesPollChannel, settings.pollChannelId || '');
+      setFormElementValue(els.spawnZonesPollCategory, settings.pollCategoryId || '1515944927257825341');
       setFormElementValue(els.spawnZonesPollQuestion, settings.pollQuestion || 'Which arena do you want to play next week?');
       if (els.spawnZonesWelcomeStatus) els.spawnZonesWelcomeStatus.textContent = settings.mapVoteWelcomeMessageId ? ('Mensagem criada: ' + settings.mapVoteWelcomeMessageId) : 'Mensagem de entrada ainda não criada.';
       setFormElementValue(els.spawnZonesPollOpenDay, settings.pollOpenDay || 'monday');
@@ -5289,6 +5438,7 @@ function renderAdminPanelHtml(token: string) {
       setFormElementValue(els.spawnZonesMinVotes, String(settings.minVotes || 0));
       setFormElementValue(els.spawnZonesTiePolicy, settings.tiePolicy || 'manual');
       if (els.spawnZonesAutoCreatePoll && document.activeElement !== els.spawnZonesAutoCreatePoll) els.spawnZonesAutoCreatePoll.checked = Boolean(settings.autoCreatePoll);
+      if (els.spawnZonesRecurringPollAfterFinish && document.activeElement !== els.spawnZonesRecurringPollAfterFinish) els.spawnZonesRecurringPollAfterFinish.checked = Boolean(settings.recurringPollAfterFinish);
       if (els.spawnZonesAutoApplyWinner && document.activeElement !== els.spawnZonesAutoApplyWinner) els.spawnZonesAutoApplyWinner.checked = Boolean(settings.autoApplyWinner);
       if (els.spawnZonesApplyOnNextRestart && document.activeElement !== els.spawnZonesApplyOnNextRestart) els.spawnZonesApplyOnNextRestart.checked = settings.applyOnNextRestart === true;
       setFormElementValue(els.spawnZonesSpawnFilePath, settings.spawnFilePath || '');
@@ -6043,7 +6193,7 @@ function renderAdminPanelHtml(token: string) {
         renderSpawnZoneMarkers();
       });
     }
-    const spawnZoneTextSettingInputs = ['spawnZonesPollChannel', 'spawnZonesPollQuestion', 'spawnZonesMinVotes', 'spawnZonesSpawnFilePath', 'spawnZonesServerName'];
+    const spawnZoneTextSettingInputs = ['spawnZonesPollChannel', 'spawnZonesPollCategory', 'spawnZonesPollQuestion', 'spawnZonesMinVotes', 'spawnZonesSpawnFilePath', 'spawnZonesServerName'];
     spawnZoneTextSettingInputs.forEach((elementKey) => {
       const element = els[elementKey];
       if (!element) return;
@@ -6056,7 +6206,7 @@ function renderAdminPanelHtml(token: string) {
       if (!element) return;
       element.addEventListener('change', () => { updateSpawnZoneSettingsUx(); saveSpawnZonesSettingsNow(); });
     });
-    ['spawnZonesAutoCreatePoll', 'spawnZonesAutoApplyWinner', 'spawnZonesApplyOnNextRestart'].forEach((elementKey) => {
+    ['spawnZonesAutoCreatePoll', 'spawnZonesRecurringPollAfterFinish', 'spawnZonesAutoApplyWinner', 'spawnZonesApplyOnNextRestart'].forEach((elementKey) => {
       const element = els[elementKey];
       if (!element) return;
       element.addEventListener('change', () => { updateSpawnZoneSettingsUx(); saveSpawnZonesSettingsNow(); });
@@ -6730,6 +6880,12 @@ router.post("/api/spawn-zones/rotation/apply-server", async (req, res) => {
   }
   try {
     const filePath = await applySpawnZoneToServer(rotation, zone, "server", 0);
+    try {
+      await updateMapVoteCategoryName(rotation, zone);
+    } catch (err) {
+      console.warn("map vote category rename failed", err);
+      rotation.automation = { ...(rotation.automation || {}), lastError: `Categoria Discord: ${err instanceof Error ? err.message : String(err)}` };
+    }
     const saved = await saveMapRotationState(state, rotation);
     res.json({ ok: true, path: filePath, rotation: saved });
     return;
@@ -6815,7 +6971,7 @@ router.post("/api/spawn-zones/poll/finalize", async (req, res) => {
   const rotation = getMapRotationState(state);
   try {
     const settings = normalizeMapRotationSettings(rotation.settings);
-    await finalizeSpawnZonePoll(rotation, { apply: Boolean(req.body?.apply ?? settings.autoApplyWinner), source: req.body?.source || "poll-manual" });
+    await finalizeSpawnZonePoll(rotation, { apply: Boolean(req.body?.apply ?? settings.autoApplyWinner), source: req.body?.source || "poll-manual", state });
     const saved = await saveMapRotationState(state, rotation);
     res.json(saved);
     return;
