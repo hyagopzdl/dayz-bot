@@ -77,7 +77,7 @@ type SpawnZonePayload = { id: string; name: string; color: string; enabled: bool
 type MapRotationSettingsPayload = { pollChannelId?: string; pollCategoryId?: string; pollQuestion?: string; pollOpenDay?: string; pollOpenTime?: string; pollCloseDay?: string; pollCloseTime?: string; pollTimezone?: string; autoCreatePoll?: boolean; recurringPollAfterFinish?: boolean; autoApplyWinner?: boolean; applyOnNextRestart?: boolean; tiePolicy?: string; minVotes?: number; spawnFilePath?: string; serverName?: string; mapVoteWelcomeMessageId?: string };
 type MapRotationPollOptionPayload = { zoneId: string; name: string; answerId?: number; votes?: number };
 type MapRotationActivePollPayload = { id: string; channelId: string; messageId: string; question: string; status: string; createdAt: string; openAt?: string; closesAt?: string; windowId?: string; durationMs?: number; recurring?: boolean; options: MapRotationPollOptionPayload[]; totalVotes?: number; winnerZoneId?: string; winnerName?: string; lastFetchedAt?: string; finalizedAt?: string; appliedAt?: string; finalReason?: string; rawUrl?: string };
-type MapRotationAutomationPayload = { lastPollWindowId?: string; lastCloseWindowId?: string; lastCheckedAt?: string; lastAction?: string; lastError?: string; currentWindowId?: string; currentWindowOpenAt?: string; currentWindowCloseAt?: string; nextWindowOpenAt?: string; nextWindowCloseAt?: string; nextRecurringPollAt?: string; recurringPollDurationMs?: number; lastRecurringPollAt?: string; lastCategoryUpdateAt?: string; lastCategoryName?: string; schedulerIntervalMs?: number };
+type MapRotationAutomationPayload = { lastPollWindowId?: string; lastCloseWindowId?: string; lastCheckedAt?: string; lastAction?: string; lastError?: string; currentWindowId?: string; currentWindowOpenAt?: string; currentWindowCloseAt?: string; nextWindowOpenAt?: string; nextWindowCloseAt?: string; activePollClosesAt?: string; activePollOverdueByMs?: number; nextRecurringPollAt?: string; recurringPollDurationMs?: number; lastRecurringPollAt?: string; lastCategoryUpdateAt?: string; lastCategoryName?: string; schedulerIntervalMs?: number };
 type MapRotationPayload = { zones: SpawnZonePayload[]; currentZoneId?: string; nextZoneId?: string; voteHistory: any[]; settings: MapRotationSettingsPayload; activePoll?: MapRotationActivePollPayload; automation?: MapRotationAutomationPayload; updatedAt: string };
 
 const SPAWN_ZONE_FILE_PATH = SHOP_EVENTS_PATH.replace(/\/db\/events\.xml$/i, "/cfgplayerspawnpoints.xml");
@@ -452,6 +452,34 @@ async function expireDiscordSpawnZonePoll(activePoll: MapRotationActivePollPaylo
   return extractDiscordPollCounts(message, activePoll);
 }
 
+function waitMapVotePollResult(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function fetchFinalizedDiscordSpawnZonePoll(activePoll: MapRotationActivePollPayload) {
+  let expireError: unknown;
+  try {
+    await expireDiscordSpawnZonePoll(activePoll);
+  } catch (err) {
+    expireError = err;
+  }
+
+  let lastError: unknown = expireError;
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    if (attempt > 0) await waitMapVotePollResult(1_250);
+    try {
+      const fetched = await fetchDiscordSpawnZonePoll(activePoll);
+      if (fetched.status === "closed") return fetched;
+      lastError = new Error("Discord ainda nao marcou a enquete como finalizada.");
+    } catch (err) {
+      lastError = err;
+    }
+  }
+
+  const detail = lastError instanceof Error ? lastError.message : String(lastError || "resultado final indisponivel");
+  throw new Error(`Nao foi possivel confirmar o resultado final da enquete no Discord: ${detail}`);
+}
+
 function previousWeekdayDate(day: unknown, time: unknown, from = new Date(), timeZone = "America/Sao_Paulo") {
   const targetDay = SPAWN_ZONE_WEEKDAY_INDEX[String(day || "monday")] ?? 1;
   const { hour, minute } = parseSpawnZoneTime(time, "12:00");
@@ -732,13 +760,7 @@ async function applySpawnZoneToServer(rotation: MapRotationPayload, zone: SpawnZ
 async function finalizeSpawnZonePoll(rotation: MapRotationPayload, options: { apply?: boolean; source?: string; state?: AdminState } = {}) {
   if (!rotation.activePoll) throw new Error("Nenhuma enquete ativa para finalizar.");
   const settings = normalizeMapRotationSettings(rotation.settings);
-  let activePoll: MapRotationActivePollPayload;
-  try {
-    activePoll = await expireDiscordSpawnZonePoll(rotation.activePoll);
-  } catch (err) {
-    console.warn("spawn zone poll expire failed, using fetched counts", err);
-    activePoll = await fetchDiscordSpawnZonePoll(rotation.activePoll);
-  }
+  const activePoll = await fetchFinalizedDiscordSpawnZonePoll(rotation.activePoll);
   activePoll.status = "closed";
   const { zone, reason } = chooseSpawnZonePollWinner(rotation, activePoll);
   const now = new Date().toISOString();
@@ -845,17 +867,24 @@ async function runSpawnZoneAutomationNow() {
     }
 
     if (rotation.activePoll && rotation.activePoll.status !== "closed") {
-      rotation.activePoll = await fetchDiscordSpawnZonePoll(rotation.activePoll);
       const pollWindowInfo = isActivePollInScheduleWindow(rotation.activePoll, windowInfo)
         ? windowInfo
         : getMapRotationScheduleWindow(settings, new Date(rotation.activePoll.createdAt || now));
       const closeWindowId = rotation.activePoll.windowId || pollWindowInfo.id;
-      const closesAt = rotation.activePoll.closesAt ? new Date(rotation.activePoll.closesAt) : pollWindowInfo.closeAt;
+      const parsedClosesAt = rotation.activePoll.closesAt ? new Date(rotation.activePoll.closesAt) : pollWindowInfo.closeAt;
+      const closesAt = Number.isFinite(parsedClosesAt.getTime()) ? parsedClosesAt : pollWindowInfo.closeAt;
+      automation.activePollClosesAt = closesAt.toISOString();
+      automation.activePollOverdueByMs = Math.max(0, now.getTime() - closesAt.getTime());
+
       if (now.getTime() >= closesAt.getTime() && automation.lastCloseWindowId !== closeWindowId) {
+        // Finaliza primeiro quando a enquete venceu. Antes o scheduler fazia um fetch antes de expirar;
+        // se esse fetch falhasse, a finalizacao ficava travada mesmo depois do horario configurado.
         await finalizeSpawnZonePoll(rotation, { apply: Boolean(settings.autoApplyWinner), source: settings.autoApplyWinner ? "poll-auto" : "poll", state });
         automation.lastCloseWindowId = closeWindowId;
         automation.lastAction = settings.autoApplyWinner ? "finalized_and_applied" : "finalized_poll";
         await createDueRecurringMapVote(rotation, settings, automation, new Date());
+      } else {
+        rotation.activePoll = await fetchDiscordSpawnZonePoll(rotation.activePoll);
       }
     } else if (settings.autoCreatePoll && windowInfo.isClosed && automation.lastPollWindowId !== windowInfo.id) {
       automation.lastAction = "missed_closed_window";
@@ -5421,12 +5450,14 @@ function renderAdminPanelHtml(token: string) {
         const lastChecked = automation.lastCheckedAt ? ('Último scheduler: ' + relativeDate(automation.lastCheckedAt) + ' (' + automation.lastCheckedAt + ')') : 'Automação ainda não executada.';
         const currentWindow = automation.currentWindowOpenAt && automation.currentWindowCloseAt ? (' · janela atual: ' + automation.currentWindowOpenAt + ' → ' + automation.currentWindowCloseAt) : '';
         const nextWindow = automation.nextWindowOpenAt && automation.nextWindowCloseAt ? (' · próxima: ' + automation.nextWindowOpenAt + ' → ' + automation.nextWindowCloseAt) : '';
+        const activePollClose = automation.activePollClosesAt ? (' · enquete fecha: ' + automation.activePollClosesAt) : '';
+        const activePollOverdue = Number(automation.activePollOverdueByMs || 0) > 0 ? (' · atraso fechamento: ' + Math.round(Number(automation.activePollOverdueByMs || 0) / 60000) + ' min') : '';
         const recurring = automation.nextRecurringPollAt ? (' · próxima recorrência: ' + automation.nextRecurringPollAt) : '';
         const category = automation.lastCategoryName ? (' · categoria: ' + automation.lastCategoryName) : '';
         const action = automation.lastAction ? (' · ação: ' + automation.lastAction) : '';
         const interval = ' · intervalo: ' + String(intervalMinutes) + ' min';
         const error = automation.lastError ? (' · erro: ' + automation.lastError) : '';
-        els.spawnZonesAutomationStatus.textContent = lastChecked + interval + currentWindow + nextWindow + recurring + category + action + error;
+        els.spawnZonesAutomationStatus.textContent = lastChecked + interval + currentWindow + nextWindow + activePollClose + activePollOverdue + recurring + category + action + error;
       }
       const activePoll = state.spawnZones?.activePoll;
       if (els.spawnZonesActivePoll) {
