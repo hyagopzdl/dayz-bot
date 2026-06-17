@@ -70,7 +70,8 @@ export function buildMapVotePublicWelcomePayload(serverNameInput?: string | null
       "⏳ La votación termina el domingo a las 23:59, y la zona con más votos comenzará después del reinicio del lunes a las 00:00.",
       periodText,
     ].join("\n"),
-    footerSuffix: "map-vote",
+    footerSuffix: null,
+    timestamp: false,
   });
 
   return {
