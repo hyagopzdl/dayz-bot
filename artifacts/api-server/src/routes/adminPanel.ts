@@ -388,7 +388,18 @@ function buildMapVotePollQuestionWithPeriod(settings: MapRotationSettingsPayload
   return `${base} [${periodLabel}]`.slice(0, 300);
 }
 
+let spawnZonePollCreationInFlight: Promise<MapRotationActivePollPayload> | null = null;
+
 async function createDiscordSpawnZonePoll(rotation: MapRotationPayload, optionsOverride: { openAt?: Date; closeAt?: Date; windowId?: string; recurring?: boolean } = {}) {
+  if (spawnZonePollCreationInFlight) return spawnZonePollCreationInFlight;
+  spawnZonePollCreationInFlight = createDiscordSpawnZonePollUnlocked(rotation, optionsOverride)
+    .finally(() => {
+      spawnZonePollCreationInFlight = null;
+    });
+  return spawnZonePollCreationInFlight;
+}
+
+async function createDiscordSpawnZonePollUnlocked(rotation: MapRotationPayload, optionsOverride: { openAt?: Date; closeAt?: Date; windowId?: string; recurring?: boolean } = {}) {
   const settings = normalizeMapRotationSettings(rotation.settings);
   const channelId = String(settings.pollChannelId || "").trim();
   if (!channelId) throw new Error("Configure o canal da enquete em Spawn Zones > Settings.");
