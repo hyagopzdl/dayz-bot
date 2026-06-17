@@ -77,7 +77,7 @@ type SpawnZonePayload = { id: string; name: string; color: string; enabled: bool
 type MapRotationSettingsPayload = { pollChannelId?: string; pollCategoryId?: string; pollQuestion?: string; pollOpenDay?: string; pollOpenTime?: string; pollCloseDay?: string; pollCloseTime?: string; pollTimezone?: string; autoCreatePoll?: boolean; recurringPollAfterFinish?: boolean; autoApplyWinner?: boolean; applyOnNextRestart?: boolean; tiePolicy?: string; minVotes?: number; spawnFilePath?: string; serverName?: string; mapVoteWelcomeMessageId?: string };
 type MapRotationPollOptionPayload = { zoneId: string; name: string; answerId?: number; votes?: number };
 type MapRotationActivePollPayload = { id: string; channelId: string; messageId: string; question: string; status: string; createdAt: string; openAt?: string; closesAt?: string; windowId?: string; durationMs?: number; recurring?: boolean; options: MapRotationPollOptionPayload[]; totalVotes?: number; winnerZoneId?: string; winnerName?: string; lastFetchedAt?: string; finalizedAt?: string; appliedAt?: string; finalReason?: string; rawUrl?: string };
-type MapRotationAutomationPayload = { lastPollWindowId?: string; lastCloseWindowId?: string; lastCheckedAt?: string; lastAction?: string; lastError?: string; currentWindowId?: string; currentWindowOpenAt?: string; currentWindowCloseAt?: string; nextWindowOpenAt?: string; nextWindowCloseAt?: string; activePollClosesAt?: string; activePollOverdueByMs?: number; nextRecurringPollAt?: string; recurringPollDurationMs?: number; lastRecurringPollAt?: string; lastCategoryUpdateAt?: string; lastCategoryName?: string; lastDeletedPollMessageId?: string; lastDeletedPollAt?: string; schedulerIntervalMs?: number };
+type MapRotationAutomationPayload = { lastPollWindowId?: string; lastCloseWindowId?: string; lastCheckedAt?: string; lastAction?: string; lastError?: string; currentWindowId?: string; currentWindowOpenAt?: string; currentWindowCloseAt?: string; nextWindowOpenAt?: string; nextWindowCloseAt?: string; activePollClosesAt?: string; activePollOverdueByMs?: number; nextRecurringPollAt?: string; recurringPollDurationMs?: number; lastRecurringPollAt?: string; lastCategoryUpdateAt?: string; lastCategoryName?: string; lastDeletedPollMessageId?: string; lastDeletedPollAt?: string; lastMissingPollMessageId?: string; lastMissingPollAt?: string; schedulerIntervalMs?: number };
 type MapRotationPayload = { zones: SpawnZonePayload[]; currentZoneId?: string; nextZoneId?: string; voteHistory: any[]; settings: MapRotationSettingsPayload; activePoll?: MapRotationActivePollPayload; automation?: MapRotationAutomationPayload; updatedAt: string };
 
 const SPAWN_ZONE_FILE_PATH = SHOP_EVENTS_PATH.replace(/\/db\/events\.xml$/i, "/cfgplayerspawnpoints.xml");
@@ -506,6 +506,19 @@ function isDiscordUnknownMessageError(err: unknown) {
   return /10008|404|Unknown Message/i.test(value);
 }
 
+function markMissingSpawnZonePollMessage(rotation: MapRotationPayload, automation: MapRotationAutomationPayload, activePoll: MapRotationActivePollPayload, source: string) {
+  const now = new Date().toISOString();
+  rotation.activePoll = {
+    ...activePoll,
+    status: "closed",
+    finalizedAt: activePoll.finalizedAt || now,
+  };
+  automation.lastMissingPollMessageId = activePoll.messageId;
+  automation.lastMissingPollAt = now;
+  automation.lastAction = source;
+  automation.lastError = undefined;
+}
+
 async function deletePreviousClosedSpawnZonePoll(rotation: MapRotationPayload, automation: MapRotationAutomationPayload) {
   const previousPoll = rotation.activePoll;
   if (!previousPoll || previousPoll.status !== "closed") return false;
@@ -932,12 +945,29 @@ async function runSpawnZoneAutomationNow() {
       if (now.getTime() >= closesAt.getTime() && automation.lastCloseWindowId !== closeWindowId) {
         // Finaliza primeiro quando a enquete venceu. Antes o scheduler fazia um fetch antes de expirar;
         // se esse fetch falhasse, a finalizacao ficava travada mesmo depois do horario configurado.
-        await finalizeSpawnZonePoll(rotation, { apply: Boolean(settings.autoApplyWinner), source: settings.autoApplyWinner ? "poll-auto" : "poll", state });
-        automation.lastCloseWindowId = closeWindowId;
-        automation.lastAction = settings.autoApplyWinner ? "finalized_and_applied" : "finalized_poll";
-        await createDueRecurringMapVote(rotation, settings, automation, new Date());
+        try {
+          await finalizeSpawnZonePoll(rotation, { apply: Boolean(settings.autoApplyWinner), source: settings.autoApplyWinner ? "poll-auto" : "poll", state });
+          automation.lastCloseWindowId = closeWindowId;
+          automation.lastAction = settings.autoApplyWinner ? "finalized_and_applied" : "finalized_poll";
+          await createDueRecurringMapVote(rotation, settings, automation, new Date());
+        } catch (err) {
+          if (isDiscordUnknownMessageError(err)) {
+            markMissingSpawnZonePollMessage(rotation, automation, rotation.activePoll, "cleared_missing_overdue_poll");
+            automation.lastCloseWindowId = closeWindowId;
+          } else {
+            throw err;
+          }
+        }
       } else {
-        rotation.activePoll = await fetchDiscordSpawnZonePoll(rotation.activePoll);
+        try {
+          rotation.activePoll = await fetchDiscordSpawnZonePoll(rotation.activePoll);
+        } catch (err) {
+          if (isDiscordUnknownMessageError(err)) {
+            markMissingSpawnZonePollMessage(rotation, automation, rotation.activePoll, "cleared_missing_active_poll");
+          } else {
+            throw err;
+          }
+        }
       }
     } else if (settings.autoCreatePoll && windowInfo.isClosed && automation.lastPollWindowId !== windowInfo.id) {
       automation.lastAction = "missed_closed_window";
