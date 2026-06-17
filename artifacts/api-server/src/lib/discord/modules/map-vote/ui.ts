@@ -43,16 +43,24 @@ function languageButtons() {
   );
 }
 
-export function buildMapVotePublicWelcomePayload(serverNameInput?: string | null) {
+export function buildMapVotePublicWelcomePayload(serverNameInput?: string | null, options: { periodLabel?: string } = {}) {
   const serverName = getMapVoteServerName(serverNameInput);
+  const periodLine = options.periodLabel ? `🗓️ Rotation period / Período / Período: **${options.periodLabel}**` : "🗓️ The rotation period appears in the poll title.";
   const embed = buildSystemEmbed({
-    title: `👋 Welcome to ${serverName}`,
+    title: `🗳️ Map Vote · ${serverName}`,
     description: [
-      "To get started, choose your language below.",
+      "Vote in the active poll below to choose the next spawn/deathmatch zone.",
       "",
-      `🇧🇷 Bem-vindo ao **${serverName}**. Para começar, escolha seu idioma abaixo.`,
+      "🇧🇷 Vote na enquete ativa abaixo para escolher a próxima zona de spawn/deathmatch.",
       "",
-      `🇪🇸 Bienvenido a **${serverName}**. Para empezar, elige tu idioma abajo.`,
+      "🇪🇸 Vota en la encuesta activa de abajo para elegir la próxima zona de spawn/deathmatch.",
+      "",
+      periodLine,
+      "",
+      "Rules / Regras / Reglas:",
+      "✅ One vote per Discord account / Um voto por conta / Un voto por cuenta",
+      "🏆 The most voted zone wins / A zona mais votada vence / Gana la zona más votada",
+      "🔄 The winner is applied on the next server reset / Entra no próximo reset / Entra en el próximo reinicio",
     ].join("\n"),
     footerSuffix: "map-vote",
   });
@@ -60,7 +68,7 @@ export function buildMapVotePublicWelcomePayload(serverNameInput?: string | null
   return {
     content: "",
     embeds: [embed],
-    components: [languageButtons()],
+    components: [],
     allowed_mentions: { parse: [] },
   };
 }
