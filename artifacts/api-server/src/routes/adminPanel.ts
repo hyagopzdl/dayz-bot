@@ -697,7 +697,7 @@ async function updateMapVoteCategoryName(rotation: MapRotationPayload, zone?: Sp
   const settings = normalizeMapRotationSettings(rotation.settings);
   const categoryId = String(settings.pollCategoryId || "").trim();
   if (!categoryId) return;
-  const zoneName = sanitizeDiscordChannelNamePart(zone?.name || rotation.zones.find((item) => item.id === rotation.currentZoneId)?.name || "");
+  const zoneName = sanitizeDiscordChannelNamePart(zone?.name || rotation.zones.find((item) => item.id === rotation.currentZoneId)?.name || "").toUpperCase();
   const name = `━━━〔 MAP ROTATION: ${zoneName} 〕━━━`.slice(0, 100);
   const client = getDiscordClient();
 
@@ -869,7 +869,7 @@ async function runSpawnZoneAutomationNow() {
   try {
     const currentZone = rotation.zones.find((zone) => zone.id === rotation.currentZoneId) || null;
     if (currentZone) {
-      const expectedCategoryName = `━━━〔 MAP ROTATION: ${sanitizeDiscordChannelNamePart(currentZone.name)} 〕━━━`.slice(0, 100);
+      const expectedCategoryName = `━━━〔 MAP ROTATION: ${sanitizeDiscordChannelNamePart(currentZone.name).toUpperCase()} 〕━━━`.slice(0, 100);
       if (settings.pollCategoryId && automation.lastCategoryName !== expectedCategoryName) {
         await updateMapVoteCategoryName(rotation, currentZone).catch((err) => {
           automation.lastError = `Categoria Discord: ${err instanceof Error ? err.message : String(err)}`;

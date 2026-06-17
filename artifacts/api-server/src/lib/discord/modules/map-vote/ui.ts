@@ -45,22 +45,30 @@ function languageButtons() {
 
 export function buildMapVotePublicWelcomePayload(serverNameInput?: string | null, options: { periodLabel?: string } = {}) {
   const serverName = getMapVoteServerName(serverNameInput);
-  const periodLine = options.periodLabel ? `🗓️ Rotation period / Período / Período: **${options.periodLabel}**` : "🗓️ The rotation period appears in the poll title.";
+  const periodText = options.periodLabel ? `\n\n🗓️ Rotation period / Período da rotação / Período de rotación: **${options.periodLabel}**` : "";
   const embed = buildSystemEmbed({
     title: `🗳️ Map Vote · ${serverName}`,
     description: [
-      "Vote in the active poll below to choose the next spawn/deathmatch zone.",
+      "**WELCOME  /  BOAS-VINDAS  /  BIENVENIDO**",
       "",
-      "🇧🇷 Vote na enquete ativa abaixo para escolher a próxima zona de spawn/deathmatch.",
+      "━━━〔 🇺🇸 〕━━━",
       "",
-      "🇪🇸 Vota en la encuesta activa de abajo para elegir la próxima zona de spawn/deathmatch.",
+      "🎯 Vote in the active poll below to choose the server's next spawn/deathmatch zone.",
       "",
-      periodLine,
+      "⏳ Voting ends on Sunday at 23:59, and the zone with the most votes will start after Monday's 00:00 reset.",
       "",
-      "Rules / Regras / Reglas:",
-      "✅ One vote per Discord account / Um voto por conta / Un voto por cuenta",
-      "🏆 The most voted zone wins / A zona mais votada vence / Gana la zona más votada",
-      "🔄 The winner is applied on the next server reset / Entra no próximo reset / Entra en el próximo reinicio",
+      "━━━〔 🇧🇷 〕━━━",
+      "",
+      "🎯 Vote na enquete ativa abaixo para escolher a próxima zona de spawn/deathmatch do servidor.",
+      "",
+      "⏳ A votação termina domingo às 23:59, e a zona com mais votos começará após o reset de segunda-feira às 00:00.",
+      "",
+      "━━━〔 🇪🇸 〕━━━",
+      "",
+      "🎯 Vota en la encuesta activa de abajo para elegir la próxima zona de spawn/deathmatch del servidor.",
+      "",
+      "⏳ La votación termina el domingo a las 23:59, y la zona con más votos comenzará después del reinicio del lunes a las 00:00.",
+      periodText,
     ].join("\n"),
     footerSuffix: "map-vote",
   });
