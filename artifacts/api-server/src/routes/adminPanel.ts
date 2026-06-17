@@ -77,7 +77,7 @@ type SpawnZonePayload = { id: string; name: string; color: string; enabled: bool
 type MapRotationSettingsPayload = { pollChannelId?: string; pollCategoryId?: string; pollQuestion?: string; pollOpenDay?: string; pollOpenTime?: string; pollCloseDay?: string; pollCloseTime?: string; pollTimezone?: string; autoCreatePoll?: boolean; recurringPollAfterFinish?: boolean; autoApplyWinner?: boolean; applyOnNextRestart?: boolean; tiePolicy?: string; minVotes?: number; spawnFilePath?: string; serverName?: string; mapVoteWelcomeMessageId?: string };
 type MapRotationPollOptionPayload = { zoneId: string; name: string; answerId?: number; votes?: number };
 type MapRotationActivePollPayload = { id: string; channelId: string; messageId: string; question: string; status: string; createdAt: string; openAt?: string; closesAt?: string; windowId?: string; durationMs?: number; recurring?: boolean; options: MapRotationPollOptionPayload[]; totalVotes?: number; winnerZoneId?: string; winnerName?: string; lastFetchedAt?: string; finalizedAt?: string; appliedAt?: string; finalReason?: string; rawUrl?: string };
-type MapRotationAutomationPayload = { lastPollWindowId?: string; lastCloseWindowId?: string; lastCheckedAt?: string; lastAction?: string; lastError?: string; currentWindowId?: string; currentWindowOpenAt?: string; currentWindowCloseAt?: string; nextWindowOpenAt?: string; nextWindowCloseAt?: string; activePollClosesAt?: string; activePollOverdueByMs?: number; nextRecurringPollAt?: string; recurringPollDurationMs?: number; lastRecurringPollAt?: string; lastCategoryUpdateAt?: string; lastCategoryName?: string; schedulerIntervalMs?: number };
+type MapRotationAutomationPayload = { lastPollWindowId?: string; lastCloseWindowId?: string; lastCheckedAt?: string; lastAction?: string; lastError?: string; currentWindowId?: string; currentWindowOpenAt?: string; currentWindowCloseAt?: string; nextWindowOpenAt?: string; nextWindowCloseAt?: string; activePollClosesAt?: string; activePollOverdueByMs?: number; nextRecurringPollAt?: string; recurringPollDurationMs?: number; lastRecurringPollAt?: string; lastCategoryUpdateAt?: string; lastCategoryName?: string; lastDeletedPollMessageId?: string; lastDeletedPollAt?: string; schedulerIntervalMs?: number };
 type MapRotationPayload = { zones: SpawnZonePayload[]; currentZoneId?: string; nextZoneId?: string; voteHistory: any[]; settings: MapRotationSettingsPayload; activePoll?: MapRotationActivePollPayload; automation?: MapRotationAutomationPayload; updatedAt: string };
 
 const SPAWN_ZONE_FILE_PATH = SHOP_EVENTS_PATH.replace(/\/db\/events\.xml$/i, "/cfgplayerspawnpoints.xml");
@@ -480,6 +480,46 @@ async function fetchFinalizedDiscordSpawnZonePoll(activePoll: MapRotationActiveP
   throw new Error(`Nao foi possivel confirmar o resultado final da enquete no Discord: ${detail}`);
 }
 
+async function deleteDiscordSpawnZonePollMessage(activePoll: MapRotationActivePollPayload | undefined | null) {
+  const channelId = String(activePoll?.channelId || "").trim();
+  const messageId = String(activePoll?.messageId || "").trim();
+  if (!channelId || !messageId) return false;
+  const client = getDiscordClient();
+  const route = Routes.channelMessage(channelId, messageId) as `/${string}`;
+  await client.rest.delete(route);
+  return true;
+}
+
+function isDiscordUnknownMessageError(err: unknown) {
+  const value = String((err as any)?.code || "") + " " + String((err as any)?.status || "") + " " + String((err as Error)?.message || err || "");
+  return /10008|404|Unknown Message/i.test(value);
+}
+
+async function deletePreviousClosedSpawnZonePoll(rotation: MapRotationPayload, automation: MapRotationAutomationPayload) {
+  const previousPoll = rotation.activePoll;
+  if (!previousPoll || previousPoll.status !== "closed") return false;
+  if (!previousPoll.channelId || !previousPoll.messageId) return false;
+  if (automation.lastDeletedPollMessageId === previousPoll.messageId) return false;
+  try {
+    const deleted = await deleteDiscordSpawnZonePollMessage(previousPoll);
+    if (deleted) {
+      automation.lastDeletedPollMessageId = previousPoll.messageId;
+      automation.lastDeletedPollAt = new Date().toISOString();
+    }
+    return deleted;
+  } catch (err) {
+    if (isDiscordUnknownMessageError(err)) {
+      automation.lastDeletedPollMessageId = previousPoll.messageId;
+      automation.lastDeletedPollAt = new Date().toISOString();
+      return true;
+    }
+    const detail = err instanceof Error ? err.message : String(err);
+    automation.lastError = `Apagar enquete anterior: ${detail}`;
+    console.warn("map vote previous poll delete failed", err);
+    return false;
+  }
+}
+
 function previousWeekdayDate(day: unknown, time: unknown, from = new Date(), timeZone = "America/Sao_Paulo") {
   const targetDay = SPAWN_ZONE_WEEKDAY_INDEX[String(day || "monday")] ?? 1;
   const { hour, minute } = parseSpawnZoneTime(time, "12:00");
@@ -717,6 +757,7 @@ async function createDueRecurringMapVote(rotation: MapRotationPayload, settings:
   const durationMs = Math.max(60 * 60 * 1000, Number(automation.recurringPollDurationMs || 0) || (fallbackWindow.closeAt.getTime() - fallbackWindow.openAt.getTime()));
   const closeAt = new Date(now.getTime() + durationMs);
   const windowId = `recurring_${recurringPollAt.toISOString()}_${now.toISOString()}_${closeAt.toISOString()}`;
+  await deletePreviousClosedSpawnZonePoll(rotation, automation);
   rotation.activePoll = await createDiscordSpawnZonePoll(rotation, { openAt: now, closeAt, windowId, recurring: true });
   automation.lastRecurringPollAt = now.toISOString();
   automation.nextRecurringPollAt = undefined;
@@ -861,6 +902,7 @@ async function runSpawnZoneAutomationNow() {
       (!rotation.activePoll || rotation.activePoll.status === "closed");
 
     if (canCreatePollForOpenWindow) {
+      await deletePreviousClosedSpawnZonePoll(rotation, automation);
       rotation.activePoll = await createDiscordSpawnZonePoll(rotation, { windowId: windowInfo.id, openAt: windowInfo.openAt, closeAt: windowInfo.closeAt });
       automation.lastPollWindowId = windowInfo.id;
       automation.lastAction = "created_poll";
@@ -7057,6 +7099,9 @@ router.post("/api/spawn-zones/poll/create", async (req, res) => {
     rotation.settings = normalizeMapRotationSettings({ ...(rotation.settings || {}), ...incomingSettings });
   }
   try {
+    const automation = rotation.automation || {};
+    rotation.automation = automation;
+    await deletePreviousClosedSpawnZonePoll(rotation, automation);
     rotation.activePoll = await createDiscordSpawnZonePoll(rotation);
     const saved = await saveMapRotationState(state, rotation);
     res.json(saved);
