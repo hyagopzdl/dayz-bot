@@ -6,6 +6,7 @@ import { createDiscordFeedRuntime } from "./discord/modules/feeds/runtime";
 import { registerInteractionHandlers } from "./discord/interactions";
 import { startShopStatusMonitor } from "./discord/shopStatusMonitor";
 import { startEconomyRewardsLoop } from "./discord/modules/economy/rewardsLoop";
+import { registerMemberFeed } from "./discord/modules/memberFeed";
 
 const client = createDiscordClient();
 
@@ -42,6 +43,8 @@ export async function startDiscordBot() {
       getState: stateAccess.getState,
       saveState: stateAccess.saveState,
     });
+
+    registerMemberFeed(client);
 
     registerInteractionHandlers({
       client,
