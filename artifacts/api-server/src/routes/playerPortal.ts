@@ -1,13 +1,27 @@
+import path from "node:path";
 import { Router } from "express";
 import { discordAvatarUrl } from "../auth/session";
 import { getOrCreateWalletForLink } from "../lib/economy";
 import { buildPlayerDashboard } from "../lib/playerPortalDashboard";
+import {
+  buildPlayerPurchases,
+  buildPlayerShopCatalog,
+  buildPlayerShopCategory,
+  buildPlayerShopItem,
+  confirmPlayerShopCheckout,
+  createPlayerShopCheckout,
+  getPlayerShopCheckout,
+} from "../lib/playerShop";
 import { getPlayerLinkByDiscordId } from "../lib/playerLinks";
-import { getStateAsync } from "../lib/state";
+import { getStateAsync, saveStateAsync } from "../lib/state";
 import { requirePortalAuth } from "../middlewares/portalAuth";
 import { renderPlayerPortal } from "./playerPortalView";
 
 const router = Router();
+
+function sendApiError(res: any, error: unknown, status = 400) {
+  res.status(status).json({ error: error instanceof Error ? error.message : String(error) });
+}
 
 router.get("/login", (req, res) => {
   if (req.portalSession) {
@@ -22,8 +36,9 @@ router.get("/login", (req, res) => {
   :root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;background:#08090b;color:#fff;font-family:Inter,system-ui,sans-serif}.card{width:min(420px,calc(100% - 32px));padding:32px;border:1px solid #272a31;border-radius:20px;background:#111318;box-shadow:0 24px 80px #0008}.eyebrow{color:#8c93a3;font-size:12px;font-weight:700;letter-spacing:.14em;text-transform:uppercase}h1{font-size:32px;line-height:1.05;margin:12px 0}p{color:#aeb4c0;line-height:1.55}.button{display:flex;align-items:center;justify-content:center;gap:10px;margin-top:24px;padding:14px 18px;border-radius:12px;background:#5865f2;color:#fff;text-decoration:none;font-weight:800}.error{margin-top:16px;padding:12px;border-radius:10px;background:#39191d;color:#ffb4bd;font-size:14px}</style></head><body><main class="card"><div class="eyebrow">PZ Deathmatch</div><h1>Player Portal</h1><p>Sign in with Discord to access your profile, statistics, coins and purchases.</p><a class="button" href="/api/auth/discord?returnTo=${encodeURIComponent(returnTo)}">Continue with Discord</a>${error ? `<div class="error">Login failed. Please try again.</div>` : ""}</main></body></html>`);
 });
 
-router.get("/app", requirePortalAuth, (req, res) => {
-  res.type("html").send(renderPlayerPortal(req.portalSession!));
+router.get(["/app", "/app/shop", "/app/shop/category/:categoryId", "/app/shop/item/:itemId", "/app/purchases"], requirePortalAuth, (req, res) => {
+  const view = req.path.startsWith("/app/purchases") ? "purchases" : req.path.startsWith("/app/shop") ? "shop" : "dashboard";
+  res.type("html").send(renderPlayerPortal(req.portalSession!, view));
 });
 
 router.get("/api/player/dashboard", requirePortalAuth, async (req, res) => {
@@ -31,8 +46,73 @@ router.get("/api/player/dashboard", requirePortalAuth, async (req, res) => {
   res.json(buildPlayerDashboard(state, req.portalSession!));
 });
 
-// Kept for compatibility with Phase 1 clients. New dashboard consumers should
-// use /api/player/dashboard, which already exposes the complete initial view model.
+router.get("/api/player/shop", requirePortalAuth, async (req, res) => {
+  try {
+    const state = await getStateAsync();
+    res.json(await buildPlayerShopCatalog(state, req.portalSession!));
+  } catch (error) { sendApiError(res, error); }
+});
+
+router.get("/api/player/shop/categories/:categoryId", requirePortalAuth, async (req, res) => {
+  try {
+    const state = await getStateAsync();
+    res.json(await buildPlayerShopCategory(state, req.portalSession!, req.params.categoryId));
+  } catch (error) { sendApiError(res, error, 404); }
+});
+
+router.get("/api/player/shop/items/:itemId", requirePortalAuth, async (req, res) => {
+  try {
+    const state = await getStateAsync();
+    res.json(await buildPlayerShopItem(state, req.portalSession!, req.params.itemId));
+  } catch (error) { sendApiError(res, error, 404); }
+});
+
+router.get("/api/player/shop/map", requirePortalAuth, (_req, res) => {
+  const mapPath = path.resolve(process.cwd(), process.env.SHOP_MAP_IMAGE_PATH || "assets/maps/chernarus-map-pz-bot.png");
+  res.setHeader("Cache-Control", "private, max-age=3600");
+  res.sendFile(mapPath, (error) => {
+    if (error && !res.headersSent) res.status(404).send("Chernarus map image not found");
+  });
+});
+
+router.post("/api/player/shop/checkouts", requirePortalAuth, async (req, res) => {
+  try {
+    const state = await getStateAsync();
+    const checkout = createPlayerShopCheckout({
+      state,
+      session: req.portalSession!,
+      itemId: String(req.body?.itemId || ""),
+      x: req.body?.x,
+      z: req.body?.z,
+      locationId: typeof req.body?.locationId === "string" ? req.body.locationId : undefined,
+      saveLocationName: typeof req.body?.saveLocationName === "string" ? req.body.saveLocationName : undefined,
+    });
+    await saveStateAsync(state);
+    res.status(201).json(checkout);
+  } catch (error) { sendApiError(res, error); }
+});
+
+router.get("/api/player/shop/checkouts/:checkoutId", requirePortalAuth, async (req, res) => {
+  try {
+    const state = await getStateAsync();
+    res.json(getPlayerShopCheckout(state, req.portalSession!, req.params.checkoutId));
+  } catch (error) { sendApiError(res, error, 404); }
+});
+
+router.post("/api/player/shop/checkouts/:checkoutId/confirm", requirePortalAuth, async (req, res) => {
+  try {
+    const state = await getStateAsync();
+    const order = confirmPlayerShopCheckout(state, req.portalSession!, req.params.checkoutId);
+    await saveStateAsync(state);
+    res.status(201).json(order);
+  } catch (error) { sendApiError(res, error); }
+});
+
+router.get("/api/player/purchases", requirePortalAuth, async (req, res) => {
+  const state = await getStateAsync();
+  res.json({ purchases: buildPlayerPurchases(state, req.portalSession!) });
+});
+
 router.get("/api/player/me", requirePortalAuth, async (req, res) => {
   const state = await getStateAsync();
   const session = req.portalSession!;

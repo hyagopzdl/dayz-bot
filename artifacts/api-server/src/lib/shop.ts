@@ -447,6 +447,8 @@ export function createShopOrder(options: {
   x: number;
   y: number;
   z: number;
+  price?: number;
+  locationName?: string;
 }) {
   const state = ensureShopState(options.state);
   assertShopCanAcceptPurchase(state);
@@ -476,6 +478,8 @@ export function createShopOrder(options: {
     z: Number(options.z.toFixed(2)),
     status: "pending_spawn",
     createdAt: now,
+    ...(Number.isFinite(options.price) ? { price: Number(options.price) } : {}),
+    ...(String(options.locationName || "").trim() ? { locationName: String(options.locationName).trim().slice(0, 40) } : {}),
   };
 
   state.shopOrders.push(order);

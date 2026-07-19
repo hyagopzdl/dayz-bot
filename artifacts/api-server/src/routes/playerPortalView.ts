@@ -9,7 +9,7 @@ function escapeHtml(value: unknown) {
     .replaceAll("'", "&#039;");
 }
 
-export function renderPlayerPortal(session: PortalSession) {
+export function renderPlayerPortal(session: PortalSession, initialView: "dashboard" | "shop" | "purchases" = "dashboard") {
   const displayName = session.globalName || session.username;
   return `<!doctype html>
 <html lang="en">
@@ -20,7 +20,7 @@ export function renderPlayerPortal(session: PortalSession) {
   <title>PZ Deathmatch · Player Portal</title>
   <link rel="stylesheet" href="/app-assets/player-portal.css">
 </head>
-<body>
+<body data-view="${initialView}">
   <div class="app-shell">
     <aside class="sidebar" id="sidebar">
       <a class="brand" href="/app" aria-label="PZ Deathmatch home">
@@ -28,10 +28,10 @@ export function renderPlayerPortal(session: PortalSession) {
         <span><strong>PZ Deathmatch</strong><small>Player portal</small></span>
       </a>
       <nav class="nav" aria-label="Player portal navigation">
-        <a class="nav-item active" href="/app" data-route="dashboard"><span class="nav-icon">⌂</span>Dashboard</a>
+        <a class="nav-item ${initialView === "dashboard" ? "active" : ""}" href="/app" data-route="dashboard"><span class="nav-icon">⌂</span>Dashboard</a>
         <a class="nav-item disabled" href="#" aria-disabled="true"><span class="nav-icon">◫</span>Statistics<span class="soon">Soon</span></a>
-        <a class="nav-item disabled" href="#" aria-disabled="true"><span class="nav-icon">◇</span>Shop<span class="soon">Soon</span></a>
-        <a class="nav-item disabled" href="#" aria-disabled="true"><span class="nav-icon">▣</span>Purchases<span class="soon">Soon</span></a>
+        <a class="nav-item ${initialView === "shop" ? "active" : ""}" href="/app/shop" data-route="shop"><span class="nav-icon">◇</span>Shop</a>
+        <a class="nav-item ${initialView === "purchases" ? "active" : ""}" href="/app/purchases" data-route="purchases"><span class="nav-icon">▣</span>Purchases</a>
         <a class="nav-item disabled" href="#" aria-disabled="true"><span class="nav-icon">◎</span>Economy<span class="soon">Soon</span></a>
         <a class="nav-item disabled" href="#" aria-disabled="true"><span class="nav-icon">○</span>Profile<span class="soon">Soon</span></a>
       </nav>
@@ -47,7 +47,7 @@ export function renderPlayerPortal(session: PortalSession) {
         <button class="menu-button" id="menuButton" type="button" aria-label="Open menu">☰</button>
       </header>
 
-      <div class="content-wrap">
+      <div class="content-wrap" id="contentRoot">
         <header class="page-header">
           <div>
             <p class="eyebrow">Player dashboard</p>
@@ -82,7 +82,7 @@ export function renderPlayerPortal(session: PortalSession) {
         </section>
 
         <section class="panel shop-panel">
-          <div class="panel-header"><div><p class="eyebrow">Spend your coins</p><h2>Featured shop items</h2></div><button class="primary-button" type="button" disabled>Open shop <span>→</span></button></div>
+          <div class="panel-header"><div><p class="eyebrow">Spend your coins</p><h2>Featured shop items</h2></div><a class="primary-button" href="/app/shop">Open shop <span>→</span></a></div>
           <div class="shop-grid" id="shopGrid"><div class="empty-state"><div class="loader"></div><p>Loading shop...</p></div></div>
         </section>
       </div>
