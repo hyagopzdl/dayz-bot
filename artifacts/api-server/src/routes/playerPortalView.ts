@@ -1,5 +1,7 @@
 import type { PortalSession } from "../auth/session";
 
+const PLAYER_PORTAL_ASSET_VERSION = "20260719-2";
+
 function escapeHtml(value: unknown) {
   return String(value ?? "")
     .replaceAll("&", "&amp;")
@@ -18,7 +20,7 @@ export function renderPlayerPortal(session: PortalSession, initialView: "dashboa
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#070709">
   <title>PZ Deathmatch · Player Portal</title>
-  <link rel="stylesheet" href="/app-assets/player-portal.css">
+  <link rel="stylesheet" href="/app-assets/player-portal.css?v=${PLAYER_PORTAL_ASSET_VERSION}">
 </head>
 <body data-view="${initialView}">
   <div class="app-shell">
@@ -89,7 +91,7 @@ export function renderPlayerPortal(session: PortalSession, initialView: "dashboa
     </main>
   </div>
   <div class="backdrop" id="backdrop"></div>
-  <script src="/app-assets/player-portal.js" defer></script>
+  <script src="/app-assets/player-portal.js?v=${PLAYER_PORTAL_ASSET_VERSION}" defer></script>
 </body>
 </html>`;
 }

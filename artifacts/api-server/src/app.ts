@@ -37,7 +37,17 @@ app.use(cors());
 app.use(cookieParser());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use("/app-assets", express.static("assets/player-portal", { maxAge: "1h", etag: true }));
+app.use(
+  "/app-assets",
+  express.static("assets/player-portal", {
+    etag: true,
+    lastModified: true,
+    maxAge: 0,
+    setHeaders(res) {
+      res.setHeader("Cache-Control", "no-cache");
+    },
+  }),
+);
 
 // Portal authentication is available to all following routes.
 app.use(attachPortalSession);
