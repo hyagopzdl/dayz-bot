@@ -1,10 +1,14 @@
 import express, { type Express } from "express";
+import cookieParser from "cookie-parser";
 import cors from "cors";
 import pinoHttp from "pino-http";
 import router from "./routes";
 import adminRoutes from "./routes/admin";
 import adminPanelRoutes from "./routes/adminPanel";
 import { logger } from "./lib/logger";
+import authRoutes from "./routes/auth";
+import playerPortalRoutes from "./routes/playerPortal";
+import { attachPortalSession } from "./middlewares/portalAuth";
 
 const app: Express = express();
 
@@ -28,15 +32,23 @@ app.use(
   }),
 );
 
+app.set("trust proxy", 1);
 app.use(cors());
+app.use(cookieParser());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// 🔥 ROTA PRINCIPAL
+// Portal authentication is available to all following routes.
+app.use(attachPortalSession);
+
+// Keep the current root behavior so the existing Render URL remains compatible.
 app.get("/", (_req, res) => {
-  console.log("🔥 ROTA / OK");
   res.send("ok");
 });
+
+// Player portal and Discord OAuth.
+app.use("/api/auth", authRoutes);
+app.use(playerPortalRoutes);
 
 // 🔐 ADMIN PANEL
 app.use("/admin", adminRoutes);
