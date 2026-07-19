@@ -23,6 +23,12 @@ function sendApiError(res: any, error: unknown, status = 400) {
   res.status(status).json({ error: error instanceof Error ? error.message : String(error) });
 }
 
+function getRouteParam(value: string | string[] | undefined, name: string): string {
+  const param = Array.isArray(value) ? value[0] : value;
+  if (!param) throw new Error(`Missing route parameter: ${name}`);
+  return param;
+}
+
 router.get("/login", (req, res) => {
   if (req.portalSession) {
     res.redirect("/app");
@@ -56,14 +62,14 @@ router.get("/api/player/shop", requirePortalAuth, async (req, res) => {
 router.get("/api/player/shop/categories/:categoryId", requirePortalAuth, async (req, res) => {
   try {
     const state = await getStateAsync();
-    res.json(await buildPlayerShopCategory(state, req.portalSession!, req.params.categoryId));
+    res.json(await buildPlayerShopCategory(state, req.portalSession!, getRouteParam(req.params.categoryId, "categoryId")));
   } catch (error) { sendApiError(res, error, 404); }
 });
 
 router.get("/api/player/shop/items/:itemId", requirePortalAuth, async (req, res) => {
   try {
     const state = await getStateAsync();
-    res.json(await buildPlayerShopItem(state, req.portalSession!, req.params.itemId));
+    res.json(await buildPlayerShopItem(state, req.portalSession!, getRouteParam(req.params.itemId, "itemId")));
   } catch (error) { sendApiError(res, error, 404); }
 });
 
@@ -95,14 +101,14 @@ router.post("/api/player/shop/checkouts", requirePortalAuth, async (req, res) =>
 router.get("/api/player/shop/checkouts/:checkoutId", requirePortalAuth, async (req, res) => {
   try {
     const state = await getStateAsync();
-    res.json(getPlayerShopCheckout(state, req.portalSession!, req.params.checkoutId));
+    res.json(getPlayerShopCheckout(state, req.portalSession!, getRouteParam(req.params.checkoutId, "checkoutId")));
   } catch (error) { sendApiError(res, error, 404); }
 });
 
 router.post("/api/player/shop/checkouts/:checkoutId/confirm", requirePortalAuth, async (req, res) => {
   try {
     const state = await getStateAsync();
-    const order = confirmPlayerShopCheckout(state, req.portalSession!, req.params.checkoutId);
+    const order = confirmPlayerShopCheckout(state, req.portalSession!, getRouteParam(req.params.checkoutId, "checkoutId"));
     await saveStateAsync(state);
     res.status(201).json(order);
   } catch (error) { sendApiError(res, error); }
