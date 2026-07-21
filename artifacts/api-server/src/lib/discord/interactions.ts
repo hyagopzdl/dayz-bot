@@ -15,6 +15,7 @@ import { handleLinkAutocomplete, handleLinkCommand, handleLinkComponentInteracti
 import { handleMapVoteComponentInteraction } from "./modules/map-vote/interactions";
 import { handleEconomyCommand } from "./modules/economy/interactions";
 import { handleEconomyAdminAutocomplete, handleEconomyAdminCommand } from "./modules/economy-admin/interactions";
+import { DISABLED_COMMAND_MESSAGE, isDiscordCommandEnabled } from "./commandSettings";
 import {
   KILLFEED_MESSAGE_PREFIX,
   KILLSTREAK_MESSAGE_PREFIX,
@@ -77,6 +78,15 @@ export function registerInteractionHandlers(ctx: RegisterInteractionHandlersCont
     if (await handleEconomyAdminAutocomplete(interaction, { getState, saveState })) return;
     if (await handleLinkComponentInteraction(interaction, { getState, saveState })) return;
     if (await handleMapVoteComponentInteraction(interaction, { getState, saveState })) return;
+
+    if (interaction.isChatInputCommand()) {
+      const commandState = await getState();
+      if (!isDiscordCommandEnabled(commandState.discordCommandSettings, interaction.commandName)) {
+        await interaction.reply({ content: DISABLED_COMMAND_MESSAGE, ephemeral: true });
+        return;
+      }
+    }
+
     if (await handleShopInteraction(interaction, { getState, saveState })) return;
 
     if (!interaction.isChatInputCommand()) return;

@@ -60,6 +60,7 @@ import {
   type Wallet,
 } from "../lib/state";
 import { getDiscordClient } from "../lib/discordBot";
+import { listDiscordCommandDescriptors, normalizeDiscordCommandSettings } from "../lib/discord/commandSettings";
 import { buildMapVotePollOptionText, buildMapVotePollQuestion, buildMapVotePublicWelcomePayload } from "../lib/discord/modules/map-vote/ui";
 import { downloadTextFile, uploadTextFile } from "../lib/nitradoFtp";
 
@@ -2518,6 +2519,23 @@ function renderAdminPanelHtml(token: string) {
     .bar-wrap:hover .bar { opacity: 1; }
     .bar-label { color: var(--text-3); font-size: 11px; text-align: center; white-space: nowrap; }
     .settings-list { display: grid; gap: 10px; }
+    .command-settings-summary { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+    .command-settings-list { display:grid; gap:10px; margin-top:14px; }
+    .command-settings-group { display:grid; gap:10px; }
+    .command-settings-group + .command-settings-group { margin-top:18px; }
+    .command-settings-group-title { color:var(--text-3); font-size:11px; font-weight:700; letter-spacing:.11em; text-transform:uppercase; padding:0 2px; }
+    .command-setting-row { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:18px; align-items:center; padding:15px 16px; border:1px solid var(--border); border-radius:16px; background:#2B2D31; box-shadow:var(--shadow-sm); transition:background .16s ease,border-color .16s ease,opacity .16s ease; }
+    .command-setting-row:hover { background:#303238; border-color:var(--border-strong); }
+    .command-setting-row.is-disabled { opacity:.72; }
+    .command-setting-name { display:flex; align-items:center; gap:9px; font-size:14px; font-weight:650; letter-spacing:-.02em; }
+    .command-setting-name code { color:#DDE1FF; background:rgba(88,101,242,.12); border:1px solid rgba(88,101,242,.22); padding:4px 7px; border-radius:8px; font:inherit; }
+    .command-setting-description { color:var(--text-3); font-size:12px; line-height:1.45; margin-top:6px; }
+    .ios-switch { position:relative; width:51px; height:31px; border-radius:999px; background:#4E5058; border:0; padding:0; cursor:pointer; flex:0 0 auto; transition:background .2s ease,box-shadow .2s ease; box-shadow:inset 0 0 0 1px rgba(255,255,255,.06); }
+    .ios-switch::after { content:""; position:absolute; width:27px; height:27px; left:2px; top:2px; border-radius:50%; background:#fff; box-shadow:0 2px 7px rgba(0,0,0,.32); transition:transform .22s cubic-bezier(.2,.8,.2,1); }
+    .ios-switch[aria-checked="true"] { background:#23A55A; box-shadow:inset 0 0 0 1px rgba(255,255,255,.10),0 0 0 3px rgba(35,165,90,.10); }
+    .ios-switch[aria-checked="true"]::after { transform:translateX(20px); }
+    .ios-switch:focus-visible { outline:3px solid rgba(88,101,242,.42); outline-offset:3px; }
+    .ios-switch:disabled { cursor:wait; opacity:.62; }
     .settings-tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 16px; }
     .settings-tab { border: 1px solid var(--border); background: rgba(255,255,255,.035); color: var(--text-2); border-radius: 999px; padding: 9px 13px; font-size: 12px; font-weight: 650; cursor: pointer; }
     .settings-tab.active { color: var(--text); border-color: rgba(124,140,255,.55); background: rgba(124,140,255,.13); }
@@ -4268,6 +4286,7 @@ function renderAdminPanelHtml(token: string) {
               <div class="settings-tabs" role="tablist" aria-label="Settings sections">
                 <button class="settings-tab active" type="button" data-settings-tab="server">Server Settings</button>
                 <button class="settings-tab" type="button" data-settings-tab="events">Events Settings</button>
+                <button class="settings-tab" type="button" data-settings-tab="discord">Discord Commands</button>
                 <button class="settings-tab" type="button" data-settings-tab="integrations">Integrações</button>
               </div>
             </div>
@@ -4305,6 +4324,21 @@ function renderAdminPanelHtml(token: string) {
                   <div><h2>Eventos disponíveis</h2><div class="member-meta">Clique em um card para ver detalhes, instalar, verificar ou remover suporte.</div></div>
                 </div>
                 <div id="lockedContainerAvailableGrid" class="integration-grid"></div>
+              </div>
+            </div>
+
+
+            <div id="settingsPanelDiscord" class="settings-panel">
+              <div class="card">
+                <div class="section-title">
+                  <div>
+                    <h2>Discord Commands</h2>
+                    <div class="member-meta">Ative ou pause comandos instantaneamente, sem removê-los do Discord ou reiniciar o bot.</div>
+                  </div>
+                  <div id="discordCommandsSummary" class="command-settings-summary"><span class="chip">Carregando...</span></div>
+                </div>
+                <div class="settings-empty-note" style="margin-top:14px">Desativar um comando bloqueia apenas novas execuções. Processos automáticos, entregas pendentes e interações já abertas continuam funcionando.</div>
+                <div id="discordCommandsList" class="command-settings-list"></div>
               </div>
             </div>
 
@@ -4463,7 +4497,7 @@ function renderAdminPanelHtml(token: string) {
   <script>
     const adminToken = ${tokenJson};
     if (adminToken) document.cookie = "${TOKEN_COOKIE}=" + encodeURIComponent(adminToken) + "; path=/admin-panel; SameSite=Lax";
-    const state = { view: "general", cursor: 0, hasMore: true, loadingMembers: false, memberForceRefresh: false, search: "", filter: "", modal: null, catalogModal: null, selectedDiscordId: null, catalog: null, catalogSearch: "", catalogCategory: "", catalogMode: "categories", catalogDrag: null, catalogJustDragged: false, shopQueue: null, shopTransactions: null, shopHistorySearch: "", shopQueueModeBefore: "categories", itemsCursor: 0, itemsHasMore: true, itemsLoading: false, itemsSearch: "", itemsFilter: "all", dayzItems: [], itemsStats: null, itemModal: null, mapEventPresets: [], selectedMapEventPresetId: "locked_container_red_military", mapEventRewardStorageItem: null, mapEventLootItems: [], scheduledMapEvents: [], mapEventBuilderOpen: false, settingsTab: "server", lockedContainerSetup: null, spawnZonesTab: "rotation", spawnZones: null, selectedSpawnZoneId: null, highlightedSpawnPointId: null, spawnZoneMapZoom: 1, spawnZoneMapDragging: false, spawnZoneEditingNameId: null };
+    const state = { view: "general", cursor: 0, hasMore: true, loadingMembers: false, memberForceRefresh: false, search: "", filter: "", modal: null, catalogModal: null, selectedDiscordId: null, catalog: null, catalogSearch: "", catalogCategory: "", catalogMode: "categories", catalogDrag: null, catalogJustDragged: false, shopQueue: null, shopTransactions: null, shopHistorySearch: "", shopQueueModeBefore: "categories", itemsCursor: 0, itemsHasMore: true, itemsLoading: false, itemsSearch: "", itemsFilter: "all", dayzItems: [], itemsStats: null, itemModal: null, mapEventPresets: [], selectedMapEventPresetId: "locked_container_red_military", mapEventRewardStorageItem: null, mapEventLootItems: [], scheduledMapEvents: [], mapEventBuilderOpen: false, settingsTab: "server", discordCommands: null, discordCommandsLoading: false, lockedContainerSetup: null, spawnZonesTab: "rotation", spawnZones: null, selectedSpawnZoneId: null, highlightedSpawnPointId: null, spawnZoneMapZoom: 1, spawnZoneMapDragging: false, spawnZoneEditingNameId: null };
     const els = {
       pageTitle: document.getElementById("pageTitle"), serverName: document.getElementById("serverName"),
       mapEventPresetGrid: document.getElementById("mapEventPresetGrid"), mapEventSelectedPreset: document.getElementById("mapEventSelectedPreset"), mapEventName: document.getElementById("mapEventName"), mapEventCoordinates: document.getElementById("mapEventCoordinates"), mapEventX: document.getElementById("mapEventX"), mapEventZ: document.getElementById("mapEventZ"), mapEventAngle: document.getElementById("mapEventAngle"), mapEventQuantity: document.getElementById("mapEventQuantity"), mapEventLifetime: document.getElementById("mapEventLifetime"), mapEventSafeRadius: document.getElementById("mapEventSafeRadius"), mapEventDistanceRadius: document.getElementById("mapEventDistanceRadius"), mapEventCleanupRadius: document.getElementById("mapEventCleanupRadius"), mapEventLootMode: document.getElementById("mapEventLootMode"), mapEventRewardStorage: document.getElementById("mapEventRewardStorage"), mapEventRewardStorageSearch: document.getElementById("mapEventRewardStorageSearch"), mapEventRewardStorageSelected: document.getElementById("mapEventRewardStorageSelected"), mapEventRewardStorageAutocomplete: document.getElementById("mapEventRewardStorageAutocomplete"), mapEventRewardStorageWrap: document.getElementById("mapEventRewardStorageWrap"), mapEventGuaranteedItemSearch: document.getElementById("mapEventGuaranteedItemSearch"), mapEventGuaranteedItemAutocomplete: document.getElementById("mapEventGuaranteedItemAutocomplete"), mapEventGuaranteedItemsList: document.getElementById("mapEventGuaranteedItemsList"), mapEventGuaranteedItemsWrap: document.getElementById("mapEventGuaranteedItemsWrap"), mapEventMapViewport: document.getElementById("mapEventMapViewport"), mapEventMapInner: document.getElementById("mapEventMapInner"), mapEventMapImage: document.getElementById("mapEventMapImage"), mapEventMapPin: document.getElementById("mapEventMapPin"), mapEventMapZoomIn: document.getElementById("mapEventMapZoomIn"), mapEventMapZoomOut: document.getElementById("mapEventMapZoomOut"), mapEventMapZoomLabel: document.getElementById("mapEventMapZoomLabel"), mapEventStatus: document.getElementById("mapEventStatus"), mapEventBuilder: document.getElementById("mapEventBuilder"), mapEventsNewToggle: document.getElementById("mapEventsNewToggle"), mapEventsBuilderClose: document.getElementById("mapEventsBuilderClose"), mapEventsSchedule: document.getElementById("mapEventsSchedule"), mapEventScheduleFields: document.getElementById("mapEventScheduleFields"), mapEventDate: document.getElementById("mapEventDate"), mapEventTime: document.getElementById("mapEventTime"), mapEventCustomTimeWrap: document.getElementById("mapEventCustomTimeWrap"), mapEventCustomTime: document.getElementById("mapEventCustomTime"), mapEventRecurrence: document.getElementById("mapEventRecurrence"), mapEventsScheduledList: document.getElementById("mapEventsScheduledList"), mapEventsScheduledEmpty: document.getElementById("mapEventsScheduledEmpty"), mapEventsScheduledCount: document.getElementById("mapEventsScheduledCount"), mapEventsRecurringCount: document.getElementById("mapEventsRecurringCount"), mapEventsNextRun: document.getElementById("mapEventsNextRun"), mapEventsScheduleRuntime: document.getElementById("mapEventsScheduleRuntime"),
@@ -6092,14 +6126,65 @@ function renderAdminPanelHtml(token: string) {
       } finally { lockedContainerSetupBusy = false; setLockedContainerButtonsDisabled(false); }
     }
     function openLockedContainerIntegrationModal(integrationId = 'locked-containers') { state.activeEventIntegrationId = integrationId; const integration = activeIntegration(); const title = document.querySelector('.integration-modal-title h2'); const desc = document.querySelector('.integration-modal-title p'); const img = document.querySelector('.integration-modal-title img'); const feature = document.querySelector('.integration-feature-list'); if (title) title.textContent = integration.title; if (desc) desc.textContent = integration.description; if (img) img.src = integration.imageUrl; if (feature) feature.innerHTML = '<li>✓ ' + escapeHtml(integration.installText) + '</li><li>✓ Mantém a criação/agendamento dentro da tela Eventos do Mapa.</li><li>✓ Pode ser verificado, reparado ou desinstalado por esta tela.</li>'; renderLockedContainerSetupStatus(); if (els.eventIntegrationModalBackdrop) els.eventIntegrationModalBackdrop.classList.add('open'); }
+    function renderDiscordCommands() {
+      const list = document.getElementById('discordCommandsList');
+      const summary = document.getElementById('discordCommandsSummary');
+      if (!list || !summary) return;
+      const commands = Array.isArray(state.discordCommands) ? state.discordCommands : [];
+      const enabled = commands.filter((command) => command.enabled).length;
+      summary.innerHTML = '<span class="chip online">' + enabled + ' ativos</span><span class="chip">' + (commands.length - enabled) + ' pausados</span>';
+      if (!commands.length) {
+        list.innerHTML = '<div class="empty" style="padding:24px">Nenhum comando registrado.</div>';
+        return;
+      }
+      const group = (category, title) => {
+        const rows = commands.filter((command) => command.category === category).map((command) =>
+          '<div class="command-setting-row ' + (command.enabled ? '' : 'is-disabled') + '" data-command-name="' + escapeHtml(command.name) + '">' +
+            '<div><div class="command-setting-name"><code>/' + escapeHtml(command.name) + '</code><span class="chip">' + (category === 'admin' ? 'Admin' : 'Player') + '</span></div>' +
+            '<div class="command-setting-description">' + escapeHtml(command.description || 'Discord command') + '</div></div>' +
+            '<button class="ios-switch" type="button" role="switch" aria-label="' + (command.enabled ? 'Desativar ' : 'Ativar ') + escapeHtml(command.name) + '" aria-checked="' + (command.enabled ? 'true' : 'false') + '" data-command-toggle="' + escapeHtml(command.name) + '"></button>' +
+          '</div>'
+        ).join('');
+        return rows ? '<div class="command-settings-group"><div class="command-settings-group-title">' + title + '</div>' + rows + '</div>' : '';
+      };
+      list.innerHTML = group('player', 'Comandos dos jogadores') + group('admin', 'Comandos administrativos');
+    }
+    async function loadDiscordCommands() {
+      if (state.discordCommandsLoading) return;
+      state.discordCommandsLoading = true;
+      const list = document.getElementById('discordCommandsList');
+      if (list) list.innerHTML = '<div class="skeleton"></div><div class="skeleton"></div>';
+      try {
+        const response = await apiFetch('/admin-panel/api/discord-commands');
+        if (!response.ok) { showToast(await response.text()); return; }
+        const payload = await response.json();
+        state.discordCommands = payload.commands || [];
+        renderDiscordCommands();
+      } finally { state.discordCommandsLoading = false; }
+    }
+    async function toggleDiscordCommand(commandName, button) {
+      const current = (state.discordCommands || []).find((command) => command.name === commandName);
+      if (!current || !button) return;
+      button.disabled = true;
+      const nextEnabled = !current.enabled;
+      try {
+        const response = await apiFetch('/admin-panel/api/discord-commands/' + encodeURIComponent(commandName), { method:'PATCH', body:JSON.stringify({ enabled:nextEnabled }) });
+        if (!response.ok) { showToast(await response.text()); return; }
+        const payload = await response.json();
+        state.discordCommands = payload.commands || [];
+        renderDiscordCommands();
+        showToast('/' + commandName + (nextEnabled ? ' ativado.' : ' desativado.'));
+      } finally { button.disabled = false; }
+    }
     function switchSettingsTab(tab) {
       state.settingsTab = tab;
       document.querySelectorAll('.settings-tab').forEach((button) => button.classList.toggle('active', button.dataset.settingsTab === tab));
-      ['server', 'events', 'integrations'].forEach((key) => {
+      ['server', 'events', 'discord', 'integrations'].forEach((key) => {
         const panel = document.getElementById('settingsPanel' + key.charAt(0).toUpperCase() + key.slice(1));
         if (panel) panel.classList.toggle('active', key === tab);
       });
       if (tab === 'events') renderLockedContainerCards();
+      if (tab === 'discord' && !state.discordCommands) loadDiscordCommands();
     }
     async function injectMapEventAction() {
       const preset = selectedMapEventPreset();
@@ -6451,6 +6536,11 @@ function renderAdminPanelHtml(token: string) {
     if (lockedContainerUninstall) lockedContainerUninstall.addEventListener("click", uninstallLockedContainerSetupAction);
     if (els.eventIntegrationModalClose) els.eventIntegrationModalClose.addEventListener("click", () => els.eventIntegrationModalBackdrop?.classList.remove("open"));
     if (els.eventIntegrationModalBackdrop) els.eventIntegrationModalBackdrop.addEventListener("click", (event) => { if (event.target === els.eventIntegrationModalBackdrop) els.eventIntegrationModalBackdrop.classList.remove("open"); });
+    const discordCommandsList = document.getElementById('discordCommandsList');
+    if (discordCommandsList) discordCommandsList.addEventListener('click', (event) => {
+      const button = event.target.closest?.('[data-command-toggle]');
+      if (button) toggleDiscordCommand(button.getAttribute('data-command-toggle') || '', button);
+    });
     document.querySelectorAll(".settings-tab").forEach((button) => button.addEventListener("click", () => switchSettingsTab(button.dataset.settingsTab || "server")));
     document.addEventListener("click", (event) => {
       const card = event.target.closest?.('[data-integration]');
@@ -6622,6 +6712,42 @@ router.get("/", (req, res) => {
   if (!requireAdmin(req, res)) return;
   setPanelCookie(req, res);
   res.type("html").send(renderAdminPanelHtml(getTokenFromRequest(req)));
+});
+
+router.get("/api/discord-commands", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  try {
+    const state = await getStateAsync();
+    res.json({ commands: listDiscordCommandDescriptors(state.discordCommandSettings) });
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
+  }
+});
+
+router.patch("/api/discord-commands/:commandName", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  try {
+    const commandName = String(req.params.commandName || "").trim().toLowerCase();
+    const enabled = req.body?.enabled;
+    if (typeof enabled !== "boolean") {
+      res.status(400).send("enabled must be a boolean");
+      return;
+    }
+    const state = await getStateAsync();
+    const available = listDiscordCommandDescriptors(state.discordCommandSettings);
+    if (!available.some((command) => command.name === commandName)) {
+      res.status(404).send("Discord command not found");
+      return;
+    }
+    const settings = normalizeDiscordCommandSettings(state.discordCommandSettings);
+    settings[commandName] = { enabled, updatedAt: new Date().toISOString() };
+    state.discordCommandSettings = settings;
+    await saveStateAsync(state);
+    await flushStateAsync();
+    res.json({ commands: listDiscordCommandDescriptors(state.discordCommandSettings) });
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
+  }
 });
 
 router.get("/api/overview", async (req, res) => {

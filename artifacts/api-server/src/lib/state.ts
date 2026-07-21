@@ -5,6 +5,7 @@ import postgres from "postgres";
 import type { ShopCatalog } from "./shopCatalog";
 import type { DayzItemDefinition } from "./dayzItemDatabase";
 import type { Locale } from "./i18n";
+import { normalizeDiscordCommandSettings, type DiscordCommandSettings } from "./discord/commandSettings";
 
 const FILE = path.resolve(process.cwd(), "state.json");
 const STATE_ID = "main";
@@ -163,10 +164,6 @@ export type ShopOrder = {
   spawnedAt?: string;
   failedAt?: string;
   failReason?: string;
-  price?: number;
-  locationName?: string;
-  balanceBefore?: number;
-  balanceAfter?: number;
 };
 
 export type PlayerLink = {
@@ -281,6 +278,7 @@ export type AppState = {
 
   mapRotation?: any;
   mapVoteUserLocales?: Record<string, { locale: Locale; updatedAt: string }>;
+  discordCommandSettings?: DiscordCommandSettings;
 };
 
 function defaultState(): AppState {
@@ -312,6 +310,7 @@ function defaultState(): AppState {
     activeMatch: null,
     mapRotation: undefined,
     mapVoteUserLocales: {},
+    discordCommandSettings: {},
     lastDailyReset: "",
     lastWeeklyReset: "",
   };
@@ -440,6 +439,7 @@ function migrateLegacyState(data: any): AppState {
   state.shopAutoDeploy = data.shopAutoDeploy || null;
   state.mapRotation = data.mapRotation;
   state.mapVoteUserLocales = data.mapVoteUserLocales && typeof data.mapVoteUserLocales === "object" ? data.mapVoteUserLocales : {};
+  state.discordCommandSettings = normalizeDiscordCommandSettings(data.discordCommandSettings);
 
   const rawOnlinePlayers = data.onlinePlayers || {};
   const now = new Date().toISOString();
