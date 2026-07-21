@@ -164,6 +164,10 @@ export type ShopOrder = {
   spawnedAt?: string;
   failedAt?: string;
   failReason?: string;
+  price?: number;
+  locationName?: string;
+  balanceBefore?: number;
+  balanceAfter?: number;
 };
 
 export type PlayerLink = {
