@@ -4,6 +4,7 @@ export function ensureBotState(state: any) {
   state.weeklyPlayers = state.weeklyPlayers || {};
   state.onlinePlayers = state.onlinePlayers || {};
   state.onlineSessions = state.onlineSessions || {};
+  state.onlineActivitySamples = state.onlineActivitySamples || [];
   state.shopOrders = state.shopOrders || [];
   state.shopSavedLocations = state.shopSavedLocations || [];
   state.shopResetMonitor = state.shopResetMonitor || null;
@@ -16,6 +17,7 @@ export function ensureBotState(state: any) {
   state.killStreakEvents = state.killStreakEvents || [];
   state.discordMessageIds = state.discordMessageIds || {};
   state.activeMatch = state.activeMatch || null;
+  state.discordCommandSettings = state.discordCommandSettings || {};
 
   return state;
 }
