@@ -71,7 +71,8 @@ export async function startDiscordBot() {
       createLongShotEmptyEmbed: feeds.createLongShotEmptyEmbed,
     });
 
-    await registerDiscordCommands(client);
+    const commandState = await stateAccess.getState();
+    await registerDiscordCommands(client, commandState.discordCommandSettings);
     await feeds.updateLeaderboard();
 
     startShopStatusMonitor(stateAccess);

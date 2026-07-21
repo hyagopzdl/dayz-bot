@@ -61,6 +61,7 @@ import {
 } from "../lib/state";
 import { getDiscordClient } from "../lib/discordBot";
 import { listDiscordCommandDescriptors, normalizeDiscordCommandSettings } from "../lib/discord/commandSettings";
+import { registerDiscordCommands } from "../lib/discord/commands";
 import { buildMapVotePollOptionText, buildMapVotePollQuestion, buildMapVotePublicWelcomePayload } from "../lib/discord/modules/map-vote/ui";
 import { downloadTextFile, uploadTextFile } from "../lib/nitradoFtp";
 
@@ -6744,6 +6745,17 @@ router.patch("/api/discord-commands/:commandName", async (req, res) => {
     state.discordCommandSettings = settings;
     await saveStateAsync(state);
     await flushStateAsync();
+
+    const client = getDiscordClient();
+    if (!client.isReady()) {
+      res.status(503).json({
+        error: "Discord bot is not connected. The setting was saved, but commands could not be synchronized yet.",
+        commands: listDiscordCommandDescriptors(state.discordCommandSettings),
+      });
+      return;
+    }
+
+    await registerDiscordCommands(client, state.discordCommandSettings);
     res.json({ commands: listDiscordCommandDescriptors(state.discordCommandSettings) });
   } catch (err) {
     res.status(500).json({ error: String(err) });

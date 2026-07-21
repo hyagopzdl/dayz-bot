@@ -298,9 +298,23 @@ export function buildDiscordCommands() {
 }
 
 
-export async function registerDiscordCommands(client: any) {
+type DiscordCommandSettingsLike = Record<
+  string,
+  { enabled?: boolean } | undefined
+>;
+
+export function buildEnabledDiscordCommands(settings?: DiscordCommandSettingsLike) {
+  return buildDiscordCommands().filter((command) =>
+    settings?.[command.name]?.enabled !== false,
+  );
+}
+
+export async function registerDiscordCommands(
+  client: any,
+  settings?: DiscordCommandSettingsLike,
+) {
   try {
-    const commands = buildDiscordCommands();
+    const commands = buildEnabledDiscordCommands(settings);
 
     if (process.env.DISCORD_SERVER_ID) {
       const guild = await client.guilds.fetch(process.env.DISCORD_SERVER_ID);
@@ -308,7 +322,10 @@ export async function registerDiscordCommands(client: any) {
     } else {
       await client.application?.commands.set(commands);
     }
+
+    console.log(`✅ ${commands.length} comandos do Discord sincronizados`);
   } catch (err) {
     console.error("❌ erro registrando comandos:", err);
+    throw err;
   }
 }
