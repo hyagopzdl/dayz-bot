@@ -874,9 +874,66 @@ async function finalizeSpawnZonePoll(rotation: MapRotationPayload, options: { ap
   return { zone, path, reason, activePoll };
 }
 
+
+const MAP_ROTATION_RUNTIME_AUTOMATION_FIELDS = new Set([
+  "lastCheckedAt",
+  "currentWindowId",
+  "currentWindowOpenAt",
+  "currentWindowCloseAt",
+  "nextWindowOpenAt",
+  "nextWindowCloseAt",
+  "activePollClosesAt",
+  "activePollOverdueByMs",
+  "schedulerIntervalMs",
+]);
+
+/**
+ * Builds a stable representation containing only map-rotation data that must
+ * survive a process restart. Scheduler heartbeat/window fields and live vote
+ * refreshes remain available through the in-memory state, but they no longer
+ * force the entire bot_state document to be written to Neon every five minutes.
+ */
+function getPersistedMapRotationSignature(rotation: MapRotationPayload) {
+  const automation = Object.fromEntries(
+    Object.entries(rotation.automation || {}).filter(([key]) => !MAP_ROTATION_RUNTIME_AUTOMATION_FIELDS.has(key)),
+  );
+
+  let activePoll = rotation.activePoll;
+  if (activePoll && activePoll.status !== "closed") {
+    activePoll = {
+      ...activePoll,
+      options: (activePoll.options || []).map((option) => ({ ...option, votes: 0 })),
+      totalVotes: 0,
+      winnerZoneId: undefined,
+      winnerName: undefined,
+      lastFetchedAt: undefined,
+    };
+  }
+
+  return JSON.stringify({
+    zones: rotation.zones,
+    currentZoneId: rotation.currentZoneId,
+    nextZoneId: rotation.nextZoneId,
+    voteHistory: rotation.voteHistory,
+    settings: rotation.settings,
+    activePoll,
+    automation,
+  });
+}
+
+function updateMapRotationRuntimeState(state: AdminState, rotation: MapRotationPayload) {
+  const previousUpdatedAt = (state.mapRotation as MapRotationPayload | undefined)?.updatedAt;
+  state.mapRotation = {
+    ...rotation,
+    updatedAt: previousUpdatedAt || rotation.updatedAt,
+  };
+  return state.mapRotation;
+}
+
 async function runSpawnZoneAutomationNow() {
   const state = (await getStateAsync()) as AdminState;
   const rotation = getMapRotationState(state);
+  const persistedSignatureBeforeRun = getPersistedMapRotationSignature(rotation);
   const settings = normalizeMapRotationSettings(rotation.settings);
   const automation = rotation.automation || {};
   rotation.automation = automation;
@@ -884,7 +941,7 @@ async function runSpawnZoneAutomationNow() {
   const windowInfo = getMapRotationScheduleWindow(settings, now);
   const nextWindowInfo = getNextMapRotationScheduleWindow(settings, now);
   automation.lastCheckedAt = now.toISOString();
-  automation.lastError = "";
+  const previousError = automation.lastError;
   automation.currentWindowId = windowInfo.id;
   automation.currentWindowOpenAt = windowInfo.openAt.toISOString();
   automation.currentWindowCloseAt = windowInfo.closeAt.toISOString();
@@ -979,9 +1036,20 @@ async function runSpawnZoneAutomationNow() {
     automation.lastAction = "error";
   }
 
+  if (automation.lastAction !== "error" && previousError) {
+    automation.lastError = "";
+  }
+
   rotation.settings = settings;
   rotation.automation = { ...automation, ...(rotation.automation || {}) };
-  return saveMapRotationState(state, rotation);
+
+  const persistedSignatureAfterRun = getPersistedMapRotationSignature(rotation);
+  if (persistedSignatureAfterRun !== persistedSignatureBeforeRun) {
+    return saveMapRotationState(state, rotation);
+  }
+
+  // Keep operational status fresh for the admin panel without waking Neon.
+  return updateMapRotationRuntimeState(state, rotation);
 }
 
 function getSpawnZoneAutomationIntervalMs() {
