@@ -7,6 +7,7 @@ import { registerInteractionHandlers } from "./discord/interactions";
 import { startShopStatusMonitor } from "./discord/shopStatusMonitor";
 import { startEconomyRewardsLoop } from "./discord/modules/economy/rewardsLoop";
 import { registerMemberFeed } from "./discord/modules/memberFeed";
+import { applyServiceSettingsToCommandSettings } from "./serviceSettings";
 
 const client = createDiscordClient();
 
@@ -72,7 +73,13 @@ export async function startDiscordBot() {
     });
 
     const commandState = await stateAccess.getState();
-    await registerDiscordCommands(client, commandState.discordCommandSettings);
+    await registerDiscordCommands(
+      client,
+      applyServiceSettingsToCommandSettings(
+        commandState.discordCommandSettings,
+        commandState.serviceSettings,
+      ),
+    );
     await feeds.updateLeaderboard();
 
     startShopStatusMonitor(stateAccess);

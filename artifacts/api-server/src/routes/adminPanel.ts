@@ -55,6 +55,7 @@ import {
   getStateAsync,
   saveStateAsync,
   flushStateAsync,
+  getStatePersistenceMetrics,
   type AppState,
   type PlayerLink,
   type Wallet,
@@ -62,6 +63,7 @@ import {
 import { getDiscordClient } from "../lib/discordBot";
 import { listDiscordCommandDescriptors, normalizeDiscordCommandSettings } from "../lib/discord/commandSettings";
 import { registerDiscordCommands } from "../lib/discord/commands";
+import { applyServiceSettingsToCommandSettings, normalizeServiceSettings } from "../lib/serviceSettings";
 import { buildMapVotePollOptionText, buildMapVotePollQuestion, buildMapVotePublicWelcomePayload } from "../lib/discord/modules/map-vote/ui";
 import { downloadTextFile, uploadTextFile } from "../lib/nitradoFtp";
 
@@ -4363,9 +4365,17 @@ function renderAdminPanelHtml(token: string) {
             <div id="settingsPanelServer" class="settings-panel active">
               <div class="card">
                 <div class="section-title">
-                  <div><h2>Server Settings</h2><div class="member-meta">Configurações gerais do servidor aparecerão aqui.</div></div>
+                  <div><h2>Services & Performance</h2><div class="member-meta">Pause serviços opcionais e reduza atividade desnecessária no Neon sem afetar estatísticas críticas.</div></div>
+                  <div id="serviceSettingsSummary" class="command-settings-summary"><span class="chip">Carregando...</span></div>
                 </div>
-                <div class="settings-empty-note">Nenhuma configuração geral disponível ainda. Use Events Settings para instalar recursos de eventos.</div>
+                <div class="settings-empty-note" style="margin-top:14px">Kills, deaths, K/D, rankings, streaks, longshots e killfeed permanecem sempre ativos e não podem ser desabilitados.</div>
+                <div id="serviceSettingsList" class="command-settings-list"></div>
+              </div>
+              <div class="card">
+                <div class="section-title">
+                  <div><h2>Neon activity</h2><div class="member-meta">Métricas do processo atual. Reiniciam após um novo deploy.</div></div>
+                </div>
+                <div id="neonPersistenceMetrics" class="settings-list"><div class="skeleton"></div></div>
               </div>
             </div>
 
@@ -4566,7 +4576,7 @@ function renderAdminPanelHtml(token: string) {
   <script>
     const adminToken = ${tokenJson};
     if (adminToken) document.cookie = "${TOKEN_COOKIE}=" + encodeURIComponent(adminToken) + "; path=/admin-panel; SameSite=Lax";
-    const state = { view: "general", cursor: 0, hasMore: true, loadingMembers: false, memberForceRefresh: false, search: "", filter: "", modal: null, catalogModal: null, selectedDiscordId: null, catalog: null, catalogSearch: "", catalogCategory: "", catalogMode: "categories", catalogDrag: null, catalogJustDragged: false, shopQueue: null, shopTransactions: null, shopHistorySearch: "", shopQueueModeBefore: "categories", itemsCursor: 0, itemsHasMore: true, itemsLoading: false, itemsSearch: "", itemsFilter: "all", dayzItems: [], itemsStats: null, itemModal: null, mapEventPresets: [], selectedMapEventPresetId: "locked_container_red_military", mapEventRewardStorageItem: null, mapEventLootItems: [], scheduledMapEvents: [], mapEventBuilderOpen: false, settingsTab: "server", discordCommands: null, discordCommandsLoading: false, lockedContainerSetup: null, spawnZonesTab: "rotation", spawnZones: null, selectedSpawnZoneId: null, highlightedSpawnPointId: null, spawnZoneMapZoom: 1, spawnZoneMapDragging: false, spawnZoneEditingNameId: null };
+    const state = { view: "general", cursor: 0, hasMore: true, loadingMembers: false, memberForceRefresh: false, search: "", filter: "", modal: null, catalogModal: null, selectedDiscordId: null, catalog: null, catalogSearch: "", catalogCategory: "", catalogMode: "categories", catalogDrag: null, catalogJustDragged: false, shopQueue: null, shopTransactions: null, shopHistorySearch: "", shopQueueModeBefore: "categories", itemsCursor: 0, itemsHasMore: true, itemsLoading: false, itemsSearch: "", itemsFilter: "all", dayzItems: [], itemsStats: null, itemModal: null, mapEventPresets: [], selectedMapEventPresetId: "locked_container_red_military", mapEventRewardStorageItem: null, mapEventLootItems: [], scheduledMapEvents: [], mapEventBuilderOpen: false, settingsTab: "server", serviceSettings: null, serviceSettingsLoading: false, discordCommands: null, discordCommandsLoading: false, lockedContainerSetup: null, spawnZonesTab: "rotation", spawnZones: null, selectedSpawnZoneId: null, highlightedSpawnPointId: null, spawnZoneMapZoom: 1, spawnZoneMapDragging: false, spawnZoneEditingNameId: null };
     const els = {
       pageTitle: document.getElementById("pageTitle"), serverName: document.getElementById("serverName"),
       mapEventPresetGrid: document.getElementById("mapEventPresetGrid"), mapEventSelectedPreset: document.getElementById("mapEventSelectedPreset"), mapEventName: document.getElementById("mapEventName"), mapEventCoordinates: document.getElementById("mapEventCoordinates"), mapEventX: document.getElementById("mapEventX"), mapEventZ: document.getElementById("mapEventZ"), mapEventAngle: document.getElementById("mapEventAngle"), mapEventQuantity: document.getElementById("mapEventQuantity"), mapEventLifetime: document.getElementById("mapEventLifetime"), mapEventSafeRadius: document.getElementById("mapEventSafeRadius"), mapEventDistanceRadius: document.getElementById("mapEventDistanceRadius"), mapEventCleanupRadius: document.getElementById("mapEventCleanupRadius"), mapEventLootMode: document.getElementById("mapEventLootMode"), mapEventRewardStorage: document.getElementById("mapEventRewardStorage"), mapEventRewardStorageSearch: document.getElementById("mapEventRewardStorageSearch"), mapEventRewardStorageSelected: document.getElementById("mapEventRewardStorageSelected"), mapEventRewardStorageAutocomplete: document.getElementById("mapEventRewardStorageAutocomplete"), mapEventRewardStorageWrap: document.getElementById("mapEventRewardStorageWrap"), mapEventGuaranteedItemSearch: document.getElementById("mapEventGuaranteedItemSearch"), mapEventGuaranteedItemAutocomplete: document.getElementById("mapEventGuaranteedItemAutocomplete"), mapEventGuaranteedItemsList: document.getElementById("mapEventGuaranteedItemsList"), mapEventGuaranteedItemsWrap: document.getElementById("mapEventGuaranteedItemsWrap"), mapEventMapViewport: document.getElementById("mapEventMapViewport"), mapEventMapInner: document.getElementById("mapEventMapInner"), mapEventMapImage: document.getElementById("mapEventMapImage"), mapEventMapPin: document.getElementById("mapEventMapPin"), mapEventMapZoomIn: document.getElementById("mapEventMapZoomIn"), mapEventMapZoomOut: document.getElementById("mapEventMapZoomOut"), mapEventMapZoomLabel: document.getElementById("mapEventMapZoomLabel"), mapEventStatus: document.getElementById("mapEventStatus"), mapEventBuilder: document.getElementById("mapEventBuilder"), mapEventsNewToggle: document.getElementById("mapEventsNewToggle"), mapEventsBuilderClose: document.getElementById("mapEventsBuilderClose"), mapEventsSchedule: document.getElementById("mapEventsSchedule"), mapEventScheduleFields: document.getElementById("mapEventScheduleFields"), mapEventDate: document.getElementById("mapEventDate"), mapEventTime: document.getElementById("mapEventTime"), mapEventCustomTimeWrap: document.getElementById("mapEventCustomTimeWrap"), mapEventCustomTime: document.getElementById("mapEventCustomTime"), mapEventRecurrence: document.getElementById("mapEventRecurrence"), mapEventsScheduledList: document.getElementById("mapEventsScheduledList"), mapEventsScheduledEmpty: document.getElementById("mapEventsScheduledEmpty"), mapEventsScheduledCount: document.getElementById("mapEventsScheduledCount"), mapEventsRecurringCount: document.getElementById("mapEventsRecurringCount"), mapEventsNextRun: document.getElementById("mapEventsNextRun"), mapEventsScheduleRuntime: document.getElementById("mapEventsScheduleRuntime"),
@@ -4588,6 +4598,7 @@ function renderAdminPanelHtml(token: string) {
     function icon(name, className) { return '<svg class="icon ' + escapeHtml(className || '') + '"><use href="#icon-' + escapeHtml(name) + '"></use></svg>'; }
     function formatNumber(value) { return new Intl.NumberFormat("pt-BR").format(Number(value || 0)); }
     function formatCoins(value) { return new Intl.NumberFormat("pt-BR").format(Number(value || 0)); }
+    function formatBytes(value) { const bytes = Math.max(0, Number(value || 0)); if (bytes < 1024) return bytes + " B"; if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB"; return (bytes / (1024 * 1024)).toFixed(2) + " MB"; }
     function relativeDate(value) { if (!value) return "Nunca"; const date = new Date(value); if (Number.isNaN(date.getTime())) return String(value); return date.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }); }
     function showToast(message) { els.toast.textContent = message; els.toast.classList.add("show"); setTimeout(() => els.toast.classList.remove("show"), 3200); }
     const mobileMenuButton = document.getElementById("mobileMenuButton");
@@ -6195,6 +6206,67 @@ function renderAdminPanelHtml(token: string) {
       } finally { lockedContainerSetupBusy = false; setLockedContainerButtonsDisabled(false); }
     }
     function openLockedContainerIntegrationModal(integrationId = 'locked-containers') { state.activeEventIntegrationId = integrationId; const integration = activeIntegration(); const title = document.querySelector('.integration-modal-title h2'); const desc = document.querySelector('.integration-modal-title p'); const img = document.querySelector('.integration-modal-title img'); const feature = document.querySelector('.integration-feature-list'); if (title) title.textContent = integration.title; if (desc) desc.textContent = integration.description; if (img) img.src = integration.imageUrl; if (feature) feature.innerHTML = '<li>✓ ' + escapeHtml(integration.installText) + '</li><li>✓ Mantém a criação/agendamento dentro da tela Eventos do Mapa.</li><li>✓ Pode ser verificado, reparado ou desinstalado por esta tela.</li>'; renderLockedContainerSetupStatus(); if (els.eventIntegrationModalBackdrop) els.eventIntegrationModalBackdrop.classList.add('open'); }
+    function renderServiceSettings() {
+      const list = document.getElementById('serviceSettingsList');
+      const summary = document.getElementById('serviceSettingsSummary');
+      const metrics = document.getElementById('neonPersistenceMetrics');
+      if (!list || !summary) return;
+      const settings = state.serviceSettings || { shopEnabled:true, livePresenceEnabled:true, storePresenceHistory:true };
+      const rows = [
+        { key:'shopEnabled', title:'Shop service', description:'Pauses purchases, automatic delivery monitoring, shop commands and the Player Portal store. Catalog and history are preserved.', warning:'Existing orders remain stored and can continue when the service is re-enabled.' },
+        { key:'livePresenceEnabled', title:'Live presence', description:'Keeps the current online player list and Discord online category active.', locked:true },
+        { key:'storePresenceHistory', title:'Store presence history', description:'Stores 15-minute online player samples for future charts and historical analysis.' },
+      ];
+      const active = rows.filter((row) => settings[row.key] !== false).length;
+      summary.innerHTML = '<span class="chip online">' + active + ' ativos</span><span class="chip">' + (rows.length - active) + ' pausados</span>';
+      list.innerHTML = rows.map((row) => {
+        const enabled = settings[row.key] !== false;
+        const disabled = Boolean(row.locked);
+        return '<div class="command-setting-row ' + (enabled ? '' : 'is-disabled') + '">' +
+          '<div><div class="command-setting-name"><strong>' + escapeHtml(row.title) + '</strong>' + (row.locked ? '<span class="chip">Core</span>' : '<span class="chip">Optional</span>') + '</div>' +
+          '<div class="command-setting-description">' + escapeHtml(row.description) + (row.warning ? '<br><span style="color:var(--text-3)">' + escapeHtml(row.warning) + '</span>' : '') + '</div></div>' +
+          '<button class="ios-switch" type="button" role="switch" aria-checked="' + (enabled ? 'true' : 'false') + '" data-service-toggle="' + row.key + '" ' + (disabled ? 'disabled title="Always active"' : '') + '></button>' +
+        '</div>';
+      }).join('');
+      if (metrics && state.persistenceMetrics) {
+        const m = state.persistenceMetrics;
+        metrics.innerHTML = '<div class="overview-grid" style="grid-template-columns:repeat(4,minmax(0,1fr))">' +
+          '<div class="stat-card"><span>Reads</span><strong>' + Number(m.reads || 0).toLocaleString() + '</strong></div>' +
+          '<div class="stat-card"><span>Writes</span><strong>' + Number(m.writes || 0).toLocaleString() + '</strong></div>' +
+          '<div class="stat-card"><span>Skipped</span><strong>' + Number(m.skippedWrites || 0).toLocaleString() + '</strong></div>' +
+          '<div class="stat-card"><span>Last payload</span><strong>' + formatBytes(Number(m.lastPayloadBytes || 0)) + '</strong></div>' +
+        '</div><div class="member-meta" style="margin-top:10px">Last write: ' + escapeHtml(m.lastWriteAt ? relativeDate(m.lastWriteAt) : 'none in this process') + '</div>';
+      }
+    }
+    async function loadServiceSettings() {
+      if (state.serviceSettingsLoading) return;
+      state.serviceSettingsLoading = true;
+      try {
+        const response = await apiFetch('/admin-panel/api/service-settings');
+        if (!response.ok) { showToast(await response.text()); return; }
+        const payload = await response.json();
+        state.serviceSettings = payload.settings;
+        state.persistenceMetrics = payload.persistenceMetrics;
+        renderServiceSettings();
+      } finally { state.serviceSettingsLoading = false; }
+    }
+    async function toggleServiceSetting(key, button) {
+      if (!state.serviceSettings || !button) return;
+      const nextValue = state.serviceSettings[key] === false;
+      button.disabled = true;
+      try {
+        const response = await apiFetch('/admin-panel/api/service-settings', { method:'PATCH', body:JSON.stringify({ [key]:nextValue }) });
+        if (!response.ok) { showToast(await response.text()); return; }
+        const payload = await response.json();
+        state.serviceSettings = payload.settings;
+        state.persistenceMetrics = payload.persistenceMetrics;
+        state.discordCommands = payload.commands || state.discordCommands;
+        renderServiceSettings();
+        if (state.discordCommands) renderDiscordCommands();
+        showToast((key === 'shopEnabled' ? 'Shop service' : 'Presence history') + (nextValue ? ' ativado.' : ' desativado.'));
+      } finally { button.disabled = false; }
+    }
+
     function renderDiscordCommands() {
       const list = document.getElementById('discordCommandsList');
       const summary = document.getElementById('discordCommandsSummary');
@@ -6252,6 +6324,7 @@ function renderAdminPanelHtml(token: string) {
         const panel = document.getElementById('settingsPanel' + key.charAt(0).toUpperCase() + key.slice(1));
         if (panel) panel.classList.toggle('active', key === tab);
       });
+      if (tab === 'server' && !state.serviceSettings) loadServiceSettings();
       if (tab === 'events') renderLockedContainerCards();
       if (tab === 'discord' && !state.discordCommands) loadDiscordCommands();
     }
@@ -6611,6 +6684,7 @@ function renderAdminPanelHtml(token: string) {
       if (button) toggleDiscordCommand(button.getAttribute('data-command-toggle') || '', button);
     });
     document.querySelectorAll(".settings-tab").forEach((button) => button.addEventListener("click", () => switchSettingsTab(button.dataset.settingsTab || "server")));
+    document.getElementById("serviceSettingsList")?.addEventListener("click", (event) => { const button = event.target.closest("button[data-service-toggle]"); if (button) toggleServiceSetting(button.dataset.serviceToggle, button); });
     document.addEventListener("click", (event) => {
       const card = event.target.closest?.('[data-integration]');
       if (card) openLockedContainerIntegrationModal(card.getAttribute('data-integration') || 'locked-containers');
@@ -6772,6 +6846,7 @@ function renderAdminPanelHtml(token: string) {
     const itemsObserver = new IntersectionObserver((entries) => { if (entries.some((entry) => entry.isIntersecting) && state.view === "items") loadDayzItems(false); }, { rootMargin: "520px" });
     itemsObserver.observe(document.getElementById("itemsSentinel"));
     loadOverview();
+    loadServiceSettings();
   </script>
 </body>
 </html>`;
@@ -6783,11 +6858,54 @@ router.get("/", (req, res) => {
   res.type("html").send(renderAdminPanelHtml(getTokenFromRequest(req)));
 });
 
+router.get("/api/service-settings", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  try {
+    const state = await getStateAsync();
+    const settings = normalizeServiceSettings(state.serviceSettings);
+    res.json({ settings, persistenceMetrics: getStatePersistenceMetrics() });
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
+  }
+});
+
+router.patch("/api/service-settings", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  try {
+    const input = req.body && typeof req.body === "object" ? req.body as Record<string, unknown> : {};
+    const state = await getStateAsync();
+    const current = normalizeServiceSettings(state.serviceSettings);
+    const next = normalizeServiceSettings({
+      ...current,
+      shopEnabled: typeof input.shopEnabled === "boolean" ? input.shopEnabled : current.shopEnabled,
+      livePresenceEnabled: true,
+      storePresenceHistory: typeof input.storePresenceHistory === "boolean" ? input.storePresenceHistory : current.storePresenceHistory,
+    });
+    state.serviceSettings = next;
+    await saveStateAsync(state);
+    await flushStateAsync();
+
+    const effectiveCommandSettings = applyServiceSettingsToCommandSettings(state.discordCommandSettings, next);
+    const client = getDiscordClient();
+    if (client.isReady()) {
+      await registerDiscordCommands(client, effectiveCommandSettings);
+    }
+
+    res.json({
+      settings: next,
+      commands: listDiscordCommandDescriptors(effectiveCommandSettings),
+      persistenceMetrics: getStatePersistenceMetrics(),
+    });
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
+  }
+});
+
 router.get("/api/discord-commands", async (req, res) => {
   if (!requireAdmin(req, res)) return;
   try {
     const state = await getStateAsync();
-    res.json({ commands: listDiscordCommandDescriptors(state.discordCommandSettings) });
+    res.json({ commands: listDiscordCommandDescriptors(applyServiceSettingsToCommandSettings(state.discordCommandSettings, state.serviceSettings)) });
   } catch (err) {
     res.status(500).json({ error: String(err) });
   }
@@ -6803,7 +6921,7 @@ router.patch("/api/discord-commands/:commandName", async (req, res) => {
       return;
     }
     const state = await getStateAsync();
-    const available = listDiscordCommandDescriptors(state.discordCommandSettings);
+    const available = listDiscordCommandDescriptors(applyServiceSettingsToCommandSettings(state.discordCommandSettings, state.serviceSettings));
     if (!available.some((command) => command.name === commandName)) {
       res.status(404).send("Discord command not found");
       return;
@@ -6818,13 +6936,14 @@ router.patch("/api/discord-commands/:commandName", async (req, res) => {
     if (!client.isReady()) {
       res.status(503).json({
         error: "Discord bot is not connected. The setting was saved, but commands could not be synchronized yet.",
-        commands: listDiscordCommandDescriptors(state.discordCommandSettings),
+        commands: listDiscordCommandDescriptors(applyServiceSettingsToCommandSettings(state.discordCommandSettings, state.serviceSettings)),
       });
       return;
     }
 
-    await registerDiscordCommands(client, state.discordCommandSettings);
-    res.json({ commands: listDiscordCommandDescriptors(state.discordCommandSettings) });
+    const effectiveCommandSettings = applyServiceSettingsToCommandSettings(state.discordCommandSettings, state.serviceSettings);
+    await registerDiscordCommands(client, effectiveCommandSettings);
+    res.json({ commands: listDiscordCommandDescriptors(effectiveCommandSettings) });
   } catch (err) {
     res.status(500).json({ error: String(err) });
   }

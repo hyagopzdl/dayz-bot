@@ -6,6 +6,7 @@ import type { ShopCatalog } from "./shopCatalog";
 import type { DayzItemDefinition } from "./dayzItemDatabase";
 import type { Locale } from "./i18n";
 import { normalizeDiscordCommandSettings, type DiscordCommandSettings } from "./discord/commandSettings";
+import { normalizeServiceSettings, type ServiceSettings } from "./serviceSettings";
 
 const FILE = path.resolve(process.cwd(), "state.json");
 const STATE_ID = "main";
@@ -22,6 +23,15 @@ let pendingPersistHash = "";
 let pendingPersistStartedAt = 0;
 let saveTimer: NodeJS.Timeout | null = null;
 let flushPromise: Promise<void> | null = null;
+
+const persistenceMetrics = {
+  reads: 0,
+  writes: 0,
+  skippedWrites: 0,
+  lastReadAt: undefined as string | undefined,
+  lastWriteAt: undefined as string | undefined,
+  lastPayloadBytes: 0,
+};
 
 const sql = process.env.DATABASE_URL
   ? postgres(process.env.DATABASE_URL, {
@@ -283,6 +293,7 @@ export type AppState = {
   mapRotation?: any;
   mapVoteUserLocales?: Record<string, { locale: Locale; updatedAt: string }>;
   discordCommandSettings?: DiscordCommandSettings;
+  serviceSettings?: ServiceSettings;
 };
 
 function defaultState(): AppState {
@@ -315,6 +326,7 @@ function defaultState(): AppState {
     mapRotation: undefined,
     mapVoteUserLocales: {},
     discordCommandSettings: {},
+    serviceSettings: normalizeServiceSettings(undefined),
     lastDailyReset: "",
     lastWeeklyReset: "",
   };
@@ -444,6 +456,7 @@ function migrateLegacyState(data: any): AppState {
   state.mapRotation = data.mapRotation;
   state.mapVoteUserLocales = data.mapVoteUserLocales && typeof data.mapVoteUserLocales === "object" ? data.mapVoteUserLocales : {};
   state.discordCommandSettings = normalizeDiscordCommandSettings(data.discordCommandSettings);
+  state.serviceSettings = normalizeServiceSettings(data.serviceSettings);
 
   const rawOnlinePlayers = data.onlinePlayers || {};
   const now = new Date().toISOString();
@@ -527,11 +540,16 @@ async function persistStateToNeon(serialized: string, hash: string) {
   if (!sql) return;
 
   if (hash === lastPersistedHash) {
+    persistenceMetrics.skippedWrites += 1;
     logStateDebug("⏭️ STATE NEON ignorado: sem alterações");
     return;
   }
 
   const parsed = JSON.parse(serialized) as AppState;
+
+  persistenceMetrics.writes += 1;
+  persistenceMetrics.lastWriteAt = new Date().toISOString();
+  persistenceMetrics.lastPayloadBytes = Buffer.byteLength(serialized, "utf8");
 
   await sql`
     INSERT INTO bot_state (id, data, updated_at)
@@ -627,6 +645,8 @@ export async function getStateAsync(): Promise<AppState> {
   }
 
   try {
+    persistenceMetrics.reads += 1;
+    persistenceMetrics.lastReadAt = new Date().toISOString();
     const rows = await sql`
       SELECT data
       FROM bot_state
@@ -664,6 +684,11 @@ export async function getStateAsync(): Promise<AppState> {
   }
 }
 
+
+export function getStatePersistenceMetrics() {
+  return { ...persistenceMetrics };
+}
+
 export async function saveStateAsync(data: AppState) {
   const persistedState = parseLastPersistedState();
   const shouldProtectMapRotation = !data.mapRotation && hasPersistedSpawnZones(persistedState?.mapRotation);
@@ -689,6 +714,7 @@ export async function saveStateAsync(data: AppState) {
     mapRotation: shouldProtectMapRotation ? persistedState?.mapRotation : data.mapRotation || undefined,
     mapVoteUserLocales: data.mapVoteUserLocales && typeof data.mapVoteUserLocales === "object" ? data.mapVoteUserLocales : {},
     discordCommandSettings: normalizeDiscordCommandSettings(data.discordCommandSettings),
+    serviceSettings: normalizeServiceSettings(data.serviceSettings),
     files: data.files || {},
     recentEventIds: (data.recentEventIds || []).slice(-3000),
     killFeedEvents: (data.killFeedEvents || []).slice(-60),

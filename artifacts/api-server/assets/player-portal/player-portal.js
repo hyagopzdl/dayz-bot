@@ -61,6 +61,7 @@ function renderLeaderboard(items) {
 
 function renderShop(items) {
   const target = byId('shopGrid');
+  if (!target) return;
   if (!items.length) {
     target.innerHTML = '<div class="empty-state"><p>No featured items available right now.<br>The store remains accessible through Discord.</p></div>';
     return;

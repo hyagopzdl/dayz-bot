@@ -3,6 +3,7 @@ import {
   getShopResetMonitorPersistenceKey,
   pollShopResetStatusAndAutoClear,
 } from "../shop";
+import { isShopServiceEnabled } from "../serviceSettings";
 
 type ShopStatusMonitorContext = {
   getState: () => Promise<any>;
@@ -20,6 +21,7 @@ export function startShopStatusMonitor(ctx: ShopStatusMonitorContext) {
 
       try {
         const state = await ctx.getState();
+        if (!isShopServiceEnabled(state)) return;
 
         const deployResult = await autoDeployPendingShopOrdersIfNeeded(state);
         if (deployResult) {

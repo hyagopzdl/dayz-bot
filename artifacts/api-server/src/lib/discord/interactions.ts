@@ -16,6 +16,7 @@ import { handleMapVoteComponentInteraction } from "./modules/map-vote/interactio
 import { handleEconomyCommand } from "./modules/economy/interactions";
 import { handleEconomyAdminAutocomplete, handleEconomyAdminCommand } from "./modules/economy-admin/interactions";
 import { DISABLED_COMMAND_MESSAGE, isDiscordCommandEnabled } from "./commandSettings";
+import { isShopServiceEnabled, SHOP_COMMAND_NAMES } from "../serviceSettings";
 import {
   KILLFEED_MESSAGE_PREFIX,
   KILLSTREAK_MESSAGE_PREFIX,
@@ -81,8 +82,20 @@ export function registerInteractionHandlers(ctx: RegisterInteractionHandlersCont
 
     if (interaction.isChatInputCommand()) {
       const commandState = await getState();
+      if (SHOP_COMMAND_NAMES.has(interaction.commandName) && !isShopServiceEnabled(commandState)) {
+        await interaction.reply({ content: "The shop is currently disabled on this server.", ephemeral: true });
+        return;
+      }
       if (!isDiscordCommandEnabled(commandState.discordCommandSettings, interaction.commandName)) {
         await interaction.reply({ content: DISABLED_COMMAND_MESSAGE, ephemeral: true });
+        return;
+      }
+    }
+
+    if ((interaction.isButton() || interaction.isStringSelectMenu() || interaction.isModalSubmit()) && interaction.customId.startsWith("shop-")) {
+      const commandState = await getState();
+      if (!isShopServiceEnabled(commandState)) {
+        await interaction.reply({ content: "The shop is currently disabled on this server.", ephemeral: true }).catch(() => undefined);
         return;
       }
     }

@@ -3,6 +3,7 @@ import { getOrCreateWalletForLink } from "./economy";
 import { getPlayerLinkByDiscordId } from "./playerLinks";
 import { getShopCatalog } from "./shopCatalog";
 import type { AppState, KillFeedEvent, PlayerStats } from "./state";
+import { isShopServiceEnabled } from "./serviceSettings";
 
 const LEADERBOARD_LIMIT = 5;
 const RECENT_ACTIVITY_LIMIT = 5;
@@ -66,7 +67,7 @@ export function buildPlayerDashboard(state: AppState, session: PortalSession) {
     category: string | null;
   }> = [];
 
-  try {
+  if (isShopServiceEnabled(state)) try {
     shopPreview = getShopCatalog()
       .items.filter((item) => item.enabled !== false)
       .sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0))
@@ -107,6 +108,7 @@ export function buildPlayerDashboard(state: AppState, session: PortalSession) {
     })),
     recentActivity,
     shopPreview,
+    services: { shopEnabled: isShopServiceEnabled(state) },
     activeMatch: state.activeMatch?.status === "active"
       ? {
           id: state.activeMatch.id,

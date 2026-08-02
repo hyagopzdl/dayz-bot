@@ -1,6 +1,7 @@
 import fs from "fs";
 import crypto from "crypto";
 import { getStateAsync, saveStateAsync, AppState, PlayerStats } from "./state";
+import { isPresenceHistoryEnabled } from "./serviceSettings";
 import { MANIFEST_FILE } from "./nitradoDownloader";
 import {
   getShopResetMonitorPersistenceKey,
@@ -1016,7 +1017,9 @@ export async function getLeaderboard() {
   }
 
   cleanupOnlinePlayers(state);
-  changed = recordOnlineActivitySample(state) || changed;
+  if (isPresenceHistoryEnabled(state)) {
+    changed = recordOnlineActivitySample(state) || changed;
+  }
 
   console.log(`🟢 online agora: ${Object.keys(state.onlinePlayers).length}`);
 

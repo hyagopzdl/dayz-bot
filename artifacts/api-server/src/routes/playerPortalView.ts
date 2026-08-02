@@ -1,6 +1,6 @@
 import type { PortalSession } from "../auth/session";
 
-const PLAYER_PORTAL_ASSET_VERSION = "20260719-2";
+const PLAYER_PORTAL_ASSET_VERSION = "20260802-1";
 
 function escapeHtml(value: unknown) {
   return String(value ?? "")
@@ -11,7 +11,8 @@ function escapeHtml(value: unknown) {
     .replaceAll("'", "&#039;");
 }
 
-export function renderPlayerPortal(session: PortalSession, initialView: "dashboard" | "shop" | "purchases" = "dashboard") {
+export function renderPlayerPortal(session: PortalSession, initialView: "dashboard" | "shop" | "purchases" = "dashboard", options: { shopEnabled?: boolean } = {}) {
+  const shopEnabled = options.shopEnabled !== false;
   const displayName = session.globalName || session.username;
   return `<!doctype html>
 <html lang="en">
@@ -32,8 +33,8 @@ export function renderPlayerPortal(session: PortalSession, initialView: "dashboa
       <nav class="nav" aria-label="Player portal navigation">
         <a class="nav-item ${initialView === "dashboard" ? "active" : ""}" href="/app" data-route="dashboard"><span class="nav-icon">⌂</span>Dashboard</a>
         <a class="nav-item disabled" href="#" aria-disabled="true"><span class="nav-icon">◫</span>Statistics<span class="soon">Soon</span></a>
-        <a class="nav-item ${initialView === "shop" ? "active" : ""}" href="/app/shop" data-route="shop"><span class="nav-icon">◇</span>Shop</a>
-        <a class="nav-item ${initialView === "purchases" ? "active" : ""}" href="/app/purchases" data-route="purchases"><span class="nav-icon">▣</span>Purchases</a>
+${shopEnabled ? `<a class="nav-item ${initialView === "shop" ? "active" : ""}" href="/app/shop" data-route="shop"><span class="nav-icon">◇</span>Shop</a>
+        <a class="nav-item ${initialView === "purchases" ? "active" : ""}" href="/app/purchases" data-route="purchases"><span class="nav-icon">▣</span>Purchases</a>` : ""}
         <a class="nav-item disabled" href="#" aria-disabled="true"><span class="nav-icon">◎</span>Economy<span class="soon">Soon</span></a>
         <a class="nav-item disabled" href="#" aria-disabled="true"><span class="nav-icon">○</span>Profile<span class="soon">Soon</span></a>
       </nav>
@@ -83,10 +84,10 @@ export function renderPlayerPortal(session: PortalSession, initialView: "dashboa
           </article>
         </section>
 
-        <section class="panel shop-panel">
+${shopEnabled ? `<section class="panel shop-panel">
           <div class="panel-header"><div><p class="eyebrow">Spend your coins</p><h2>Featured shop items</h2></div><a class="primary-button" href="/app/shop">Open shop <span>→</span></a></div>
           <div class="shop-grid" id="shopGrid"><div class="empty-state"><div class="loader"></div><p>Loading shop...</p></div></div>
-        </section>
+        </section>` : ""}
       </div>
     </main>
   </div>
