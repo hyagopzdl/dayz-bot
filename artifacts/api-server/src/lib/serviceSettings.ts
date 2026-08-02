@@ -1,3 +1,5 @@
+import { normalizeDiscordCommandSettings, type DiscordCommandSettings } from "./discord/commandSettings";
+
 export type ServiceSettings = {
   shopEnabled: boolean;
   livePresenceEnabled: boolean;
@@ -44,10 +46,10 @@ export const SHOP_COMMAND_NAMES = new Set([
 ]);
 
 export function applyServiceSettingsToCommandSettings(
-  settings: Record<string, { enabled?: boolean; updatedAt?: string } | undefined> | undefined,
+  settings: unknown,
   serviceSettings: unknown,
-) {
-  const effective = { ...(settings || {}) };
+): DiscordCommandSettings {
+  const effective = normalizeDiscordCommandSettings(settings);
   const normalized = normalizeServiceSettings(serviceSettings);
 
   if (!normalized.shopEnabled) {

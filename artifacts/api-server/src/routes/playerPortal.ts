@@ -62,30 +62,48 @@ router.get("/api/player/dashboard", requirePortalAuth, async (req, res) => {
 router.get("/api/player/shop", requirePortalAuth, async (req, res) => {
   try {
     const state = await getStateAsync();
-    if (!isShopServiceEnabled(state)) return res.status(503).json({ error: "The shop is currently disabled on this server." });
+    if (!isShopServiceEnabled(state)) {
+      res.status(503).json({ error: "The shop is currently disabled on this server." });
+      return;
+    }
     res.json(await buildPlayerShopCatalog(state, req.portalSession!));
-  } catch (error) { sendApiError(res, error); }
+  } catch (error) {
+    sendApiError(res, error);
+  }
 });
 
 router.get("/api/player/shop/categories/:categoryId", requirePortalAuth, async (req, res) => {
   try {
     const state = await getStateAsync();
-    if (!isShopServiceEnabled(state)) return res.status(503).json({ error: "The shop is currently disabled on this server." });
+    if (!isShopServiceEnabled(state)) {
+      res.status(503).json({ error: "The shop is currently disabled on this server." });
+      return;
+    }
     res.json(await buildPlayerShopCategory(state, req.portalSession!, getRouteParam(req.params.categoryId, "categoryId")));
-  } catch (error) { sendApiError(res, error, 404); }
+  } catch (error) {
+    sendApiError(res, error, 404);
+  }
 });
 
 router.get("/api/player/shop/items/:itemId", requirePortalAuth, async (req, res) => {
   try {
     const state = await getStateAsync();
-    if (!isShopServiceEnabled(state)) return res.status(503).json({ error: "The shop is currently disabled on this server." });
+    if (!isShopServiceEnabled(state)) {
+      res.status(503).json({ error: "The shop is currently disabled on this server." });
+      return;
+    }
     res.json(await buildPlayerShopItem(state, req.portalSession!, getRouteParam(req.params.itemId, "itemId")));
-  } catch (error) { sendApiError(res, error, 404); }
+  } catch (error) {
+    sendApiError(res, error, 404);
+  }
 });
 
 router.get("/api/player/shop/map", requirePortalAuth, async (_req, res) => {
   const state = await getStateAsync();
-  if (!isShopServiceEnabled(state)) return res.status(503).send("The shop is currently disabled on this server.");
+  if (!isShopServiceEnabled(state)) {
+    res.status(503).send("The shop is currently disabled on this server.");
+    return;
+  }
   const mapPath = path.resolve(process.cwd(), process.env.SHOP_MAP_IMAGE_PATH || "assets/maps/chernarus-map-pz-bot.png");
   res.setHeader("Cache-Control", "private, max-age=3600");
   res.sendFile(mapPath, (error) => {
@@ -96,7 +114,10 @@ router.get("/api/player/shop/map", requirePortalAuth, async (_req, res) => {
 router.post("/api/player/shop/checkouts", requirePortalAuth, async (req, res) => {
   try {
     const state = await getStateAsync();
-    if (!isShopServiceEnabled(state)) return res.status(503).json({ error: "The shop is currently disabled on this server." });
+    if (!isShopServiceEnabled(state)) {
+      res.status(503).json({ error: "The shop is currently disabled on this server." });
+      return;
+    }
     const checkout = createPlayerShopCheckout({
       state,
       session: req.portalSession!,
@@ -108,25 +129,37 @@ router.post("/api/player/shop/checkouts", requirePortalAuth, async (req, res) =>
     });
     await saveStateAsync(state);
     res.status(201).json(checkout);
-  } catch (error) { sendApiError(res, error); }
+  } catch (error) {
+    sendApiError(res, error);
+  }
 });
 
 router.get("/api/player/shop/checkouts/:checkoutId", requirePortalAuth, async (req, res) => {
   try {
     const state = await getStateAsync();
-    if (!isShopServiceEnabled(state)) return res.status(503).json({ error: "The shop is currently disabled on this server." });
+    if (!isShopServiceEnabled(state)) {
+      res.status(503).json({ error: "The shop is currently disabled on this server." });
+      return;
+    }
     res.json(getPlayerShopCheckout(state, req.portalSession!, getRouteParam(req.params.checkoutId, "checkoutId")));
-  } catch (error) { sendApiError(res, error, 404); }
+  } catch (error) {
+    sendApiError(res, error, 404);
+  }
 });
 
 router.post("/api/player/shop/checkouts/:checkoutId/confirm", requirePortalAuth, async (req, res) => {
   try {
     const state = await getStateAsync();
-    if (!isShopServiceEnabled(state)) return res.status(503).json({ error: "The shop is currently disabled on this server." });
+    if (!isShopServiceEnabled(state)) {
+      res.status(503).json({ error: "The shop is currently disabled on this server." });
+      return;
+    }
     const order = confirmPlayerShopCheckout(state, req.portalSession!, getRouteParam(req.params.checkoutId, "checkoutId"));
     await saveStateAsync(state);
     res.status(201).json(order);
-  } catch (error) { sendApiError(res, error); }
+  } catch (error) {
+    sendApiError(res, error);
+  }
 });
 
 router.get("/api/player/purchases", requirePortalAuth, async (req, res) => {
