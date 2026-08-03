@@ -9,6 +9,52 @@ export const MANIFEST_FILE = path.resolve(process.cwd(), "adm_manifest.json");
 
 const MAX_CANDIDATES = 6;
 
+type AdmFileMetric = {
+  downloads: number;
+  bytes: number;
+  failures: number;
+  lastDownloadedAt?: string;
+  lastBytes?: number;
+};
+
+const admDownloadMetrics = {
+  startedAt: new Date().toISOString(),
+  cycles: 0,
+  listRequests: 0,
+  listFailures: 0,
+  candidatesSeen: 0,
+  downloadUrlRequests: 0,
+  fileDownloads: 0,
+  downloadFailures: 0,
+  bytesDownloaded: 0,
+  lastCycleAt: undefined as string | undefined,
+  lastCycleDurationMs: 0,
+  maxCycleDurationMs: 0,
+  lastCandidateCount: 0,
+  lastDownloadedCount: 0,
+  lastDownloadedBytes: 0,
+  files: {} as Record<string, AdmFileMetric>,
+};
+
+function getAdmFileMetric(filePath: string): AdmFileMetric {
+  const key = safeLocalName(filePath);
+  return admDownloadMetrics.files[key] ||= { downloads: 0, bytes: 0, failures: 0 };
+}
+
+export function getAdmDownloadMetrics() {
+  const uptimeHours = Math.max(1 / 60, (Date.now() - new Date(admDownloadMetrics.startedAt).getTime()) / 3_600_000);
+  const bytesPerHour = admDownloadMetrics.bytesDownloaded / uptimeHours;
+  return {
+    ...admDownloadMetrics,
+    averageBytesPerCycle: admDownloadMetrics.cycles > 0 ? Math.round(admDownloadMetrics.bytesDownloaded / admDownloadMetrics.cycles) : 0,
+    projected30DayBytes: Math.round(bytesPerHour * 24 * 30),
+    files: Object.entries(admDownloadMetrics.files)
+      .map(([file, value]) => ({ file, ...value }))
+      .sort((a, b) => b.bytes - a.bytes)
+      .slice(0, 20),
+  };
+}
+
 export type NitradoEntry = {
   path: string;
   size?: number;
@@ -107,6 +153,7 @@ export async function getNitradoGameserverStatus(): Promise<NitradoGameserverSta
 }
 
 async function getDownloadUrl(filePath: string): Promise<string | null> {
+  admDownloadMetrics.downloadUrlRequests += 1;
   const json = await fetchJson(
     `https://api.nitrado.net/services/${SERVICE_ID}/gameservers/file_server/download?file=${encodeURIComponent(
       filePath,
@@ -141,6 +188,11 @@ function saveManifest(files: string[]) {
 
 export async function downloadADM() {
   ensureLogDir();
+  const cycleStarted = Date.now();
+  admDownloadMetrics.cycles += 1;
+  admDownloadMetrics.lastCycleAt = new Date().toISOString();
+  admDownloadMetrics.lastDownloadedCount = 0;
+  admDownloadMetrics.lastDownloadedBytes = 0;
 
   if (!process.env.NITRADO_TOKEN) {
     console.error("❌ NITRADO_TOKEN não definido");
@@ -149,11 +201,18 @@ export async function downloadADM() {
 
   console.log("📂 Listando arquivos ADM...");
 
-  const listJson = await fetchJson(
-    `https://api.nitrado.net/services/${SERVICE_ID}/gameservers/file_server/list?dir=${encodeURIComponent(
-      BASE_DIR,
-    )}`,
-  );
+  let listJson: any;
+  try {
+    admDownloadMetrics.listRequests += 1;
+    listJson = await fetchJson(
+      `https://api.nitrado.net/services/${SERVICE_ID}/gameservers/file_server/list?dir=${encodeURIComponent(
+        BASE_DIR,
+      )}`,
+    );
+  } catch (err) {
+    admDownloadMetrics.listFailures += 1;
+    throw err;
+  }
 
   const files: NitradoEntry[] = listJson?.data?.entries || [];
 
@@ -164,9 +223,14 @@ export async function downloadADM() {
     )
     .slice(0, MAX_CANDIDATES);
 
+  admDownloadMetrics.candidatesSeen += admFiles.length;
+  admDownloadMetrics.lastCandidateCount = admFiles.length;
+
   if (!admFiles.length) {
     console.log("⚠️ nenhum .ADM encontrado");
     saveManifest([]);
+    admDownloadMetrics.lastCycleDurationMs = Date.now() - cycleStarted;
+    admDownloadMetrics.maxCycleDurationMs = Math.max(admDownloadMetrics.maxCycleDurationMs, admDownloadMetrics.lastCycleDurationMs);
     return;
   }
 
@@ -189,13 +253,29 @@ export async function downloadADM() {
       fs.writeFileSync(localFile, text, "utf-8");
       downloadedLocalFiles.push(localFile);
 
-      console.log(`✅ ADM baixado: ${file.path} (${text.length} chars)`);
+      const bytes = Buffer.byteLength(text, "utf8");
+      const metric = getAdmFileMetric(file.path);
+      metric.downloads += 1;
+      metric.bytes += bytes;
+      metric.lastBytes = bytes;
+      metric.lastDownloadedAt = new Date().toISOString();
+      admDownloadMetrics.fileDownloads += 1;
+      admDownloadMetrics.bytesDownloaded += bytes;
+      admDownloadMetrics.lastDownloadedCount += 1;
+      admDownloadMetrics.lastDownloadedBytes += bytes;
+
+      console.log(`✅ ADM baixado: ${file.path} (${bytes} bytes)`);
     } catch (err) {
+      const metric = getAdmFileMetric(file.path);
+      metric.failures += 1;
+      admDownloadMetrics.downloadFailures += 1;
       console.error(`❌ erro baixando ${file.path}:`, err);
     }
   }
 
   saveManifest(downloadedLocalFiles);
+  admDownloadMetrics.lastCycleDurationMs = Date.now() - cycleStarted;
+  admDownloadMetrics.maxCycleDurationMs = Math.max(admDownloadMetrics.maxCycleDurationMs, admDownloadMetrics.lastCycleDurationMs);
 
   console.log(`📦 ${downloadedLocalFiles.length} arquivos ADM disponíveis`);
 }

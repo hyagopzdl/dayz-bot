@@ -66,6 +66,8 @@ import { registerDiscordCommands } from "../lib/discord/commands";
 import { applyServiceSettingsToCommandSettings, normalizeServiceSettings } from "../lib/serviceSettings";
 import { buildMapVotePollOptionText, buildMapVotePollQuestion, buildMapVotePublicWelcomePayload } from "../lib/discord/modules/map-vote/ui";
 import { downloadTextFile, uploadTextFile } from "../lib/nitradoFtp";
+import { getAdmDownloadMetrics } from "../lib/nitradoDownloader";
+import { getRuntimePerformanceMetrics } from "../lib/runtimeMetrics";
 
 const router = Router();
 startMapEventScheduler();
@@ -4373,7 +4375,8 @@ function renderAdminPanelHtml(token: string) {
               </div>
               <div class="card">
                 <div class="section-title">
-                  <div><h2>Neon activity</h2><div class="member-meta">Métricas do processo atual. Reiniciam após um novo deploy.</div></div>
+                  <div><h2>Performance diagnostics</h2><div class="member-meta">Neon persistence, payload composition, ADM bandwidth and main loop timing. Metrics reset after deploy.</div></div>
+                  <button id="performanceMetricsRefresh" class="ghost-btn" type="button">Refresh metrics</button>
                 </div>
                 <div id="neonPersistenceMetrics" class="settings-list"><div class="skeleton"></div></div>
               </div>
@@ -6230,11 +6233,18 @@ function renderAdminPanelHtml(token: string) {
       }).join('');
       if (metrics && state.persistenceMetrics) {
         const m = state.persistenceMetrics;
+        const adm = state.admDownloadMetrics || {};
+        const runtime = state.runtimeMetrics || {};
         const reasons = Object.entries(m.reasons || {})
           .map(([reason, value]) => ({ reason, ...(value || {}) }))
           .sort((a, b) => Number(b.contributedWrites || 0) - Number(a.contributedWrites || 0) || Number(b.saveRequests || 0) - Number(a.saveRequests || 0));
         const sections = Array.isArray(m.lastPayloadSections) ? m.lastPayloadSections : [];
+        const detailed = Array.isArray(m.detailedSections) ? m.detailedSections : [];
+        const recentWrites = Array.isArray(m.recentWrites) ? m.recentWrites.slice(-20).reverse() : [];
+        const admFiles = Array.isArray(adm.files) ? adm.files : [];
+        const recentCycles = Array.isArray(runtime.recentCycles) ? runtime.recentCycles.slice(-12).reverse() : [];
         const lastReasons = Array.isArray(m.lastWriteReasons) && m.lastWriteReasons.length ? m.lastWriteReasons.join(', ') : 'unknown';
+        const lastChanged = Array.isArray(m.lastChangedSections) && m.lastChangedSections.length ? m.lastChangedSections.join(', ') : 'none';
         const reasonRows = reasons.length ? reasons.map((item) =>
           '<tr><td><code>' + escapeHtml(item.reason) + '</code></td>' +
           '<td>' + Number(item.saveRequests || 0).toLocaleString() + '</td>' +
@@ -6242,26 +6252,66 @@ function renderAdminPanelHtml(token: string) {
           '<td>' + Number(item.contributedWrites || 0).toLocaleString() + '</td>' +
           '<td>' + formatBytes(Number(item.estimatedBytesWritten || 0)) + '</td></tr>'
         ).join('') : '<tr><td colspan="5" class="member-meta">No save requests recorded yet.</td></tr>';
-        const sectionRows = sections.length ? sections.map((item) =>
-          '<tr><td><code>' + escapeHtml(item.key) + '</code></td><td>' + formatBytes(Number(item.bytes || 0)) + '</td><td>' + (Number(m.lastPayloadBytes || 0) > 0 ? ((Number(item.bytes || 0) / Number(m.lastPayloadBytes || 1)) * 100).toFixed(1) + '%' : '0%') + '</td></tr>'
-        ).join('') : '<tr><td colspan="3" class="member-meta">Available after the first write in this process.</td></tr>';
-        metrics.innerHTML = '<div class="overview-grid" style="grid-template-columns:repeat(5,minmax(0,1fr))">' +
+        const sectionRows = sections.length ? sections.map((item) => {
+          const sectionMetric = (m.sections || {})[item.key] || {};
+          return '<tr><td><code>' + escapeHtml(item.key) + '</code></td>' +
+            '<td>' + Number(item.entries || 0).toLocaleString() + '</td>' +
+            '<td>' + formatBytes(Number(item.bytes || 0)) + '</td>' +
+            '<td>' + (Number(m.lastPayloadBytes || 0) > 0 ? ((Number(item.bytes || 0) / Number(m.lastPayloadBytes || 1)) * 100).toFixed(1) + '%' : '0%') + '</td>' +
+            '<td>' + Number(sectionMetric.changedWrites || 0).toLocaleString() + '</td>' +
+            '<td>' + formatBytes(Number(sectionMetric.cumulativeBytesWritten || 0)) + '</td></tr>';
+        }).join('') : '<tr><td colspan="6" class="member-meta">Available after the first write in this process.</td></tr>';
+        const detailCards = detailed.length ? detailed.map((section) => {
+          const fieldRows = Array.isArray(section.topFields) && section.topFields.length ? section.topFields.map((field) =>
+            '<tr><td><code>' + escapeHtml(field.field) + '</code></td><td>' + Number(field.presentIn || 0).toLocaleString() + '</td><td>' + formatBytes(Number(field.bytes || 0)) + '</td></tr>'
+          ).join('') : '<tr><td colspan="3" class="member-meta">No object fields available.</td></tr>';
+          return '<div class="settings-card"><div class="settings-card-head"><div><h3>' + escapeHtml(section.key) + '</h3><p>' + Number(section.entries || 0).toLocaleString() + ' entries · ' + formatBytes(Number(section.bytes || 0)) + ' · avg ' + formatBytes(Number(section.averageEntryBytes || 0)) + ' · max ' + formatBytes(Number(section.maxEntryBytes || 0)) + '</p></div></div>' +
+            '<div class="table-wrap"><table><thead><tr><th>Field</th><th>Present in</th><th>Estimated size</th></tr></thead><tbody>' + fieldRows + '</tbody></table></div></div>';
+        }).join('') : '<div class="settings-card"><div class="member-meta">Detailed analysis becomes available after the first write.</div></div>';
+        const writeRows = recentWrites.length ? recentWrites.map((item) =>
+          '<tr><td>' + escapeHtml(item.at ? relativeDate(item.at) : '-') + '</td><td>' + formatBytes(Number(item.bytes || 0)) + '</td><td>' + formatBytes(Number(item.changedBytes || 0)) + '</td><td>' + Number(item.durationMs || 0).toLocaleString() + ' ms</td><td><code>' + escapeHtml((item.reasons || []).join(', ')) + '</code></td><td>' + escapeHtml((item.changedSections || []).join(', ')) + '</td></tr>'
+        ).join('') : '<tr><td colspan="6" class="member-meta">No persisted writes yet.</td></tr>';
+        const admFileRows = admFiles.length ? admFiles.map((item) =>
+          '<tr><td><code>' + escapeHtml(item.file || '-') + '</code></td><td>' + Number(item.downloads || 0).toLocaleString() + '</td><td>' + formatBytes(Number(item.bytes || 0)) + '</td><td>' + formatBytes(Number(item.lastBytes || 0)) + '</td><td>' + Number(item.failures || 0).toLocaleString() + '</td></tr>'
+        ).join('') : '<tr><td colspan="5" class="member-meta">No ADM downloads recorded yet.</td></tr>';
+        const cycleRows = recentCycles.length ? recentCycles.map((item) =>
+          '<tr><td>' + escapeHtml(item.finishedAt ? relativeDate(item.finishedAt) : '-') + '</td><td>' + Number(item.durationMs || 0).toLocaleString() + ' ms</td><td>' + Number(item.downloadDurationMs || 0).toLocaleString() + ' ms</td><td>' + Number(item.parserDurationMs || 0).toLocaleString() + ' ms</td><td>' + (item.downloadOk ? 'OK' : 'Error') + '</td><td>' + (item.parserOk ? 'OK' : 'Error') + '</td></tr>'
+        ).join('') : '<tr><td colspan="6" class="member-meta">No main cycles recorded yet.</td></tr>';
+        metrics.innerHTML = '<div class="overview-grid" style="grid-template-columns:repeat(6,minmax(0,1fr))">' +
           '<div class="stat-card"><span>Reads</span><strong>' + Number(m.reads || 0).toLocaleString() + '</strong></div>' +
           '<div class="stat-card"><span>Save requests</span><strong>' + Number(m.saveRequests || 0).toLocaleString() + '</strong></div>' +
           '<div class="stat-card"><span>Writes</span><strong>' + Number(m.writes || 0).toLocaleString() + '</strong></div>' +
           '<div class="stat-card"><span>Skipped</span><strong>' + Number(m.skippedWrites || 0).toLocaleString() + '</strong></div>' +
+          '<div class="stat-card"><span>Write rate</span><strong>' + Number(m.writeRatePerHour || 0).toLocaleString() + '/h</strong></div>' +
+          '<div class="stat-card"><span>Failed writes</span><strong>' + Number(m.failedWrites || 0).toLocaleString() + '</strong></div>' +
           '<div class="stat-card"><span>Last payload</span><strong>' + formatBytes(Number(m.lastPayloadBytes || 0)) + '</strong></div>' +
+          '<div class="stat-card"><span>Average payload</span><strong>' + formatBytes(Number(m.averagePayloadBytes || 0)) + '</strong></div>' +
+          '<div class="stat-card"><span>Changed last write</span><strong>' + formatBytes(Number(m.lastChangedBytes || 0)) + '</strong></div>' +
+          '<div class="stat-card"><span>Total written</span><strong>' + formatBytes(Number(m.totalPayloadBytesWritten || 0)) + '</strong></div>' +
+          '<div class="stat-card"><span>Projected 30d</span><strong>' + formatBytes(Number(m.projected30DayPayloadBytes || 0)) + '</strong></div>' +
+          '<div class="stat-card"><span>Avg write time</span><strong>' + Number(m.averageWriteDurationMs || 0).toLocaleString() + ' ms</strong></div>' +
         '</div>' +
-        '<div class="member-meta" style="margin-top:10px">Last write: ' + escapeHtml(m.lastWriteAt ? relativeDate(m.lastWriteAt) : 'none in this process') + ' · Reasons: ' + escapeHtml(lastReasons) + '</div>' +
-        '<div class="settings-grid" style="margin-top:16px;grid-template-columns:minmax(0,1.35fr) minmax(280px,.65fr)">' +
-          '<div class="settings-card"><div class="settings-card-head"><div><h3>Writes by source</h3><p>One persisted write can include more than one source because saves are consolidated.</p></div></div>' +
-            '<div class="table-wrap"><table><thead><tr><th>Source</th><th>Requests</th><th>Skipped</th><th>Writes involved</th><th>Estimated bytes</th></tr></thead><tbody>' + reasonRows + '</tbody></table></div>' +
-          '</div>' +
-          '<div class="settings-card"><div class="settings-card-head"><div><h3>Last payload composition</h3><p>Largest top-level sections in the most recent state write.</p></div></div>' +
-            '<div class="table-wrap"><table><thead><tr><th>Section</th><th>Size</th><th>Share</th></tr></thead><tbody>' + sectionRows + '</tbody></table></div>' +
-          '</div>' +
+        '<div class="member-meta" style="margin-top:10px">Profiler started: ' + escapeHtml(m.startedAt ? relativeDate(m.startedAt) : '-') + ' · Last write: ' + escapeHtml(m.lastWriteAt ? relativeDate(m.lastWriteAt) : 'none') + ' · Reasons: ' + escapeHtml(lastReasons) + ' · Changed: ' + escapeHtml(lastChanged) + '</div>' +
+        '<div class="settings-grid" style="margin-top:16px;grid-template-columns:minmax(0,1.1fr) minmax(0,.9fr)">' +
+          '<div class="settings-card"><div class="settings-card-head"><div><h3>Writes by source</h3><p>Sources that requested saves and participated in persisted writes.</p></div></div><div class="table-wrap"><table><thead><tr><th>Source</th><th>Requests</th><th>Skipped</th><th>Writes involved</th><th>Estimated bytes</th></tr></thead><tbody>' + reasonRows + '</tbody></table></div></div>' +
+          '<div class="settings-card"><div class="settings-card-head"><div><h3>Payload sections</h3><p>Current size, entry count and how often each top-level section changed.</p></div></div><div class="table-wrap"><table><thead><tr><th>Section</th><th>Entries</th><th>Size</th><th>Share</th><th>Changed writes</th><th>Cumulative</th></tr></thead><tbody>' + sectionRows + '</tbody></table></div></div>' +
+        '</div>' +
+        '<div class="settings-card" style="margin-top:16px"><div class="settings-card-head"><div><h3>Recent persisted writes</h3><p>Last 20 writes with payload, effective changed bytes, source and changed sections.</p></div></div><div class="table-wrap"><table><thead><tr><th>When</th><th>Payload</th><th>Changed</th><th>Duration</th><th>Sources</th><th>Sections</th></tr></thead><tbody>' + writeRows + '</tbody></table></div></div>' +
+        '<div class="settings-grid" style="margin-top:16px;grid-template-columns:repeat(2,minmax(0,1fr))">' + detailCards + '</div>' +
+        '<div class="overview-grid" style="margin-top:20px;grid-template-columns:repeat(6,minmax(0,1fr))">' +
+          '<div class="stat-card"><span>ADM cycles</span><strong>' + Number(adm.cycles || 0).toLocaleString() + '</strong></div>' +
+          '<div class="stat-card"><span>ADM downloads</span><strong>' + Number(adm.fileDownloads || 0).toLocaleString() + '</strong></div>' +
+          '<div class="stat-card"><span>ADM downloaded</span><strong>' + formatBytes(Number(adm.bytesDownloaded || 0)) + '</strong></div>' +
+          '<div class="stat-card"><span>ADM projected 30d</span><strong>' + formatBytes(Number(adm.projected30DayBytes || 0)) + '</strong></div>' +
+          '<div class="stat-card"><span>Main cycles</span><strong>' + Number(runtime.cyclesCompleted || 0).toLocaleString() + '</strong></div>' +
+          '<div class="stat-card"><span>Avg cycle</span><strong>' + Number(runtime.averageCycleDurationMs || 0).toLocaleString() + ' ms</strong></div>' +
+        '</div>' +
+        '<div class="settings-grid" style="margin-top:16px;grid-template-columns:minmax(0,1fr) minmax(0,1fr)">' +
+          '<div class="settings-card"><div class="settings-card-head"><div><h3>ADM bandwidth by file</h3><p>Actual bytes downloaded from Nitrado during this process and a 30-day projection.</p></div></div><div class="table-wrap"><table><thead><tr><th>File</th><th>Downloads</th><th>Total</th><th>Last</th><th>Failures</th></tr></thead><tbody>' + admFileRows + '</tbody></table></div></div>' +
+          '<div class="settings-card"><div class="settings-card-head"><div><h3>Main loop timing</h3><p>Recent download and parser durations. Useful for Render CPU/runtime diagnosis.</p></div></div><div class="table-wrap"><table><thead><tr><th>When</th><th>Total</th><th>Download</th><th>Parser</th><th>Download</th><th>Parser</th></tr></thead><tbody>' + cycleRows + '</tbody></table></div></div>' +
         '</div>';
       }
+
     }
     async function loadServiceSettings() {
       if (state.serviceSettingsLoading) return;
@@ -6272,6 +6322,8 @@ function renderAdminPanelHtml(token: string) {
         const payload = await response.json();
         state.serviceSettings = payload.settings;
         state.persistenceMetrics = payload.persistenceMetrics;
+        state.admDownloadMetrics = payload.admDownloadMetrics;
+        state.runtimeMetrics = payload.runtimeMetrics;
         renderServiceSettings();
       } finally { state.serviceSettingsLoading = false; }
     }
@@ -6285,6 +6337,8 @@ function renderAdminPanelHtml(token: string) {
         const payload = await response.json();
         state.serviceSettings = payload.settings;
         state.persistenceMetrics = payload.persistenceMetrics;
+        state.admDownloadMetrics = payload.admDownloadMetrics;
+        state.runtimeMetrics = payload.runtimeMetrics;
         state.discordCommands = payload.commands || state.discordCommands;
         renderServiceSettings();
         if (state.discordCommands) renderDiscordCommands();
@@ -6870,6 +6924,7 @@ function renderAdminPanelHtml(token: string) {
     observer.observe(document.getElementById("memberSentinel"));
     const itemsObserver = new IntersectionObserver((entries) => { if (entries.some((entry) => entry.isIntersecting) && state.view === "items") loadDayzItems(false); }, { rootMargin: "520px" });
     itemsObserver.observe(document.getElementById("itemsSentinel"));
+    document.getElementById("performanceMetricsRefresh")?.addEventListener("click", () => loadServiceSettings());
     loadOverview();
     loadServiceSettings();
   </script>
@@ -6888,7 +6943,7 @@ router.get("/api/service-settings", async (req, res) => {
   try {
     const state = await getStateAsync();
     const settings = normalizeServiceSettings(state.serviceSettings);
-    res.json({ settings, persistenceMetrics: getStatePersistenceMetrics() });
+    res.json({ settings, persistenceMetrics: getStatePersistenceMetrics(), admDownloadMetrics: getAdmDownloadMetrics(), runtimeMetrics: getRuntimePerformanceMetrics() });
   } catch (err) {
     res.status(500).json({ error: String(err) });
   }
@@ -6920,6 +6975,8 @@ router.patch("/api/service-settings", async (req, res) => {
       settings: next,
       commands: listDiscordCommandDescriptors(effectiveCommandSettings),
       persistenceMetrics: getStatePersistenceMetrics(),
+      admDownloadMetrics: getAdmDownloadMetrics(),
+      runtimeMetrics: getRuntimePerformanceMetrics(),
     });
   } catch (err) {
     res.status(500).json({ error: String(err) });

@@ -34,18 +34,68 @@ type PersistenceReasonMetric = {
   lastWriteAt?: string;
 };
 
+type PersistenceSectionMetric = {
+  currentBytes: number;
+  currentEntries: number;
+  changedWrites: number;
+  cumulativeBytesWritten: number;
+  lastChangedAt?: string;
+  lastDeltaBytes?: number;
+};
+
+type PayloadFieldMetric = {
+  field: string;
+  bytes: number;
+  presentIn: number;
+};
+
+type PayloadSectionAnalysis = {
+  key: string;
+  bytes: number;
+  entries: number;
+  averageEntryBytes: number;
+  maxEntryBytes: number;
+  topFields: PayloadFieldMetric[];
+};
+
+type PersistenceWriteSample = {
+  at: string;
+  bytes: number;
+  durationMs: number;
+  reasons: string[];
+  changedSections: string[];
+  changedBytes: number;
+};
+
 const persistenceMetrics = {
+  startedAt: new Date().toISOString(),
   reads: 0,
   writes: 0,
+  failedWrites: 0,
   saveRequests: 0,
   skippedWrites: 0,
+  consolidatedWrites: 0,
+  totalPayloadBytesWritten: 0,
+  totalChangedBytes: 0,
+  totalWriteDurationMs: 0,
+  maxWriteDurationMs: 0,
+  lastWriteDurationMs: 0,
   lastReadAt: undefined as string | undefined,
   lastWriteAt: undefined as string | undefined,
+  lastWriteError: undefined as string | undefined,
   lastPayloadBytes: 0,
+  lastChangedBytes: 0,
+  lastChangedSections: [] as string[],
   lastWriteReasons: [] as string[],
   reasons: {} as Record<string, PersistenceReasonMetric>,
-  lastPayloadSections: [] as Array<{ key: string; bytes: number }>,
+  sections: {} as Record<string, PersistenceSectionMetric>,
+  lastPayloadSections: [] as Array<{ key: string; bytes: number; entries: number }>,
+  detailedSections: [] as PayloadSectionAnalysis[],
+  recentWrites: [] as PersistenceWriteSample[],
 };
+
+let lastSectionHashes: Record<string, string> = {};
+let lastSectionBytes: Record<string, number> = {};
 
 const sql = process.env.DATABASE_URL
   ? postgres(process.env.DATABASE_URL, {
@@ -588,11 +638,106 @@ function recordSaveRequest(reason: string) {
   metric.lastRequestedAt = now;
 }
 
-function measurePayloadSections(parsed: AppState) {
-  return Object.entries(parsed)
-    .map(([key, value]) => ({ key, bytes: Buffer.byteLength(JSON.stringify(value ?? null), "utf8") }))
-    .sort((a, b) => b.bytes - a.bytes)
-    .slice(0, 12);
+function countSectionEntries(value: unknown): number {
+  if (Array.isArray(value)) return value.length;
+  if (value && typeof value === "object") return Object.keys(value as Record<string, unknown>).length;
+  return value == null ? 0 : 1;
+}
+
+function analyzeSectionFields(value: unknown): { topFields: PayloadFieldMetric[]; averageEntryBytes: number; maxEntryBytes: number } {
+  const entries = Array.isArray(value)
+    ? value
+    : value && typeof value === "object"
+      ? Object.values(value as Record<string, unknown>)
+      : [];
+  if (!entries.length) return { topFields: [], averageEntryBytes: 0, maxEntryBytes: 0 };
+
+  const fieldTotals: Record<string, { bytes: number; presentIn: number }> = {};
+  let totalEntryBytes = 0;
+  let maxEntryBytes = 0;
+  for (const entry of entries.slice(0, 10000)) {
+    const entryBytes = Buffer.byteLength(JSON.stringify(entry ?? null), "utf8");
+    totalEntryBytes += entryBytes;
+    maxEntryBytes = Math.max(maxEntryBytes, entryBytes);
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
+    for (const [field, fieldValue] of Object.entries(entry as Record<string, unknown>)) {
+      const current = fieldTotals[field] ||= { bytes: 0, presentIn: 0 };
+      current.bytes += Buffer.byteLength(JSON.stringify(fieldValue ?? null), "utf8");
+      current.presentIn += 1;
+    }
+  }
+
+  return {
+    averageEntryBytes: Math.round(totalEntryBytes / entries.length),
+    maxEntryBytes,
+    topFields: Object.entries(fieldTotals)
+      .map(([field, metric]) => ({ field, ...metric }))
+      .sort((a, b) => b.bytes - a.bytes)
+      .slice(0, 12),
+  };
+}
+
+function analyzePayload(parsed: AppState, now: string) {
+  const allSections = Object.entries(parsed).map(([key, value]) => {
+    const serialized = JSON.stringify(value ?? null);
+    const bytes = Buffer.byteLength(serialized, "utf8");
+    const hash = crypto.createHash("sha1").update(serialized).digest("hex");
+    const changed = lastSectionHashes[key] !== hash;
+    const previousBytes = lastSectionBytes[key] || 0;
+    const entries = countSectionEntries(value);
+    const metric = persistenceMetrics.sections[key] ||= {
+      currentBytes: 0,
+      currentEntries: 0,
+      changedWrites: 0,
+      cumulativeBytesWritten: 0,
+    };
+    metric.currentBytes = bytes;
+    metric.currentEntries = entries;
+    if (changed) {
+      metric.changedWrites += 1;
+      metric.cumulativeBytesWritten += bytes;
+      metric.lastChangedAt = now;
+      metric.lastDeltaBytes = bytes - previousBytes;
+    }
+    lastSectionHashes[key] = hash;
+    lastSectionBytes[key] = bytes;
+    return { key, bytes, entries, changed, value };
+  });
+
+  const changed = allSections.filter((section) => section.changed);
+  const detailedKeys = new Set([
+    "players",
+    "currentKillStreaks",
+    "recentEventIds",
+    "dayzItems",
+    "files",
+    "economyTransactions",
+    "shopOrders",
+    "longShotEvents",
+    "killStreakEvents",
+  ]);
+
+  return {
+    sections: allSections
+      .map(({ key, bytes, entries }) => ({ key, bytes, entries }))
+      .sort((a, b) => b.bytes - a.bytes),
+    changedSections: changed.map((section) => section.key),
+    changedBytes: changed.reduce((sum, section) => sum + section.bytes, 0),
+    detailedSections: allSections
+      .filter((section) => detailedKeys.has(section.key))
+      .map((section) => {
+        const fieldAnalysis = analyzeSectionFields(section.value);
+        return {
+          key: section.key,
+          bytes: section.bytes,
+          entries: section.entries,
+          averageEntryBytes: fieldAnalysis.averageEntryBytes,
+          maxEntryBytes: fieldAnalysis.maxEntryBytes,
+          topFields: fieldAnalysis.topFields,
+        };
+      })
+      .sort((a, b) => b.bytes - a.bytes),
+  };
 }
 
 async function persistStateToNeon(serialized: string, hash: string, reasons: string[]) {
@@ -609,11 +754,18 @@ async function persistStateToNeon(serialized: string, hash: string, reasons: str
   const payloadBytes = Buffer.byteLength(serialized, "utf8");
   const uniqueReasons = [...new Set(reasons.length ? reasons : ["unknown"])];
 
+  const analysis = analyzePayload(parsed, now);
   persistenceMetrics.writes += 1;
   persistenceMetrics.lastWriteAt = now;
   persistenceMetrics.lastPayloadBytes = payloadBytes;
+  persistenceMetrics.lastChangedBytes = analysis.changedBytes;
+  persistenceMetrics.lastChangedSections = analysis.changedSections;
   persistenceMetrics.lastWriteReasons = uniqueReasons;
-  persistenceMetrics.lastPayloadSections = measurePayloadSections(parsed);
+  persistenceMetrics.lastPayloadSections = analysis.sections.slice(0, 24);
+  persistenceMetrics.detailedSections = analysis.detailedSections;
+  persistenceMetrics.totalPayloadBytesWritten += payloadBytes;
+  persistenceMetrics.totalChangedBytes += analysis.changedBytes;
+  if (uniqueReasons.length > 1) persistenceMetrics.consolidatedWrites += 1;
 
   const byteShare = Math.round(payloadBytes / uniqueReasons.length);
   for (const reason of uniqueReasons) {
@@ -623,18 +775,42 @@ async function persistStateToNeon(serialized: string, hash: string, reasons: str
     metric.lastWriteAt = now;
   }
 
-  await sql`
-    INSERT INTO bot_state (id, data, updated_at)
-    VALUES (${STATE_ID}, ${sql.json(parsed)}, NOW())
-    ON CONFLICT (id)
-    DO UPDATE SET
-      data = EXCLUDED.data,
-      updated_at = NOW()
-  `;
+  const writeStarted = Date.now();
+  try {
+    await sql`
+      INSERT INTO bot_state (id, data, updated_at)
+      VALUES (${STATE_ID}, ${sql.json(parsed)}, NOW())
+      ON CONFLICT (id)
+      DO UPDATE SET
+        data = EXCLUDED.data,
+        updated_at = NOW()
+    `;
+  } catch (err) {
+    persistenceMetrics.failedWrites += 1;
+    persistenceMetrics.lastWriteError = err instanceof Error ? err.message : String(err);
+    throw err;
+  } finally {
+    const durationMs = Date.now() - writeStarted;
+    persistenceMetrics.lastWriteDurationMs = durationMs;
+    persistenceMetrics.totalWriteDurationMs += durationMs;
+    persistenceMetrics.maxWriteDurationMs = Math.max(persistenceMetrics.maxWriteDurationMs, durationMs);
+  }
+
+  persistenceMetrics.recentWrites.push({
+    at: now,
+    bytes: payloadBytes,
+    durationMs: persistenceMetrics.lastWriteDurationMs,
+    reasons: uniqueReasons,
+    changedSections: analysis.changedSections,
+    changedBytes: analysis.changedBytes,
+  });
+  if (persistenceMetrics.recentWrites.length > 100) {
+    persistenceMetrics.recentWrites.splice(0, persistenceMetrics.recentWrites.length - 100);
+  }
 
   lastPersistedHash = hash;
   lastPersistedJson = serialized;
-  logStateDebug("💾 STATE SALVO NO NEON", { bytes: Buffer.byteLength(serialized, "utf8") });
+  logStateDebug("💾 STATE SALVO NO NEON", { bytes: payloadBytes, changedBytes: analysis.changedBytes, changedSections: analysis.changedSections });
 }
 
 async function flushPendingState() {
@@ -761,7 +937,22 @@ export async function getStateAsync(): Promise<AppState> {
 
 
 export function getStatePersistenceMetrics() {
-  return { ...persistenceMetrics };
+  const writes = Math.max(1, persistenceMetrics.writes);
+  const uptimeHours = Math.max(1 / 60, (Date.now() - new Date(persistenceMetrics.startedAt).getTime()) / 3_600_000);
+  const bytesPerHour = persistenceMetrics.totalPayloadBytesWritten / uptimeHours;
+  return {
+    ...persistenceMetrics,
+    averagePayloadBytes: Math.round(persistenceMetrics.totalPayloadBytesWritten / writes),
+    averageChangedBytes: Math.round(persistenceMetrics.totalChangedBytes / writes),
+    averageWriteDurationMs: Math.round(persistenceMetrics.totalWriteDurationMs / writes),
+    projected30DayPayloadBytes: Math.round(bytesPerHour * 24 * 30),
+    writeRatePerHour: Number((persistenceMetrics.writes / uptimeHours).toFixed(2)),
+    reasons: { ...persistenceMetrics.reasons },
+    sections: { ...persistenceMetrics.sections },
+    lastPayloadSections: [...persistenceMetrics.lastPayloadSections],
+    detailedSections: [...persistenceMetrics.detailedSections],
+    recentWrites: [...persistenceMetrics.recentWrites],
+  };
 }
 
 export async function saveStateAsync(data: AppState, reason?: string) {

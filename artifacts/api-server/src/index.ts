@@ -5,6 +5,7 @@ import { getLeaderboard } from "./lib/parser";
 import { startDiscordBot } from "./lib/discordBot";
 import { flushStateAsync } from "./lib/state";
 import { initializeShopCatalog } from "./lib/shopCatalog";
+import { recordMainCycleCompleted, recordMainCycleSkippedOverlap, recordMainCycleStarted } from "./lib/runtimeMetrics";
 
 function installStateFlushHooks() {
   let flushing = false;
@@ -39,26 +40,50 @@ let cycleRunning = false;
 
 async function runCycle() {
   if (cycleRunning) {
+    recordMainCycleSkippedOverlap();
     console.log("⏭️ ciclo ignorado: execução anterior ainda rodando");
     return;
   }
 
   cycleRunning = true;
+  recordMainCycleStarted();
+  const startedAt = new Date().toISOString();
+  const cycleStarted = Date.now();
+  let downloadDurationMs = 0;
+  let parserDurationMs = 0;
+  let downloadOk = true;
+  let parserOk = true;
   console.log("🔁 LOOP PRINCIPAL");
 
+  const downloadStarted = Date.now();
   try {
     await downloadADM();
   } catch (err) {
+    downloadOk = false;
     console.error("❌ erro download:", err);
+  } finally {
+    downloadDurationMs = Date.now() - downloadStarted;
   }
 
+  const parserStarted = Date.now();
   try {
     console.log("🔥 PARSER AUTOMÁTICO");
     await getLeaderboard();
   } catch (err) {
+    parserOk = false;
     console.error("❌ erro parser:", err);
   } finally {
+    parserDurationMs = Date.now() - parserStarted;
     cycleRunning = false;
+    recordMainCycleCompleted({
+      startedAt,
+      finishedAt: new Date().toISOString(),
+      durationMs: Date.now() - cycleStarted,
+      downloadDurationMs,
+      parserDurationMs,
+      downloadOk,
+      parserOk,
+    });
   }
 }
 
