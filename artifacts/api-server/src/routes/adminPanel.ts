@@ -6230,12 +6230,37 @@ function renderAdminPanelHtml(token: string) {
       }).join('');
       if (metrics && state.persistenceMetrics) {
         const m = state.persistenceMetrics;
-        metrics.innerHTML = '<div class="overview-grid" style="grid-template-columns:repeat(4,minmax(0,1fr))">' +
+        const reasons = Object.entries(m.reasons || {})
+          .map(([reason, value]) => ({ reason, ...(value || {}) }))
+          .sort((a, b) => Number(b.contributedWrites || 0) - Number(a.contributedWrites || 0) || Number(b.saveRequests || 0) - Number(a.saveRequests || 0));
+        const sections = Array.isArray(m.lastPayloadSections) ? m.lastPayloadSections : [];
+        const lastReasons = Array.isArray(m.lastWriteReasons) && m.lastWriteReasons.length ? m.lastWriteReasons.join(', ') : 'unknown';
+        const reasonRows = reasons.length ? reasons.map((item) =>
+          '<tr><td><code>' + escapeHtml(item.reason) + '</code></td>' +
+          '<td>' + Number(item.saveRequests || 0).toLocaleString() + '</td>' +
+          '<td>' + Number(item.skippedRequests || 0).toLocaleString() + '</td>' +
+          '<td>' + Number(item.contributedWrites || 0).toLocaleString() + '</td>' +
+          '<td>' + formatBytes(Number(item.estimatedBytesWritten || 0)) + '</td></tr>'
+        ).join('') : '<tr><td colspan="5" class="member-meta">No save requests recorded yet.</td></tr>';
+        const sectionRows = sections.length ? sections.map((item) =>
+          '<tr><td><code>' + escapeHtml(item.key) + '</code></td><td>' + formatBytes(Number(item.bytes || 0)) + '</td><td>' + (Number(m.lastPayloadBytes || 0) > 0 ? ((Number(item.bytes || 0) / Number(m.lastPayloadBytes || 1)) * 100).toFixed(1) + '%' : '0%') + '</td></tr>'
+        ).join('') : '<tr><td colspan="3" class="member-meta">Available after the first write in this process.</td></tr>';
+        metrics.innerHTML = '<div class="overview-grid" style="grid-template-columns:repeat(5,minmax(0,1fr))">' +
           '<div class="stat-card"><span>Reads</span><strong>' + Number(m.reads || 0).toLocaleString() + '</strong></div>' +
+          '<div class="stat-card"><span>Save requests</span><strong>' + Number(m.saveRequests || 0).toLocaleString() + '</strong></div>' +
           '<div class="stat-card"><span>Writes</span><strong>' + Number(m.writes || 0).toLocaleString() + '</strong></div>' +
           '<div class="stat-card"><span>Skipped</span><strong>' + Number(m.skippedWrites || 0).toLocaleString() + '</strong></div>' +
           '<div class="stat-card"><span>Last payload</span><strong>' + formatBytes(Number(m.lastPayloadBytes || 0)) + '</strong></div>' +
-        '</div><div class="member-meta" style="margin-top:10px">Last write: ' + escapeHtml(m.lastWriteAt ? relativeDate(m.lastWriteAt) : 'none in this process') + '</div>';
+        '</div>' +
+        '<div class="member-meta" style="margin-top:10px">Last write: ' + escapeHtml(m.lastWriteAt ? relativeDate(m.lastWriteAt) : 'none in this process') + ' · Reasons: ' + escapeHtml(lastReasons) + '</div>' +
+        '<div class="settings-grid" style="margin-top:16px;grid-template-columns:minmax(0,1.35fr) minmax(280px,.65fr)">' +
+          '<div class="settings-card"><div class="settings-card-head"><div><h3>Writes by source</h3><p>One persisted write can include more than one source because saves are consolidated.</p></div></div>' +
+            '<div class="table-wrap"><table><thead><tr><th>Source</th><th>Requests</th><th>Skipped</th><th>Writes involved</th><th>Estimated bytes</th></tr></thead><tbody>' + reasonRows + '</tbody></table></div>' +
+          '</div>' +
+          '<div class="settings-card"><div class="settings-card-head"><div><h3>Last payload composition</h3><p>Largest top-level sections in the most recent state write.</p></div></div>' +
+            '<div class="table-wrap"><table><thead><tr><th>Section</th><th>Size</th><th>Share</th></tr></thead><tbody>' + sectionRows + '</tbody></table></div>' +
+          '</div>' +
+        '</div>';
       }
     }
     async function loadServiceSettings() {

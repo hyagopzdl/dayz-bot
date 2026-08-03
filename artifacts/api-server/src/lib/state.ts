@@ -23,14 +23,28 @@ let pendingPersistHash = "";
 let pendingPersistStartedAt = 0;
 let saveTimer: NodeJS.Timeout | null = null;
 let flushPromise: Promise<void> | null = null;
+let pendingPersistReasons = new Set<string>();
+
+type PersistenceReasonMetric = {
+  saveRequests: number;
+  skippedRequests: number;
+  contributedWrites: number;
+  estimatedBytesWritten: number;
+  lastRequestedAt?: string;
+  lastWriteAt?: string;
+};
 
 const persistenceMetrics = {
   reads: 0,
   writes: 0,
+  saveRequests: 0,
   skippedWrites: 0,
   lastReadAt: undefined as string | undefined,
   lastWriteAt: undefined as string | undefined,
   lastPayloadBytes: 0,
+  lastWriteReasons: [] as string[],
+  reasons: {} as Record<string, PersistenceReasonMetric>,
+  lastPayloadSections: [] as Array<{ key: string; bytes: number }>,
 };
 
 const sql = process.env.DATABASE_URL
@@ -536,7 +550,52 @@ function logStateDebug(message: string, meta?: Record<string, unknown>) {
   }
 }
 
-async function persistStateToNeon(serialized: string, hash: string) {
+function normalizePersistenceReason(value?: string): string {
+  const explicit = String(value || "").trim();
+  if (explicit) return explicit.slice(0, 120);
+
+  const stack = new Error().stack || "";
+  const line = stack
+    .split("\n")
+    .map((entry) => entry.trim())
+    .find((entry) => entry.includes("/src/") && !entry.includes("/src/lib/state."));
+
+  if (!line) return "unknown";
+  const match = line.match(/\/src\/(.+?)(?::\d+:\d+|\)?$)/);
+  const source = (match?.[1] || line).replace(/\\/g, "/");
+  if (source.startsWith("lib/parser")) return "parser";
+  if (source.startsWith("lib/discord/")) return `discord:${source.split("/").slice(2, 4).join(":").replace(/\.(ts|js)$/, "")}`;
+  if (source.startsWith("routes/adminPanel")) return "admin-panel";
+  if (source.startsWith("routes/playerPortal")) return "player-portal";
+  if (source.startsWith("routes/admin")) return "admin-api";
+  return source.replace(/\.(ts|js)$/, "").slice(0, 120);
+}
+
+function getReasonMetric(reason: string): PersistenceReasonMetric {
+  return persistenceMetrics.reasons[reason] ||= {
+    saveRequests: 0,
+    skippedRequests: 0,
+    contributedWrites: 0,
+    estimatedBytesWritten: 0,
+  };
+}
+
+function recordSaveRequest(reason: string) {
+  const now = new Date().toISOString();
+  persistenceMetrics.saveRequests += 1;
+  const metric = getReasonMetric(reason);
+  metric.saveRequests += 1;
+  metric.lastRequestedAt = now;
+}
+
+function measurePayloadSections(parsed: AppState) {
+  return Object.entries(parsed)
+    .map(([key, value]) => ({ key, bytes: Buffer.byteLength(JSON.stringify(value ?? null), "utf8") }))
+    .sort((a, b) => b.bytes - a.bytes)
+    .slice(0, 12);
+}
+
+async function persistStateToNeon(serialized: string, hash: string, reasons: string[]) {
   if (!sql) return;
 
   if (hash === lastPersistedHash) {
@@ -546,10 +605,23 @@ async function persistStateToNeon(serialized: string, hash: string) {
   }
 
   const parsed = JSON.parse(serialized) as AppState;
+  const now = new Date().toISOString();
+  const payloadBytes = Buffer.byteLength(serialized, "utf8");
+  const uniqueReasons = [...new Set(reasons.length ? reasons : ["unknown"])];
 
   persistenceMetrics.writes += 1;
-  persistenceMetrics.lastWriteAt = new Date().toISOString();
-  persistenceMetrics.lastPayloadBytes = Buffer.byteLength(serialized, "utf8");
+  persistenceMetrics.lastWriteAt = now;
+  persistenceMetrics.lastPayloadBytes = payloadBytes;
+  persistenceMetrics.lastWriteReasons = uniqueReasons;
+  persistenceMetrics.lastPayloadSections = measurePayloadSections(parsed);
+
+  const byteShare = Math.round(payloadBytes / uniqueReasons.length);
+  for (const reason of uniqueReasons) {
+    const metric = getReasonMetric(reason);
+    metric.contributedWrites += 1;
+    metric.estimatedBytesWritten += byteShare;
+    metric.lastWriteAt = now;
+  }
 
   await sql`
     INSERT INTO bot_state (id, data, updated_at)
@@ -571,8 +643,10 @@ async function flushPendingState() {
 
   const serialized = pendingPersistJson;
   const hash = pendingPersistHash;
+  const reasons = [...pendingPersistReasons];
   pendingPersistJson = "";
   pendingPersistHash = "";
+  pendingPersistReasons = new Set<string>();
   pendingPersistStartedAt = 0;
 
   if (saveTimer) {
@@ -580,11 +654,12 @@ async function flushPendingState() {
     saveTimer = null;
   }
 
-  flushPromise = persistStateToNeon(serialized, hash)
+  flushPromise = persistStateToNeon(serialized, hash, reasons)
     .catch((err) => {
       console.error("❌ erro salvando state no Neon:", err);
       pendingPersistJson = serialized;
       pendingPersistHash = hash;
+      pendingPersistReasons = new Set([...pendingPersistReasons, ...reasons]);
       pendingPersistStartedAt = pendingPersistStartedAt || Date.now();
       scheduleNeonPersist();
     })
@@ -689,7 +764,9 @@ export function getStatePersistenceMetrics() {
   return { ...persistenceMetrics };
 }
 
-export async function saveStateAsync(data: AppState) {
+export async function saveStateAsync(data: AppState, reason?: string) {
+  const persistenceReason = normalizePersistenceReason(reason);
+  recordSaveRequest(persistenceReason);
   const persistedState = parseLastPersistedState();
   const shouldProtectMapRotation = !data.mapRotation && hasPersistedSpawnZones(persistedState?.mapRotation);
 
@@ -743,7 +820,9 @@ export async function saveStateAsync(data: AppState) {
   const hash = hashState(serialized);
 
   if (hash === lastPersistedHash || serialized === lastPersistedJson) {
-    logStateDebug("⏭️ STATE ignorado: sem alterações");
+    persistenceMetrics.skippedWrites += 1;
+    getReasonMetric(persistenceReason).skippedRequests += 1;
+    logStateDebug("⏭️ STATE ignorado: sem alterações", { reason: persistenceReason });
     return;
   }
 
@@ -758,6 +837,7 @@ export async function saveStateAsync(data: AppState) {
 
   pendingPersistJson = serialized;
   pendingPersistHash = hash;
+  pendingPersistReasons.add(persistenceReason);
   pendingPersistStartedAt = pendingPersistStartedAt || Date.now();
   scheduleNeonPersist();
 }
