@@ -6242,6 +6242,8 @@ function renderAdminPanelHtml(token: string) {
         const detailed = Array.isArray(m.detailedSections) ? m.detailedSections : [];
         const recentWrites = Array.isArray(m.recentWrites) ? m.recentWrites.slice(-20).reverse() : [];
         const admFiles = Array.isArray(adm.files) ? adm.files : [];
+        const admShadow = adm.shadow || {};
+        const shadowDecisions = Array.isArray(admShadow.recentDecisions) ? admShadow.recentDecisions.slice(-20).reverse() : [];
         const recentCycles = Array.isArray(runtime.recentCycles) ? runtime.recentCycles.slice(-12).reverse() : [];
         const lastReasons = Array.isArray(m.lastWriteReasons) && m.lastWriteReasons.length ? m.lastWriteReasons.join(', ') : 'unknown';
         const lastChanged = Array.isArray(m.lastChangedSections) && m.lastChangedSections.length ? m.lastChangedSections.join(', ') : 'none';
@@ -6274,6 +6276,16 @@ function renderAdminPanelHtml(token: string) {
         const admFileRows = admFiles.length ? admFiles.map((item) =>
           '<tr><td><code>' + escapeHtml(item.file || '-') + '</code></td><td>' + Number(item.downloads || 0).toLocaleString() + '</td><td>' + formatBytes(Number(item.bytes || 0)) + '</td><td>' + formatBytes(Number(item.lastBytes || 0)) + '</td><td>' + Number(item.failures || 0).toLocaleString() + '</td></tr>'
         ).join('') : '<tr><td colspan="5" class="member-meta">No ADM downloads recorded yet.</td></tr>';
+        const shadowRows = shadowDecisions.length ? shadowDecisions.map((item) =>
+          '<tr><td>' + escapeHtml(item.at ? relativeDate(item.at) : '-') + '</td>' +
+          '<td><code>' + escapeHtml(item.file || '-') + '</code></td>' +
+          '<td>' + escapeHtml(item.decision || '-') + '</td>' +
+          '<td>' + escapeHtml(item.reason || '-') + '</td>' +
+          '<td>' + (item.remoteSize == null ? '-' : formatBytes(Number(item.remoteSize || 0))) + '</td>' +
+          '<td>' + (item.localSize == null ? '-' : formatBytes(Number(item.localSize || 0))) + '</td>' +
+          '<td>' + (item.contentChanged == null ? 'New/local missing' : (item.contentChanged ? 'Changed' : 'Same')) + '</td>' +
+          '<td>' + (item.mismatch ? '<span class="chip" style="color:#ff7b7b">Mismatch</span>' : '<span class="chip online">OK</span>') + '</td></tr>'
+        ).join('') : '<tr><td colspan="8" class="member-meta">Shadow decisions become available after ADM downloads.</td></tr>';
         const cycleRows = recentCycles.length ? recentCycles.map((item) =>
           '<tr><td>' + escapeHtml(item.finishedAt ? relativeDate(item.finishedAt) : '-') + '</td><td>' + Number(item.durationMs || 0).toLocaleString() + ' ms</td><td>' + Number(item.downloadDurationMs || 0).toLocaleString() + ' ms</td><td>' + Number(item.parserDurationMs || 0).toLocaleString() + ' ms</td><td>' + (item.downloadOk ? 'OK' : 'Error') + '</td><td>' + (item.parserOk ? 'OK' : 'Error') + '</td></tr>'
         ).join('') : '<tr><td colspan="6" class="member-meta">No main cycles recorded yet.</td></tr>';
@@ -6305,6 +6317,19 @@ function renderAdminPanelHtml(token: string) {
           '<div class="stat-card"><span>ADM projected 30d</span><strong>' + formatBytes(Number(adm.projected30DayBytes || 0)) + '</strong></div>' +
           '<div class="stat-card"><span>Main cycles</span><strong>' + Number(runtime.cyclesCompleted || 0).toLocaleString() + '</strong></div>' +
           '<div class="stat-card"><span>Avg cycle</span><strong>' + Number(runtime.averageCycleDurationMs || 0).toLocaleString() + ' ms</strong></div>' +
+        '</div>' +
+        '<div class="settings-card" style="margin-top:16px">' +
+          '<div class="settings-card-head"><div><h3>ADM downloader shadow mode</h3><p>The legacy downloader remains fully active. The optimized strategy only simulates decisions and validates them against the files actually downloaded.</p></div><span class="chip ' + (Number(admShadow.dangerousSkips || 0) === 0 ? 'online' : '') + '">' + (Number(admShadow.dangerousSkips || 0) === 0 ? 'Safe so far' : 'Mismatch detected') + '</span></div>' +
+          '<div class="overview-grid" style="grid-template-columns:repeat(6,minmax(0,1fr))">' +
+            '<div class="stat-card"><span>Would download</span><strong>' + Number(admShadow.wouldDownload || 0).toLocaleString() + '</strong></div>' +
+            '<div class="stat-card"><span>Would skip</span><strong>' + Number(admShadow.wouldSkip || 0).toLocaleString() + '</strong></div>' +
+            '<div class="stat-card"><span>Safe skips</span><strong>' + Number(admShadow.safeSkips || 0).toLocaleString() + '</strong></div>' +
+            '<div class="stat-card"><span>Dangerous skips</span><strong>' + Number(admShadow.dangerousSkips || 0).toLocaleString() + '</strong></div>' +
+            '<div class="stat-card"><span>Estimated saved</span><strong>' + formatBytes(Number(admShadow.estimatedSavedBytes || 0)) + '</strong></div>' +
+            '<div class="stat-card"><span>Estimated reduction</span><strong>' + Number(admShadow.estimatedReductionPercent || 0).toLocaleString() + '%</strong></div>' +
+          '</div>' +
+          '<div class="member-meta" style="margin-top:12px">Remote metadata unavailable: ' + Number(admShadow.metadataUnavailable || 0).toLocaleString() + ' · Local missing: ' + Number(admShadow.localMissing || 0).toLocaleString() + ' · Size changed: ' + Number(admShadow.sizeMismatch || 0).toLocaleString() + '. Any uncertainty is treated as download.</div>' +
+          '<div class="table-wrap" style="margin-top:12px"><table><thead><tr><th>When</th><th>File</th><th>Decision</th><th>Reason</th><th>Remote</th><th>Local</th><th>Actual content</th><th>Validation</th></tr></thead><tbody>' + shadowRows + '</tbody></table></div>' +
         '</div>' +
         '<div class="settings-grid" style="margin-top:16px;grid-template-columns:minmax(0,1fr) minmax(0,1fr)">' +
           '<div class="settings-card"><div class="settings-card-head"><div><h3>ADM bandwidth by file</h3><p>Actual bytes downloaded from Nitrado during this process and a 30-day projection.</p></div></div><div class="table-wrap"><table><thead><tr><th>File</th><th>Downloads</th><th>Total</th><th>Last</th><th>Failures</th></tr></thead><tbody>' + admFileRows + '</tbody></table></div></div>' +

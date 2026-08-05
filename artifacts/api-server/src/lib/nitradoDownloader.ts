@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import fs from "fs";
 import path from "path";
 
@@ -15,6 +16,25 @@ type AdmFileMetric = {
   failures: number;
   lastDownloadedAt?: string;
   lastBytes?: number;
+  shadowWouldDownload: number;
+  shadowWouldSkip: number;
+  shadowSafeSkips: number;
+  shadowDangerousSkips: number;
+  shadowConservativeDownloads: number;
+  shadowEstimatedBytes: number;
+  shadowEstimatedSavedBytes: number;
+};
+
+type AdmShadowDecision = {
+  at: string;
+  file: string;
+  decision: "download" | "skip";
+  reason: string;
+  remoteSize: number | null;
+  localSize: number | null;
+  actualBytes: number;
+  contentChanged: boolean | null;
+  mismatch: boolean;
 };
 
 const admDownloadMetrics = {
@@ -34,11 +54,38 @@ const admDownloadMetrics = {
   lastDownloadedCount: 0,
   lastDownloadedBytes: 0,
   files: {} as Record<string, AdmFileMetric>,
+  shadow: {
+    mode: "legacy-with-shadow" as const,
+    decisions: 0,
+    wouldDownload: 0,
+    wouldSkip: 0,
+    safeSkips: 0,
+    dangerousSkips: 0,
+    conservativeDownloads: 0,
+    metadataUnavailable: 0,
+    localMissing: 0,
+    sizeMismatch: 0,
+    sameSize: 0,
+    estimatedOptimizedBytes: 0,
+    estimatedSavedBytes: 0,
+    recentDecisions: [] as AdmShadowDecision[],
+  },
 };
 
 function getAdmFileMetric(filePath: string): AdmFileMetric {
   const key = safeLocalName(filePath);
-  return admDownloadMetrics.files[key] ||= { downloads: 0, bytes: 0, failures: 0 };
+  return admDownloadMetrics.files[key] ||= {
+    downloads: 0,
+    bytes: 0,
+    failures: 0,
+    shadowWouldDownload: 0,
+    shadowWouldSkip: 0,
+    shadowSafeSkips: 0,
+    shadowDangerousSkips: 0,
+    shadowConservativeDownloads: 0,
+    shadowEstimatedBytes: 0,
+    shadowEstimatedSavedBytes: 0,
+  };
 }
 
 export function getAdmDownloadMetrics() {
@@ -48,6 +95,13 @@ export function getAdmDownloadMetrics() {
     ...admDownloadMetrics,
     averageBytesPerCycle: admDownloadMetrics.cycles > 0 ? Math.round(admDownloadMetrics.bytesDownloaded / admDownloadMetrics.cycles) : 0,
     projected30DayBytes: Math.round(bytesPerHour * 24 * 30),
+    shadow: {
+      ...admDownloadMetrics.shadow,
+      estimatedReductionPercent: admDownloadMetrics.bytesDownloaded > 0
+        ? Number(((admDownloadMetrics.shadow.estimatedSavedBytes / admDownloadMetrics.bytesDownloaded) * 100).toFixed(2))
+        : 0,
+      recentDecisions: [...admDownloadMetrics.shadow.recentDecisions],
+    },
     files: Object.entries(admDownloadMetrics.files)
       .map(([file, value]) => ({ file, ...value }))
       .sort((a, b) => b.bytes - a.bytes)
@@ -57,8 +111,11 @@ export function getAdmDownloadMetrics() {
 
 export type NitradoEntry = {
   path: string;
-  size?: number;
+  size?: number | string;
   type?: string;
+  modified_at?: string;
+  modified?: string;
+  mtime?: string | number;
 };
 
 type Manifest = {
@@ -74,6 +131,43 @@ function ensureLogDir() {
 
 function safeLocalName(remotePath: string) {
   return path.basename(remotePath).replace(/[^\w.-]/g, "_");
+}
+
+
+function normalizeRemoteSize(value: unknown): number | null {
+  const parsed = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+}
+
+function hashText(value: string): string {
+  return crypto.createHash("sha256").update(value, "utf8").digest("hex");
+}
+
+function addRecentShadowDecision(decision: AdmShadowDecision) {
+  admDownloadMetrics.shadow.recentDecisions.push(decision);
+  if (admDownloadMetrics.shadow.recentDecisions.length > 120) {
+    admDownloadMetrics.shadow.recentDecisions.splice(0, admDownloadMetrics.shadow.recentDecisions.length - 120);
+  }
+}
+
+function createShadowDecision(file: NitradoEntry, localFile: string) {
+  const remoteSize = normalizeRemoteSize(file.size);
+  const localExists = fs.existsSync(localFile);
+  const localSize = localExists ? fs.statSync(localFile).size : null;
+
+  if (!localExists) {
+    return { decision: "download" as const, reason: "local-missing", remoteSize, localSize };
+  }
+
+  if (remoteSize === null) {
+    return { decision: "download" as const, reason: "remote-size-unavailable", remoteSize, localSize };
+  }
+
+  if (localSize !== remoteSize) {
+    return { decision: "download" as const, reason: "size-changed", remoteSize, localSize };
+  }
+
+  return { decision: "skip" as const, reason: "same-size", remoteSize, localSize };
 }
 
 function extractDateFromAdmPath(filePath: string) {
@@ -241,6 +335,11 @@ export async function downloadADM() {
 
   for (const file of admFiles) {
     try {
+      const localFile = path.join(LOG_DIR, safeLocalName(file.path));
+      const shadowDecision = createShadowDecision(file, localFile);
+      const previousText = fs.existsSync(localFile) ? fs.readFileSync(localFile, "utf8") : null;
+      const previousHash = previousText === null ? null : hashText(previousText);
+
       const text = await downloadText(file.path);
 
       if (!text) {
@@ -248,13 +347,62 @@ export async function downloadADM() {
         continue;
       }
 
-      const localFile = path.join(LOG_DIR, safeLocalName(file.path));
+      const bytes = Buffer.byteLength(text, "utf8");
+      const downloadedHash = hashText(text);
+      const contentChanged = previousHash === null ? null : previousHash !== downloadedHash;
+      const mismatch = shadowDecision.decision === "skip" && contentChanged === true;
+      const metric = getAdmFileMetric(file.path);
+
+      admDownloadMetrics.shadow.decisions += 1;
+      if (shadowDecision.decision === "download") {
+        admDownloadMetrics.shadow.wouldDownload += 1;
+        admDownloadMetrics.shadow.estimatedOptimizedBytes += bytes;
+        metric.shadowWouldDownload += 1;
+        metric.shadowEstimatedBytes += bytes;
+        if (shadowDecision.reason === "remote-size-unavailable") {
+          admDownloadMetrics.shadow.metadataUnavailable += 1;
+          admDownloadMetrics.shadow.conservativeDownloads += 1;
+          metric.shadowConservativeDownloads += 1;
+        } else if (shadowDecision.reason === "local-missing") {
+          admDownloadMetrics.shadow.localMissing += 1;
+        } else if (shadowDecision.reason === "size-changed") {
+          admDownloadMetrics.shadow.sizeMismatch += 1;
+        }
+      } else {
+        admDownloadMetrics.shadow.wouldSkip += 1;
+        admDownloadMetrics.shadow.sameSize += 1;
+        admDownloadMetrics.shadow.estimatedSavedBytes += bytes;
+        metric.shadowWouldSkip += 1;
+        metric.shadowEstimatedSavedBytes += bytes;
+        if (mismatch) {
+          admDownloadMetrics.shadow.dangerousSkips += 1;
+          metric.shadowDangerousSkips += 1;
+        } else {
+          admDownloadMetrics.shadow.safeSkips += 1;
+          metric.shadowSafeSkips += 1;
+        }
+      }
+
+      addRecentShadowDecision({
+        at: new Date().toISOString(),
+        file: safeLocalName(file.path),
+        decision: shadowDecision.decision,
+        reason: shadowDecision.reason,
+        remoteSize: shadowDecision.remoteSize,
+        localSize: shadowDecision.localSize,
+        actualBytes: bytes,
+        contentChanged,
+        mismatch,
+      });
+
+      if (mismatch) {
+        console.warn(`⚠️ ADM shadow mismatch: ${file.path} tinha o mesmo tamanho, mas o conteúdo mudou. Legacy continua ativo.`);
+      }
 
       fs.writeFileSync(localFile, text, "utf-8");
       downloadedLocalFiles.push(localFile);
 
-      const bytes = Buffer.byteLength(text, "utf8");
-      const metric = getAdmFileMetric(file.path);
+      
       metric.downloads += 1;
       metric.bytes += bytes;
       metric.lastBytes = bytes;
