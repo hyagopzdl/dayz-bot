@@ -66,7 +66,7 @@ import { registerDiscordCommands } from "../lib/discord/commands";
 import { applyServiceSettingsToCommandSettings, normalizeServiceSettings } from "../lib/serviceSettings";
 import { buildMapVotePollOptionText, buildMapVotePollQuestion, buildMapVotePublicWelcomePayload } from "../lib/discord/modules/map-vote/ui";
 import { downloadTextFile, uploadTextFile } from "../lib/nitradoFtp";
-import { getAdmDownloadMetrics } from "../lib/nitradoDownloader";
+import { getAdmDownloadMetrics, setAdmDownloadMode } from "../lib/nitradoDownloader";
 import { getRuntimePerformanceMetrics } from "../lib/runtimeMetrics";
 
 const router = Router();
@@ -6243,6 +6243,7 @@ function renderAdminPanelHtml(token: string) {
         const recentWrites = Array.isArray(m.recentWrites) ? m.recentWrites.slice(-20).reverse() : [];
         const admFiles = Array.isArray(adm.files) ? adm.files : [];
         const admShadow = adm.shadow || {};
+        const admStrategy = adm.strategy || {};
         const shadowDecisions = Array.isArray(admShadow.recentDecisions) ? admShadow.recentDecisions.slice(-20).reverse() : [];
         const recentCycles = Array.isArray(runtime.recentCycles) ? runtime.recentCycles.slice(-12).reverse() : [];
         const lastReasons = Array.isArray(m.lastWriteReasons) && m.lastWriteReasons.length ? m.lastWriteReasons.join(', ') : 'unknown';
@@ -6319,7 +6320,16 @@ function renderAdminPanelHtml(token: string) {
           '<div class="stat-card"><span>Avg cycle</span><strong>' + Number(runtime.averageCycleDurationMs || 0).toLocaleString() + ' ms</strong></div>' +
         '</div>' +
         '<div class="settings-card" style="margin-top:16px">' +
-          '<div class="settings-card-head"><div><h3>ADM downloader shadow mode</h3><p>The legacy downloader remains fully active. The optimized strategy only simulates decisions and validates them against the files actually downloaded.</p></div><span class="chip ' + (Number(admShadow.dangerousSkips || 0) === 0 ? 'online' : '') + '">' + (Number(admShadow.dangerousSkips || 0) === 0 ? 'Safe so far' : 'Mismatch detected') + '</span></div>' +
+          '<div class="settings-card-head"><div><h3>ADM downloader strategy</h3><p>Legacy downloads every candidate. Shadow validates the optimized decision without skipping. Optimized always downloads the two newest files and safely reuses older unchanged local copies.</p></div><div style="display:flex;gap:10px;align-items:center"><select id="admDownloadModeSelect" class="field" style="min-width:150px"><option value="legacy"' + ((state.serviceSettings?.admDownloadMode || admStrategy.mode) === 'legacy' ? ' selected' : '') + '>Legacy</option><option value="shadow"' + ((state.serviceSettings?.admDownloadMode || admStrategy.mode) === 'shadow' ? ' selected' : '') + '>Shadow</option><option value="optimized"' + ((state.serviceSettings?.admDownloadMode || admStrategy.mode) === 'optimized' ? ' selected' : '') + '>Optimized</option></select><span class="chip ' + (Number(admStrategy.auditMismatches || 0) === 0 ? 'online' : '') + '">' + escapeHtml(String(admStrategy.mode || 'shadow')) + '</span></div></div>' +
+          '<div class="overview-grid" style="grid-template-columns:repeat(6,minmax(0,1fr));margin-bottom:12px">' +
+            '<div class="stat-card"><span>Optimized skips</span><strong>' + Number(admStrategy.optimizedSkips || 0).toLocaleString() + '</strong></div>' +
+            '<div class="stat-card"><span>Optimized downloads</span><strong>' + Number(admStrategy.optimizedDownloads || 0).toLocaleString() + '</strong></div>' +
+            '<div class="stat-card"><span>Actual saved</span><strong>' + formatBytes(Number(admStrategy.optimizedSavedBytes || 0)) + '</strong></div>' +
+            '<div class="stat-card"><span>Audit downloads</span><strong>' + Number(admStrategy.auditDownloads || 0).toLocaleString() + '</strong></div>' +
+            '<div class="stat-card"><span>Audit mismatches</span><strong>' + Number(admStrategy.auditMismatches || 0).toLocaleString() + '</strong></div>' +
+            '<div class="stat-card"><span>Auto fallbacks</span><strong>' + Number(admStrategy.automaticFallbacks || 0).toLocaleString() + '</strong></div>' +
+          '</div>' +
+          '<div class="member-meta" style="margin-bottom:12px">Optimized mode keeps the newest and previous ADM in conservative download mode. One older skipped file is force-audited every hour; any mismatch automatically falls back to Legacy.</div>' +
           '<div class="overview-grid" style="grid-template-columns:repeat(6,minmax(0,1fr))">' +
             '<div class="stat-card"><span>Would download</span><strong>' + Number(admShadow.wouldDownload || 0).toLocaleString() + '</strong></div>' +
             '<div class="stat-card"><span>Would skip</span><strong>' + Number(admShadow.wouldSkip || 0).toLocaleString() + '</strong></div>' +
@@ -6369,6 +6379,22 @@ function renderAdminPanelHtml(token: string) {
         if (state.discordCommands) renderDiscordCommands();
         showToast((key === 'shopEnabled' ? 'Shop service' : 'Presence history') + (nextValue ? ' ativado.' : ' desativado.'));
       } finally { button.disabled = false; }
+    }
+
+    async function updateAdmDownloadMode(mode, select) {
+      if (!['legacy','shadow','optimized'].includes(mode)) return;
+      if (select) select.disabled = true;
+      try {
+        const response = await apiFetch('/admin-panel/api/service-settings', { method:'PATCH', body:JSON.stringify({ admDownloadMode:mode }) });
+        if (!response.ok) { showToast(await response.text()); return; }
+        const payload = await response.json();
+        state.serviceSettings = payload.settings;
+        state.persistenceMetrics = payload.persistenceMetrics;
+        state.admDownloadMetrics = payload.admDownloadMetrics;
+        state.runtimeMetrics = payload.runtimeMetrics;
+        renderServiceSettings();
+        showToast('ADM downloader mode: ' + mode + '.');
+      } finally { if (select) select.disabled = false; }
     }
 
     function renderDiscordCommands() {
@@ -6950,6 +6976,7 @@ function renderAdminPanelHtml(token: string) {
     const itemsObserver = new IntersectionObserver((entries) => { if (entries.some((entry) => entry.isIntersecting) && state.view === "items") loadDayzItems(false); }, { rootMargin: "520px" });
     itemsObserver.observe(document.getElementById("itemsSentinel"));
     document.getElementById("performanceMetricsRefresh")?.addEventListener("click", () => loadServiceSettings());
+    document.addEventListener("change", (event) => { const select = event.target.closest("#admDownloadModeSelect"); if (select) updateAdmDownloadMode(select.value, select); });
     loadOverview();
     loadServiceSettings();
   </script>
@@ -6968,6 +6995,7 @@ router.get("/api/service-settings", async (req, res) => {
   try {
     const state = await getStateAsync();
     const settings = normalizeServiceSettings(state.serviceSettings);
+    setAdmDownloadMode(settings.admDownloadMode);
     res.json({ settings, persistenceMetrics: getStatePersistenceMetrics(), admDownloadMetrics: getAdmDownloadMetrics(), runtimeMetrics: getRuntimePerformanceMetrics() });
   } catch (err) {
     res.status(500).json({ error: String(err) });
@@ -6985,8 +7013,10 @@ router.patch("/api/service-settings", async (req, res) => {
       shopEnabled: typeof input.shopEnabled === "boolean" ? input.shopEnabled : current.shopEnabled,
       livePresenceEnabled: true,
       storePresenceHistory: typeof input.storePresenceHistory === "boolean" ? input.storePresenceHistory : current.storePresenceHistory,
+      admDownloadMode: input.admDownloadMode === "legacy" || input.admDownloadMode === "shadow" || input.admDownloadMode === "optimized" ? input.admDownloadMode : current.admDownloadMode,
     });
     state.serviceSettings = next;
+    setAdmDownloadMode(next.admDownloadMode);
     await saveStateAsync(state);
     await flushStateAsync();
 

@@ -9,6 +9,22 @@ export const LOG_DIR = path.resolve(process.cwd(), "adm_logs");
 export const MANIFEST_FILE = path.resolve(process.cwd(), "adm_manifest.json");
 
 const MAX_CANDIDATES = 6;
+const CONSERVATIVE_DOWNLOAD_COUNT = 2;
+const AUDIT_INTERVAL_CYCLES = 12;
+
+export type AdmDownloadMode = "legacy" | "shadow" | "optimized";
+
+let admDownloadMode: AdmDownloadMode = "shadow";
+let optimizedAuditCursor = 0;
+
+export function setAdmDownloadMode(mode: AdmDownloadMode) {
+  admDownloadMode = mode;
+  admDownloadMetrics.strategy.mode = mode;
+}
+
+export function getAdmDownloadMode(): AdmDownloadMode {
+  return admDownloadMode;
+}
 
 type AdmFileMetric = {
   downloads: number;
@@ -23,6 +39,9 @@ type AdmFileMetric = {
   shadowConservativeDownloads: number;
   shadowEstimatedBytes: number;
   shadowEstimatedSavedBytes: number;
+  optimizedSkips: number;
+  optimizedSavedBytes: number;
+  optimizedAudits: number;
 };
 
 type AdmShadowDecision = {
@@ -54,6 +73,17 @@ const admDownloadMetrics = {
   lastDownloadedCount: 0,
   lastDownloadedBytes: 0,
   files: {} as Record<string, AdmFileMetric>,
+  strategy: {
+    mode: "shadow" as AdmDownloadMode,
+    optimizedSkips: 0,
+    optimizedDownloads: 0,
+    optimizedSavedBytes: 0,
+    auditDownloads: 0,
+    auditMismatches: 0,
+    automaticFallbacks: 0,
+    lastFallbackAt: undefined as string | undefined,
+    lastFallbackReason: undefined as string | undefined,
+  },
   shadow: {
     mode: "legacy-with-shadow" as const,
     decisions: 0,
@@ -85,6 +115,9 @@ function getAdmFileMetric(filePath: string): AdmFileMetric {
     shadowConservativeDownloads: 0,
     shadowEstimatedBytes: 0,
     shadowEstimatedSavedBytes: 0,
+    optimizedSkips: 0,
+    optimizedSavedBytes: 0,
+    optimizedAudits: 0,
   };
 }
 
@@ -133,7 +166,6 @@ function safeLocalName(remotePath: string) {
   return path.basename(remotePath).replace(/[^\w.-]/g, "_");
 }
 
-
 function normalizeRemoteSize(value: unknown): number | null {
   const parsed = typeof value === "number" ? value : Number(value);
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
@@ -155,129 +187,82 @@ function createShadowDecision(file: NitradoEntry, localFile: string) {
   const localExists = fs.existsSync(localFile);
   const localSize = localExists ? fs.statSync(localFile).size : null;
 
-  if (!localExists) {
-    return { decision: "download" as const, reason: "local-missing", remoteSize, localSize };
-  }
-
-  if (remoteSize === null) {
-    return { decision: "download" as const, reason: "remote-size-unavailable", remoteSize, localSize };
-  }
-
-  if (localSize !== remoteSize) {
-    return { decision: "download" as const, reason: "size-changed", remoteSize, localSize };
-  }
-
+  if (!localExists) return { decision: "download" as const, reason: "local-missing", remoteSize, localSize };
+  if (remoteSize === null) return { decision: "download" as const, reason: "remote-size-unavailable", remoteSize, localSize };
+  if (localSize !== remoteSize) return { decision: "download" as const, reason: "size-changed", remoteSize, localSize };
   return { decision: "skip" as const, reason: "same-size", remoteSize, localSize };
 }
 
 function extractDateFromAdmPath(filePath: string) {
   const match = filePath.match(/_(\d{4}-\d{2}-\d{2})_(\d{2}-\d{2}-\d{2})/);
   if (!match) return 0;
-
   return new Date(`${match[1]}T${match[2].replace(/-/g, ":")}`).getTime();
 }
 
 async function fetchJson(url: string): Promise<any> {
-  const res = await fetch(url, {
-    headers: {
-      Authorization: `Bearer ${process.env.NITRADO_TOKEN}`,
-    },
-  });
-
-  if (!res.ok) {
-    throw new Error(`Nitrado HTTP ${res.status}: ${await res.text()}`);
-  }
-
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${process.env.NITRADO_TOKEN}` } });
+  if (!res.ok) throw new Error(`Nitrado HTTP ${res.status}: ${await res.text()}`);
   return (await res.json()) as any;
 }
 
-
-export type NitradoGameserverStatus = {
-  status: string | null;
-  raw: any;
-};
+export type NitradoGameserverStatus = { status: string | null; raw: any };
 
 function firstString(...values: any[]) {
-  for (const value of values) {
-    if (typeof value === "string" && value.trim()) return value.trim();
-  }
+  for (const value of values) if (typeof value === "string" && value.trim()) return value.trim();
   return null;
 }
 
 export async function getNitradoGameserverStatus(): Promise<NitradoGameserverStatus> {
-  if (!process.env.NITRADO_TOKEN) {
-    throw new Error("NITRADO_TOKEN não definido");
-  }
-
+  if (!process.env.NITRADO_TOKEN) throw new Error("NITRADO_TOKEN não definido");
   const serviceId = getNitradoServiceId();
-
-  const candidates = [
-    `https://api.nitrado.net/services/${serviceId}/gameservers`,
-    `https://api.nitrado.net/services/${serviceId}`,
-  ];
-
+  const candidates = [`https://api.nitrado.net/services/${serviceId}/gameservers`, `https://api.nitrado.net/services/${serviceId}`];
   const errors: string[] = [];
-
   for (const url of candidates) {
     try {
       const json = await fetchJson(url);
       const data = json?.data || json;
       const gameserver = data?.gameserver || data?.gameservers?.[0] || data;
       const service = data?.service || data?.services?.[0] || data;
-
-      const status = firstString(
-        gameserver?.status,
-        gameserver?.status_text,
-        gameserver?.query?.server_status,
-        gameserver?.query?.status,
-        service?.status,
-        service?.status_text,
-        data?.status,
-      );
-
+      const status = firstString(gameserver?.status, gameserver?.status_text, gameserver?.query?.server_status, gameserver?.query?.status, service?.status, service?.status_text, data?.status);
       console.log(`🧭 Nitrado status: ${status || "unknown"}`);
-
       return { status, raw: json };
     } catch (err: any) {
       errors.push(`${url}: ${err?.message || String(err)}`);
     }
   }
-
   throw new Error(`Unable to read Nitrado server status. ${errors.join(" | ")}`);
 }
 
 async function getDownloadUrl(filePath: string): Promise<string | null> {
   admDownloadMetrics.downloadUrlRequests += 1;
-  const json = await fetchJson(
-    `https://api.nitrado.net/services/${SERVICE_ID}/gameservers/file_server/download?file=${encodeURIComponent(
-      filePath,
-    )}`,
-  );
-
+  const json = await fetchJson(`https://api.nitrado.net/services/${SERVICE_ID}/gameservers/file_server/download?file=${encodeURIComponent(filePath)}`);
   return json?.data?.token?.url || null;
 }
 
 async function downloadText(filePath: string): Promise<string | null> {
   const url = await getDownloadUrl(filePath);
   if (!url) return null;
-
-  const finalUrl = `${url}&t=${Date.now()}`;
-  const res = await fetch(finalUrl);
-
-  if (!res.ok) {
-    throw new Error(`ADM download HTTP ${res.status}: ${await res.text()}`);
-  }
-
+  const res = await fetch(`${url}&t=${Date.now()}`);
+  if (!res.ok) throw new Error(`ADM download HTTP ${res.status}: ${await res.text()}`);
   return res.text();
 }
 
 function saveManifest(files: string[]) {
-  const manifest: Manifest = {
-    files,
-    updatedAt: new Date().toISOString(),
-  };
-
+  const manifest: Manifest = { files, updatedAt: new Date().toISOString() };
   fs.writeFileSync(MANIFEST_FILE, JSON.stringify(manifest, null, 2));
+}
+
+function shouldAuditOptimizedSkip(index: number, cycle: number): boolean {
+  if (cycle % AUDIT_INTERVAL_CYCLES !== 0) return false;
+  return index === optimizedAuditCursor;
+}
+
+function triggerAutomaticFallback(reason: string) {
+  admDownloadMetrics.strategy.automaticFallbacks += 1;
+  admDownloadMetrics.strategy.lastFallbackAt = new Date().toISOString();
+  admDownloadMetrics.strategy.lastFallbackReason = reason;
+  setAdmDownloadMode("legacy");
+  console.error(`🚨 ADM optimized downloader fallback para Legacy: ${reason}`);
 }
 
 export async function downloadADM() {
@@ -287,34 +272,27 @@ export async function downloadADM() {
   admDownloadMetrics.lastCycleAt = new Date().toISOString();
   admDownloadMetrics.lastDownloadedCount = 0;
   admDownloadMetrics.lastDownloadedBytes = 0;
+  admDownloadMetrics.strategy.mode = admDownloadMode;
 
   if (!process.env.NITRADO_TOKEN) {
     console.error("❌ NITRADO_TOKEN não definido");
     return;
   }
 
-  console.log("📂 Listando arquivos ADM...");
-
+  console.log(`📂 Listando arquivos ADM... modo=${admDownloadMode}`);
   let listJson: any;
   try {
     admDownloadMetrics.listRequests += 1;
-    listJson = await fetchJson(
-      `https://api.nitrado.net/services/${SERVICE_ID}/gameservers/file_server/list?dir=${encodeURIComponent(
-        BASE_DIR,
-      )}`,
-    );
+    listJson = await fetchJson(`https://api.nitrado.net/services/${SERVICE_ID}/gameservers/file_server/list?dir=${encodeURIComponent(BASE_DIR)}`);
   } catch (err) {
     admDownloadMetrics.listFailures += 1;
     throw err;
   }
 
   const files: NitradoEntry[] = listJson?.data?.entries || [];
-
   const admFiles = files
     .filter((f) => f.path?.endsWith(".ADM"))
-    .sort(
-      (a, b) => extractDateFromAdmPath(b.path) - extractDateFromAdmPath(a.path),
-    )
+    .sort((a, b) => extractDateFromAdmPath(b.path) - extractDateFromAdmPath(a.path))
     .slice(0, MAX_CANDIDATES);
 
   admDownloadMetrics.candidatesSeen += admFiles.length;
@@ -328,81 +306,97 @@ export async function downloadADM() {
     return;
   }
 
-  console.log("📂 candidatos ADM:");
-  admFiles.forEach((f) => console.log(`- ${f.path}`));
+  const availableLocalFiles: string[] = [];
+  const skippableIndexes = admFiles.map((_, index) => index).filter((index) => index >= CONSERVATIVE_DOWNLOAD_COUNT);
+  const auditIndex = skippableIndexes.length ? skippableIndexes[optimizedAuditCursor % skippableIndexes.length] : -1;
 
-  const downloadedLocalFiles: string[] = [];
+  for (let index = 0; index < admFiles.length; index++) {
+    const file = admFiles[index];
+    const localFile = path.join(LOG_DIR, safeLocalName(file.path));
+    const baseDecision = createShadowDecision(file, localFile);
+    const isConservative = index < CONSERVATIVE_DOWNLOAD_COUNT;
+    const shouldAudit = admDownloadMode === "optimized" && index === auditIndex && admDownloadMetrics.cycles % AUDIT_INTERVAL_CYCLES === 0;
+    const optimizedSkip = admDownloadMode === "optimized" && !isConservative && !shouldAudit && baseDecision.decision === "skip";
 
-  for (const file of admFiles) {
+    if (optimizedSkip) {
+      const metric = getAdmFileMetric(file.path);
+      const saved = baseDecision.remoteSize || baseDecision.localSize || 0;
+      metric.optimizedSkips += 1;
+      metric.optimizedSavedBytes += saved;
+      admDownloadMetrics.strategy.optimizedSkips += 1;
+      admDownloadMetrics.strategy.optimizedSavedBytes += saved;
+      availableLocalFiles.push(localFile);
+      addRecentShadowDecision({
+        at: new Date().toISOString(), file: safeLocalName(file.path), decision: "skip", reason: "optimized-stable-old-file",
+        remoteSize: baseDecision.remoteSize, localSize: baseDecision.localSize, actualBytes: 0, contentChanged: null, mismatch: false,
+      });
+      console.log(`⏭️ ADM estável reutilizado: ${file.path}`);
+      continue;
+    }
+
     try {
-      const localFile = path.join(LOG_DIR, safeLocalName(file.path));
-      const shadowDecision = createShadowDecision(file, localFile);
       const previousText = fs.existsSync(localFile) ? fs.readFileSync(localFile, "utf8") : null;
       const previousHash = previousText === null ? null : hashText(previousText);
-
       const text = await downloadText(file.path);
-
       if (!text) {
         console.log(`⚠️ sem URL de download: ${file.path}`);
+        if (fs.existsSync(localFile)) availableLocalFiles.push(localFile);
         continue;
       }
 
       const bytes = Buffer.byteLength(text, "utf8");
       const downloadedHash = hashText(text);
       const contentChanged = previousHash === null ? null : previousHash !== downloadedHash;
-      const mismatch = shadowDecision.decision === "skip" && contentChanged === true;
+      const shadowMismatch = baseDecision.decision === "skip" && contentChanged === true;
       const metric = getAdmFileMetric(file.path);
 
-      admDownloadMetrics.shadow.decisions += 1;
-      if (shadowDecision.decision === "download") {
-        admDownloadMetrics.shadow.wouldDownload += 1;
-        admDownloadMetrics.shadow.estimatedOptimizedBytes += bytes;
-        metric.shadowWouldDownload += 1;
-        metric.shadowEstimatedBytes += bytes;
-        if (shadowDecision.reason === "remote-size-unavailable") {
-          admDownloadMetrics.shadow.metadataUnavailable += 1;
-          admDownloadMetrics.shadow.conservativeDownloads += 1;
-          metric.shadowConservativeDownloads += 1;
-        } else if (shadowDecision.reason === "local-missing") {
-          admDownloadMetrics.shadow.localMissing += 1;
-        } else if (shadowDecision.reason === "size-changed") {
-          admDownloadMetrics.shadow.sizeMismatch += 1;
-        }
-      } else {
-        admDownloadMetrics.shadow.wouldSkip += 1;
-        admDownloadMetrics.shadow.sameSize += 1;
-        admDownloadMetrics.shadow.estimatedSavedBytes += bytes;
-        metric.shadowWouldSkip += 1;
-        metric.shadowEstimatedSavedBytes += bytes;
-        if (mismatch) {
-          admDownloadMetrics.shadow.dangerousSkips += 1;
-          metric.shadowDangerousSkips += 1;
+      if (admDownloadMode !== "legacy") {
+        admDownloadMetrics.shadow.decisions += 1;
+        const shadowDecision = isConservative ? { ...baseDecision, decision: "download" as const, reason: "conservative-recent-file" } : baseDecision;
+        if (shadowDecision.decision === "download") {
+          admDownloadMetrics.shadow.wouldDownload += 1;
+          admDownloadMetrics.shadow.estimatedOptimizedBytes += bytes;
+          metric.shadowWouldDownload += 1;
+          metric.shadowEstimatedBytes += bytes;
+          if (shadowDecision.reason === "remote-size-unavailable") admDownloadMetrics.shadow.metadataUnavailable += 1;
+          else if (shadowDecision.reason === "local-missing") admDownloadMetrics.shadow.localMissing += 1;
+          else if (shadowDecision.reason === "size-changed") admDownloadMetrics.shadow.sizeMismatch += 1;
+          else if (shadowDecision.reason === "conservative-recent-file") {
+            admDownloadMetrics.shadow.conservativeDownloads += 1;
+            metric.shadowConservativeDownloads += 1;
+          }
         } else {
-          admDownloadMetrics.shadow.safeSkips += 1;
-          metric.shadowSafeSkips += 1;
+          admDownloadMetrics.shadow.wouldSkip += 1;
+          admDownloadMetrics.shadow.sameSize += 1;
+          admDownloadMetrics.shadow.estimatedSavedBytes += bytes;
+          metric.shadowWouldSkip += 1;
+          metric.shadowEstimatedSavedBytes += bytes;
+          if (shadowMismatch) {
+            admDownloadMetrics.shadow.dangerousSkips += 1;
+            metric.shadowDangerousSkips += 1;
+          } else {
+            admDownloadMetrics.shadow.safeSkips += 1;
+            metric.shadowSafeSkips += 1;
+          }
         }
+
+        addRecentShadowDecision({
+          at: new Date().toISOString(), file: safeLocalName(file.path), decision: shadowDecision.decision, reason: shouldAudit ? "optimized-audit" : shadowDecision.reason,
+          remoteSize: baseDecision.remoteSize, localSize: baseDecision.localSize, actualBytes: bytes, contentChanged, mismatch: shadowMismatch,
+        });
       }
 
-      addRecentShadowDecision({
-        at: new Date().toISOString(),
-        file: safeLocalName(file.path),
-        decision: shadowDecision.decision,
-        reason: shadowDecision.reason,
-        remoteSize: shadowDecision.remoteSize,
-        localSize: shadowDecision.localSize,
-        actualBytes: bytes,
-        contentChanged,
-        mismatch,
-      });
-
-      if (mismatch) {
-        console.warn(`⚠️ ADM shadow mismatch: ${file.path} tinha o mesmo tamanho, mas o conteúdo mudou. Legacy continua ativo.`);
+      if (shouldAudit) {
+        metric.optimizedAudits += 1;
+        admDownloadMetrics.strategy.auditDownloads += 1;
+        if (shadowMismatch) {
+          admDownloadMetrics.strategy.auditMismatches += 1;
+          triggerAutomaticFallback(`audit mismatch em ${safeLocalName(file.path)}`);
+        }
       }
 
       fs.writeFileSync(localFile, text, "utf-8");
-      downloadedLocalFiles.push(localFile);
-
-      
+      availableLocalFiles.push(localFile);
       metric.downloads += 1;
       metric.bytes += bytes;
       metric.lastBytes = bytes;
@@ -411,21 +405,25 @@ export async function downloadADM() {
       admDownloadMetrics.bytesDownloaded += bytes;
       admDownloadMetrics.lastDownloadedCount += 1;
       admDownloadMetrics.lastDownloadedBytes += bytes;
-
+      if (admDownloadMode === "optimized") admDownloadMetrics.strategy.optimizedDownloads += 1;
       console.log(`✅ ADM baixado: ${file.path} (${bytes} bytes)`);
     } catch (err) {
       const metric = getAdmFileMetric(file.path);
       metric.failures += 1;
       admDownloadMetrics.downloadFailures += 1;
       console.error(`❌ erro baixando ${file.path}:`, err);
+      if (fs.existsSync(localFile)) availableLocalFiles.push(localFile);
     }
   }
 
-  saveManifest(downloadedLocalFiles);
+  if (admDownloadMode === "optimized" && skippableIndexes.length && admDownloadMetrics.cycles % AUDIT_INTERVAL_CYCLES === 0) {
+    optimizedAuditCursor = (optimizedAuditCursor + 1) % skippableIndexes.length;
+  }
+
+  saveManifest(availableLocalFiles);
   admDownloadMetrics.lastCycleDurationMs = Date.now() - cycleStarted;
   admDownloadMetrics.maxCycleDurationMs = Math.max(admDownloadMetrics.maxCycleDurationMs, admDownloadMetrics.lastCycleDurationMs);
-
-  console.log(`📦 ${downloadedLocalFiles.length} arquivos ADM disponíveis`);
+  console.log(`📦 ${availableLocalFiles.length} arquivos ADM disponíveis`);
 }
 
 function getNitradoServiceId() {

@@ -1,15 +1,19 @@
 import { normalizeDiscordCommandSettings, type DiscordCommandSettings } from "./discord/commandSettings";
 
+export type AdmDownloadMode = "legacy" | "shadow" | "optimized";
+
 export type ServiceSettings = {
   shopEnabled: boolean;
   livePresenceEnabled: boolean;
   storePresenceHistory: boolean;
+  admDownloadMode: AdmDownloadMode;
 };
 
 export const DEFAULT_SERVICE_SETTINGS: ServiceSettings = {
   shopEnabled: true,
   livePresenceEnabled: true,
   storePresenceHistory: true,
+  admDownloadMode: "shadow",
 };
 
 export function normalizeServiceSettings(value: unknown): ServiceSettings {
@@ -17,10 +21,15 @@ export function normalizeServiceSettings(value: unknown): ServiceSettings {
     ? value as Record<string, unknown>
     : {};
 
+  const admDownloadMode = raw.admDownloadMode === "legacy" || raw.admDownloadMode === "optimized"
+    ? raw.admDownloadMode
+    : "shadow";
+
   return {
     shopEnabled: raw.shopEnabled !== false,
     livePresenceEnabled: raw.livePresenceEnabled !== false,
     storePresenceHistory: raw.storePresenceHistory !== false,
+    admDownloadMode,
   };
 }
 

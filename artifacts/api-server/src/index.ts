@@ -1,11 +1,12 @@
 import app from "./app";
 import { logger } from "./lib/logger";
-import { downloadADM } from "./lib/nitradoDownloader";
+import { downloadADM, setAdmDownloadMode } from "./lib/nitradoDownloader";
 import { getLeaderboard } from "./lib/parser";
 import { startDiscordBot } from "./lib/discordBot";
-import { flushStateAsync } from "./lib/state";
+import { flushStateAsync, getStateAsync } from "./lib/state";
 import { initializeShopCatalog } from "./lib/shopCatalog";
 import { recordMainCycleCompleted, recordMainCycleSkippedOverlap, recordMainCycleStarted } from "./lib/runtimeMetrics";
+import { normalizeServiceSettings } from "./lib/serviceSettings";
 
 function installStateFlushHooks() {
   let flushing = false;
@@ -98,6 +99,16 @@ function startServer(port: number) {
     console.log(`🚀 Running on http://${HOST}:${port}`);
 
     logger.info({ port }, "Server listening");
+
+    try {
+      const state = await getStateAsync();
+      const settings = normalizeServiceSettings(state.serviceSettings);
+      setAdmDownloadMode(settings.admDownloadMode);
+      console.log(`📥 ADM download mode: ${settings.admDownloadMode}`);
+    } catch (err) {
+      console.error("❌ unable to initialize ADM download mode; using shadow:", err);
+      setAdmDownloadMode("shadow");
+    }
 
     try {
       await initializeShopCatalog();
