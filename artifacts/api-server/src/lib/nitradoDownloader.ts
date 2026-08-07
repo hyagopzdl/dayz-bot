@@ -9,13 +9,16 @@ export const LOG_DIR = path.resolve(process.cwd(), "adm_logs");
 export const MANIFEST_FILE = path.resolve(process.cwd(), "adm_manifest.json");
 
 const MAX_CANDIDATES = 6;
-const CONSERVATIVE_DOWNLOAD_COUNT = 2;
+const ACTIVE_FILE_INDEX = 0;
+const PREVIOUS_FILE_INDEX = 1;
+const PREVIOUS_FILE_STABILITY_MS = 30 * 60 * 1000;
 const AUDIT_INTERVAL_CYCLES = 12;
 
 export type AdmDownloadMode = "legacy" | "shadow" | "optimized";
 
 let admDownloadMode: AdmDownloadMode = "shadow";
 let optimizedAuditCursor = 0;
+let previousFileTracker: { file?: string; stableSince?: number } = {};
 
 export function setAdmDownloadMode(mode: AdmDownloadMode) {
   admDownloadMode = mode;
@@ -81,6 +84,8 @@ const admDownloadMetrics = {
     auditDownloads: 0,
     auditMismatches: 0,
     automaticFallbacks: 0,
+    previousGraceDownloads: 0,
+    previousStableSkips: 0,
     lastFallbackAt: undefined as string | undefined,
     lastFallbackReason: undefined as string | undefined,
   },
@@ -252,9 +257,56 @@ function saveManifest(files: string[]) {
   fs.writeFileSync(MANIFEST_FILE, JSON.stringify(manifest, null, 2));
 }
 
-function shouldAuditOptimizedSkip(index: number, cycle: number): boolean {
-  if (cycle % AUDIT_INTERVAL_CYCLES !== 0) return false;
-  return index === optimizedAuditCursor;
+function updatePreviousFileStability(admFiles: NitradoEntry[]) {
+  const previous = admFiles[PREVIOUS_FILE_INDEX];
+  const previousPath = previous?.path;
+
+  if (!previousPath) {
+    previousFileTracker = {};
+    return;
+  }
+
+  if (previousFileTracker.file !== previousPath) {
+    previousFileTracker = { file: previousPath };
+  }
+}
+
+function getOptimizedDecision(
+  file: NitradoEntry,
+  index: number,
+  baseDecision: ReturnType<typeof createShadowDecision>,
+) {
+  if (index === ACTIVE_FILE_INDEX) {
+    return { decision: "download" as const, reason: "conservative-active-file" };
+  }
+
+  if (baseDecision.decision === "download") {
+    if (index === PREVIOUS_FILE_INDEX && previousFileTracker.file === file.path) {
+      previousFileTracker.stableSince = undefined;
+    }
+    return baseDecision;
+  }
+
+  if (index === PREVIOUS_FILE_INDEX) {
+    const now = Date.now();
+    if (previousFileTracker.file !== file.path) {
+      previousFileTracker = { file: file.path, stableSince: now };
+      return { decision: "download" as const, reason: "previous-file-grace-window" };
+    }
+
+    if (!previousFileTracker.stableSince) {
+      previousFileTracker.stableSince = now;
+      return { decision: "download" as const, reason: "previous-file-grace-window" };
+    }
+
+    if (now - previousFileTracker.stableSince < PREVIOUS_FILE_STABILITY_MS) {
+      return { decision: "download" as const, reason: "previous-file-grace-window" };
+    }
+
+    return { decision: "skip" as const, reason: "optimized-stable-previous-file" };
+  }
+
+  return { decision: "skip" as const, reason: "optimized-stable-old-file" };
 }
 
 function triggerAutomaticFallback(reason: string) {
@@ -307,16 +359,24 @@ export async function downloadADM() {
   }
 
   const availableLocalFiles: string[] = [];
-  const skippableIndexes = admFiles.map((_, index) => index).filter((index) => index >= CONSERVATIVE_DOWNLOAD_COUNT);
-  const auditIndex = skippableIndexes.length ? skippableIndexes[optimizedAuditCursor % skippableIndexes.length] : -1;
+  updatePreviousFileStability(admFiles);
 
-  for (let index = 0; index < admFiles.length; index++) {
-    const file = admFiles[index];
+  const candidateDecisions = admFiles.map((file, index) => {
     const localFile = path.join(LOG_DIR, safeLocalName(file.path));
     const baseDecision = createShadowDecision(file, localFile);
-    const isConservative = index < CONSERVATIVE_DOWNLOAD_COUNT;
+    const optimizedDecision = getOptimizedDecision(file, index, baseDecision);
+    return { file, index, localFile, baseDecision, optimizedDecision };
+  });
+
+  const skippableIndexes = candidateDecisions
+    .filter((item) => item.optimizedDecision.decision === "skip")
+    .map((item) => item.index);
+  const auditIndex = skippableIndexes.length ? skippableIndexes[optimizedAuditCursor % skippableIndexes.length] : -1;
+
+  for (const candidate of candidateDecisions) {
+    const { file, index, localFile, baseDecision, optimizedDecision } = candidate;
     const shouldAudit = admDownloadMode === "optimized" && index === auditIndex && admDownloadMetrics.cycles % AUDIT_INTERVAL_CYCLES === 0;
-    const optimizedSkip = admDownloadMode === "optimized" && !isConservative && !shouldAudit && baseDecision.decision === "skip";
+    const optimizedSkip = admDownloadMode === "optimized" && !shouldAudit && optimizedDecision.decision === "skip";
 
     if (optimizedSkip) {
       const metric = getAdmFileMetric(file.path);
@@ -325,9 +385,10 @@ export async function downloadADM() {
       metric.optimizedSavedBytes += saved;
       admDownloadMetrics.strategy.optimizedSkips += 1;
       admDownloadMetrics.strategy.optimizedSavedBytes += saved;
+      if (index === PREVIOUS_FILE_INDEX) admDownloadMetrics.strategy.previousStableSkips += 1;
       availableLocalFiles.push(localFile);
       addRecentShadowDecision({
-        at: new Date().toISOString(), file: safeLocalName(file.path), decision: "skip", reason: "optimized-stable-old-file",
+        at: new Date().toISOString(), file: safeLocalName(file.path), decision: "skip", reason: optimizedDecision.reason,
         remoteSize: baseDecision.remoteSize, localSize: baseDecision.localSize, actualBytes: 0, contentChanged: null, mismatch: false,
       });
       console.log(`⏭️ ADM estável reutilizado: ${file.path}`);
@@ -352,7 +413,7 @@ export async function downloadADM() {
 
       if (admDownloadMode !== "legacy") {
         admDownloadMetrics.shadow.decisions += 1;
-        const shadowDecision = isConservative ? { ...baseDecision, decision: "download" as const, reason: "conservative-recent-file" } : baseDecision;
+        const shadowDecision = optimizedDecision;
         if (shadowDecision.decision === "download") {
           admDownloadMetrics.shadow.wouldDownload += 1;
           admDownloadMetrics.shadow.estimatedOptimizedBytes += bytes;
@@ -361,9 +422,12 @@ export async function downloadADM() {
           if (shadowDecision.reason === "remote-size-unavailable") admDownloadMetrics.shadow.metadataUnavailable += 1;
           else if (shadowDecision.reason === "local-missing") admDownloadMetrics.shadow.localMissing += 1;
           else if (shadowDecision.reason === "size-changed") admDownloadMetrics.shadow.sizeMismatch += 1;
-          else if (shadowDecision.reason === "conservative-recent-file") {
+          else if (shadowDecision.reason === "conservative-active-file" || shadowDecision.reason === "previous-file-grace-window") {
             admDownloadMetrics.shadow.conservativeDownloads += 1;
             metric.shadowConservativeDownloads += 1;
+            if (shadowDecision.reason === "previous-file-grace-window") {
+              admDownloadMetrics.strategy.previousGraceDownloads += 1;
+            }
           }
         } else {
           admDownloadMetrics.shadow.wouldSkip += 1;

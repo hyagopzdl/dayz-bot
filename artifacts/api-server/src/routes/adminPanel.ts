@@ -6284,7 +6284,7 @@ function renderAdminPanelHtml(token: string) {
           '<td>' + escapeHtml(item.reason || '-') + '</td>' +
           '<td>' + (item.remoteSize == null ? '-' : formatBytes(Number(item.remoteSize || 0))) + '</td>' +
           '<td>' + (item.localSize == null ? '-' : formatBytes(Number(item.localSize || 0))) + '</td>' +
-          '<td>' + (item.contentChanged == null ? 'New/local missing' : (item.contentChanged ? 'Changed' : 'Same')) + '</td>' +
+          '<td>' + (item.contentChanged == null ? (item.decision === 'skip' ? 'Reused local copy' : 'New/local missing') : (item.contentChanged ? 'Changed' : 'Same')) + '</td>' +
           '<td>' + (item.mismatch ? '<span class="chip" style="color:#ff7b7b">Mismatch</span>' : '<span class="chip online">OK</span>') + '</td></tr>'
         ).join('') : '<tr><td colspan="8" class="member-meta">Shadow decisions become available after ADM downloads.</td></tr>';
         const cycleRows = recentCycles.length ? recentCycles.map((item) =>
@@ -6320,16 +6320,18 @@ function renderAdminPanelHtml(token: string) {
           '<div class="stat-card"><span>Avg cycle</span><strong>' + Number(runtime.averageCycleDurationMs || 0).toLocaleString() + ' ms</strong></div>' +
         '</div>' +
         '<div class="settings-card" style="margin-top:16px">' +
-          '<div class="settings-card-head"><div><h3>ADM downloader strategy</h3><p>Legacy downloads every candidate. Shadow validates the optimized decision without skipping. Optimized always downloads the two newest files and safely reuses older unchanged local copies.</p></div><div style="display:flex;gap:10px;align-items:center"><select id="admDownloadModeSelect" class="field" style="min-width:150px"><option value="legacy"' + ((state.serviceSettings?.admDownloadMode || admStrategy.mode) === 'legacy' ? ' selected' : '') + '>Legacy</option><option value="shadow"' + ((state.serviceSettings?.admDownloadMode || admStrategy.mode) === 'shadow' ? ' selected' : '') + '>Shadow</option><option value="optimized"' + ((state.serviceSettings?.admDownloadMode || admStrategy.mode) === 'optimized' ? ' selected' : '') + '>Optimized</option></select><span class="chip ' + (Number(admStrategy.auditMismatches || 0) === 0 ? 'online' : '') + '">' + escapeHtml(String(admStrategy.mode || 'shadow')) + '</span></div></div>' +
-          '<div class="overview-grid" style="grid-template-columns:repeat(6,minmax(0,1fr));margin-bottom:12px">' +
+          '<div class="settings-card-head"><div><h3>ADM downloader strategy</h3><p>Legacy downloads every candidate. Shadow validates optimized decisions without skipping. Optimized always downloads the active ADM; the previous ADM stays conservative until it is unchanged for 30 minutes, then stable files are reused.</p></div><div style="display:flex;gap:10px;align-items:center"><select id="admDownloadModeSelect" class="field" style="min-width:150px"><option value="legacy"' + ((state.serviceSettings?.admDownloadMode || admStrategy.mode) === 'legacy' ? ' selected' : '') + '>Legacy</option><option value="shadow"' + ((state.serviceSettings?.admDownloadMode || admStrategy.mode) === 'shadow' ? ' selected' : '') + '>Shadow</option><option value="optimized"' + ((state.serviceSettings?.admDownloadMode || admStrategy.mode) === 'optimized' ? ' selected' : '') + '>Optimized</option></select><span class="chip ' + (Number(admStrategy.auditMismatches || 0) === 0 ? 'online' : '') + '">' + escapeHtml(String(admStrategy.mode || 'shadow')) + '</span></div></div>' +
+          '<div class="overview-grid" style="grid-template-columns:repeat(4,minmax(0,1fr));margin-bottom:12px">' +
             '<div class="stat-card"><span>Optimized skips</span><strong>' + Number(admStrategy.optimizedSkips || 0).toLocaleString() + '</strong></div>' +
             '<div class="stat-card"><span>Optimized downloads</span><strong>' + Number(admStrategy.optimizedDownloads || 0).toLocaleString() + '</strong></div>' +
             '<div class="stat-card"><span>Actual saved</span><strong>' + formatBytes(Number(admStrategy.optimizedSavedBytes || 0)) + '</strong></div>' +
             '<div class="stat-card"><span>Audit downloads</span><strong>' + Number(admStrategy.auditDownloads || 0).toLocaleString() + '</strong></div>' +
             '<div class="stat-card"><span>Audit mismatches</span><strong>' + Number(admStrategy.auditMismatches || 0).toLocaleString() + '</strong></div>' +
             '<div class="stat-card"><span>Auto fallbacks</span><strong>' + Number(admStrategy.automaticFallbacks || 0).toLocaleString() + '</strong></div>' +
+            '<div class="stat-card"><span>Previous grace downloads</span><strong>' + Number(admStrategy.previousGraceDownloads || 0).toLocaleString() + '</strong></div>' +
+            '<div class="stat-card"><span>Previous stable skips</span><strong>' + Number(admStrategy.previousStableSkips || 0).toLocaleString() + '</strong></div>' +
           '</div>' +
-          '<div class="member-meta" style="margin-bottom:12px">Optimized mode keeps the newest and previous ADM in conservative download mode. One older skipped file is force-audited every hour; any mismatch automatically falls back to Legacy.</div>' +
+          '<div class="member-meta" style="margin-bottom:12px">Optimized mode always downloads the active ADM. When rotation happens, the previous ADM is downloaded conservatively until its size remains unchanged for 30 minutes; after that it can be reused like older stable files. One skipped file is force-audited every hour and any mismatch automatically falls back to Legacy.</div>' +
           '<div class="overview-grid" style="grid-template-columns:repeat(6,minmax(0,1fr))">' +
             '<div class="stat-card"><span>Would download</span><strong>' + Number(admShadow.wouldDownload || 0).toLocaleString() + '</strong></div>' +
             '<div class="stat-card"><span>Would skip</span><strong>' + Number(admShadow.wouldSkip || 0).toLocaleString() + '</strong></div>' +
