@@ -245,6 +245,48 @@ export type ShopOrder = {
   balanceAfter?: number;
 };
 
+
+export type ClanRole = "owner" | "officer" | "member";
+
+export type ClanMember = {
+  discordId: string;
+  gamertag: string;
+  role: ClanRole;
+  joinedAt: string;
+};
+
+export type ClanActivityEvent = {
+  id: string;
+  type: "created" | "updated" | "invited" | "joined" | "left" | "removed" | "promoted" | "demoted" | "ownership_transferred";
+  actorDiscordId: string;
+  actorGamertag: string;
+  subject?: string;
+  createdAt: string;
+};
+
+export type Clan = {
+  id: string;
+  name: string;
+  tag: string;
+  description?: string;
+  ownerDiscordId: string;
+  createdAt: string;
+  updatedAt: string;
+  members: ClanMember[];
+  activity?: ClanActivityEvent[];
+};
+
+export type ClanInvite = {
+  id: string;
+  clanId: string;
+  invitedDiscordId: string;
+  invitedGamertag: string;
+  invitedByDiscordId: string;
+  invitedByGamertag: string;
+  createdAt: string;
+  expiresAt: string;
+};
+
 export type PlayerLink = {
   discordId: string;
   gamertag: string;
@@ -321,6 +363,10 @@ export type AppState = {
   playerLinks: Record<string, PlayerLink>;
   playerLinksByGamertag: Record<string, string>;
 
+  clans?: Record<string, Clan>;
+  clanMemberships?: Record<string, string>;
+  clanInvites?: ClanInvite[];
+
   wallets: Record<string, Wallet>;
   economyTransactions: EconomyTransaction[];
 
@@ -371,6 +417,9 @@ function defaultState(): AppState {
     onlineActivitySamples: [],
     playerLinks: {},
     playerLinksByGamertag: {},
+    clans: {},
+    clanMemberships: {},
+    clanInvites: [],
     wallets: {},
     economyTransactions: [],
     shopOrders: [],
@@ -463,6 +512,9 @@ function migrateLegacyState(data: any): AppState {
   state.onlineSessions = data.onlineSessions || {};
   state.playerLinks = data.playerLinks || {};
   state.playerLinksByGamertag = {};
+  state.clans = data.clans && typeof data.clans === "object" ? data.clans : {};
+  state.clanMemberships = data.clanMemberships && typeof data.clanMemberships === "object" ? data.clanMemberships : {};
+  state.clanInvites = Array.isArray(data.clanInvites) ? data.clanInvites : [];
 
   for (const [discordId, link] of Object.entries(state.playerLinks)) {
     const existing = link as any;
