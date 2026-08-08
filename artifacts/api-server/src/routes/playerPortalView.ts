@@ -1,6 +1,6 @@
 import type { PortalSession } from "../auth/session";
 
-const PLAYER_PORTAL_ASSET_VERSION = "20260808-profile-1";
+const PLAYER_PORTAL_ASSET_VERSION = "20260808-public-profile-1";
 
 function escapeHtml(value: unknown) {
   return String(value ?? "")
@@ -11,7 +11,7 @@ function escapeHtml(value: unknown) {
     .replaceAll("'", "&#039;");
 }
 
-export function renderPlayerPortal(session: PortalSession, initialView: "dashboard" | "profile" | "rankings" | "accounts" | "clan" | "shop" | "purchases" = "dashboard", options: { shopEnabled?: boolean } = {}) {
+export function renderPlayerPortal(session: PortalSession, initialView: "dashboard" | "profile" | "public-profile" | "rankings" | "accounts" | "clan" | "shop" | "purchases" = "dashboard", options: { shopEnabled?: boolean } = {}) {
   const shopEnabled = options.shopEnabled !== false;
   const displayName = session.globalName || session.username;
   return `<!doctype html>

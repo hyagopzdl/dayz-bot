@@ -25,3 +25,6 @@
 @media(max-width:1050px){.profile-stat-grid{grid-template-columns:repeat(3,1fr)}.profile-content-grid{grid-template-columns:1fr}}
 @media(max-width:760px){.profile-hero{grid-template-columns:auto 1fr}.profile-rank-spotlight{grid-column:1/-1;width:100%}.profile-period-grid{grid-template-columns:1fr}.profile-coming-grid{grid-template-columns:1fr}.profile-stat-grid{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:520px){.profile-hero{grid-template-columns:1fr;text-align:center}.profile-hero-avatar{margin:0 auto}.profile-badges{justify-content:center}.profile-stat-grid{grid-template-columns:1fr 1fr}.profile-period-values{grid-template-columns:1fr}.profile-period-values>div{display:flex;justify-content:space-between;align-items:center}}
+
+.player-profile-link{color:inherit;text-decoration:none}.player-profile-link:hover{color:#ff8e96;text-decoration:underline;text-underline-offset:3px}.player-avatar-link{text-decoration:none}.player-avatar-link:hover{border-color:#6b3037;color:#ff9aa2}.public-profile-toolbar{display:flex;align-items:center;justify-content:space-between;gap:14px;color:var(--muted-2);font-size:10px}.public-profile-toolbar .back-link{margin:0}
+@media(max-width:560px){.public-profile-toolbar{align-items:flex-start;flex-direction:column}}

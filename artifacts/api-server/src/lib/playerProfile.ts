@@ -1,6 +1,6 @@
 import { discordAvatarUrl, type PortalSession } from "../auth/session";
 import { getPlayerAccountGamertags } from "./playerAccounts";
-import { getPlayerLinkByDiscordId } from "./playerLinks";
+import { findKnownGamertag, getPlayerLinkByDiscordId, normalizeGamertag } from "./playerLinks";
 import type { AppState, PlayerStats } from "./state";
 
 type ProfilePeriod = "overall" | "weekly" | "daily";
@@ -65,15 +65,41 @@ function periodSnapshot(state: AppState, gamertag: string | null, period: Profil
   };
 }
 
+function combatProfile(state: AppState, gamertag: string | null) {
+  return {
+    stats: {
+      overall: periodSnapshot(state, gamertag, "overall"),
+      weekly: periodSnapshot(state, gamertag, "weekly"),
+      daily: periodSnapshot(state, gamertag, "daily"),
+    },
+    records: {
+      currentStreak: gamertag ? Number(state.currentKillStreaks?.[gamertag] || 0) : 0,
+      bestStreak: bestStreak(state, gamertag),
+      longestShot: bestLongshot(state, gamertag),
+    },
+  };
+}
+
+function clanForDiscordId(state: AppState, discordId: string | null | undefined) {
+  if (!discordId) return null;
+  const clanId = state.clanMemberships?.[discordId];
+  const clan = clanId ? state.clans?.[clanId] : undefined;
+  const member = clan?.members.find((entry) => entry.discordId === discordId);
+  if (!clan || !member) return null;
+  return {
+    id: clan.id,
+    name: clan.name,
+    tag: clan.tag,
+    role: member.role,
+    joinedAt: member.joinedAt,
+    memberCount: clan.members.length,
+  };
+}
+
 export function buildPlayerProfile(state: AppState, session: PortalSession) {
   const link = getPlayerLinkByDiscordId(state, session.discordId);
   const gamertag = link?.gamertag || null;
   const accountGamertags = link ? getPlayerAccountGamertags(state, session.discordId) : [];
-  const clanId = state.clanMemberships?.[session.discordId];
-  const clan = clanId ? state.clans?.[clanId] : undefined;
-  const member = clan?.members.find((entry) => entry.discordId === session.discordId);
-  const longestShot = bestLongshot(state, gamertag);
-  const currentStreak = gamertag ? Number(state.currentKillStreaks?.[gamertag] || 0) : 0;
 
   return {
     identity: {
@@ -88,29 +114,24 @@ export function buildPlayerProfile(state: AppState, session: PortalSession) {
       online: gamertag ? Boolean(state.onlinePlayers?.[gamertag]) : false,
       linkedCharacters: accountGamertags.length,
     },
-    stats: {
-      overall: periodSnapshot(state, gamertag, "overall"),
-      weekly: periodSnapshot(state, gamertag, "weekly"),
-      daily: periodSnapshot(state, gamertag, "daily"),
+    ...combatProfile(state, gamertag),
+    clan: clanForDiscordId(state, session.discordId),
+    sections: { timeline: "coming-soon", achievements: "coming-soon" },
+  };
+}
+
+export function buildPublicPlayerProfile(state: AppState, rawGamertag: string) {
+  const gamertag = findKnownGamertag(state, rawGamertag);
+  if (!gamertag) return null;
+
+  const discordId = state.playerLinksByGamertag?.[normalizeGamertag(gamertag)] || null;
+  return {
+    identity: {
+      gamertag,
+      online: Boolean(state.onlinePlayers?.[gamertag]),
     },
-    records: {
-      currentStreak,
-      bestStreak: bestStreak(state, gamertag),
-      longestShot,
-    },
-    clan: clan && member
-      ? {
-          id: clan.id,
-          name: clan.name,
-          tag: clan.tag,
-          role: member.role,
-          joinedAt: member.joinedAt,
-          memberCount: clan.members.length,
-        }
-      : null,
-    sections: {
-      timeline: "coming-soon",
-      achievements: "coming-soon",
-    },
+    ...combatProfile(state, gamertag),
+    clan: clanForDiscordId(state, discordId),
+    sections: { timeline: "coming-soon", achievements: "coming-soon" },
   };
 }
