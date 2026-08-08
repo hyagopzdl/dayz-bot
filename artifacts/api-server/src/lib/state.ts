@@ -362,6 +362,7 @@ export type AppState = {
 
   playerLinks: Record<string, PlayerLink>;
   playerLinksByGamertag: Record<string, string>;
+  playerAlts?: Record<string, string[]>;
 
   clans?: Record<string, Clan>;
   clanMemberships?: Record<string, string>;
@@ -417,6 +418,7 @@ function defaultState(): AppState {
     onlineActivitySamples: [],
     playerLinks: {},
     playerLinksByGamertag: {},
+    playerAlts: {},
     clans: {},
     clanMemberships: {},
     clanInvites: [],
@@ -512,6 +514,7 @@ function migrateLegacyState(data: any): AppState {
   state.onlineSessions = data.onlineSessions || {};
   state.playerLinks = data.playerLinks || {};
   state.playerLinksByGamertag = {};
+  state.playerAlts = data.playerAlts && typeof data.playerAlts === "object" ? data.playerAlts : {};
   state.clans = data.clans && typeof data.clans === "object" ? data.clans : {};
   state.clanMemberships = data.clanMemberships && typeof data.clanMemberships === "object" ? data.clanMemberships : {};
   state.clanInvites = Array.isArray(data.clanInvites) ? data.clanInvites : [];
@@ -534,6 +537,28 @@ function migrateLegacyState(data: any): AppState {
       updatedAt: existing.updatedAt || existing.linkedAt || new Date().toISOString(),
     };
     state.playerLinksByGamertag[normalized] = discordId;
+  }
+
+  for (const [discordId, rawAlts] of Object.entries(state.playerAlts || {})) {
+    const mainLink = state.playerLinks[discordId];
+    if (!mainLink) {
+      delete state.playerAlts[discordId];
+      continue;
+    }
+    const mainNormalized = mainLink.gamertagNormalized || "";
+    const seen = new Set<string>();
+    const clean: string[] = [];
+    for (const raw of Array.isArray(rawAlts) ? rawAlts : []) {
+      const gamertag = String(raw || "").trim();
+      const normalized = gamertag.toLowerCase();
+      if (!gamertag || !normalized || normalized === mainNormalized || seen.has(normalized)) continue;
+      const owner = state.playerLinksByGamertag[normalized];
+      if (owner && owner !== discordId) continue;
+      seen.add(normalized);
+      clean.push(gamertag);
+      state.playerLinksByGamertag[normalized] = discordId;
+    }
+    state.playerAlts[discordId] = clean.slice(0, 5);
   }
 
   state.wallets = {};
@@ -1040,6 +1065,7 @@ export async function saveStateAsync(data: AppState, reason?: string) {
     onlineActivitySamples: Array.isArray(data.onlineActivitySamples) ? data.onlineActivitySamples : [],
     playerLinks: data.playerLinks || {},
     playerLinksByGamertag: data.playerLinksByGamertag || {},
+    playerAlts: data.playerAlts && typeof data.playerAlts === "object" ? data.playerAlts : {},
     clans: data.clans && typeof data.clans === "object" ? data.clans : {},
     clanMemberships: data.clanMemberships && typeof data.clanMemberships === "object" ? data.clanMemberships : {},
     clanInvites: Array.isArray(data.clanInvites) ? data.clanInvites : [],

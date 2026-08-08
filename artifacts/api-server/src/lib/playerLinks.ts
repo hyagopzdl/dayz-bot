@@ -18,6 +18,12 @@ function ensurePlayerLinkState(state: AppState) {
     const normalized = link.gamertagNormalized || normalizeGamertag(link.gamertag);
     link.gamertagNormalized = normalized;
     state.playerLinksByGamertag[normalized] = discordId;
+    for (const alt of state.playerAlts?.[discordId] || []) {
+      const altNormalized = normalizeGamertag(alt);
+      if (altNormalized && !state.playerLinksByGamertag[altNormalized]) {
+        state.playerLinksByGamertag[altNormalized] = discordId;
+      }
+    }
   }
 }
 
@@ -92,6 +98,11 @@ export function unlinkPlayer(state: AppState, discordId: string): PlayerLink | n
   if (link.gamertagNormalized) {
     delete state.playerLinksByGamertag?.[link.gamertagNormalized];
   }
+  for (const alt of state.playerAlts?.[discordId] || []) {
+    const normalized = normalizeGamertag(alt);
+    if (state.playerLinksByGamertag?.[normalized] === discordId) delete state.playerLinksByGamertag[normalized];
+  }
+  delete state.playerAlts?.[discordId];
 
   return link;
 }

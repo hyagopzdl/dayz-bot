@@ -87,6 +87,7 @@ function memberView(state: AppState, member: ClanMember) {
     kills,
     deaths,
     kd: deaths > 0 ? Number((kills / deaths).toFixed(2)) : kills,
+    linkedCharacters: 1 + (state.playerAlts?.[member.discordId]?.length || 0),
   };
 }
 
