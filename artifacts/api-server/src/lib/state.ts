@@ -515,6 +515,7 @@ function migrateLegacyState(data: any): AppState {
   state.playerLinks = data.playerLinks || {};
   state.playerLinksByGamertag = {};
   state.playerAlts = data.playerAlts && typeof data.playerAlts === "object" ? data.playerAlts : {};
+  const playerAlts = state.playerAlts;
   state.clans = data.clans && typeof data.clans === "object" ? data.clans : {};
   state.clanMemberships = data.clanMemberships && typeof data.clanMemberships === "object" ? data.clanMemberships : {};
   state.clanInvites = Array.isArray(data.clanInvites) ? data.clanInvites : [];
@@ -539,10 +540,10 @@ function migrateLegacyState(data: any): AppState {
     state.playerLinksByGamertag[normalized] = discordId;
   }
 
-  for (const [discordId, rawAlts] of Object.entries(state.playerAlts || {})) {
+  for (const [discordId, rawAlts] of Object.entries(playerAlts)) {
     const mainLink = state.playerLinks[discordId];
     if (!mainLink) {
-      delete state.playerAlts[discordId];
+      delete playerAlts[discordId];
       continue;
     }
     const mainNormalized = mainLink.gamertagNormalized || "";
@@ -558,7 +559,7 @@ function migrateLegacyState(data: any): AppState {
       clean.push(gamertag);
       state.playerLinksByGamertag[normalized] = discordId;
     }
-    state.playerAlts[discordId] = clean.slice(0, 5);
+    playerAlts[discordId] = clean.slice(0, 5);
   }
 
   state.wallets = {};
