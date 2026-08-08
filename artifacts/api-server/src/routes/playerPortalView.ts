@@ -1,6 +1,6 @@
 import type { PortalSession } from "../auth/session";
 
-const PLAYER_PORTAL_ASSET_VERSION = "20260802-1";
+const PLAYER_PORTAL_ASSET_VERSION = "20260808-rankings-1";
 
 function escapeHtml(value: unknown) {
   return String(value ?? "")
@@ -11,7 +11,7 @@ function escapeHtml(value: unknown) {
     .replaceAll("'", "&#039;");
 }
 
-export function renderPlayerPortal(session: PortalSession, initialView: "dashboard" | "shop" | "purchases" = "dashboard", options: { shopEnabled?: boolean } = {}) {
+export function renderPlayerPortal(session: PortalSession, initialView: "dashboard" | "rankings" | "shop" | "purchases" = "dashboard", options: { shopEnabled?: boolean } = {}) {
   const shopEnabled = options.shopEnabled !== false;
   const displayName = session.globalName || session.username;
   return `<!doctype html>
@@ -32,7 +32,7 @@ export function renderPlayerPortal(session: PortalSession, initialView: "dashboa
       </a>
       <nav class="nav" aria-label="Player portal navigation">
         <a class="nav-item ${initialView === "dashboard" ? "active" : ""}" href="/app" data-route="dashboard"><span class="nav-icon">⌂</span>Dashboard</a>
-        <a class="nav-item disabled" href="#" aria-disabled="true"><span class="nav-icon">◫</span>Statistics<span class="soon">Soon</span></a>
+        <a class="nav-item ${initialView === "rankings" ? "active" : ""}" href="/app/rankings" data-route="rankings"><span class="nav-icon">◫</span>Rankings</a>
 ${shopEnabled ? `<a class="nav-item ${initialView === "shop" ? "active" : ""}" href="/app/shop" data-route="shop"><span class="nav-icon">◇</span>Shop</a>
         <a class="nav-item ${initialView === "purchases" ? "active" : ""}" href="/app/purchases" data-route="purchases"><span class="nav-icon">▣</span>Purchases</a>` : ""}
         <a class="nav-item disabled" href="#" aria-disabled="true"><span class="nav-icon">◎</span>Economy<span class="soon">Soon</span></a>
@@ -79,7 +79,7 @@ ${shopEnabled ? `<a class="nav-item ${initialView === "shop" ? "active" : ""}" h
           </article>
 
           <article class="panel leaderboard-panel">
-            <div class="panel-header"><div><p class="eyebrow">Global ranking</p><h2>Leaderboard</h2></div><button class="text-button" type="button" disabled>View all</button></div>
+            <div class="panel-header"><div><p class="eyebrow">Global ranking</p><h2>Leaderboard</h2></div><a class="text-button" href="/app/rankings">View all</a></div>
             <div class="leaderboard-list" id="leaderboardList"><div class="empty-state compact"><div class="loader"></div><p>Loading ranking...</p></div></div>
           </article>
         </section>
