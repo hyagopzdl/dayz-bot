@@ -7,6 +7,7 @@ import type { DayzItemDefinition } from "./dayzItemDatabase";
 import type { Locale } from "./i18n";
 import { normalizeDiscordCommandSettings, type DiscordCommandSettings } from "./discord/commandSettings";
 import { normalizeServiceSettings, type ServiceSettings } from "./serviceSettings";
+import { recordNetworkTransfer } from "./networkMetrics";
 
 const FILE = path.resolve(process.cwd(), "state.json");
 const STATE_ID = "main";
@@ -785,6 +786,15 @@ async function persistStateToNeon(serialized: string, hash: string, reasons: str
         data = EXCLUDED.data,
         updated_at = NOW()
     `;
+    // The serialized JSON dominates the outbound payload to Neon. This counter
+    // intentionally measures application bytes, not PostgreSQL/TLS overhead.
+    recordNetworkTransfer({
+      service: "neon",
+      operation: "bot_state_write",
+      direction: "outbound",
+      bytes: payloadBytes,
+      ok: true,
+    });
   } catch (err) {
     persistenceMetrics.failedWrites += 1;
     persistenceMetrics.lastWriteError = err instanceof Error ? err.message : String(err);
@@ -923,7 +933,15 @@ export async function getStateAsync(): Promise<AppState> {
     }
 
     cachedState = migrateLegacyState(rows[0].data || {});
-    lastPersistedJson = serializeState(cachedState);
+    const loadedStateJson = serializeState(cachedState);
+    recordNetworkTransfer({
+      service: "neon",
+      operation: "bot_state_read",
+      direction: "inbound",
+      bytes: Buffer.byteLength(loadedStateJson, "utf8"),
+      ok: true,
+    });
+    lastPersistedJson = loadedStateJson;
     lastPersistedHash = hashState(lastPersistedJson);
     return cachedState;
   } catch (err) {

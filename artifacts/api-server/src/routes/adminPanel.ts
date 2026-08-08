@@ -68,6 +68,7 @@ import { buildMapVotePollOptionText, buildMapVotePollQuestion, buildMapVotePubli
 import { downloadTextFile, uploadTextFile } from "../lib/nitradoFtp";
 import { getAdmDownloadMetrics, setAdmDownloadMode } from "../lib/nitradoDownloader";
 import { getRuntimePerformanceMetrics } from "../lib/runtimeMetrics";
+import { getNetworkMetrics } from "../lib/networkMetrics";
 
 const router = Router();
 startMapEventScheduler();
@@ -6235,6 +6236,7 @@ function renderAdminPanelHtml(token: string) {
         const m = state.persistenceMetrics;
         const adm = state.admDownloadMetrics || {};
         const runtime = state.runtimeMetrics || {};
+        const network = state.networkMetrics || {};
         const reasons = Object.entries(m.reasons || {})
           .map(([reason, value]) => ({ reason, ...(value || {}) }))
           .sort((a, b) => Number(b.contributedWrites || 0) - Number(a.contributedWrites || 0) || Number(b.saveRequests || 0) - Number(a.saveRequests || 0));
@@ -6246,6 +6248,24 @@ function renderAdminPanelHtml(token: string) {
         const admStrategy = adm.strategy || {};
         const shadowDecisions = Array.isArray(admShadow.recentDecisions) ? admShadow.recentDecisions.slice(-20).reverse() : [];
         const recentCycles = Array.isArray(runtime.recentCycles) ? runtime.recentCycles.slice(-12).reverse() : [];
+        const networkServices = Array.isArray(network.services) ? network.services : [];
+        const networkTransfers = Array.isArray(network.recentTransfers) ? network.recentTransfers.slice(-20).reverse() : [];
+        const networkServiceRows = networkServices.length ? networkServices.map((item) =>
+          '<tr><td><code>' + escapeHtml(item.service || '-') + '</code></td>' +
+          '<td>' + Number(item.requests || 0).toLocaleString() + '</td>' +
+          '<td>' + formatBytes(Number(item.outboundBytes || 0)) + '</td>' +
+          '<td>' + formatBytes(Number(item.inboundBytes || 0)) + '</td>' +
+          '<td>' + formatBytes(Number(item.httpResponseBytes || 0)) + '</td>' +
+          '<td>' + Number(item.failures || 0).toLocaleString() + '</td></tr>'
+        ).join('') : '<tr><td colspan="6" class="member-meta">No measured network activity yet.</td></tr>';
+        const networkTransferRows = networkTransfers.length ? networkTransfers.map((item) =>
+          '<tr><td>' + escapeHtml(item.at ? relativeDate(item.at) : '-') + '</td>' +
+          '<td><code>' + escapeHtml(item.service || '-') + '</code></td>' +
+          '<td>' + escapeHtml(item.direction || '-') + '</td>' +
+          '<td>' + formatBytes(Number(item.bytes || 0)) + '</td>' +
+          '<td>' + escapeHtml(item.operation || '-') + '</td>' +
+          '<td>' + (item.ok === false ? 'Error' : 'OK') + '</td></tr>'
+        ).join('') : '<tr><td colspan="6" class="member-meta">No recent transfers yet.</td></tr>';
         const lastReasons = Array.isArray(m.lastWriteReasons) && m.lastWriteReasons.length ? m.lastWriteReasons.join(', ') : 'unknown';
         const lastChanged = Array.isArray(m.lastChangedSections) && m.lastChangedSections.length ? m.lastChangedSections.join(', ') : 'none';
         const reasonRows = reasons.length ? reasons.map((item) =>
@@ -6346,6 +6366,20 @@ function renderAdminPanelHtml(token: string) {
         '<div class="settings-grid" style="margin-top:16px;grid-template-columns:minmax(0,1fr) minmax(0,1fr)">' +
           '<div class="settings-card"><div class="settings-card-head"><div><h3>ADM bandwidth by file</h3><p>Actual bytes downloaded from Nitrado during this process and a 30-day projection.</p></div></div><div class="table-wrap"><table><thead><tr><th>File</th><th>Downloads</th><th>Total</th><th>Last</th><th>Failures</th></tr></thead><tbody>' + admFileRows + '</tbody></table></div></div>' +
           '<div class="settings-card"><div class="settings-card-head"><div><h3>Main loop timing</h3><p>Recent download and parser durations. Useful for Render CPU/runtime diagnosis.</p></div></div><div class="table-wrap"><table><thead><tr><th>When</th><th>Total</th><th>Download</th><th>Parser</th><th>Download</th><th>Parser</th></tr></thead><tbody>' + cycleRows + '</tbody></table></div></div>' +
+        '</div>' +
+        '<div class="settings-card" style="margin-top:16px"><div class="settings-card-head"><div><h3>Network & Render bandwidth diagnostics</h3><p>Measured application payloads by destination. Use this to compare Neon/service-initiated traffic with Render billing.</p></div></div>' +
+          '<div class="overview-grid" style="grid-template-columns:repeat(5,minmax(0,1fr));margin-bottom:12px">' +
+            '<div class="stat-card"><span>Measured outbound</span><strong>' + formatBytes(Number(network.outboundBytes || 0)) + '</strong></div>' +
+            '<div class="stat-card"><span>Projected outbound 30d</span><strong>' + formatBytes(Number(network.projected30DayOutboundBytes || 0)) + '</strong></div>' +
+            '<div class="stat-card"><span>Measured inbound</span><strong>' + formatBytes(Number(network.inboundBytes || 0)) + '</strong></div>' +
+            '<div class="stat-card"><span>HTTP responses</span><strong>' + formatBytes(Number(network.httpResponseBytes || 0)) + '</strong></div>' +
+            '<div class="stat-card"><span>Projected HTTP 30d</span><strong>' + formatBytes(Number(network.projected30DayHttpResponseBytes || 0)) + '</strong></div>' +
+          '</div>' +
+          '<div class="member-meta" style="margin-bottom:12px">' + escapeHtml(network.coverageNote || 'Metrics start after deploy and are application-level estimates.') + '</div>' +
+          '<div class="settings-grid" style="grid-template-columns:minmax(0,1fr) minmax(0,1fr)">' +
+            '<div class="settings-card"><div class="settings-card-head"><div><h3>Traffic by service</h3><p>Outbound is the most relevant column for Render service-initiated billing.</p></div></div><div class="table-wrap"><table><thead><tr><th>Service</th><th>Events</th><th>Outbound</th><th>Inbound</th><th>HTTP response</th><th>Failures</th></tr></thead><tbody>' + networkServiceRows + '</tbody></table></div></div>' +
+            '<div class="settings-card"><div class="settings-card-head"><div><h3>Recent network samples</h3><p>Last measured application transfers.</p></div></div><div class="table-wrap"><table><thead><tr><th>When</th><th>Service</th><th>Direction</th><th>Bytes</th><th>Operation</th><th>Status</th></tr></thead><tbody>' + networkTransferRows + '</tbody></table></div></div>' +
+          '</div>' +
         '</div>';
       }
 
@@ -6361,6 +6395,7 @@ function renderAdminPanelHtml(token: string) {
         state.persistenceMetrics = payload.persistenceMetrics;
         state.admDownloadMetrics = payload.admDownloadMetrics;
         state.runtimeMetrics = payload.runtimeMetrics;
+        state.networkMetrics = payload.networkMetrics;
         renderServiceSettings();
       } finally { state.serviceSettingsLoading = false; }
     }
@@ -6376,6 +6411,7 @@ function renderAdminPanelHtml(token: string) {
         state.persistenceMetrics = payload.persistenceMetrics;
         state.admDownloadMetrics = payload.admDownloadMetrics;
         state.runtimeMetrics = payload.runtimeMetrics;
+        state.networkMetrics = payload.networkMetrics;
         state.discordCommands = payload.commands || state.discordCommands;
         renderServiceSettings();
         if (state.discordCommands) renderDiscordCommands();
@@ -6394,6 +6430,7 @@ function renderAdminPanelHtml(token: string) {
         state.persistenceMetrics = payload.persistenceMetrics;
         state.admDownloadMetrics = payload.admDownloadMetrics;
         state.runtimeMetrics = payload.runtimeMetrics;
+        state.networkMetrics = payload.networkMetrics;
         renderServiceSettings();
         showToast('ADM downloader mode: ' + mode + '.');
       } finally { if (select) select.disabled = false; }
@@ -6998,7 +7035,7 @@ router.get("/api/service-settings", async (req, res) => {
     const state = await getStateAsync();
     const settings = normalizeServiceSettings(state.serviceSettings);
     setAdmDownloadMode(settings.admDownloadMode);
-    res.json({ settings, persistenceMetrics: getStatePersistenceMetrics(), admDownloadMetrics: getAdmDownloadMetrics(), runtimeMetrics: getRuntimePerformanceMetrics() });
+    res.json({ settings, persistenceMetrics: getStatePersistenceMetrics(), admDownloadMetrics: getAdmDownloadMetrics(), runtimeMetrics: getRuntimePerformanceMetrics(), networkMetrics: getNetworkMetrics() });
   } catch (err) {
     res.status(500).json({ error: String(err) });
   }
@@ -7034,6 +7071,7 @@ router.patch("/api/service-settings", async (req, res) => {
       persistenceMetrics: getStatePersistenceMetrics(),
       admDownloadMetrics: getAdmDownloadMetrics(),
       runtimeMetrics: getRuntimePerformanceMetrics(),
+      networkMetrics: getNetworkMetrics(),
     });
   } catch (err) {
     res.status(500).json({ error: String(err) });

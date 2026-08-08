@@ -10,6 +10,7 @@ import {
 import { getPlayerLinkByDiscordId } from "../lib/playerLinks";
 import { logger } from "../lib/logger";
 import { getStateAsync } from "../lib/state";
+import { byteLengthOfBody, recordNetworkTransfer } from "../lib/networkMetrics";
 
 const router = Router();
 const DISCORD_API = "https://discord.com/api/v10";
@@ -19,6 +20,40 @@ function publicBaseUrl(req: Request) {
   if (configured) return configured;
   const proto = String(req.headers["x-forwarded-proto"] || req.protocol || "https").split(",")[0].trim();
   return `${proto}://${req.get("host")}`;
+}
+
+async function trackedDiscordOAuthFetch(url: string, init: RequestInit = {}) {
+  const outboundBytes = byteLengthOfBody(init.body);
+  try {
+    const response = await globalThis.fetch(url, init);
+    recordNetworkTransfer({
+      service: "discord-oauth",
+      operation: `${String(init.method || "GET").toUpperCase()} ${new URL(url).pathname}`,
+      direction: "outbound",
+      bytes: outboundBytes,
+      ok: response.ok,
+    });
+    const contentLength = Number(response.headers.get("content-length") || 0);
+    if (contentLength > 0) {
+      recordNetworkTransfer({
+        service: "discord-oauth",
+        operation: `${String(init.method || "GET").toUpperCase()} ${new URL(url).pathname}`,
+        direction: "inbound",
+        bytes: contentLength,
+        ok: response.ok,
+      });
+    }
+    return response;
+  } catch (error) {
+    recordNetworkTransfer({
+      service: "discord-oauth",
+      operation: `${String(init.method || "GET").toUpperCase()} ${new URL(url).pathname}`,
+      direction: "outbound",
+      bytes: outboundBytes,
+      ok: false,
+    });
+    throw error;
+  }
 }
 
 function discordConfig(req: Request) {
@@ -58,7 +93,7 @@ router.get("/discord/callback", async (req, res) => {
 
   try {
     const { clientId, clientSecret, redirectUri } = discordConfig(req);
-    const tokenResponse = await fetch(`${DISCORD_API}/oauth2/token`, {
+    const tokenResponse = await trackedDiscordOAuthFetch(`${DISCORD_API}/oauth2/token`, {
       method: "POST",
       headers: { "content-type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
@@ -73,7 +108,7 @@ router.get("/discord/callback", async (req, res) => {
     const token = (await tokenResponse.json()) as { access_token?: string };
     if (!token.access_token) throw new Error("Discord access token missing");
 
-    const userResponse = await fetch(`${DISCORD_API}/users/@me`, {
+    const userResponse = await trackedDiscordOAuthFetch(`${DISCORD_API}/users/@me`, {
       headers: { authorization: `Bearer ${token.access_token}` },
     });
     if (!userResponse.ok) throw new Error(`Discord user request failed (${userResponse.status})`);

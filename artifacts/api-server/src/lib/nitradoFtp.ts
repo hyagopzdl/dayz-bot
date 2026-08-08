@@ -1,4 +1,5 @@
 import net from "net";
+import { recordNetworkTransfer } from "./networkMetrics";
 
 type FtpResponse = {
   code: number;
@@ -298,14 +299,21 @@ export async function uploadTextFile(filePath: string, content: string) {
 
   console.log(`📤 FTP upload: ${host}:${port} -> ${remotePath}`);
 
-  await uploadTextViaFtp({
-    host,
-    port,
-    user,
-    password,
-    remotePath,
-    content,
-  });
+  const bytes = Buffer.byteLength(content, "utf8");
+  try {
+    await uploadTextViaFtp({
+      host,
+      port,
+      user,
+      password,
+      remotePath,
+      content,
+    });
+    recordNetworkTransfer({ service: "nitrado-ftp", operation: `STOR ${remotePath}`, direction: "outbound", bytes, ok: true });
+  } catch (error) {
+    recordNetworkTransfer({ service: "nitrado-ftp", operation: `STOR ${remotePath}`, direction: "outbound", bytes, ok: false });
+    throw error;
+  }
 
   console.log(`✅ FTP uploaded: ${remotePath} (${content.length} chars)`);
 }
@@ -322,6 +330,13 @@ export async function downloadTextFile(filePath: string) {
     user,
     password,
     remotePath,
+  });
+  recordNetworkTransfer({
+    service: "nitrado-ftp",
+    operation: `RETR ${remotePath}`,
+    direction: "inbound",
+    bytes: Buffer.byteLength(content, "utf8"),
+    ok: true,
   });
 
   console.log(`✅ FTP downloaded: ${remotePath} (${content.length} chars)`);

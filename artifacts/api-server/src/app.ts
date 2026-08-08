@@ -6,6 +6,7 @@ import router from "./routes";
 import adminRoutes from "./routes/admin";
 import adminPanelRoutes from "./routes/adminPanel";
 import { logger } from "./lib/logger";
+import { recordNetworkTransfer } from "./lib/networkMetrics";
 import authRoutes from "./routes/auth";
 import playerPortalRoutes from "./routes/playerPortal";
 import { attachPortalSession } from "./middlewares/portalAuth";
@@ -34,6 +35,33 @@ app.use(
 
 app.set("trust proxy", 1);
 app.use(cors());
+
+// Count bytes sent by this web service without buffering or changing responses.
+// This is the closest in-app counterpart to Render HTTP Response bandwidth.
+app.use((req, res, next) => {
+  let responseBytes = 0;
+  const originalWrite = res.write.bind(res);
+  const originalEnd = res.end.bind(res);
+
+  (res as any).write = (chunk: any, ...args: any[]) => {
+    if (chunk) responseBytes += Buffer.isBuffer(chunk) ? chunk.length : Buffer.byteLength(String(chunk));
+    return (originalWrite as any)(chunk, ...args);
+  };
+
+  (res as any).end = (chunk?: any, ...args: any[]) => {
+    if (chunk) responseBytes += Buffer.isBuffer(chunk) ? chunk.length : Buffer.byteLength(String(chunk));
+    recordNetworkTransfer({
+      service: "http-responses",
+      operation: `${req.method} ${req.path || req.url.split("?")[0]}`,
+      direction: "http-response",
+      bytes: responseBytes,
+      ok: res.statusCode < 500,
+    });
+    return (originalEnd as any)(chunk, ...args);
+  };
+  next();
+});
+
 app.use(cookieParser());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));

@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import fs from "fs";
 import path from "path";
+import { byteLengthOfBody, recordNetworkTransfer } from "./networkMetrics";
 
 const SERVICE_ID = "19149785";
 const BASE_DIR = "/games/ni13029176_1/noftp/dayzps/config";
@@ -204,8 +205,45 @@ function extractDateFromAdmPath(filePath: string) {
   return new Date(`${match[1]}T${match[2].replace(/-/g, ":")}`).getTime();
 }
 
+async function trackedNitradoFetch(url: string, init: RequestInit = {}) {
+  const outboundBytes = byteLengthOfBody(init.body);
+  const started = Date.now();
+  try {
+    const res = await globalThis.fetch(url, init);
+    recordNetworkTransfer({
+      service: "nitrado",
+      operation: `${String(init.method || "GET").toUpperCase()} ${new URL(url).pathname}`,
+      direction: "outbound",
+      bytes: outboundBytes,
+      ok: res.ok,
+    });
+    const contentLength = Number(res.headers.get("content-length") || 0);
+    if (contentLength > 0) {
+      recordNetworkTransfer({
+        service: "nitrado",
+        operation: `${String(init.method || "GET").toUpperCase()} ${new URL(url).pathname}`,
+        direction: "inbound",
+        bytes: contentLength,
+        ok: res.ok,
+      });
+    }
+    return res;
+  } catch (error) {
+    recordNetworkTransfer({
+      service: "nitrado",
+      operation: `${String(init.method || "GET").toUpperCase()} ${new URL(url).pathname}`,
+      direction: "outbound",
+      bytes: outboundBytes,
+      ok: false,
+    });
+    throw error;
+  } finally {
+    void started;
+  }
+}
+
 async function fetchJson(url: string): Promise<any> {
-  const res = await fetch(url, { headers: { Authorization: `Bearer ${process.env.NITRADO_TOKEN}` } });
+  const res = await trackedNitradoFetch(url, { headers: { Authorization: `Bearer ${process.env.NITRADO_TOKEN}` } });
   if (!res.ok) throw new Error(`Nitrado HTTP ${res.status}: ${await res.text()}`);
   return (await res.json()) as any;
 }
@@ -247,7 +285,7 @@ async function getDownloadUrl(filePath: string): Promise<string | null> {
 async function downloadText(filePath: string): Promise<string | null> {
   const url = await getDownloadUrl(filePath);
   if (!url) return null;
-  const res = await fetch(`${url}&t=${Date.now()}`);
+  const res = await trackedNitradoFetch(`${url}&t=${Date.now()}`);
   if (!res.ok) throw new Error(`ADM download HTTP ${res.status}: ${await res.text()}`);
   return res.text();
 }
@@ -540,7 +578,7 @@ export async function debugNitradoListRaw(dir: string): Promise<{
     normalizedDir,
   )}`;
 
-  const res = await fetch(url, {
+  const res = await trackedNitradoFetch(url, {
     headers: {
       Authorization: `Bearer ${process.env.NITRADO_TOKEN}`,
     },
@@ -589,7 +627,7 @@ export async function probeNitradoUploadTokenForDirectory(
   const baseUrl = `https://api.nitrado.net/services/${serviceId}/gameservers/file_server/upload`;
   const url = `${baseUrl}?${new URLSearchParams({ path: normalizedDir, file }).toString()}`;
 
-  const res = await fetch(url, {
+  const res = await trackedNitradoFetch(url, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${process.env.NITRADO_TOKEN}`,
@@ -614,7 +652,7 @@ async function postForm(
 ): Promise<any> {
   const form = new URLSearchParams(body);
 
-  const res = await fetch(url, {
+  const res = await trackedNitradoFetch(url, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${process.env.NITRADO_TOKEN}`,
@@ -636,7 +674,7 @@ async function postWithQueryParams(
 ): Promise<any> {
   const fullUrl = `${url}?${new URLSearchParams(params).toString()}`;
 
-  const res = await fetch(fullUrl, {
+  const res = await trackedNitradoFetch(fullUrl, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${process.env.NITRADO_TOKEN}`,
@@ -794,7 +832,7 @@ export async function uploadShopSpawnerFile(
   const { url, token } = await getUploadToken(filePath);
   const body = JSON.stringify(payload, null, 2);
 
-  const res = await fetch(url, {
+  const res = await trackedNitradoFetch(url, {
     method: "POST",
     headers: {
       "Content-Type": "application/binary",
