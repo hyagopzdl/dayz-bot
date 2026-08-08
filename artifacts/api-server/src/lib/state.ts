@@ -514,8 +514,10 @@ function migrateLegacyState(data: any): AppState {
   state.onlineSessions = data.onlineSessions || {};
   state.playerLinks = data.playerLinks || {};
   state.playerLinksByGamertag = {};
-  state.playerAlts = data.playerAlts && typeof data.playerAlts === "object" ? data.playerAlts : {};
-  const playerAlts = state.playerAlts;
+  const playerAlts: Record<string, string[]> = data.playerAlts && typeof data.playerAlts === "object"
+    ? (data.playerAlts as Record<string, string[]>)
+    : {};
+  state.playerAlts = playerAlts;
   state.clans = data.clans && typeof data.clans === "object" ? data.clans : {};
   state.clanMemberships = data.clanMemberships && typeof data.clanMemberships === "object" ? data.clanMemberships : {};
   state.clanInvites = Array.isArray(data.clanInvites) ? data.clanInvites : [];
