@@ -361,13 +361,15 @@ function addKillFeedEvent(
   killer: string,
   victim: string,
   weapon: string,
+  distance: number | null,
   eventTime: AdmEventTime | null,
 ) {
   state.killFeedEvents.push({
     killer,
     victim,
     weapon,
-    at: new Date().toISOString(),
+    distance: Number.isFinite(distance) ? Math.round(Number(distance)) : null,
+    at: eventTime?.date?.toISOString() || new Date().toISOString(),
   });
 
   state.killFeedEvents = state.killFeedEvents.slice(-99);
@@ -548,7 +550,7 @@ function addKill(
   updateOnlineSessionStats(state, killer, victim, eventTime);
 
   updateKillStreaks(state, killer, victim, eventTime);
-  addKillFeedEvent(state, killer, victim, weapon, eventTime);
+  addKillFeedEvent(state, killer, victim, weapon, distance, eventTime);
   addLongShotEvent(state, killer, victim, weapon, distance, eventTime);
 }
 

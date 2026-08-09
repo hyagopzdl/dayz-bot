@@ -202,6 +202,7 @@ export type KillFeedEvent = {
   killer: string;
   victim: string;
   weapon?: string;
+  distance?: number | null;
   at: string;
 };
 

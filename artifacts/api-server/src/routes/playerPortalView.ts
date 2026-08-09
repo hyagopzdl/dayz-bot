@@ -1,6 +1,6 @@
 import type { PortalSession } from "../auth/session";
 
-const PLAYER_PORTAL_ASSET_VERSION = "20260808-public-profile-1";
+const PLAYER_PORTAL_ASSET_VERSION = "20260809-killfeed-1";
 
 function escapeHtml(value: unknown) {
   return String(value ?? "")
@@ -11,7 +11,7 @@ function escapeHtml(value: unknown) {
     .replaceAll("'", "&#039;");
 }
 
-export function renderPlayerPortal(session: PortalSession, initialView: "dashboard" | "profile" | "public-profile" | "rankings" | "accounts" | "clan" | "shop" | "purchases" = "dashboard", options: { shopEnabled?: boolean } = {}) {
+export function renderPlayerPortal(session: PortalSession, initialView: "dashboard" | "profile" | "public-profile" | "rankings" | "killfeed" | "accounts" | "clan" | "shop" | "purchases" = "dashboard", options: { shopEnabled?: boolean } = {}) {
   const shopEnabled = options.shopEnabled !== false;
   const displayName = session.globalName || session.username;
   return `<!doctype html>
@@ -34,6 +34,7 @@ export function renderPlayerPortal(session: PortalSession, initialView: "dashboa
         <a class="nav-item ${initialView === "dashboard" ? "active" : ""}" href="/app" data-route="dashboard"><span class="nav-icon">⌂</span>Dashboard</a>
         <a class="nav-item ${initialView === "profile" ? "active" : ""}" href="/app/profile" data-route="profile"><span class="nav-icon">○</span>Profile</a>
         <a class="nav-item ${initialView === "rankings" ? "active" : ""}" href="/app/rankings" data-route="rankings"><span class="nav-icon">◫</span>Rankings</a>
+        <a class="nav-item ${initialView === "killfeed" ? "active" : ""}" href="/app/killfeed" data-route="killfeed"><span class="nav-icon">☠</span>Kill Feed</a>
         <a class="nav-item ${initialView === "accounts" ? "active" : ""}" href="/app/accounts" data-route="accounts"><span class="nav-icon">◎</span>Accounts</a>
         <a class="nav-item ${initialView === "clan" ? "active" : ""}" href="/app/clan" data-route="clan"><span class="nav-icon">◉</span>Clan</a>
 ${shopEnabled ? `<a class="nav-item ${initialView === "shop" ? "active" : ""}" href="/app/shop" data-route="shop"><span class="nav-icon">◇</span>Shop</a>
