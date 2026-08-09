@@ -1,4 +1,4 @@
-import { getStateAsync, saveStateAsync } from "../state";
+import { getStateAsync, saveDiscordStateAsync } from "../state";
 import { ensureBotState } from "./state";
 
 export function createDiscordStateAccess() {
@@ -20,7 +20,7 @@ export function createDiscordStateAccess() {
   }
 
   async function saveState(state: any) {
-    await saveStateAsync(ensureBotState(state));
+    await saveDiscordStateAsync(ensureBotState(state));
     console.log("💾 state salvo pelo Discord");
   }
 

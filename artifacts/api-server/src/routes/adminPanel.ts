@@ -56,6 +56,7 @@ import {
   saveStateAsync,
   flushStateAsync,
   getStatePersistenceMetrics,
+  getDiscordRuntimePersistenceMetrics,
   type AppState,
   type PlayerLink,
   type Wallet,
@@ -6234,6 +6235,7 @@ function renderAdminPanelHtml(token: string) {
       }).join('');
       if (metrics && state.persistenceMetrics) {
         const m = state.persistenceMetrics;
+        const discordRuntime = state.discordRuntimeMetrics || {};
         const adm = state.admDownloadMetrics || {};
         const runtime = state.runtimeMetrics || {};
         const network = state.networkMetrics || {};
@@ -6330,6 +6332,17 @@ function renderAdminPanelHtml(token: string) {
           '<div class="settings-card"><div class="settings-card-head"><div><h3>Payload sections</h3><p>Current size, entry count and how often each top-level section changed.</p></div></div><div class="table-wrap"><table><thead><tr><th>Section</th><th>Entries</th><th>Size</th><th>Share</th><th>Changed writes</th><th>Cumulative</th></tr></thead><tbody>' + sectionRows + '</tbody></table></div></div>' +
         '</div>' +
         '<div class="settings-card" style="margin-top:16px"><div class="settings-card-head"><div><h3>Recent persisted writes</h3><p>Last 20 writes with payload, effective changed bytes, source and changed sections.</p></div></div><div class="table-wrap"><table><thead><tr><th>When</th><th>Payload</th><th>Changed</th><th>Duration</th><th>Sources</th><th>Sections</th></tr></thead><tbody>' + writeRows + '</tbody></table></div></div>' +
+        '<div class="settings-card" style="margin-top:16px"><div class="settings-card-head"><div><h3>Discord runtime domain</h3><p>Small Neon row used for feed/message/map runtime updates when no core state changed.</p></div></div>' +
+          '<div class="overview-grid" style="grid-template-columns:repeat(6,minmax(0,1fr))">' +
+            '<div class="stat-card"><span>Requests</span><strong>' + Number(discordRuntime.saveRequests || 0).toLocaleString() + '</strong></div>' +
+            '<div class="stat-card"><span>Writes</span><strong>' + Number(discordRuntime.writes || 0).toLocaleString() + '</strong></div>' +
+            '<div class="stat-card"><span>Skipped</span><strong>' + Number(discordRuntime.skippedWrites || 0).toLocaleString() + '</strong></div>' +
+            '<div class="stat-card"><span>Avg payload</span><strong>' + formatBytes(Number(discordRuntime.averagePayloadBytes || 0)) + '</strong></div>' +
+            '<div class="stat-card"><span>Total written</span><strong>' + formatBytes(Number(discordRuntime.totalPayloadBytesWritten || 0)) + '</strong></div>' +
+            '<div class="stat-card"><span>Projected 30d</span><strong>' + formatBytes(Number(discordRuntime.projected30DayPayloadBytes || 0)) + '</strong></div>' +
+          '</div>' +
+          '<div class="member-meta" style="margin-top:10px">Write rate: ' + Number(discordRuntime.writeRatePerHour || 0).toLocaleString() + '/h · Failed: ' + Number(discordRuntime.failedWrites || 0).toLocaleString() + ' · Last write: ' + escapeHtml(discordRuntime.lastWriteAt ? relativeDate(discordRuntime.lastWriteAt) : 'none') + '</div>' +
+        '</div>' +
         '<div class="settings-grid" style="margin-top:16px;grid-template-columns:repeat(2,minmax(0,1fr))">' + detailCards + '</div>' +
         '<div class="overview-grid" style="margin-top:20px;grid-template-columns:repeat(6,minmax(0,1fr))">' +
           '<div class="stat-card"><span>ADM cycles</span><strong>' + Number(adm.cycles || 0).toLocaleString() + '</strong></div>' +
@@ -6393,6 +6406,7 @@ function renderAdminPanelHtml(token: string) {
         const payload = await response.json();
         state.serviceSettings = payload.settings;
         state.persistenceMetrics = payload.persistenceMetrics;
+        state.discordRuntimeMetrics = payload.discordRuntimeMetrics;
         state.admDownloadMetrics = payload.admDownloadMetrics;
         state.runtimeMetrics = payload.runtimeMetrics;
         state.networkMetrics = payload.networkMetrics;
@@ -6409,6 +6423,7 @@ function renderAdminPanelHtml(token: string) {
         const payload = await response.json();
         state.serviceSettings = payload.settings;
         state.persistenceMetrics = payload.persistenceMetrics;
+        state.discordRuntimeMetrics = payload.discordRuntimeMetrics;
         state.admDownloadMetrics = payload.admDownloadMetrics;
         state.runtimeMetrics = payload.runtimeMetrics;
         state.networkMetrics = payload.networkMetrics;
@@ -6428,6 +6443,7 @@ function renderAdminPanelHtml(token: string) {
         const payload = await response.json();
         state.serviceSettings = payload.settings;
         state.persistenceMetrics = payload.persistenceMetrics;
+        state.discordRuntimeMetrics = payload.discordRuntimeMetrics;
         state.admDownloadMetrics = payload.admDownloadMetrics;
         state.runtimeMetrics = payload.runtimeMetrics;
         state.networkMetrics = payload.networkMetrics;
@@ -7035,7 +7051,7 @@ router.get("/api/service-settings", async (req, res) => {
     const state = await getStateAsync();
     const settings = normalizeServiceSettings(state.serviceSettings);
     setAdmDownloadMode(settings.admDownloadMode);
-    res.json({ settings, persistenceMetrics: getStatePersistenceMetrics(), admDownloadMetrics: getAdmDownloadMetrics(), runtimeMetrics: getRuntimePerformanceMetrics(), networkMetrics: getNetworkMetrics() });
+    res.json({ settings, persistenceMetrics: getStatePersistenceMetrics(), discordRuntimeMetrics: getDiscordRuntimePersistenceMetrics(), admDownloadMetrics: getAdmDownloadMetrics(), runtimeMetrics: getRuntimePerformanceMetrics(), networkMetrics: getNetworkMetrics() });
   } catch (err) {
     res.status(500).json({ error: String(err) });
   }
@@ -7069,6 +7085,7 @@ router.patch("/api/service-settings", async (req, res) => {
       settings: next,
       commands: listDiscordCommandDescriptors(effectiveCommandSettings),
       persistenceMetrics: getStatePersistenceMetrics(),
+      discordRuntimeMetrics: getDiscordRuntimePersistenceMetrics(),
       admDownloadMetrics: getAdmDownloadMetrics(),
       runtimeMetrics: getRuntimePerformanceMetrics(),
       networkMetrics: getNetworkMetrics(),

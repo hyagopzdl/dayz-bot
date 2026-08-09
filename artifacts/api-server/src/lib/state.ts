@@ -11,6 +11,7 @@ import { recordNetworkTransfer } from "./networkMetrics";
 
 const FILE = path.resolve(process.cwd(), "state.json");
 const STATE_ID = "main";
+const DISCORD_RUNTIME_STATE_ID = "discord_runtime";
 
 const STATE_SAVE_DEBOUNCE_MS = Number(process.env.STATE_SAVE_DEBOUNCE_MS || 15000);
 const STATE_FORCE_SAVE_AFTER_MS = Number(process.env.STATE_FORCE_SAVE_AFTER_MS || 60000);
@@ -25,6 +26,27 @@ let pendingPersistStartedAt = 0;
 let saveTimer: NodeJS.Timeout | null = null;
 let flushPromise: Promise<void> | null = null;
 let pendingPersistReasons = new Set<string>();
+
+let lastCoreHash = "";
+let lastDiscordRuntimeHash = "";
+let pendingDiscordRuntimeJson = "";
+let pendingDiscordRuntimeHash = "";
+let discordRuntimeSaveTimer: NodeJS.Timeout | null = null;
+let discordRuntimeFlushPromise: Promise<void> | null = null;
+
+const discordRuntimeMetrics = {
+  startedAt: new Date().toISOString(),
+  saveRequests: 0,
+  writes: 0,
+  skippedWrites: 0,
+  failedWrites: 0,
+  totalPayloadBytesWritten: 0,
+  totalWriteDurationMs: 0,
+  lastPayloadBytes: 0,
+  lastWriteDurationMs: 0,
+  lastWriteAt: undefined as string | undefined,
+  lastWriteError: undefined as string | undefined,
+};
 
 type PersistenceReasonMetric = {
   saveRequests: number;
@@ -408,6 +430,42 @@ export type AppState = {
   serviceSettings?: ServiceSettings;
 };
 
+export type DiscordRuntimeState = {
+  killFeedEvents: KillFeedEvent[];
+  killStreakEvents: KillStreakEvent[];
+  discordMessageIds: Record<string, string>;
+  mapRotation?: any;
+};
+
+function defaultDiscordRuntimeState(): DiscordRuntimeState {
+  return {
+    killFeedEvents: [],
+    killStreakEvents: [],
+    discordMessageIds: {},
+    mapRotation: undefined,
+  };
+}
+
+function normalizeDiscordRuntimeState(data: Partial<AppState> | Partial<DiscordRuntimeState> | null | undefined): DiscordRuntimeState {
+  const source = data || {};
+  return {
+    killFeedEvents: Array.isArray(source.killFeedEvents) ? source.killFeedEvents.slice(-60) : [],
+    killStreakEvents: Array.isArray(source.killStreakEvents)
+      ? source.killStreakEvents.map(normalizeKillStreakEvent).filter(Boolean).slice(-100) as KillStreakEvent[]
+      : [],
+    discordMessageIds: source.discordMessageIds && typeof source.discordMessageIds === "object" ? source.discordMessageIds : {},
+    mapRotation: source.mapRotation,
+  };
+}
+
+function applyDiscordRuntimeState(state: AppState, runtime: DiscordRuntimeState): AppState {
+  state.killFeedEvents = runtime.killFeedEvents;
+  state.killStreakEvents = runtime.killStreakEvents;
+  state.discordMessageIds = runtime.discordMessageIds;
+  state.mapRotation = runtime.mapRotation;
+  return state;
+}
+
 function defaultState(): AppState {
   return {
     players: {},
@@ -672,6 +730,19 @@ function hashState(serialized: string): string {
   return crypto.createHash("sha1").update(serialized).digest("hex");
 }
 
+function serializeCoreState(data: AppState): string {
+  const { killFeedEvents: _killFeedEvents, killStreakEvents: _killStreakEvents, discordMessageIds: _discordMessageIds, mapRotation: _mapRotation, ...core } = data;
+  return JSON.stringify(core);
+}
+
+function hashCoreState(data: AppState): string {
+  return hashState(serializeCoreState(data));
+}
+
+function serializeDiscordRuntime(data: Partial<AppState> | Partial<DiscordRuntimeState>): string {
+  return JSON.stringify(normalizeDiscordRuntimeState(data));
+}
+
 function logStateDebug(message: string, meta?: Record<string, unknown>) {
   if (!STATE_DEBUG) return;
   if (meta) {
@@ -821,6 +892,83 @@ function analyzePayload(parsed: AppState, now: string) {
   };
 }
 
+async function persistDiscordRuntimeToNeon(serialized: string, hash: string) {
+  if (!sql) return;
+  if (hash === lastDiscordRuntimeHash) {
+    discordRuntimeMetrics.skippedWrites += 1;
+    return;
+  }
+
+  const runtime = JSON.parse(serialized) as DiscordRuntimeState;
+  const payloadBytes = Buffer.byteLength(serialized, "utf8");
+  const startedAt = Date.now();
+  discordRuntimeMetrics.writes += 1;
+  discordRuntimeMetrics.lastPayloadBytes = payloadBytes;
+  discordRuntimeMetrics.totalPayloadBytesWritten += payloadBytes;
+  discordRuntimeMetrics.lastWriteAt = new Date().toISOString();
+
+  try {
+    await sql`
+      INSERT INTO bot_state (id, data, updated_at)
+      VALUES (${DISCORD_RUNTIME_STATE_ID}, ${sql.json(runtime)}, NOW())
+      ON CONFLICT (id)
+      DO UPDATE SET data = EXCLUDED.data, updated_at = NOW()
+    `;
+    recordNetworkTransfer({
+      service: "neon-runtime",
+      operation: "discord_runtime_write",
+      direction: "outbound",
+      bytes: payloadBytes,
+      ok: true,
+    });
+    lastDiscordRuntimeHash = hash;
+  } catch (err) {
+    discordRuntimeMetrics.failedWrites += 1;
+    discordRuntimeMetrics.lastWriteError = err instanceof Error ? err.message : String(err);
+    throw err;
+  } finally {
+    const durationMs = Date.now() - startedAt;
+    discordRuntimeMetrics.lastWriteDurationMs = durationMs;
+    discordRuntimeMetrics.totalWriteDurationMs += durationMs;
+  }
+}
+
+async function flushPendingDiscordRuntime() {
+  if (!pendingDiscordRuntimeJson || !pendingDiscordRuntimeHash) return;
+  if (discordRuntimeFlushPromise) return discordRuntimeFlushPromise;
+
+  const serialized = pendingDiscordRuntimeJson;
+  const hash = pendingDiscordRuntimeHash;
+  pendingDiscordRuntimeJson = "";
+  pendingDiscordRuntimeHash = "";
+  if (discordRuntimeSaveTimer) {
+    clearTimeout(discordRuntimeSaveTimer);
+    discordRuntimeSaveTimer = null;
+  }
+
+  discordRuntimeFlushPromise = persistDiscordRuntimeToNeon(serialized, hash)
+    .catch((err) => {
+      console.error("❌ erro salvando discord_runtime no Neon:", err);
+      pendingDiscordRuntimeJson = serialized;
+      pendingDiscordRuntimeHash = hash;
+      scheduleDiscordRuntimePersist();
+    })
+    .finally(() => {
+      discordRuntimeFlushPromise = null;
+      if (pendingDiscordRuntimeJson) scheduleDiscordRuntimePersist();
+    });
+
+  return discordRuntimeFlushPromise;
+}
+
+function scheduleDiscordRuntimePersist() {
+  if (!sql || !pendingDiscordRuntimeJson || discordRuntimeSaveTimer) return;
+  discordRuntimeSaveTimer = setTimeout(() => {
+    discordRuntimeSaveTimer = null;
+    flushPendingDiscordRuntime().catch((err) => console.error("❌ erro no flush do discord_runtime:", err));
+  }, STATE_SAVE_DEBOUNCE_MS);
+}
+
 async function persistStateToNeon(serialized: string, hash: string, reasons: string[]) {
   if (!sql) return;
 
@@ -952,7 +1100,7 @@ function scheduleNeonPersist() {
 }
 
 export async function flushStateAsync() {
-  await flushPendingState();
+  await Promise.all([flushPendingState(), flushPendingDiscordRuntime()]);
 }
 
 function readLocalState(): AppState {
@@ -982,6 +1130,8 @@ export async function getStateAsync(): Promise<AppState> {
     cachedState = readLocalState();
     lastPersistedJson = serializeState(cachedState);
     lastPersistedHash = hashState(lastPersistedJson);
+    lastCoreHash = hashCoreState(cachedState);
+    lastDiscordRuntimeHash = hashState(serializeDiscordRuntime(cachedState));
     return cachedState;
   }
 
@@ -989,13 +1139,14 @@ export async function getStateAsync(): Promise<AppState> {
     persistenceMetrics.reads += 1;
     persistenceMetrics.lastReadAt = new Date().toISOString();
     const rows = await sql`
-      SELECT data
+      SELECT id, data, updated_at
       FROM bot_state
-      WHERE id = ${STATE_ID}
-      LIMIT 1
+      WHERE id IN (${STATE_ID}, ${DISCORD_RUNTIME_STATE_ID})
     `;
+    const mainRow = rows.find((row: any) => row.id === STATE_ID);
+    const runtimeRow = rows.find((row: any) => row.id === DISCORD_RUNTIME_STATE_ID);
 
-    if (!rows.length) {
+    if (!mainRow) {
       const state = defaultState();
       const serialized = serializeState(state);
       const hash = hashState(serialized);
@@ -1009,10 +1160,17 @@ export async function getStateAsync(): Promise<AppState> {
       cachedState = state;
       lastPersistedJson = serialized;
       lastPersistedHash = hash;
+      lastCoreHash = hashCoreState(state);
+      lastDiscordRuntimeHash = hashState(serializeDiscordRuntime(state));
       return cachedState;
     }
 
-    cachedState = migrateLegacyState(rows[0].data || {});
+    cachedState = migrateLegacyState(mainRow.data || {});
+    const mainUpdatedAt = mainRow.updated_at ? new Date(mainRow.updated_at).getTime() : 0;
+    const runtimeUpdatedAt = runtimeRow?.updated_at ? new Date(runtimeRow.updated_at).getTime() : 0;
+    if (runtimeRow && runtimeUpdatedAt >= mainUpdatedAt) {
+      applyDiscordRuntimeState(cachedState, normalizeDiscordRuntimeState(runtimeRow.data || defaultDiscordRuntimeState()));
+    }
     const loadedStateJson = serializeState(cachedState);
     recordNetworkTransfer({
       service: "neon",
@@ -1023,12 +1181,16 @@ export async function getStateAsync(): Promise<AppState> {
     });
     lastPersistedJson = loadedStateJson;
     lastPersistedHash = hashState(lastPersistedJson);
+    lastCoreHash = hashCoreState(cachedState);
+    lastDiscordRuntimeHash = hashState(serializeDiscordRuntime(cachedState));
     return cachedState;
   } catch (err) {
     console.error("❌ erro lendo state no Neon, usando state.json local:", err);
     cachedState = readLocalState();
     lastPersistedJson = serializeState(cachedState);
     lastPersistedHash = hashState(lastPersistedJson);
+    lastCoreHash = hashCoreState(cachedState);
+    lastDiscordRuntimeHash = hashState(serializeDiscordRuntime(cachedState));
     return cachedState;
   }
 }
@@ -1051,6 +1213,53 @@ export function getStatePersistenceMetrics() {
     detailedSections: [...persistenceMetrics.detailedSections],
     recentWrites: [...persistenceMetrics.recentWrites],
   };
+}
+
+export function getDiscordRuntimePersistenceMetrics() {
+  const uptimeHours = Math.max(1 / 60, (Date.now() - new Date(discordRuntimeMetrics.startedAt).getTime()) / 3_600_000);
+  const writes = Math.max(1, discordRuntimeMetrics.writes);
+  return {
+    ...discordRuntimeMetrics,
+    averagePayloadBytes: Math.round(discordRuntimeMetrics.totalPayloadBytesWritten / writes),
+    averageWriteDurationMs: Math.round(discordRuntimeMetrics.totalWriteDurationMs / writes),
+    writeRatePerHour: Number((discordRuntimeMetrics.writes / uptimeHours).toFixed(2)),
+    projected30DayPayloadBytes: Math.round((discordRuntimeMetrics.totalPayloadBytesWritten / uptimeHours) * 24 * 30),
+  };
+}
+
+export async function saveDiscordStateAsync(data: AppState, reason?: string) {
+  const runtimeReason = normalizePersistenceReason(reason);
+  discordRuntimeMetrics.saveRequests += 1;
+
+  // Any non-runtime mutation still uses the full, proven persistence path.
+  // This keeps economy, links, shop and other Discord interactions safe while
+  // allowing feed/message-only updates to use the small domain row.
+  if (!lastCoreHash || hashCoreState(data) !== lastCoreHash) {
+    await saveStateAsync(data, runtimeReason);
+    return;
+  }
+
+  const runtime = normalizeDiscordRuntimeState(data);
+  if (cachedState) applyDiscordRuntimeState(cachedState, runtime);
+  else cachedState = data;
+  writeLocalState(cachedState);
+
+  if (!sql) {
+    // Local-only environments keep the established single-file behavior.
+    await saveStateAsync(cachedState, runtimeReason);
+    return;
+  }
+
+  const serialized = JSON.stringify(runtime);
+  const hash = hashState(serialized);
+  if (hash === lastDiscordRuntimeHash || hash === pendingDiscordRuntimeHash) {
+    discordRuntimeMetrics.skippedWrites += 1;
+    return;
+  }
+
+  pendingDiscordRuntimeJson = serialized;
+  pendingDiscordRuntimeHash = hash;
+  scheduleDiscordRuntimePersist();
 }
 
 export async function saveStateAsync(data: AppState, reason?: string) {
@@ -1108,6 +1317,15 @@ export async function saveStateAsync(data: AppState, reason?: string) {
   };
 
   cachedState = safeData;
+  lastCoreHash = hashCoreState(safeData);
+
+  // If a runtime-only write was waiting while a full/core save became necessary,
+  // refresh that pending payload so an older runtime snapshot can never become
+  // newer than the full row after a race.
+  if (pendingDiscordRuntimeJson) {
+    pendingDiscordRuntimeJson = serializeDiscordRuntime(safeData);
+    pendingDiscordRuntimeHash = hashState(pendingDiscordRuntimeJson);
+  }
 
   const serialized = serializeState(safeData);
   const hash = hashState(serialized);
@@ -1140,6 +1358,8 @@ export function getState(): AppState {
   cachedState = readLocalState();
   lastPersistedJson = serializeState(cachedState);
   lastPersistedHash = hashState(lastPersistedJson);
+  lastCoreHash = hashCoreState(cachedState);
+  lastDiscordRuntimeHash = hashState(serializeDiscordRuntime(cachedState));
   return cachedState;
 }
 
@@ -1148,6 +1368,8 @@ export function saveState(data: AppState) {
   const serialized = serializeState(data);
   lastPersistedJson = serialized;
   lastPersistedHash = hashState(serialized);
+  lastCoreHash = hashCoreState(data);
+  lastDiscordRuntimeHash = hashState(serializeDiscordRuntime(data));
   writeLocalState(data);
   logStateDebug("💾 STATE SALVO LOCALMENTE", { file: FILE });
 }
