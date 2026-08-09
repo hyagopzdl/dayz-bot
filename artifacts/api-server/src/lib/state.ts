@@ -127,6 +127,50 @@ const sql = process.env.DATABASE_URL
     })
   : null;
 
+
+export type PlayerPositionHistoryEventType = "position" | "connect" | "disconnect";
+
+export type PlayerPositionHistoryObservation = {
+  sourceKey: string;
+  playerName: string;
+  playerNormalized: string;
+  eventType: PlayerPositionHistoryEventType;
+  x?: number;
+  z?: number;
+  y?: number;
+  observedAt: string;
+  sourceFile?: string;
+};
+
+const PLAYER_POSITION_RETENTION_HOURS = 24;
+const PLAYER_POSITION_FLUSH_INTERVAL_MS = 10 * 60 * 1000;
+const PLAYER_POSITION_MAX_PENDING = 250;
+const PLAYER_POSITION_CLEANUP_INTERVAL_MS = 6 * 60 * 60 * 1000;
+
+let playerPositionTableReadyPromise: Promise<void> | null = null;
+let pendingPlayerPositionObservations = new Map<string, PlayerPositionHistoryObservation>();
+let lastPlayerPositionFlushAt = 0;
+let lastPlayerPositionCleanupAt = 0;
+
+const playerPositionHistoryMetrics = {
+  startedAt: new Date().toISOString(),
+  observationsReceived: 0,
+  positionEvents: 0,
+  connectEvents: 0,
+  disconnectEvents: 0,
+  invalidPositions: 0,
+  batchesWritten: 0,
+  rowsWritten: 0,
+  failedBatches: 0,
+  totalPayloadBytesWritten: 0,
+  totalWriteDurationMs: 0,
+  lastWriteDurationMs: 0,
+  lastWriteAt: undefined as string | undefined,
+  lastError: undefined as string | undefined,
+  recentSamples: [] as PlayerPositionHistoryObservation[],
+  observedPlayers: new Set<string>(),
+};
+
 export type PlayerStats = {
   kills: number;
   deaths: number;
@@ -1100,7 +1144,7 @@ function scheduleNeonPersist() {
 }
 
 export async function flushStateAsync() {
-  await Promise.all([flushPendingState(), flushPendingDiscordRuntime()]);
+  await Promise.all([flushPendingState(), flushPendingDiscordRuntime(), flushPlayerPositionHistoryBatch()]);
 }
 
 function readLocalState(): AppState {
@@ -1224,6 +1268,160 @@ export function getDiscordRuntimePersistenceMetrics() {
     averageWriteDurationMs: Math.round(discordRuntimeMetrics.totalWriteDurationMs / writes),
     writeRatePerHour: Number((discordRuntimeMetrics.writes / uptimeHours).toFixed(2)),
     projected30DayPayloadBytes: Math.round((discordRuntimeMetrics.totalPayloadBytesWritten / uptimeHours) * 24 * 30),
+  };
+}
+
+
+async function ensurePlayerPositionHistoryTable() {
+  if (!sql) return;
+  if (playerPositionTableReadyPromise) return playerPositionTableReadyPromise;
+
+  playerPositionTableReadyPromise = (async () => {
+    await sql`
+      CREATE TABLE IF NOT EXISTS player_position_history (
+        id BIGSERIAL PRIMARY KEY,
+        source_key TEXT NOT NULL UNIQUE,
+        player_name TEXT NOT NULL,
+        player_normalized TEXT NOT NULL,
+        event_type TEXT NOT NULL,
+        x DOUBLE PRECISION,
+        z DOUBLE PRECISION,
+        y DOUBLE PRECISION,
+        observed_at TIMESTAMPTZ NOT NULL,
+        source_file TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `;
+    await sql`CREATE INDEX IF NOT EXISTS player_position_history_observed_at_idx ON player_position_history (observed_at)`;
+    await sql`CREATE INDEX IF NOT EXISTS player_position_history_player_time_idx ON player_position_history (player_normalized, observed_at)`;
+  })().catch((err) => {
+    playerPositionTableReadyPromise = null;
+    throw err;
+  });
+
+  return playerPositionTableReadyPromise;
+}
+
+async function flushPlayerPositionHistoryBatch() {
+  if (!sql || !pendingPlayerPositionObservations.size) return;
+
+  const rows = [...pendingPlayerPositionObservations.values()];
+  pendingPlayerPositionObservations = new Map<string, PlayerPositionHistoryObservation>();
+  const startedAt = Date.now();
+  const payloadBytes = Buffer.byteLength(JSON.stringify(rows), "utf8");
+
+  try {
+    await ensurePlayerPositionHistoryTable();
+    const values = rows.map((row) => ({
+      source_key: row.sourceKey,
+      player_name: row.playerName,
+      player_normalized: row.playerNormalized,
+      event_type: row.eventType,
+      x: row.x ?? null,
+      z: row.z ?? null,
+      y: row.y ?? null,
+      observed_at: row.observedAt,
+      source_file: row.sourceFile || null,
+    }));
+    const result = await sql`
+      INSERT INTO player_position_history ${sql(values)}
+      ON CONFLICT (source_key) DO NOTHING
+    `;
+
+    const inserted = Number((result as any).count ?? rows.length);
+    const now = Date.now();
+    playerPositionHistoryMetrics.batchesWritten += 1;
+    playerPositionHistoryMetrics.rowsWritten += inserted;
+    playerPositionHistoryMetrics.totalPayloadBytesWritten += payloadBytes;
+    playerPositionHistoryMetrics.lastWriteAt = new Date(now).toISOString();
+    lastPlayerPositionFlushAt = now;
+    recordNetworkTransfer({
+      service: "neon-position-history",
+      operation: "player_position_history_batch",
+      direction: "outbound",
+      bytes: payloadBytes,
+      ok: true,
+    });
+
+    if (now - lastPlayerPositionCleanupAt >= PLAYER_POSITION_CLEANUP_INTERVAL_MS) {
+      await sql`DELETE FROM player_position_history WHERE observed_at < NOW() - INTERVAL '24 hours'`;
+      lastPlayerPositionCleanupAt = now;
+    }
+  } catch (err) {
+    playerPositionHistoryMetrics.failedBatches += 1;
+    playerPositionHistoryMetrics.lastError = err instanceof Error ? err.message : String(err);
+    for (const row of rows) pendingPlayerPositionObservations.set(row.sourceKey, row);
+    recordNetworkTransfer({
+      service: "neon-position-history",
+      operation: "player_position_history_batch",
+      direction: "outbound",
+      bytes: payloadBytes,
+      ok: false,
+    });
+    throw err;
+  } finally {
+    const durationMs = Date.now() - startedAt;
+    playerPositionHistoryMetrics.lastWriteDurationMs = durationMs;
+    playerPositionHistoryMetrics.totalWriteDurationMs += durationMs;
+  }
+}
+
+export async function queuePlayerPositionHistoryObservations(observations: PlayerPositionHistoryObservation[]) {
+  if (!observations.length) return;
+
+  for (const observation of observations) {
+    playerPositionHistoryMetrics.observationsReceived += 1;
+    if (observation.eventType === "connect") playerPositionHistoryMetrics.connectEvents += 1;
+    else if (observation.eventType === "disconnect") playerPositionHistoryMetrics.disconnectEvents += 1;
+    else playerPositionHistoryMetrics.positionEvents += 1;
+    playerPositionHistoryMetrics.observedPlayers.add(observation.playerNormalized);
+    pendingPlayerPositionObservations.set(observation.sourceKey, observation);
+    playerPositionHistoryMetrics.recentSamples.push(observation);
+  }
+
+  if (playerPositionHistoryMetrics.recentSamples.length > 80) {
+    playerPositionHistoryMetrics.recentSamples.splice(0, playerPositionHistoryMetrics.recentSamples.length - 80);
+  }
+
+  if (!sql) return;
+  const now = Date.now();
+  const shouldFlush =
+    lastPlayerPositionFlushAt === 0 ||
+    now - lastPlayerPositionFlushAt >= PLAYER_POSITION_FLUSH_INTERVAL_MS ||
+    pendingPlayerPositionObservations.size >= PLAYER_POSITION_MAX_PENDING;
+
+  if (shouldFlush) await flushPlayerPositionHistoryBatch();
+}
+
+export function recordInvalidPlayerPositionObservation() {
+  playerPositionHistoryMetrics.invalidPositions += 1;
+}
+
+export function getPlayerPositionHistoryMetrics() {
+  const uptimeHours = Math.max(1 / 60, (Date.now() - new Date(playerPositionHistoryMetrics.startedAt).getTime()) / 3_600_000);
+  const batches = Math.max(1, playerPositionHistoryMetrics.batchesWritten);
+  return {
+    startedAt: playerPositionHistoryMetrics.startedAt,
+    retentionHours: PLAYER_POSITION_RETENTION_HOURS,
+    flushIntervalMinutes: PLAYER_POSITION_FLUSH_INTERVAL_MS / 60_000,
+    observationsReceived: playerPositionHistoryMetrics.observationsReceived,
+    positionEvents: playerPositionHistoryMetrics.positionEvents,
+    connectEvents: playerPositionHistoryMetrics.connectEvents,
+    disconnectEvents: playerPositionHistoryMetrics.disconnectEvents,
+    invalidPositions: playerPositionHistoryMetrics.invalidPositions,
+    uniquePlayersObserved: playerPositionHistoryMetrics.observedPlayers.size,
+    pendingObservations: pendingPlayerPositionObservations.size,
+    batchesWritten: playerPositionHistoryMetrics.batchesWritten,
+    rowsWritten: playerPositionHistoryMetrics.rowsWritten,
+    failedBatches: playerPositionHistoryMetrics.failedBatches,
+    totalPayloadBytesWritten: playerPositionHistoryMetrics.totalPayloadBytesWritten,
+    averageBatchPayloadBytes: Math.round(playerPositionHistoryMetrics.totalPayloadBytesWritten / batches),
+    averageWriteDurationMs: Math.round(playerPositionHistoryMetrics.totalWriteDurationMs / batches),
+    projected30DayPayloadBytes: Math.round((playerPositionHistoryMetrics.totalPayloadBytesWritten / uptimeHours) * 24 * 30),
+    lastWriteAt: playerPositionHistoryMetrics.lastWriteAt,
+    lastWriteDurationMs: playerPositionHistoryMetrics.lastWriteDurationMs,
+    lastError: playerPositionHistoryMetrics.lastError,
+    recentSamples: [...playerPositionHistoryMetrics.recentSamples],
   };
 }
 

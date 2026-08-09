@@ -57,6 +57,7 @@ import {
   flushStateAsync,
   getStatePersistenceMetrics,
   getDiscordRuntimePersistenceMetrics,
+  getPlayerPositionHistoryMetrics,
   type AppState,
   type PlayerLink,
   type Wallet,
@@ -6236,6 +6237,7 @@ function renderAdminPanelHtml(token: string) {
       if (metrics && state.persistenceMetrics) {
         const m = state.persistenceMetrics;
         const discordRuntime = state.discordRuntimeMetrics || {};
+        const positionHistory = state.playerPositionHistoryMetrics || {};
         const adm = state.admDownloadMetrics || {};
         const runtime = state.runtimeMetrics || {};
         const network = state.networkMetrics || {};
@@ -6252,6 +6254,15 @@ function renderAdminPanelHtml(token: string) {
         const recentCycles = Array.isArray(runtime.recentCycles) ? runtime.recentCycles.slice(-12).reverse() : [];
         const networkServices = Array.isArray(network.services) ? network.services : [];
         const networkTransfers = Array.isArray(network.recentTransfers) ? network.recentTransfers.slice(-20).reverse() : [];
+        const positionSamples = Array.isArray(positionHistory.recentSamples) ? positionHistory.recentSamples.slice(-20).reverse() : [];
+        const positionSampleRows = positionSamples.length ? positionSamples.map((item) =>
+          '<tr><td>' + escapeHtml(item.observedAt ? relativeDate(item.observedAt) : '-') + '</td>' +
+          '<td>' + escapeHtml(item.playerName || '-') + '</td>' +
+          '<td>' + escapeHtml(item.eventType || '-') + '</td>' +
+          '<td>' + (item.x == null ? '-' : Number(item.x).toFixed(1)) + '</td>' +
+          '<td>' + (item.z == null ? '-' : Number(item.z).toFixed(1)) + '</td>' +
+          '<td><code>' + escapeHtml(item.sourceFile ? String(item.sourceFile).split('/').pop() : '-') + '</code></td></tr>'
+        ).join('') : '<tr><td colspan="6" class="member-meta">No player position observations captured yet.</td></tr>';
         const networkServiceRows = networkServices.length ? networkServices.map((item) =>
           '<tr><td><code>' + escapeHtml(item.service || '-') + '</code></td>' +
           '<td>' + Number(item.requests || 0).toLocaleString() + '</td>' +
@@ -6343,6 +6354,24 @@ function renderAdminPanelHtml(token: string) {
           '</div>' +
           '<div class="member-meta" style="margin-top:10px">Write rate: ' + Number(discordRuntime.writeRatePerHour || 0).toLocaleString() + '/h · Failed: ' + Number(discordRuntime.failedWrites || 0).toLocaleString() + ' · Last write: ' + escapeHtml(discordRuntime.lastWriteAt ? relativeDate(discordRuntime.lastWriteAt) : 'none') + '</div>' +
         '</div>' +
+        '<div class="settings-card" style="margin-top:16px"><div class="settings-card-head"><div><h3>Player position history diagnostics</h3><p>24-hour forensic location foundation. Positions are extracted only from ADM lines already processed; no extra Nitrado downloads or polling.</p></div></div>' +
+          '<div class="overview-grid" style="grid-template-columns:repeat(6,minmax(0,1fr))">' +
+            '<div class="stat-card"><span>Observations</span><strong>' + Number(positionHistory.observationsReceived || 0).toLocaleString() + '</strong></div>' +
+            '<div class="stat-card"><span>Players seen</span><strong>' + Number(positionHistory.uniquePlayersObserved || 0).toLocaleString() + '</strong></div>' +
+            '<div class="stat-card"><span>Position events</span><strong>' + Number(positionHistory.positionEvents || 0).toLocaleString() + '</strong></div>' +
+            '<div class="stat-card"><span>Connect / disconnect</span><strong>' + Number(positionHistory.connectEvents || 0).toLocaleString() + ' / ' + Number(positionHistory.disconnectEvents || 0).toLocaleString() + '</strong></div>' +
+            '<div class="stat-card"><span>Pending batch</span><strong>' + Number(positionHistory.pendingObservations || 0).toLocaleString() + '</strong></div>' +
+            '<div class="stat-card"><span>Invalid positions</span><strong>' + Number(positionHistory.invalidPositions || 0).toLocaleString() + '</strong></div>' +
+            '<div class="stat-card"><span>DB batches</span><strong>' + Number(positionHistory.batchesWritten || 0).toLocaleString() + '</strong></div>' +
+            '<div class="stat-card"><span>Rows written</span><strong>' + Number(positionHistory.rowsWritten || 0).toLocaleString() + '</strong></div>' +
+            '<div class="stat-card"><span>Avg batch</span><strong>' + formatBytes(Number(positionHistory.averageBatchPayloadBytes || 0)) + '</strong></div>' +
+            '<div class="stat-card"><span>Total sent</span><strong>' + formatBytes(Number(positionHistory.totalPayloadBytesWritten || 0)) + '</strong></div>' +
+            '<div class="stat-card"><span>Projected 30d</span><strong>' + formatBytes(Number(positionHistory.projected30DayPayloadBytes || 0)) + '</strong></div>' +
+            '<div class="stat-card"><span>Failed batches</span><strong>' + Number(positionHistory.failedBatches || 0).toLocaleString() + '</strong></div>' +
+          '</div>' +
+          '<div class="member-meta" style="margin-top:10px">Retention: ' + Number(positionHistory.retentionHours || 24).toLocaleString() + 'h · Flush cadence: up to ' + Number(positionHistory.flushIntervalMinutes || 10).toLocaleString() + ' min · Last DB write: ' + escapeHtml(positionHistory.lastWriteAt ? relativeDate(positionHistory.lastWriteAt) : 'none') + '. A position-history failure never blocks kills, rankings or ADM cursors.</div>' +
+          '<div class="table-wrap" style="margin-top:12px"><table><thead><tr><th>When</th><th>Player</th><th>Event</th><th>X</th><th>Z</th><th>ADM</th></tr></thead><tbody>' + positionSampleRows + '</tbody></table></div>' +
+        '</div>' +
         '<div class="settings-grid" style="margin-top:16px;grid-template-columns:repeat(2,minmax(0,1fr))">' + detailCards + '</div>' +
         '<div class="overview-grid" style="margin-top:20px;grid-template-columns:repeat(6,minmax(0,1fr))">' +
           '<div class="stat-card"><span>ADM cycles</span><strong>' + Number(adm.cycles || 0).toLocaleString() + '</strong></div>' +
@@ -6407,6 +6436,7 @@ function renderAdminPanelHtml(token: string) {
         state.serviceSettings = payload.settings;
         state.persistenceMetrics = payload.persistenceMetrics;
         state.discordRuntimeMetrics = payload.discordRuntimeMetrics;
+        state.playerPositionHistoryMetrics = payload.playerPositionHistoryMetrics;
         state.admDownloadMetrics = payload.admDownloadMetrics;
         state.runtimeMetrics = payload.runtimeMetrics;
         state.networkMetrics = payload.networkMetrics;
@@ -6424,6 +6454,7 @@ function renderAdminPanelHtml(token: string) {
         state.serviceSettings = payload.settings;
         state.persistenceMetrics = payload.persistenceMetrics;
         state.discordRuntimeMetrics = payload.discordRuntimeMetrics;
+        state.playerPositionHistoryMetrics = payload.playerPositionHistoryMetrics;
         state.admDownloadMetrics = payload.admDownloadMetrics;
         state.runtimeMetrics = payload.runtimeMetrics;
         state.networkMetrics = payload.networkMetrics;
@@ -6444,6 +6475,7 @@ function renderAdminPanelHtml(token: string) {
         state.serviceSettings = payload.settings;
         state.persistenceMetrics = payload.persistenceMetrics;
         state.discordRuntimeMetrics = payload.discordRuntimeMetrics;
+        state.playerPositionHistoryMetrics = payload.playerPositionHistoryMetrics;
         state.admDownloadMetrics = payload.admDownloadMetrics;
         state.runtimeMetrics = payload.runtimeMetrics;
         state.networkMetrics = payload.networkMetrics;
@@ -7051,7 +7083,7 @@ router.get("/api/service-settings", async (req, res) => {
     const state = await getStateAsync();
     const settings = normalizeServiceSettings(state.serviceSettings);
     setAdmDownloadMode(settings.admDownloadMode);
-    res.json({ settings, persistenceMetrics: getStatePersistenceMetrics(), discordRuntimeMetrics: getDiscordRuntimePersistenceMetrics(), admDownloadMetrics: getAdmDownloadMetrics(), runtimeMetrics: getRuntimePerformanceMetrics(), networkMetrics: getNetworkMetrics() });
+    res.json({ settings, persistenceMetrics: getStatePersistenceMetrics(), discordRuntimeMetrics: getDiscordRuntimePersistenceMetrics(), playerPositionHistoryMetrics: getPlayerPositionHistoryMetrics(), admDownloadMetrics: getAdmDownloadMetrics(), runtimeMetrics: getRuntimePerformanceMetrics(), networkMetrics: getNetworkMetrics() });
   } catch (err) {
     res.status(500).json({ error: String(err) });
   }
@@ -7086,6 +7118,7 @@ router.patch("/api/service-settings", async (req, res) => {
       commands: listDiscordCommandDescriptors(effectiveCommandSettings),
       persistenceMetrics: getStatePersistenceMetrics(),
       discordRuntimeMetrics: getDiscordRuntimePersistenceMetrics(),
+      playerPositionHistoryMetrics: getPlayerPositionHistoryMetrics(),
       admDownloadMetrics: getAdmDownloadMetrics(),
       runtimeMetrics: getRuntimePerformanceMetrics(),
       networkMetrics: getNetworkMetrics(),

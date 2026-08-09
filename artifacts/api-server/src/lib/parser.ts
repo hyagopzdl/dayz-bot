@@ -1,6 +1,14 @@
 import fs from "fs";
 import crypto from "crypto";
-import { getStateAsync, saveStateAsync, AppState, PlayerStats } from "./state";
+import {
+  getStateAsync,
+  saveStateAsync,
+  queuePlayerPositionHistoryObservations,
+  recordInvalidPlayerPositionObservation,
+  AppState,
+  PlayerStats,
+  type PlayerPositionHistoryObservation,
+} from "./state";
 import { isPresenceHistoryEnabled } from "./serviceSettings";
 import { MANIFEST_FILE } from "./nitradoDownloader";
 import {
@@ -12,6 +20,77 @@ import { isLiveRuntimeEnabled } from "./systems";
 const KILL_REGEX = /Player "([^"]+)".*?killed by Player "([^"]+)"/;
 const CONNECT_REGEX = /Player "([^"]+)".*?is connected/;
 const DISCONNECT_REGEX = /Player "([^"]+)".*?has been disconnected/;
+const PLAYER_POSITION_REGEX = /Player "([^"]+)"(?:\s+\(DEAD\))?\s*\(id=.*?pos=<\s*(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)>/g;
+const PLAYER_POSITION_MAX_COORD = 20000;
+
+function isValidPlayerPositionCoordinate(value: number) {
+  return Number.isFinite(value) && value >= 0 && value <= PLAYER_POSITION_MAX_COORD;
+}
+
+function collectPlayerPositionObservations(
+  line: string,
+  fileName: string,
+  lineNumber: number,
+  eventTime: AdmEventTime | null,
+  target: PlayerPositionHistoryObservation[],
+) {
+  const connectMatch = line.match(CONNECT_REGEX);
+  const disconnectMatch = line.match(DISCONNECT_REGEX);
+  const lineEventType: PlayerPositionHistoryObservation["eventType"] = connectMatch
+    ? "connect"
+    : disconnectMatch
+      ? "disconnect"
+      : "position";
+  const matchedPlayers = new Set<string>();
+  PLAYER_POSITION_REGEX.lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = PLAYER_POSITION_REGEX.exec(line)) !== null) {
+    const playerName = String(match[1] || "").trim();
+    const x = Number(match[2]);
+    const z = Number(match[3]);
+    const y = Number(match[4]);
+    if (!playerName) continue;
+
+    if (!isValidPlayerPositionCoordinate(x) || !isValidPlayerPositionCoordinate(z) || !Number.isFinite(y)) {
+      recordInvalidPlayerPositionObservation();
+      continue;
+    }
+
+    const playerNormalized = normalizeOnlineName(playerName);
+    matchedPlayers.add(playerNormalized);
+    target.push({
+      sourceKey: `${fileName}:${lineNumber}:${playerNormalized}:${lineEventType}`,
+      playerName,
+      playerNormalized,
+      eventType: lineEventType,
+      x,
+      z,
+      y,
+      observedAt: eventTime?.date.toISOString() || new Date().toISOString(),
+      sourceFile: fileName,
+    });
+  }
+
+  // Some connect/disconnect lines may not expose coordinates. Preserve the
+  // session boundary anyway so historical map reconstruction never assumes a
+  // player remained online after the log explicitly says otherwise.
+  const boundaryPlayer = connectMatch?.[1] || disconnectMatch?.[1];
+  if (boundaryPlayer) {
+    const playerName = boundaryPlayer.trim();
+    const playerNormalized = normalizeOnlineName(playerName);
+    if (playerName && !matchedPlayers.has(playerNormalized)) {
+      target.push({
+        sourceKey: `${fileName}:${lineNumber}:${playerNormalized}:${lineEventType}`,
+        playerName,
+        playerNormalized,
+        eventType: lineEventType,
+        observedAt: eventTime?.date.toISOString() || new Date().toISOString(),
+        sourceFile: fileName,
+      });
+    }
+  }
+}
 
 const LONG_SHOT_MIN_DISTANCE = 100;
 
@@ -783,7 +862,11 @@ function readManifestFiles(): string[] {
   }
 }
 
-function processFile(filePath: string, state: AppState): boolean {
+function processFile(
+  filePath: string,
+  state: AppState,
+  positionObservations: PlayerPositionHistoryObservation[],
+): boolean {
   ensureOnlineState(state);
   if (!fs.existsSync(filePath)) return false;
 
@@ -858,6 +941,14 @@ function processFile(filePath: string, state: AppState): boolean {
       baseDate && lineSeconds !== null
         ? createAdmEventTime(baseDate, currentDayOffset, lineSeconds)
         : null;
+
+    collectPlayerPositionObservations(
+      line,
+      fileName,
+      i,
+      eventTime,
+      positionObservations,
+    );
 
     const id = eventId(fileName, i, line);
 
@@ -992,10 +1083,11 @@ export async function getLeaderboard() {
   }
 
   const orderedFiles = sortAdmFilesChronologically(files);
+  const positionObservations: PlayerPositionHistoryObservation[] = [];
 
   for (const file of orderedFiles) {
     try {
-      changed = processFile(file, state) || changed;
+      changed = processFile(file, state, positionObservations) || changed;
     } catch (err) {
       console.error(`❌ erro processando ${file}:`, err);
     }
@@ -1005,6 +1097,16 @@ export async function getLeaderboard() {
     changed = rebuildOnlinePresenceFromAdmFiles(state, orderedFiles) || changed;
   } catch (err) {
     console.error("❌ erro recalculando players online pelos ADMs:", err);
+  }
+
+  if (positionObservations.length) {
+    try {
+      await queuePlayerPositionHistoryObservations(positionObservations);
+    } catch (err) {
+      // Position history is intentionally isolated from the critical parser
+      // state. A history write failure must never block kills/rankings/cursors.
+      console.error("❌ erro salvando histórico de posições:", err);
+    }
   }
 
   try {
