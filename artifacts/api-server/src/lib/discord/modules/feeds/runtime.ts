@@ -20,6 +20,7 @@ import {
   MESSAGE_FILE_WEEKLY,
 } from "../../constants";
 import { getKillStreakMeta } from "../killstreak/service";
+import { getCoreStateFingerprint } from "../../../state";
 
 type DiscordFeedRuntimeContext = {
   client: Client;
@@ -35,6 +36,7 @@ type DiscordFeedRuntimeContext = {
   streakRankingChannel: TextBasedChannel | null;
   getState: () => Promise<any>;
   saveState: (state: any) => Promise<void>;
+  saveRuntimeState: (state: any) => Promise<void>;
 };
 
 let discordLoopRunning = false;
@@ -54,6 +56,7 @@ export function createDiscordFeedRuntime(ctx: DiscordFeedRuntimeContext) {
     streakRankingChannel,
     getState,
     saveState,
+    saveRuntimeState,
   } = ctx;
 
 function padEnd(str: string, size: number) {
@@ -1092,6 +1095,7 @@ async function updateLeaderboard() {
 
   try {
     const state = await getState();
+    const coreBeforeFeedUpdate = getCoreStateFingerprint(state);
 
     if (!state.globalStartedAt) {
       state.globalStartedAt =
@@ -1165,7 +1169,13 @@ async function updateLeaderboard() {
     await updateLongShotFeed(state);
     await updateMatchRanking(state);
 
-    await saveState(state);
+    // The feed loop normally changes only Discord runtime fields. Compare against the
+    // snapshot taken at loop start so unrelated parser activity before this loop does
+    // not force a 1.2 MB core write. If anything core actually changed during the loop
+    // (including a concurrent parser mutation), keep the safe full-save path.
+    const coreChangedDuringFeedUpdate = getCoreStateFingerprint(state) !== coreBeforeFeedUpdate;
+    if (coreChangedDuringFeedUpdate) await saveState(state);
+    else await saveRuntimeState(state);
   } catch (err) {
     console.error("❌ erro ao atualizar leaderboard", err);
   } finally {

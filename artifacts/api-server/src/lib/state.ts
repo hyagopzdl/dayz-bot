@@ -37,6 +37,8 @@ let discordRuntimeFlushPromise: Promise<void> | null = null;
 const discordRuntimeMetrics = {
   startedAt: new Date().toISOString(),
   saveRequests: 0,
+  explicitRuntimeRequests: 0,
+  fallbackToCore: 0,
   writes: 0,
   skippedWrites: 0,
   failedWrites: 0,
@@ -457,6 +459,8 @@ export type AppState = {
   recentEventIds: string[];
 
   killFeedEvents: KillFeedEvent[];
+  // Recent kills for the Player Portal. Unlike killFeedEvents, Discord never consumes this ring buffer.
+  portalKillFeedEvents: KillFeedEvent[];
   longShotEvents: LongShotEvent[];
 
   currentKillStreaks: Record<string, number>;
@@ -544,6 +548,7 @@ function defaultState(): AppState {
     files: {},
     recentEventIds: [],
     killFeedEvents: [],
+    portalKillFeedEvents: [],
     longShotEvents: [],
     currentKillStreaks: {},
     killStreakEvents: [],
@@ -598,6 +603,7 @@ function migrateLegacyState(data: any): AppState {
   state.weeklyPlayers = data.weeklyPlayers || {};
   state.recentEventIds = data.recentEventIds || [];
   state.killFeedEvents = data.killFeedEvents || [];
+  state.portalKillFeedEvents = (data.portalKillFeedEvents || data.killFeedEvents || []).slice(-99);
   state.longShotEvents = (data.longShotEvents || []).slice(-150);
 
   state.currentKillStreaks = data.currentKillStreaks || data.killStreaks || {};
@@ -789,6 +795,10 @@ function serializeCoreState(data: AppState): string {
 
 function hashCoreState(data: AppState): string {
   return hashState(serializeCoreState(data));
+}
+
+export function getCoreStateFingerprint(data: AppState): string {
+  return hashCoreState(data);
 }
 
 function serializeDiscordRuntime(data: Partial<AppState> | Partial<DiscordRuntimeState>): string {
@@ -1494,18 +1504,14 @@ export function getPlayerPositionHistoryMetrics() {
   };
 }
 
-export async function saveDiscordStateAsync(data: AppState, reason?: string) {
+export async function saveDiscordRuntimeStateOnlyAsync(data: AppState, reason?: string) {
   const runtimeReason = normalizePersistenceReason(reason);
   discordRuntimeMetrics.saveRequests += 1;
+  discordRuntimeMetrics.explicitRuntimeRequests += 1;
+  await persistDiscordRuntimeOnly(data, runtimeReason);
+}
 
-  // Any non-runtime mutation still uses the full, proven persistence path.
-  // This keeps economy, links, shop and other Discord interactions safe while
-  // allowing feed/message-only updates to use the small domain row.
-  if (!lastCoreHash || hashCoreState(data) !== lastCoreHash) {
-    await saveStateAsync(data, runtimeReason);
-    return;
-  }
-
+async function persistDiscordRuntimeOnly(data: AppState, runtimeReason: string) {
   const runtime = normalizeDiscordRuntimeState(data);
   if (cachedState) applyDiscordRuntimeState(cachedState, runtime);
   else cachedState = data;
@@ -1527,6 +1533,22 @@ export async function saveDiscordStateAsync(data: AppState, reason?: string) {
   pendingDiscordRuntimeJson = serialized;
   pendingDiscordRuntimeHash = hash;
   scheduleDiscordRuntimePersist();
+}
+
+export async function saveDiscordStateAsync(data: AppState, reason?: string) {
+  const runtimeReason = normalizePersistenceReason(reason);
+  discordRuntimeMetrics.saveRequests += 1;
+
+  // Generic Discord mutations remain conservative: if core state changed, persist it fully.
+  // The periodic feed loop uses saveDiscordRuntimeStateOnlyAsync only after verifying that
+  // the loop itself did not change core state.
+  if (!lastCoreHash || hashCoreState(data) !== lastCoreHash) {
+    discordRuntimeMetrics.fallbackToCore += 1;
+    await saveStateAsync(data, runtimeReason);
+    return;
+  }
+
+  await persistDiscordRuntimeOnly(data, runtimeReason);
 }
 
 export async function saveStateAsync(data: AppState, reason?: string) {
@@ -1564,6 +1586,7 @@ export async function saveStateAsync(data: AppState, reason?: string) {
     files: data.files || {},
     recentEventIds: (data.recentEventIds || []).slice(-3000),
     killFeedEvents: (data.killFeedEvents || []).slice(-60),
+    portalKillFeedEvents: (data.portalKillFeedEvents || []).slice(-99),
     longShotEvents: (data.longShotEvents || []).slice(-100),
 
     currentKillStreaks: data.currentKillStreaks || {},

@@ -43,6 +43,7 @@ export async function startDiscordBot() {
       streakRankingChannel: channels.streakRankingChannel,
       getState: stateAccess.getState,
       saveState: stateAccess.saveState,
+      saveRuntimeState: stateAccess.saveRuntimeState,
     });
 
     registerMemberFeed(client);

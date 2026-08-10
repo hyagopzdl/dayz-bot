@@ -6344,8 +6344,10 @@ function renderAdminPanelHtml(token: string) {
         '</div>' +
         '<div class="settings-card" style="margin-top:16px"><div class="settings-card-head"><div><h3>Recent persisted writes</h3><p>Last 20 writes with payload, effective changed bytes, source and changed sections.</p></div></div><div class="table-wrap"><table><thead><tr><th>When</th><th>Payload</th><th>Changed</th><th>Duration</th><th>Sources</th><th>Sections</th></tr></thead><tbody>' + writeRows + '</tbody></table></div></div>' +
         '<div class="settings-card" style="margin-top:16px"><div class="settings-card-head"><div><h3>Discord runtime domain</h3><p>Small Neon row used for feed/message/map runtime updates when no core state changed.</p></div></div>' +
-          '<div class="overview-grid" style="grid-template-columns:repeat(6,minmax(0,1fr))">' +
+          '<div class="overview-grid" style="grid-template-columns:repeat(8,minmax(0,1fr))">' +
             '<div class="stat-card"><span>Requests</span><strong>' + Number(discordRuntime.saveRequests || 0).toLocaleString() + '</strong></div>' +
+            '<div class="stat-card"><span>Runtime-only</span><strong>' + Number(discordRuntime.explicitRuntimeRequests || 0).toLocaleString() + '</strong></div>' +
+            '<div class="stat-card"><span>Fallback to core</span><strong>' + Number(discordRuntime.fallbackToCore || 0).toLocaleString() + '</strong></div>' +
             '<div class="stat-card"><span>Writes</span><strong>' + Number(discordRuntime.writes || 0).toLocaleString() + '</strong></div>' +
             '<div class="stat-card"><span>Skipped</span><strong>' + Number(discordRuntime.skippedWrites || 0).toLocaleString() + '</strong></div>' +
             '<div class="stat-card"><span>Avg payload</span><strong>' + formatBytes(Number(discordRuntime.averagePayloadBytes || 0)) + '</strong></div>' +

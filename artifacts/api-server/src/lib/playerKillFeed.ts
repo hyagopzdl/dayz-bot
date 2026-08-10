@@ -9,7 +9,13 @@ export function buildPlayerKillFeed(state: AppState, requestedLimit?: unknown) {
     ? Math.min(MAX_LIMIT, Math.max(1, Math.floor(parsedLimit)))
     : DEFAULT_LIMIT;
 
-  const retained = Array.isArray(state.killFeedEvents) ? state.killFeedEvents : [];
+  // Discord consumes/clears killFeedEvents after publishing. The portal reads its own
+  // bounded ring buffer so the website feed is independent from the Discord queue.
+  const retained = Array.isArray(state.portalKillFeedEvents) && state.portalKillFeedEvents.length
+    ? state.portalKillFeedEvents
+    : Array.isArray(state.killFeedEvents)
+      ? state.killFeedEvents
+      : [];
   const events = retained
     .slice(-limit)
     .reverse()

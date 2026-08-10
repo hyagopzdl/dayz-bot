@@ -292,6 +292,7 @@ function ensureStateDefaults(state: AppState) {
   state.files = state.files || {};
   state.recentEventIds = state.recentEventIds || [];
   state.killFeedEvents = state.killFeedEvents || [];
+  state.portalKillFeedEvents = state.portalKillFeedEvents || [];
   state.longShotEvents = state.longShotEvents || [];
   state.currentKillStreaks = state.currentKillStreaks || {};
   state.killStreakEvents = state.killStreakEvents || [];
@@ -364,15 +365,21 @@ function addKillFeedEvent(
   distance: number | null,
   eventTime: AdmEventTime | null,
 ) {
-  state.killFeedEvents.push({
+  const event = {
     killer,
     victim,
     weapon,
     distance: Number.isFinite(distance) ? Math.round(Number(distance)) : null,
     at: eventTime?.date?.toISOString() || new Date().toISOString(),
-  });
+  };
+
+  // killFeedEvents is a transient Discord queue and is intentionally cleared after publish.
+  // Keep a separate bounded ring buffer for the Player Portal so Discord cannot consume it.
+  state.killFeedEvents.push(event);
+  state.portalKillFeedEvents.push(event);
 
   state.killFeedEvents = state.killFeedEvents.slice(-99);
+  state.portalKillFeedEvents = state.portalKillFeedEvents.slice(-99);
 }
 
 function addKillStreakMilestoneEvent(
@@ -1031,6 +1038,7 @@ function processFile(
 
   state.recentEventIds = state.recentEventIds.slice(-10000);
   state.killFeedEvents = state.killFeedEvents.slice(-99);
+  state.portalKillFeedEvents = state.portalKillFeedEvents.slice(-99);
   state.killStreakEvents = state.killStreakEvents.slice(-150);
   state.longShotEvents = (state.longShotEvents || []).slice(-150);
 

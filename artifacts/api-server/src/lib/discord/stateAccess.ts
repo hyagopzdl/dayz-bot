@@ -1,4 +1,4 @@
-import { getStateAsync, saveDiscordStateAsync } from "../state";
+import { getStateAsync, saveDiscordRuntimeStateOnlyAsync, saveDiscordStateAsync } from "../state";
 import { ensureBotState } from "./state";
 
 export function createDiscordStateAccess() {
@@ -24,5 +24,10 @@ export function createDiscordStateAccess() {
     console.log("💾 state salvo pelo Discord");
   }
 
-  return { getState, saveState };
+  async function saveRuntimeState(state: any) {
+    await saveDiscordRuntimeStateOnlyAsync(ensureBotState(state), "discord:feeds-runtime");
+    console.log("💾 runtime do Discord salvo");
+  }
+
+  return { getState, saveState, saveRuntimeState };
 }
