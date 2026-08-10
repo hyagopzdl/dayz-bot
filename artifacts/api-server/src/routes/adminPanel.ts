@@ -6324,6 +6324,8 @@ function renderAdminPanelHtml(token: string) {
         const recentCycles = Array.isArray(runtime.recentCycles) ? runtime.recentCycles.slice(-12).reverse() : [];
         const networkServices = Array.isArray(network.services) ? network.services : [];
         const networkTransfers = Array.isArray(network.recentTransfers) ? network.recentTransfers.slice(-20).reverse() : [];
+        const httpRoutes = Array.isArray(network.httpRoutes) ? network.httpRoutes.slice(0, 30) : [];
+        const largeHttpResponses = Array.isArray(network.recentLargeHttpResponses) ? network.recentLargeHttpResponses.slice(-20).reverse() : [];
         const positionSamples = Array.isArray(positionHistory.recentSamples) ? positionHistory.recentSamples.slice(-20).reverse() : [];
         const positionSampleRows = positionSamples.length ? positionSamples.map((item) =>
           '<tr><td>' + escapeHtml(item.observedAt ? relativeDate(item.observedAt) : '-') + '</td>' +
@@ -6349,6 +6351,22 @@ function renderAdminPanelHtml(token: string) {
           '<td>' + escapeHtml(item.operation || '-') + '</td>' +
           '<td>' + (item.ok === false ? 'Error' : 'OK') + '</td></tr>'
         ).join('') : '<tr><td colspan="6" class="member-meta">No recent transfers yet.</td></tr>';
+        const httpRouteRows = httpRoutes.length ? httpRoutes.map((item) =>
+          '<tr><td><code>' + escapeHtml(item.operation || '-') + '</code></td>' +
+          '<td>' + Number(item.requests || 0).toLocaleString() + '</td>' +
+          '<td>' + formatBytes(Number(item.totalBytes || 0)) + '</td>' +
+          '<td>' + formatBytes(Number(item.averageBytes || 0)) + '</td>' +
+          '<td>' + formatBytes(Number(item.maxBytes || 0)) + '</td>' +
+          '<td>' + formatBytes(Number(item.projected30DayBytes || 0)) + '</td>' +
+          '<td>' + Number(item.failures || 0).toLocaleString() + '</td>' +
+          '<td>' + escapeHtml(item.lastAt ? relativeDate(item.lastAt) : '-') + '</td></tr>'
+        ).join('') : '<tr><td colspan="8" class="member-meta">No HTTP response activity yet.</td></tr>';
+        const largeHttpResponseRows = largeHttpResponses.length ? largeHttpResponses.map((item) =>
+          '<tr><td>' + escapeHtml(item.at ? relativeDate(item.at) : '-') + '</td>' +
+          '<td><code>' + escapeHtml(item.operation || '-') + '</code></td>' +
+          '<td>' + formatBytes(Number(item.bytes || 0)) + '</td>' +
+          '<td>' + (item.ok === false ? 'Error' : 'OK') + '</td></tr>'
+        ).join('') : '<tr><td colspan="4" class="member-meta">No HTTP response above 256 KB yet.</td></tr>';
         const lastReasons = Array.isArray(m.lastWriteReasons) && m.lastWriteReasons.length ? m.lastWriteReasons.join(', ') : 'unknown';
         const lastChanged = Array.isArray(m.lastChangedSections) && m.lastChangedSections.length ? m.lastChangedSections.join(', ') : 'none';
         const reasonRows = reasons.length ? reasons.map((item) =>
@@ -6505,18 +6523,21 @@ function renderAdminPanelHtml(token: string) {
           '<div class="settings-card"><div class="settings-card-head"><div><h3>Main loop timing</h3><p>Recent download and parser durations. Useful for Render CPU/runtime diagnosis.</p></div></div><div class="table-wrap"><table><thead><tr><th>When</th><th>Total</th><th>Download</th><th>Parser</th><th>Download</th><th>Parser</th></tr></thead><tbody>' + cycleRows + '</tbody></table></div></div>' +
         '</div>' +
         '<div class="settings-card" style="margin-top:16px"><div class="settings-card-head"><div><h3>Network & Render bandwidth diagnostics</h3><p>Measured application payloads by destination. Use this to compare Neon/service-initiated traffic with Render billing.</p></div></div>' +
-          '<div class="overview-grid" style="grid-template-columns:repeat(5,minmax(0,1fr));margin-bottom:12px">' +
+          '<div class="overview-grid" style="grid-template-columns:repeat(6,minmax(0,1fr));margin-bottom:12px">' +
             '<div class="stat-card"><span>Measured outbound</span><strong>' + formatBytes(Number(network.outboundBytes || 0)) + '</strong></div>' +
             '<div class="stat-card"><span>Projected outbound 30d</span><strong>' + formatBytes(Number(network.projected30DayOutboundBytes || 0)) + '</strong></div>' +
             '<div class="stat-card"><span>Measured inbound</span><strong>' + formatBytes(Number(network.inboundBytes || 0)) + '</strong></div>' +
             '<div class="stat-card"><span>HTTP responses</span><strong>' + formatBytes(Number(network.httpResponseBytes || 0)) + '</strong></div>' +
             '<div class="stat-card"><span>Projected HTTP 30d</span><strong>' + formatBytes(Number(network.projected30DayHttpResponseBytes || 0)) + '</strong></div>' +
+            '<div class="stat-card"><span>Largest HTTP response</span><strong>' + formatBytes(Number(network.largestHttpResponseBytes || 0)) + '</strong></div>' +
           '</div>' +
           '<div class="member-meta" style="margin-bottom:12px">' + escapeHtml(network.coverageNote || 'Metrics start after deploy and are application-level estimates.') + '</div>' +
           '<div class="settings-grid" style="grid-template-columns:minmax(0,1fr) minmax(0,1fr)">' +
-            '<div class="settings-card"><div class="settings-card-head"><div><h3>Traffic by service</h3><p>Outbound is the most relevant column for Render service-initiated billing.</p></div></div><div class="table-wrap"><table><thead><tr><th>Service</th><th>Events</th><th>Outbound</th><th>Inbound</th><th>HTTP response</th><th>Failures</th></tr></thead><tbody>' + networkServiceRows + '</tbody></table></div></div>' +
+            '<div class="settings-card"><div class="settings-card-head"><div><h3>Traffic by service</h3><p>Outbound service calls are the closest in-app counterpart to Render Service-Initiated bandwidth.</p></div></div><div class="table-wrap"><table><thead><tr><th>Service</th><th>Events</th><th>Outbound</th><th>Inbound</th><th>HTTP response</th><th>Failures</th></tr></thead><tbody>' + networkServiceRows + '</tbody></table></div></div>' +
             '<div class="settings-card"><div class="settings-card-head"><div><h3>Recent network samples</h3><p>Last measured application transfers.</p></div></div><div class="table-wrap"><table><thead><tr><th>When</th><th>Service</th><th>Direction</th><th>Bytes</th><th>Operation</th><th>Status</th></tr></thead><tbody>' + networkTransferRows + '</tbody></table></div></div>' +
           '</div>' +
+          '<div class="settings-card" style="margin-top:16px"><div class="settings-card-head"><div><h3>HTTP response bandwidth by route</h3><p>Routes are normalized so dynamic IDs do not create separate rows. Sorted by total bytes sent to browsers.</p></div></div><div class="table-wrap"><table><thead><tr><th>Route</th><th>Requests</th><th>Total</th><th>Average</th><th>Max</th><th>Projected 30d</th><th>Failures</th><th>Last</th></tr></thead><tbody>' + httpRouteRows + '</tbody></table></div></div>' +
+          '<div class="settings-card" style="margin-top:16px"><div class="settings-card-head"><div><h3>Large HTTP response samples</h3><p>Recent responses at or above 256 KB. Useful for spotting maps, images or JSON payloads that can dominate browser bandwidth.</p></div></div><div class="table-wrap"><table><thead><tr><th>When</th><th>Route</th><th>Bytes</th><th>Status</th></tr></thead><tbody>' + largeHttpResponseRows + '</tbody></table></div></div>' +
         '</div>';
       }
 
