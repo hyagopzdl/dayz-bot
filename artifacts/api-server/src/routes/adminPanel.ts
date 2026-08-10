@@ -57,6 +57,7 @@ import {
   flushStateAsync,
   getStatePersistenceMetrics,
   getDiscordRuntimePersistenceMetrics,
+  getStateDomainPersistenceMetrics,
   getPlayerPositionHistoryMetrics,
   getLatestPlayerPositionSnapshot,
   type AppState,
@@ -6304,6 +6305,8 @@ function renderAdminPanelHtml(token: string) {
       if (metrics && state.persistenceMetrics) {
         const m = state.persistenceMetrics;
         const discordRuntime = state.discordRuntimeMetrics || {};
+        const domainV2 = state.domainPersistenceMetrics || {};
+        const domainRows = domainV2.domains || {};
         const positionHistory = state.playerPositionHistoryMetrics || {};
         const adm = state.admDownloadMetrics || {};
         const runtime = state.runtimeMetrics || {};
@@ -6410,6 +6413,22 @@ function renderAdminPanelHtml(token: string) {
           '<div class="settings-card"><div class="settings-card-head"><div><h3>Payload sections</h3><p>Current size, entry count and how often each top-level section changed.</p></div></div><div class="table-wrap"><table><thead><tr><th>Section</th><th>Entries</th><th>Size</th><th>Share</th><th>Changed writes</th><th>Cumulative</th></tr></thead><tbody>' + sectionRows + '</tbody></table></div></div>' +
         '</div>' +
         '<div class="settings-card" style="margin-top:16px"><div class="settings-card-head"><div><h3>Recent persisted writes</h3><p>Last 20 writes with payload, effective changed bytes, source and changed sections.</p></div></div><div class="table-wrap"><table><thead><tr><th>When</th><th>Payload</th><th>Changed</th><th>Duration</th><th>Sources</th><th>Sections</th></tr></thead><tbody>' + writeRows + '</tbody></table></div></div>' +
+        '<div class="settings-card" style="margin-top:16px"><div class="settings-card-head"><div><h3>Persistence V2 domains</h3><p>Core state is split by responsibility. Background game/runtime changes are coalesced to reduce Neon wake-ups; social, commerce and config remain immediate.</p></div></div>' +
+          '<div class="overview-grid" style="grid-template-columns:repeat(8,minmax(0,1fr))">' +
+            '<div class="stat-card"><span>Status</span><strong>' + (domainV2.enabled ? 'Active' : 'Legacy') + '</strong></div>' +
+            '<div class="stat-card"><span>Flushes</span><strong>' + Number(domainV2.flushes || 0).toLocaleString() + '</strong></div>' +
+            '<div class="stat-card"><span>Rows written</span><strong>' + Number(domainV2.rowsWritten || 0).toLocaleString() + '</strong></div>' +
+            '<div class="stat-card"><span>Pending domains</span><strong>' + Number(domainV2.pendingDomains || 0).toLocaleString() + '</strong></div>' +
+            '<div class="stat-card"><span>Avg flush</span><strong>' + formatBytes(Number(domainV2.averageFlushPayloadBytes || 0)) + '</strong></div>' +
+            '<div class="stat-card"><span>Total domain sent</span><strong>' + formatBytes(Number(domainV2.totalPayloadBytesWritten || 0)) + '</strong></div>' +
+            '<div class="stat-card"><span>Projected 30d</span><strong>' + formatBytes(Number(domainV2.projected30DayPayloadBytes || 0)) + '</strong></div>' +
+            '<div class="stat-card"><span>Compat snapshots</span><strong>' + Number(domainV2.compatibilitySnapshots || 0).toLocaleString() + '</strong></div>' +
+          '</div>' +
+          '<div class="member-meta" style="margin-top:10px">Background cadence: ' + Number(domainV2.backgroundCadenceMinutes || 10).toLocaleString() + ' min · Compatibility snapshot: ' + Number(domainV2.compatibilitySnapshotMinutes || 60).toLocaleString() + ' min · Immediate flushes: ' + Number(domainV2.immediateFlushes || 0).toLocaleString() + ' · Failed: ' + Number(domainV2.failedFlushes || 0).toLocaleString() + ' · Last write: ' + escapeHtml(domainV2.lastWriteAt ? relativeDate(domainV2.lastWriteAt) : 'none') + '</div>' +
+          '<div class="table-wrap" style="margin-top:12px"><table><thead><tr><th>Domain</th><th>Current</th><th>Changes</th><th>Writes</th><th>Written</th></tr></thead><tbody>' +
+            ['stats','processing','social','commerce','config'].map((key) => { const d = domainRows[key] || {}; return '<tr><td><code>' + escapeHtml(key) + '</code></td><td>' + formatBytes(Number(d.currentBytes || 0)) + '</td><td>' + Number(d.changes || 0).toLocaleString() + '</td><td>' + Number(d.writes || 0).toLocaleString() + '</td><td>' + formatBytes(Number(d.bytesWritten || 0)) + '</td></tr>'; }).join('') +
+          '</tbody></table></div>' +
+        '</div>' +
         '<div class="settings-card" style="margin-top:16px"><div class="settings-card-head"><div><h3>Discord runtime domain</h3><p>Small Neon row used for feed/message/map runtime updates when no core state changed.</p></div></div>' +
           '<div class="overview-grid" style="grid-template-columns:repeat(8,minmax(0,1fr))">' +
             '<div class="stat-card"><span>Requests</span><strong>' + Number(discordRuntime.saveRequests || 0).toLocaleString() + '</strong></div>' +
@@ -7218,7 +7237,7 @@ router.get("/api/service-settings", async (req, res) => {
     const state = await getStateAsync();
     const settings = normalizeServiceSettings(state.serviceSettings);
     setAdmDownloadMode(settings.admDownloadMode);
-    res.json({ settings, persistenceMetrics: getStatePersistenceMetrics(), discordRuntimeMetrics: getDiscordRuntimePersistenceMetrics(), playerPositionHistoryMetrics: getPlayerPositionHistoryMetrics(), admDownloadMetrics: getAdmDownloadMetrics(), runtimeMetrics: getRuntimePerformanceMetrics(), networkMetrics: getNetworkMetrics() });
+    res.json({ settings, persistenceMetrics: getStatePersistenceMetrics(), domainPersistenceMetrics: getStateDomainPersistenceMetrics(), discordRuntimeMetrics: getDiscordRuntimePersistenceMetrics(), playerPositionHistoryMetrics: getPlayerPositionHistoryMetrics(), admDownloadMetrics: getAdmDownloadMetrics(), runtimeMetrics: getRuntimePerformanceMetrics(), networkMetrics: getNetworkMetrics() });
   } catch (err) {
     res.status(500).json({ error: String(err) });
   }
@@ -7252,6 +7271,7 @@ router.patch("/api/service-settings", async (req, res) => {
       settings: next,
       commands: listDiscordCommandDescriptors(effectiveCommandSettings),
       persistenceMetrics: getStatePersistenceMetrics(),
+      domainPersistenceMetrics: getStateDomainPersistenceMetrics(),
       discordRuntimeMetrics: getDiscordRuntimePersistenceMetrics(),
       playerPositionHistoryMetrics: getPlayerPositionHistoryMetrics(),
       admDownloadMetrics: getAdmDownloadMetrics(),

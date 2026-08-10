@@ -17,6 +17,14 @@ const STATE_SAVE_DEBOUNCE_MS = Number(process.env.STATE_SAVE_DEBOUNCE_MS || 1500
 const STATE_FORCE_SAVE_AFTER_MS = Number(process.env.STATE_FORCE_SAVE_AFTER_MS || 60000);
 const STATE_DEBUG = process.env.STATE_DEBUG === "true";
 
+// Persistence V2 stores independent domains as separate bot_state rows. Background
+// game/runtime changes are intentionally coalesced so Neon can spend meaningful
+// time idle between bursts instead of being touched every few minutes. Social,
+// commerce and configuration changes still flush immediately.
+const STATE_PERSISTENCE_V2_ENABLED = process.env.STATE_PERSISTENCE_V2 !== "false";
+const STATE_BACKGROUND_PERSIST_MS = Math.max(60_000, Number(process.env.STATE_BACKGROUND_PERSIST_MS || 10 * 60 * 1000));
+const STATE_COMPAT_SNAPSHOT_MS = Math.max(15 * 60_000, Number(process.env.STATE_COMPAT_SNAPSHOT_MS || 60 * 60 * 1000));
+
 let cachedState: AppState | null = null;
 let lastPersistedHash = "";
 let lastPersistedJson = "";
@@ -33,6 +41,64 @@ let pendingDiscordRuntimeJson = "";
 let pendingDiscordRuntimeHash = "";
 let discordRuntimeSaveTimer: NodeJS.Timeout | null = null;
 let discordRuntimeFlushPromise: Promise<void> | null = null;
+
+type StateDomainName = "stats" | "processing" | "social" | "commerce" | "config";
+type StateDomainPayload = Record<string, unknown>;
+
+type PendingDomainState = {
+  payload: StateDomainPayload;
+  serialized: string;
+  hash: string;
+  reasons: Set<string>;
+};
+
+const STATE_DOMAIN_IDS: Record<StateDomainName, string> = {
+  stats: "v2_stats",
+  processing: "v2_processing",
+  social: "v2_social",
+  commerce: "v2_commerce",
+  config: "v2_config",
+};
+
+let lastDomainHashes: Partial<Record<StateDomainName, string>> = {};
+let pendingDomains = new Map<StateDomainName, PendingDomainState>();
+let domainFlushTimer: NodeJS.Timeout | null = null;
+let domainFlushPromise: Promise<void> | null = null;
+let lastCompatibilitySnapshotAt = 0;
+
+type DomainMetric = {
+  changes: number;
+  writes: number;
+  bytesWritten: number;
+  currentBytes: number;
+  lastWriteAt?: string;
+};
+
+const domainPersistenceMetrics = {
+  startedAt: new Date().toISOString(),
+  enabled: STATE_PERSISTENCE_V2_ENABLED,
+  backgroundCadenceMs: STATE_BACKGROUND_PERSIST_MS,
+  compatibilitySnapshotMs: STATE_COMPAT_SNAPSHOT_MS,
+  saveRequests: 0,
+  backgroundQueued: 0,
+  immediateFlushes: 0,
+  flushes: 0,
+  rowsWritten: 0,
+  failedFlushes: 0,
+  compatibilitySnapshots: 0,
+  totalPayloadBytesWritten: 0,
+  totalWriteDurationMs: 0,
+  lastWriteDurationMs: 0,
+  lastWriteAt: undefined as string | undefined,
+  lastError: undefined as string | undefined,
+  domains: {
+    stats: { changes: 0, writes: 0, bytesWritten: 0, currentBytes: 0 },
+    processing: { changes: 0, writes: 0, bytesWritten: 0, currentBytes: 0 },
+    social: { changes: 0, writes: 0, bytesWritten: 0, currentBytes: 0 },
+    commerce: { changes: 0, writes: 0, bytesWritten: 0, currentBytes: 0 },
+    config: { changes: 0, writes: 0, bytesWritten: 0, currentBytes: 0 },
+  } as Record<StateDomainName, DomainMetric>,
+};
 
 const discordRuntimeMetrics = {
   startedAt: new Date().toISOString(),
@@ -146,14 +212,14 @@ export type PlayerPositionHistoryObservation = {
 
 const PLAYER_POSITION_RETENTION_HOURS = 24;
 const PLAYER_POSITION_FLUSH_INTERVAL_MS = 10 * 60 * 1000;
-const PLAYER_POSITION_MAX_PENDING = 250;
+const PLAYER_POSITION_MAX_PENDING = 1000;
 const PLAYER_POSITION_CLEANUP_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const PLAYER_POSITION_MIN_MOVEMENT_METERS = 25;
 const PLAYER_POSITION_MAX_SAMPLE_INTERVAL_MS = 2 * 60 * 1000;
 
 let playerPositionTableReadyPromise: Promise<void> | null = null;
 let pendingPlayerPositionObservations = new Map<string, PlayerPositionHistoryObservation>();
-let lastPlayerPositionFlushAt = 0;
+let playerPositionFlushTimer: NodeJS.Timeout | null = null;
 let lastPlayerPositionCleanupAt = 0;
 
 type RetainedPlayerPosition = { x: number; z: number; observedAtMs: number };
@@ -805,6 +871,147 @@ function serializeDiscordRuntime(data: Partial<AppState> | Partial<DiscordRuntim
   return JSON.stringify(normalizeDiscordRuntimeState(data));
 }
 
+function buildStateDomains(data: AppState): Record<StateDomainName, StateDomainPayload> {
+  return {
+    stats: {
+      players: data.players || {},
+      dailyPlayers: data.dailyPlayers || {},
+      weeklyPlayers: data.weeklyPlayers || {},
+      portalKillFeedEvents: (data.portalKillFeedEvents || []).slice(-99),
+      longShotEvents: (data.longShotEvents || []).slice(-100),
+      currentKillStreaks: data.currentKillStreaks || {},
+      lastDailyReset: data.lastDailyReset || "",
+      lastWeeklyReset: data.lastWeeklyReset || "",
+      globalStartedAt: data.globalStartedAt,
+      dailyStartedAt: data.dailyStartedAt,
+      weeklyStartedAt: data.weeklyStartedAt,
+    },
+    processing: {
+      onlinePlayers: data.onlinePlayers || {},
+      onlineSessions: data.onlineSessions || {},
+      onlineActivitySamples: Array.isArray(data.onlineActivitySamples) ? data.onlineActivitySamples : [],
+      files: data.files || {},
+      recentEventIds: (data.recentEventIds || []).slice(-3000),
+      activeMatch: data.activeMatch || null,
+      lastLine: data.lastLine,
+      lastFileName: data.lastFileName,
+    },
+    social: {
+      playerLinks: data.playerLinks || {},
+      playerLinksByGamertag: data.playerLinksByGamertag || {},
+      playerAlts: data.playerAlts && typeof data.playerAlts === "object" ? data.playerAlts : {},
+      clans: data.clans && typeof data.clans === "object" ? data.clans : {},
+      clanMemberships: data.clanMemberships && typeof data.clanMemberships === "object" ? data.clanMemberships : {},
+      clanInvites: Array.isArray(data.clanInvites) ? data.clanInvites : [],
+    },
+    commerce: {
+      wallets: data.wallets || {},
+      economyTransactions: Array.isArray(data.economyTransactions) ? data.economyTransactions.slice(-1000) : [],
+      shopOrders: Array.isArray(data.shopOrders) ? data.shopOrders : [],
+      shopSavedLocations: Array.isArray(data.shopSavedLocations) ? data.shopSavedLocations : [],
+      shopPendingCheckouts: Array.isArray(data.shopPendingCheckouts) ? data.shopPendingCheckouts : [],
+      shopCatalog: data.shopCatalog,
+      dayzItems: Array.isArray(data.dayzItems) ? data.dayzItems : undefined,
+      shopResetMonitor: data.shopResetMonitor || null,
+      shopAutoDeploy: data.shopAutoDeploy || null,
+    },
+    config: {
+      mapVoteUserLocales: data.mapVoteUserLocales && typeof data.mapVoteUserLocales === "object" ? data.mapVoteUserLocales : {},
+      discordCommandSettings: normalizeDiscordCommandSettings(data.discordCommandSettings),
+      serviceSettings: normalizeServiceSettings(data.serviceSettings),
+    },
+  };
+}
+
+function applyStateDomain(state: AppState, domain: StateDomainName, payload: any): AppState {
+  if (!payload || typeof payload !== "object") return state;
+  if (domain === "stats") {
+    state.players = payload.players || {};
+    state.dailyPlayers = payload.dailyPlayers || {};
+    state.weeklyPlayers = payload.weeklyPlayers || {};
+    state.portalKillFeedEvents = Array.isArray(payload.portalKillFeedEvents) ? payload.portalKillFeedEvents.slice(-99) : [];
+    state.longShotEvents = Array.isArray(payload.longShotEvents) ? payload.longShotEvents.slice(-100) : [];
+    state.currentKillStreaks = payload.currentKillStreaks || {};
+    state.lastDailyReset = payload.lastDailyReset || "";
+    state.lastWeeklyReset = payload.lastWeeklyReset || "";
+    state.globalStartedAt = payload.globalStartedAt;
+    state.dailyStartedAt = payload.dailyStartedAt;
+    state.weeklyStartedAt = payload.weeklyStartedAt;
+  } else if (domain === "processing") {
+    state.onlinePlayers = payload.onlinePlayers || {};
+    state.onlineSessions = payload.onlineSessions || {};
+    state.onlineActivitySamples = Array.isArray(payload.onlineActivitySamples) ? payload.onlineActivitySamples : [];
+    state.files = payload.files || {};
+    state.recentEventIds = Array.isArray(payload.recentEventIds) ? payload.recentEventIds.slice(-3000) : [];
+    state.activeMatch = payload.activeMatch || null;
+    state.lastLine = payload.lastLine;
+    state.lastFileName = payload.lastFileName;
+  } else if (domain === "social") {
+    state.playerLinks = payload.playerLinks || {};
+    state.playerLinksByGamertag = payload.playerLinksByGamertag || {};
+    state.playerAlts = payload.playerAlts && typeof payload.playerAlts === "object" ? payload.playerAlts : {};
+    state.clans = payload.clans && typeof payload.clans === "object" ? payload.clans : {};
+    state.clanMemberships = payload.clanMemberships && typeof payload.clanMemberships === "object" ? payload.clanMemberships : {};
+    state.clanInvites = Array.isArray(payload.clanInvites) ? payload.clanInvites : [];
+  } else if (domain === "commerce") {
+    state.wallets = payload.wallets || {};
+    state.economyTransactions = Array.isArray(payload.economyTransactions) ? payload.economyTransactions.slice(-1000) : [];
+    state.shopOrders = Array.isArray(payload.shopOrders) ? payload.shopOrders : [];
+    state.shopSavedLocations = Array.isArray(payload.shopSavedLocations) ? payload.shopSavedLocations : [];
+    state.shopPendingCheckouts = Array.isArray(payload.shopPendingCheckouts) ? payload.shopPendingCheckouts : [];
+    state.shopCatalog = payload.shopCatalog;
+    state.dayzItems = Array.isArray(payload.dayzItems) ? payload.dayzItems : undefined;
+    state.shopResetMonitor = payload.shopResetMonitor || null;
+    state.shopAutoDeploy = payload.shopAutoDeploy || null;
+  } else if (domain === "config") {
+    state.mapVoteUserLocales = payload.mapVoteUserLocales && typeof payload.mapVoteUserLocales === "object" ? payload.mapVoteUserLocales : {};
+    state.discordCommandSettings = normalizeDiscordCommandSettings(payload.discordCommandSettings);
+    state.serviceSettings = normalizeServiceSettings(payload.serviceSettings);
+  }
+  return state;
+}
+
+function initializeDomainHashes(data: AppState) {
+  const domains = buildStateDomains(data);
+  for (const domain of Object.keys(STATE_DOMAIN_IDS) as StateDomainName[]) {
+    const serialized = JSON.stringify(domains[domain]);
+    lastDomainHashes[domain] = hashState(serialized);
+    domainPersistenceMetrics.domains[domain].currentBytes = Buffer.byteLength(serialized, "utf8");
+  }
+}
+
+function nextAlignedBackgroundDelay() {
+  const remainder = Date.now() % STATE_BACKGROUND_PERSIST_MS;
+  return Math.max(1000, STATE_BACKGROUND_PERSIST_MS - remainder);
+}
+
+function isBackgroundPersistenceReason(reason: string) {
+  return reason === "parser" || reason.startsWith("discord:") || reason.startsWith("lib:discord:");
+}
+
+function domainNeedsImmediateFlush(domain: StateDomainName) {
+  return domain === "social" || domain === "commerce" || domain === "config";
+}
+
+function queueStateDomains(data: AppState, reason: string) {
+  const domains = buildStateDomains(data);
+  const changed: StateDomainName[] = [];
+  for (const domain of Object.keys(STATE_DOMAIN_IDS) as StateDomainName[]) {
+    const payload = domains[domain];
+    const serialized = JSON.stringify(payload);
+    const hash = hashState(serialized);
+    const currentPending = pendingDomains.get(domain);
+    domainPersistenceMetrics.domains[domain].currentBytes = Buffer.byteLength(serialized, "utf8");
+    if (hash === lastDomainHashes[domain] || hash === currentPending?.hash) continue;
+    const reasons = new Set(currentPending?.reasons || []);
+    reasons.add(reason);
+    pendingDomains.set(domain, { payload, serialized, hash, reasons });
+    domainPersistenceMetrics.domains[domain].changes += 1;
+    changed.push(domain);
+  }
+  return changed;
+}
+
 function logStateDebug(message: string, meta?: Record<string, unknown>) {
   if (!STATE_DEBUG) return;
   if (meta) {
@@ -954,6 +1161,141 @@ function analyzePayload(parsed: AppState, now: string) {
   };
 }
 
+async function persistDomainBatchToNeon(entries: Array<[StateDomainName, PendingDomainState]>) {
+  if (!sql || !entries.length) return;
+  const startedAt = Date.now();
+  const now = new Date().toISOString();
+  const payloadBytes = entries.reduce((total, [, entry]) => total + Buffer.byteLength(entry.serialized, "utf8"), 0);
+
+  try {
+    await sql.begin(async (tx: any) => {
+      for (const [domain, entry] of entries) {
+        await tx`
+          INSERT INTO bot_state (id, data, updated_at)
+          VALUES (${STATE_DOMAIN_IDS[domain]}, ${tx.json(entry.payload)}, NOW())
+          ON CONFLICT (id)
+          DO UPDATE SET data = EXCLUDED.data, updated_at = NOW()
+        `;
+      }
+    });
+
+    domainPersistenceMetrics.flushes += 1;
+    domainPersistenceMetrics.rowsWritten += entries.length;
+    domainPersistenceMetrics.totalPayloadBytesWritten += payloadBytes;
+    domainPersistenceMetrics.lastWriteAt = now;
+    domainPersistenceMetrics.lastError = undefined;
+    for (const [domain, entry] of entries) {
+      const metric = domainPersistenceMetrics.domains[domain];
+      const bytes = Buffer.byteLength(entry.serialized, "utf8");
+      metric.writes += 1;
+      metric.bytesWritten += bytes;
+      metric.currentBytes = bytes;
+      metric.lastWriteAt = now;
+      lastDomainHashes[domain] = entry.hash;
+    }
+    recordNetworkTransfer({
+      service: "neon-domain",
+      operation: "state_domain_batch_write",
+      direction: "outbound",
+      bytes: payloadBytes,
+      ok: true,
+    });
+  } catch (err) {
+    domainPersistenceMetrics.failedFlushes += 1;
+    domainPersistenceMetrics.lastError = err instanceof Error ? err.message : String(err);
+    recordNetworkTransfer({
+      service: "neon-domain",
+      operation: "state_domain_batch_write",
+      direction: "outbound",
+      bytes: payloadBytes,
+      ok: false,
+    });
+    throw err;
+  } finally {
+    const durationMs = Date.now() - startedAt;
+    domainPersistenceMetrics.lastWriteDurationMs = durationMs;
+    domainPersistenceMetrics.totalWriteDurationMs += durationMs;
+  }
+}
+
+async function maybeWriteCompatibilitySnapshot(force = false) {
+  if (!sql || !cachedState) return;
+  const now = Date.now();
+  if (!force && lastCompatibilitySnapshotAt > 0 && now - lastCompatibilitySnapshotAt < STATE_COMPAT_SNAPSHOT_MS) return;
+  const serialized = serializeState(cachedState);
+  const hash = hashState(serialized);
+  await persistStateToNeon(serialized, hash, ["v2:compat-snapshot"]);
+  lastCompatibilitySnapshotAt = Date.now();
+  domainPersistenceMetrics.compatibilitySnapshots += 1;
+}
+
+async function flushPendingDomains(forceCompatibilitySnapshot = false) {
+  if (!STATE_PERSISTENCE_V2_ENABLED || !sql) return;
+  if (domainFlushPromise) return domainFlushPromise;
+  if (domainFlushTimer) {
+    clearTimeout(domainFlushTimer);
+    domainFlushTimer = null;
+  }
+
+  const entries = [...pendingDomains.entries()];
+  if (!entries.length && !forceCompatibilitySnapshot) return;
+  for (const [domain] of entries) pendingDomains.delete(domain);
+
+  domainFlushPromise = (async () => {
+    try {
+      if (entries.length) {
+        try {
+          await persistDomainBatchToNeon(entries);
+        } catch (err) {
+          for (const [domain, entry] of entries) {
+            const existing = pendingDomains.get(domain);
+            if (!existing || existing.hash === entry.hash) pendingDomains.set(domain, entry);
+          }
+          scheduleDomainFlush();
+          throw err;
+        }
+      }
+
+      if (forceCompatibilitySnapshot || (cachedState && Date.now() - lastCompatibilitySnapshotAt >= STATE_COMPAT_SNAPSHOT_MS)) {
+        // Compatibility is a rollback safety net. Domain rows remain the source
+        // of truth even if this non-critical snapshot fails.
+        await maybeWriteCompatibilitySnapshot(forceCompatibilitySnapshot);
+      }
+    } finally {
+      domainFlushPromise = null;
+      if (pendingDomains.size) scheduleDomainFlush();
+    }
+  })();
+  return domainFlushPromise;
+}
+
+function scheduleDomainFlush() {
+  if (!STATE_PERSISTENCE_V2_ENABLED || !sql || !pendingDomains.size || domainFlushTimer) return;
+  domainPersistenceMetrics.backgroundQueued += 1;
+  domainFlushTimer = setTimeout(() => {
+    domainFlushTimer = null;
+    Promise.all([flushPendingDomains(), flushPendingDiscordRuntime()]).catch((err) => {
+      console.error("❌ erro no flush V2 em background:", err);
+    });
+  }, nextAlignedBackgroundDelay());
+}
+
+async function queueAndPersistStateDomains(data: AppState, reason: string) {
+  domainPersistenceMetrics.saveRequests += 1;
+  const changed = queueStateDomains(data, reason);
+  if (!changed.length) return false;
+  const immediate =
+    !isBackgroundPersistenceReason(reason) ||
+    (reason !== "parser" && changed.some(domainNeedsImmediateFlush));
+  if (immediate) {
+    domainPersistenceMetrics.immediateFlushes += 1;
+    await Promise.all([flushPendingDomains(), flushPendingDiscordRuntime()]);
+  } else {
+    scheduleDomainFlush();
+  }
+  return true;
+}
+
 async function persistDiscordRuntimeToNeon(serialized: string, hash: string) {
   if (!sql) return;
   if (hash === lastDiscordRuntimeHash) {
@@ -1025,10 +1367,11 @@ async function flushPendingDiscordRuntime() {
 
 function scheduleDiscordRuntimePersist() {
   if (!sql || !pendingDiscordRuntimeJson || discordRuntimeSaveTimer) return;
+  const delay = STATE_PERSISTENCE_V2_ENABLED ? nextAlignedBackgroundDelay() : STATE_SAVE_DEBOUNCE_MS;
   discordRuntimeSaveTimer = setTimeout(() => {
     discordRuntimeSaveTimer = null;
-    flushPendingDiscordRuntime().catch((err) => console.error("❌ erro no flush do discord_runtime:", err));
-  }, STATE_SAVE_DEBOUNCE_MS);
+    Promise.all([flushPendingDiscordRuntime(), flushPendingDomains()]).catch((err) => console.error("❌ erro no flush do discord_runtime:", err));
+  }, delay);
 }
 
 async function persistStateToNeon(serialized: string, hash: string, reasons: string[]) {
@@ -1161,7 +1504,11 @@ function scheduleNeonPersist() {
   }, delay);
 }
 
-export async function flushStateAsync() {
+export async function flushStateAsync(forceCompatibilitySnapshot = false) {
+  if (STATE_PERSISTENCE_V2_ENABLED) {
+    await Promise.all([flushPendingDomains(forceCompatibilitySnapshot), flushPendingDiscordRuntime(), flushPlayerPositionHistoryBatch()]);
+    return;
+  }
   await Promise.all([flushPendingState(), flushPendingDiscordRuntime(), flushPlayerPositionHistoryBatch()]);
 }
 
@@ -1194,16 +1541,18 @@ export async function getStateAsync(): Promise<AppState> {
     lastPersistedHash = hashState(lastPersistedJson);
     lastCoreHash = hashCoreState(cachedState);
     lastDiscordRuntimeHash = hashState(serializeDiscordRuntime(cachedState));
+    initializeDomainHashes(cachedState);
     return cachedState;
   }
 
   try {
     persistenceMetrics.reads += 1;
     persistenceMetrics.lastReadAt = new Date().toISOString();
+    const domainIds = Object.values(STATE_DOMAIN_IDS);
     const rows = await sql`
       SELECT id, data, updated_at
       FROM bot_state
-      WHERE id IN (${STATE_ID}, ${DISCORD_RUNTIME_STATE_ID})
+      WHERE id IN (${STATE_ID}, ${DISCORD_RUNTIME_STATE_ID}, ${domainIds[0]}, ${domainIds[1]}, ${domainIds[2]}, ${domainIds[3]}, ${domainIds[4]})
     `;
     const mainRow = rows.find((row: any) => row.id === STATE_ID);
     const runtimeRow = rows.find((row: any) => row.id === DISCORD_RUNTIME_STATE_ID);
@@ -1224,11 +1573,26 @@ export async function getStateAsync(): Promise<AppState> {
       lastPersistedHash = hash;
       lastCoreHash = hashCoreState(state);
       lastDiscordRuntimeHash = hashState(serializeDiscordRuntime(state));
+      initializeDomainHashes(state);
+      lastCompatibilitySnapshotAt = Date.now();
       return cachedState;
     }
 
     cachedState = migrateLegacyState(mainRow.data || {});
+    const mainPersistedHash = hashState(serializeState(cachedState));
     const mainUpdatedAt = mainRow.updated_at ? new Date(mainRow.updated_at).getTime() : 0;
+    lastCompatibilitySnapshotAt = mainUpdatedAt || Date.now();
+
+    if (STATE_PERSISTENCE_V2_ENABLED) {
+      for (const domain of Object.keys(STATE_DOMAIN_IDS) as StateDomainName[]) {
+        const row = rows.find((candidate: any) => candidate.id === STATE_DOMAIN_IDS[domain]);
+        const domainUpdatedAt = row?.updated_at ? new Date(row.updated_at).getTime() : 0;
+        // A compatibility snapshot may be newer than a domain row. In that case
+        // the snapshot already contains the fresher domain value and must win.
+        if (row && domainUpdatedAt > mainUpdatedAt) applyStateDomain(cachedState, domain, row.data || {});
+      }
+    }
+
     const runtimeUpdatedAt = runtimeRow?.updated_at ? new Date(runtimeRow.updated_at).getTime() : 0;
     if (runtimeRow && runtimeUpdatedAt >= mainUpdatedAt) {
       applyDiscordRuntimeState(cachedState, normalizeDiscordRuntimeState(runtimeRow.data || defaultDiscordRuntimeState()));
@@ -1242,9 +1606,12 @@ export async function getStateAsync(): Promise<AppState> {
       ok: true,
     });
     lastPersistedJson = loadedStateJson;
-    lastPersistedHash = hashState(lastPersistedJson);
+    // Track the actual compatibility row, not the merged V2 view. Otherwise an
+    // hourly compatibility snapshot could be incorrectly skipped after restart.
+    lastPersistedHash = mainPersistedHash;
     lastCoreHash = hashCoreState(cachedState);
     lastDiscordRuntimeHash = hashState(serializeDiscordRuntime(cachedState));
+    initializeDomainHashes(cachedState);
     return cachedState;
   } catch (err) {
     console.error("❌ erro lendo state no Neon, usando state.json local:", err);
@@ -1253,6 +1620,7 @@ export async function getStateAsync(): Promise<AppState> {
     lastPersistedHash = hashState(lastPersistedJson);
     lastCoreHash = hashCoreState(cachedState);
     lastDiscordRuntimeHash = hashState(serializeDiscordRuntime(cachedState));
+    initializeDomainHashes(cachedState);
     return cachedState;
   }
 }
@@ -1289,6 +1657,22 @@ export function getDiscordRuntimePersistenceMetrics() {
   };
 }
 
+export function getStateDomainPersistenceMetrics() {
+  const uptimeHours = Math.max(1 / 60, (Date.now() - new Date(domainPersistenceMetrics.startedAt).getTime()) / 3_600_000);
+  const flushes = Math.max(1, domainPersistenceMetrics.flushes);
+  return {
+    ...domainPersistenceMetrics,
+    pendingDomains: pendingDomains.size,
+    backgroundCadenceMinutes: Math.round(STATE_BACKGROUND_PERSIST_MS / 60_000),
+    compatibilitySnapshotMinutes: Math.round(STATE_COMPAT_SNAPSHOT_MS / 60_000),
+    averageFlushPayloadBytes: Math.round(domainPersistenceMetrics.totalPayloadBytesWritten / flushes),
+    averageWriteDurationMs: Math.round(domainPersistenceMetrics.totalWriteDurationMs / flushes),
+    writeRatePerHour: Number((domainPersistenceMetrics.flushes / uptimeHours).toFixed(2)),
+    projected30DayPayloadBytes: Math.round((domainPersistenceMetrics.totalPayloadBytesWritten / uptimeHours) * 24 * 30),
+    domains: Object.fromEntries(Object.entries(domainPersistenceMetrics.domains).map(([key, value]) => [key, { ...value }])),
+  };
+}
+
 
 async function ensurePlayerPositionHistoryTable() {
   if (!sql) return;
@@ -1321,6 +1705,10 @@ async function ensurePlayerPositionHistoryTable() {
 }
 
 async function flushPlayerPositionHistoryBatch() {
+  if (playerPositionFlushTimer) {
+    clearTimeout(playerPositionFlushTimer);
+    playerPositionFlushTimer = null;
+  }
   if (!sql || !pendingPlayerPositionObservations.size) return;
 
   const rows = [...pendingPlayerPositionObservations.values()];
@@ -1352,7 +1740,6 @@ async function flushPlayerPositionHistoryBatch() {
     playerPositionHistoryMetrics.rowsWritten += inserted;
     playerPositionHistoryMetrics.totalPayloadBytesWritten += payloadBytes;
     playerPositionHistoryMetrics.lastWriteAt = new Date(now).toISOString();
-    lastPlayerPositionFlushAt = now;
     recordNetworkTransfer({
       service: "neon-position-history",
       operation: "player_position_history_batch",
@@ -1456,13 +1843,19 @@ export async function queuePlayerPositionHistoryObservations(observations: Playe
   }
 
   if (!sql) return;
-  const now = Date.now();
-  const shouldFlush =
-    lastPlayerPositionFlushAt === 0 ||
-    now - lastPlayerPositionFlushAt >= PLAYER_POSITION_FLUSH_INTERVAL_MS ||
-    pendingPlayerPositionObservations.size >= PLAYER_POSITION_MAX_PENDING;
+  if (pendingPlayerPositionObservations.size >= PLAYER_POSITION_MAX_PENDING) {
+    await flushPlayerPositionHistoryBatch();
+    return;
+  }
 
-  if (shouldFlush) await flushPlayerPositionHistoryBatch();
+  if (!playerPositionFlushTimer) {
+    const remainder = Date.now() % PLAYER_POSITION_FLUSH_INTERVAL_MS;
+    const delay = Math.max(1000, PLAYER_POSITION_FLUSH_INTERVAL_MS - remainder);
+    playerPositionFlushTimer = setTimeout(() => {
+      playerPositionFlushTimer = null;
+      flushPlayerPositionHistoryBatch().catch((err) => console.error("❌ erro no flush alinhado do histórico de posições:", err));
+    }, delay);
+  }
 }
 
 export function recordInvalidPlayerPositionObservation() {
@@ -1701,19 +2094,44 @@ export async function saveStateAsync(data: AppState, reason?: string) {
   const serialized = serializeState(safeData);
   const hash = hashState(serialized);
 
-  if (hash === lastPersistedHash || serialized === lastPersistedJson) {
-    persistenceMetrics.skippedWrites += 1;
-    getReasonMetric(persistenceReason).skippedRequests += 1;
-    logStateDebug("⏭️ STATE ignorado: sem alterações", { reason: persistenceReason });
-    return;
-  }
-
   writeLocalState(safeData);
 
   if (!sql) {
     lastPersistedJson = serialized;
     lastPersistedHash = hash;
+    initializeDomainHashes(safeData);
     logStateDebug("💾 STATE SALVO EM", { file: FILE });
+    return;
+  }
+
+  if (STATE_PERSISTENCE_V2_ENABLED) {
+    // Runtime fields are persisted independently as well, even when the caller
+    // used the generic save API (for example admin/config paths touching mapRotation).
+    const runtimeSerialized = serializeDiscordRuntime(safeData);
+    const runtimeHash = hashState(runtimeSerialized);
+    const runtimeChanged = runtimeHash !== lastDiscordRuntimeHash && runtimeHash !== pendingDiscordRuntimeHash;
+    if (runtimeChanged) {
+      pendingDiscordRuntimeJson = runtimeSerialized;
+      pendingDiscordRuntimeHash = runtimeHash;
+      scheduleDiscordRuntimePersist();
+    }
+
+    const changed = await queueAndPersistStateDomains(safeData, persistenceReason);
+    if (!changed && !runtimeChanged) {
+      persistenceMetrics.skippedWrites += 1;
+      getReasonMetric(persistenceReason).skippedRequests += 1;
+      logStateDebug("⏭️ STATE V2 ignorado: sem alterações", { reason: persistenceReason });
+    }
+    // Keep the latest in-memory/full JSON for local diagnostics and the hourly
+    // compatibility snapshot, but do not treat it as already persisted in Neon.
+    lastPersistedJson = serialized;
+    return;
+  }
+
+  if (hash === lastPersistedHash || serialized === lastPersistedJson) {
+    persistenceMetrics.skippedWrites += 1;
+    getReasonMetric(persistenceReason).skippedRequests += 1;
+    logStateDebug("⏭️ STATE ignorado: sem alterações", { reason: persistenceReason });
     return;
   }
 
@@ -1731,6 +2149,7 @@ export function getState(): AppState {
   lastPersistedHash = hashState(lastPersistedJson);
   lastCoreHash = hashCoreState(cachedState);
   lastDiscordRuntimeHash = hashState(serializeDiscordRuntime(cachedState));
+  initializeDomainHashes(cachedState);
   return cachedState;
 }
 
@@ -1741,6 +2160,7 @@ export function saveState(data: AppState) {
   lastPersistedHash = hashState(serialized);
   lastCoreHash = hashCoreState(data);
   lastDiscordRuntimeHash = hashState(serializeDiscordRuntime(data));
+  initializeDomainHashes(data);
   writeLocalState(data);
   logStateDebug("💾 STATE SALVO LOCALMENTE", { file: FILE });
 }

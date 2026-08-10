@@ -17,7 +17,7 @@ function installStateFlushHooks() {
 
     try {
       console.log(`💾 flush final do state antes de ${signal}`);
-      await flushStateAsync();
+      await flushStateAsync(true);
     } catch (err) {
       console.error("❌ erro no flush final do state:", err);
     } finally {
