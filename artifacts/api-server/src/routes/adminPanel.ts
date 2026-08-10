@@ -6358,7 +6358,10 @@ function renderAdminPanelHtml(token: string) {
           '<div class="overview-grid" style="grid-template-columns:repeat(6,minmax(0,1fr))">' +
             '<div class="stat-card"><span>Observations</span><strong>' + Number(positionHistory.observationsReceived || 0).toLocaleString() + '</strong></div>' +
             '<div class="stat-card"><span>Players seen</span><strong>' + Number(positionHistory.uniquePlayersObserved || 0).toLocaleString() + '</strong></div>' +
-            '<div class="stat-card"><span>Position events</span><strong>' + Number(positionHistory.positionEvents || 0).toLocaleString() + '</strong></div>' +
+            '<div class="stat-card"><span>Positions observed</span><strong>' + Number(positionHistory.positionEvents || 0).toLocaleString() + '</strong></div>' +
+            '<div class="stat-card"><span>Positions retained</span><strong>' + Number(positionHistory.queuedPositionEvents || 0).toLocaleString() + '</strong></div>' +
+            '<div class="stat-card"><span>Positions suppressed</span><strong>' + Number(positionHistory.suppressedPositionEvents || 0).toLocaleString() + '</strong></div>' +
+            '<div class="stat-card"><span>Position reduction</span><strong>' + Number(positionHistory.positionReductionPercent || 0).toLocaleString() + '%</strong></div>' +
             '<div class="stat-card"><span>Connect / disconnect</span><strong>' + Number(positionHistory.connectEvents || 0).toLocaleString() + ' / ' + Number(positionHistory.disconnectEvents || 0).toLocaleString() + '</strong></div>' +
             '<div class="stat-card"><span>Pending batch</span><strong>' + Number(positionHistory.pendingObservations || 0).toLocaleString() + '</strong></div>' +
             '<div class="stat-card"><span>Invalid positions</span><strong>' + Number(positionHistory.invalidPositions || 0).toLocaleString() + '</strong></div>' +
@@ -6369,7 +6372,7 @@ function renderAdminPanelHtml(token: string) {
             '<div class="stat-card"><span>Projected 30d</span><strong>' + formatBytes(Number(positionHistory.projected30DayPayloadBytes || 0)) + '</strong></div>' +
             '<div class="stat-card"><span>Failed batches</span><strong>' + Number(positionHistory.failedBatches || 0).toLocaleString() + '</strong></div>' +
           '</div>' +
-          '<div class="member-meta" style="margin-top:10px">Retention: ' + Number(positionHistory.retentionHours || 24).toLocaleString() + 'h · Flush cadence: up to ' + Number(positionHistory.flushIntervalMinutes || 10).toLocaleString() + ' min · Last DB write: ' + escapeHtml(positionHistory.lastWriteAt ? relativeDate(positionHistory.lastWriteAt) : 'none') + '. A position-history failure never blocks kills, rankings or ADM cursors.</div>' +
+          '<div class="member-meta" style="margin-top:10px">Retention: ' + Number(positionHistory.retentionHours || 24).toLocaleString() + 'h · Sampling: first point, movement ≥ ' + Number(positionHistory.minMovementMeters || 25).toLocaleString() + 'm, or max ' + Number(positionHistory.maxSampleIntervalMinutes || 2).toLocaleString() + ' min between retained positions · Flush cadence: up to ' + Number(positionHistory.flushIntervalMinutes || 10).toLocaleString() + ' min · Last DB write: ' + escapeHtml(positionHistory.lastWriteAt ? relativeDate(positionHistory.lastWriteAt) : 'none') + '. Connect/disconnect events are always retained. A position-history failure never blocks kills, rankings or ADM cursors.</div>' +
           '<div class="table-wrap" style="margin-top:12px"><table><thead><tr><th>When</th><th>Player</th><th>Event</th><th>X</th><th>Z</th><th>ADM</th></tr></thead><tbody>' + positionSampleRows + '</tbody></table></div>' +
         '</div>' +
         '<div class="settings-grid" style="margin-top:16px;grid-template-columns:repeat(2,minmax(0,1fr))">' + detailCards + '</div>' +

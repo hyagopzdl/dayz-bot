@@ -146,16 +146,23 @@ const PLAYER_POSITION_RETENTION_HOURS = 24;
 const PLAYER_POSITION_FLUSH_INTERVAL_MS = 10 * 60 * 1000;
 const PLAYER_POSITION_MAX_PENDING = 250;
 const PLAYER_POSITION_CLEANUP_INTERVAL_MS = 6 * 60 * 60 * 1000;
+const PLAYER_POSITION_MIN_MOVEMENT_METERS = 25;
+const PLAYER_POSITION_MAX_SAMPLE_INTERVAL_MS = 2 * 60 * 1000;
 
 let playerPositionTableReadyPromise: Promise<void> | null = null;
 let pendingPlayerPositionObservations = new Map<string, PlayerPositionHistoryObservation>();
 let lastPlayerPositionFlushAt = 0;
 let lastPlayerPositionCleanupAt = 0;
 
+type RetainedPlayerPosition = { x: number; z: number; observedAtMs: number };
+const lastRetainedPlayerPositions = new Map<string, RetainedPlayerPosition>();
+
 const playerPositionHistoryMetrics = {
   startedAt: new Date().toISOString(),
   observationsReceived: 0,
   positionEvents: 0,
+  queuedPositionEvents: 0,
+  suppressedPositionEvents: 0,
   connectEvents: 0,
   disconnectEvents: 0,
   invalidPositions: 0,
@@ -1372,10 +1379,64 @@ export async function queuePlayerPositionHistoryObservations(observations: Playe
 
   for (const observation of observations) {
     playerPositionHistoryMetrics.observationsReceived += 1;
-    if (observation.eventType === "connect") playerPositionHistoryMetrics.connectEvents += 1;
-    else if (observation.eventType === "disconnect") playerPositionHistoryMetrics.disconnectEvents += 1;
-    else playerPositionHistoryMetrics.positionEvents += 1;
     playerPositionHistoryMetrics.observedPlayers.add(observation.playerNormalized);
+
+    if (observation.eventType === "connect") {
+      playerPositionHistoryMetrics.connectEvents += 1;
+      // A reconnect starts a new forensic session. If the ADM exposes coordinates
+      // on the connect line, use them as the baseline for movement sampling.
+      lastRetainedPlayerPositions.delete(observation.playerNormalized);
+      if (observation.x != null && observation.z != null) {
+        const observedAtMs = Date.parse(observation.observedAt);
+        lastRetainedPlayerPositions.set(observation.playerNormalized, {
+          x: observation.x,
+          z: observation.z,
+          observedAtMs: Number.isFinite(observedAtMs) ? observedAtMs : Date.now(),
+        });
+      }
+      pendingPlayerPositionObservations.set(observation.sourceKey, observation);
+      playerPositionHistoryMetrics.recentSamples.push(observation);
+      continue;
+    }
+
+    if (observation.eventType === "disconnect") {
+      playerPositionHistoryMetrics.disconnectEvents += 1;
+      pendingPlayerPositionObservations.set(observation.sourceKey, observation);
+      playerPositionHistoryMetrics.recentSamples.push(observation);
+      // Never carry a location baseline across sessions.
+      lastRetainedPlayerPositions.delete(observation.playerNormalized);
+      continue;
+    }
+
+    playerPositionHistoryMetrics.positionEvents += 1;
+    if (observation.x == null || observation.z == null) continue;
+
+    const observedAtMsRaw = Date.parse(observation.observedAt);
+    const observedAtMs = Number.isFinite(observedAtMsRaw) ? observedAtMsRaw : Date.now();
+    const previous = lastRetainedPlayerPositions.get(observation.playerNormalized);
+    let shouldRetain = !previous;
+
+    if (previous) {
+      const dx = observation.x - previous.x;
+      const dz = observation.z - previous.z;
+      const movedMeters = Math.hypot(dx, dz);
+      const elapsedMs = Math.max(0, observedAtMs - previous.observedAtMs);
+      shouldRetain =
+        movedMeters >= PLAYER_POSITION_MIN_MOVEMENT_METERS ||
+        elapsedMs >= PLAYER_POSITION_MAX_SAMPLE_INTERVAL_MS;
+    }
+
+    if (!shouldRetain) {
+      playerPositionHistoryMetrics.suppressedPositionEvents += 1;
+      continue;
+    }
+
+    playerPositionHistoryMetrics.queuedPositionEvents += 1;
+    lastRetainedPlayerPositions.set(observation.playerNormalized, {
+      x: observation.x,
+      z: observation.z,
+      observedAtMs,
+    });
     pendingPlayerPositionObservations.set(observation.sourceKey, observation);
     playerPositionHistoryMetrics.recentSamples.push(observation);
   }
@@ -1405,8 +1466,15 @@ export function getPlayerPositionHistoryMetrics() {
     startedAt: playerPositionHistoryMetrics.startedAt,
     retentionHours: PLAYER_POSITION_RETENTION_HOURS,
     flushIntervalMinutes: PLAYER_POSITION_FLUSH_INTERVAL_MS / 60_000,
+    minMovementMeters: PLAYER_POSITION_MIN_MOVEMENT_METERS,
+    maxSampleIntervalMinutes: PLAYER_POSITION_MAX_SAMPLE_INTERVAL_MS / 60_000,
     observationsReceived: playerPositionHistoryMetrics.observationsReceived,
     positionEvents: playerPositionHistoryMetrics.positionEvents,
+    queuedPositionEvents: playerPositionHistoryMetrics.queuedPositionEvents,
+    suppressedPositionEvents: playerPositionHistoryMetrics.suppressedPositionEvents,
+    positionReductionPercent: playerPositionHistoryMetrics.positionEvents > 0
+      ? Number(((playerPositionHistoryMetrics.suppressedPositionEvents / playerPositionHistoryMetrics.positionEvents) * 100).toFixed(2))
+      : 0,
     connectEvents: playerPositionHistoryMetrics.connectEvents,
     disconnectEvents: playerPositionHistoryMetrics.disconnectEvents,
     invalidPositions: playerPositionHistoryMetrics.invalidPositions,
