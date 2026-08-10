@@ -91,6 +91,11 @@ const domainPersistenceMetrics = {
   lastWriteDurationMs: 0,
   lastWriteAt: undefined as string | undefined,
   lastError: undefined as string | undefined,
+  bootSource: "pending" as "pending" | "persistence-v2" | "compat-main" | "legacy-main" | "fresh-main" | "local-file" | "local-fallback",
+  domainRowsFoundAtBoot: 0,
+  domainRowsAppliedAtBoot: 0,
+  mainUpdatedAtAtBoot: undefined as string | undefined,
+  newestDomainUpdatedAtAtBoot: undefined as string | undefined,
   domains: {
     stats: { changes: 0, writes: 0, bytesWritten: 0, currentBytes: 0 },
     processing: { changes: 0, writes: 0, bytesWritten: 0, currentBytes: 0 },
@@ -1536,6 +1541,7 @@ export async function getStateAsync(): Promise<AppState> {
   }
 
   if (!sql) {
+    domainPersistenceMetrics.bootSource = "local-file";
     cachedState = readLocalState();
     lastPersistedJson = serializeState(cachedState);
     lastPersistedHash = hashState(lastPersistedJson);
@@ -1558,6 +1564,7 @@ export async function getStateAsync(): Promise<AppState> {
     const runtimeRow = rows.find((row: any) => row.id === DISCORD_RUNTIME_STATE_ID);
 
     if (!mainRow) {
+      domainPersistenceMetrics.bootSource = "fresh-main";
       const state = defaultState();
       const serialized = serializeState(state);
       const hash = hashState(serialized);
@@ -1582,16 +1589,31 @@ export async function getStateAsync(): Promise<AppState> {
     const mainPersistedHash = hashState(serializeState(cachedState));
     const mainUpdatedAt = mainRow.updated_at ? new Date(mainRow.updated_at).getTime() : 0;
     lastCompatibilitySnapshotAt = mainUpdatedAt || Date.now();
+    domainPersistenceMetrics.mainUpdatedAtAtBoot = mainUpdatedAt ? new Date(mainUpdatedAt).toISOString() : undefined;
 
+    let domainRowsFoundAtBoot = 0;
+    let domainRowsAppliedAtBoot = 0;
+    let newestDomainUpdatedAt = 0;
     if (STATE_PERSISTENCE_V2_ENABLED) {
       for (const domain of Object.keys(STATE_DOMAIN_IDS) as StateDomainName[]) {
         const row = rows.find((candidate: any) => candidate.id === STATE_DOMAIN_IDS[domain]);
         const domainUpdatedAt = row?.updated_at ? new Date(row.updated_at).getTime() : 0;
+        if (row) domainRowsFoundAtBoot += 1;
+        if (domainUpdatedAt > newestDomainUpdatedAt) newestDomainUpdatedAt = domainUpdatedAt;
         // A compatibility snapshot may be newer than a domain row. In that case
         // the snapshot already contains the fresher domain value and must win.
-        if (row && domainUpdatedAt > mainUpdatedAt) applyStateDomain(cachedState, domain, row.data || {});
+        if (row && domainUpdatedAt > mainUpdatedAt) {
+          applyStateDomain(cachedState, domain, row.data || {});
+          domainRowsAppliedAtBoot += 1;
+        }
       }
     }
+    domainPersistenceMetrics.domainRowsFoundAtBoot = domainRowsFoundAtBoot;
+    domainPersistenceMetrics.domainRowsAppliedAtBoot = domainRowsAppliedAtBoot;
+    domainPersistenceMetrics.newestDomainUpdatedAtAtBoot = newestDomainUpdatedAt ? new Date(newestDomainUpdatedAt).toISOString() : undefined;
+    domainPersistenceMetrics.bootSource = STATE_PERSISTENCE_V2_ENABLED
+      ? (domainRowsAppliedAtBoot > 0 ? "persistence-v2" : "compat-main")
+      : "legacy-main";
 
     const runtimeUpdatedAt = runtimeRow?.updated_at ? new Date(runtimeRow.updated_at).getTime() : 0;
     if (runtimeRow && runtimeUpdatedAt >= mainUpdatedAt) {
@@ -1615,6 +1637,7 @@ export async function getStateAsync(): Promise<AppState> {
     return cachedState;
   } catch (err) {
     console.error("❌ erro lendo state no Neon, usando state.json local:", err);
+    domainPersistenceMetrics.bootSource = "local-fallback";
     cachedState = readLocalState();
     lastPersistedJson = serializeState(cachedState);
     lastPersistedHash = hashState(lastPersistedJson);

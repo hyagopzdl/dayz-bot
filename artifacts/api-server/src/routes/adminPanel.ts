@@ -6414,8 +6414,10 @@ function renderAdminPanelHtml(token: string) {
         '</div>' +
         '<div class="settings-card" style="margin-top:16px"><div class="settings-card-head"><div><h3>Recent persisted writes</h3><p>Last 20 writes with payload, effective changed bytes, source and changed sections.</p></div></div><div class="table-wrap"><table><thead><tr><th>When</th><th>Payload</th><th>Changed</th><th>Duration</th><th>Sources</th><th>Sections</th></tr></thead><tbody>' + writeRows + '</tbody></table></div></div>' +
         '<div class="settings-card" style="margin-top:16px"><div class="settings-card-head"><div><h3>Persistence V2 domains</h3><p>Core state is split by responsibility. Background game/runtime changes are coalesced to reduce Neon wake-ups; social, commerce and config remain immediate.</p></div></div>' +
-          '<div class="overview-grid" style="grid-template-columns:repeat(8,minmax(0,1fr))">' +
+          '<div class="overview-grid" style="grid-template-columns:repeat(10,minmax(0,1fr))">' +
             '<div class="stat-card"><span>Status</span><strong>' + (domainV2.enabled ? 'Active' : 'Legacy') + '</strong></div>' +
+            '<div class="stat-card"><span>Boot source</span><strong>' + escapeHtml(domainV2.bootSource || 'unknown') + '</strong></div>' +
+            '<div class="stat-card"><span>V2 rows at boot</span><strong>' + Number(domainV2.domainRowsFoundAtBoot || 0).toLocaleString() + ' / ' + Number(domainV2.domainRowsAppliedAtBoot || 0).toLocaleString() + '</strong></div>' +
             '<div class="stat-card"><span>Flushes</span><strong>' + Number(domainV2.flushes || 0).toLocaleString() + '</strong></div>' +
             '<div class="stat-card"><span>Rows written</span><strong>' + Number(domainV2.rowsWritten || 0).toLocaleString() + '</strong></div>' +
             '<div class="stat-card"><span>Pending domains</span><strong>' + Number(domainV2.pendingDomains || 0).toLocaleString() + '</strong></div>' +
@@ -6424,7 +6426,9 @@ function renderAdminPanelHtml(token: string) {
             '<div class="stat-card"><span>Projected 30d</span><strong>' + formatBytes(Number(domainV2.projected30DayPayloadBytes || 0)) + '</strong></div>' +
             '<div class="stat-card"><span>Compat snapshots</span><strong>' + Number(domainV2.compatibilitySnapshots || 0).toLocaleString() + '</strong></div>' +
           '</div>' +
-          '<div class="member-meta" style="margin-top:10px">Background cadence: ' + Number(domainV2.backgroundCadenceMinutes || 10).toLocaleString() + ' min · Compatibility snapshot: ' + Number(domainV2.compatibilitySnapshotMinutes || 60).toLocaleString() + ' min · Immediate flushes: ' + Number(domainV2.immediateFlushes || 0).toLocaleString() + ' · Failed: ' + Number(domainV2.failedFlushes || 0).toLocaleString() + ' · Last write: ' + escapeHtml(domainV2.lastWriteAt ? relativeDate(domainV2.lastWriteAt) : 'none') + '</div>' +
+          '<div class="member-meta" style="margin-top:10px">Background cadence: ' + Number(domainV2.backgroundCadenceMinutes || 10).toLocaleString() + ' min · Compatibility snapshot: ' + Number(domainV2.compatibilitySnapshotMinutes || 60).toLocaleString() + ' min · Immediate flushes: ' + Number(domainV2.immediateFlushes || 0).toLocaleString() + ' · Failed: ' + Number(domainV2.failedFlushes || 0).toLocaleString() + '</div>' +
+          '<div class="member-meta" style="margin-top:6px">Last domain flush: ' + escapeHtml(domainV2.lastWriteAt ? relativeDate(domainV2.lastWriteAt) : 'none') + ' · Last runtime write: ' + escapeHtml(discordRuntime.lastWriteAt ? relativeDate(discordRuntime.lastWriteAt) : 'none') + ' · Last main/compat write: ' + escapeHtml(m.lastWriteAt ? relativeDate(m.lastWriteAt) : 'none') + '</div>' +
+          '<div class="member-meta" style="margin-top:6px">Boot main: ' + escapeHtml(domainV2.mainUpdatedAtAtBoot ? relativeDate(domainV2.mainUpdatedAtAtBoot) : 'none') + ' · Boot newest V2: ' + escapeHtml(domainV2.newestDomainUpdatedAtAtBoot ? relativeDate(domainV2.newestDomainUpdatedAtAtBoot) : 'none') + '</div>' +
           '<div class="table-wrap" style="margin-top:12px"><table><thead><tr><th>Domain</th><th>Current</th><th>Changes</th><th>Writes</th><th>Written</th></tr></thead><tbody>' +
             ['stats','processing','social','commerce','config'].map((key) => { const d = domainRows[key] || {}; return '<tr><td><code>' + escapeHtml(key) + '</code></td><td>' + formatBytes(Number(d.currentBytes || 0)) + '</td><td>' + Number(d.changes || 0).toLocaleString() + '</td><td>' + Number(d.writes || 0).toLocaleString() + '</td><td>' + formatBytes(Number(d.bytesWritten || 0)) + '</td></tr>'; }).join('') +
           '</tbody></table></div>' +
@@ -6526,6 +6530,7 @@ function renderAdminPanelHtml(token: string) {
         const payload = await response.json();
         state.serviceSettings = payload.settings;
         state.persistenceMetrics = payload.persistenceMetrics;
+        state.domainPersistenceMetrics = payload.domainPersistenceMetrics;
         state.discordRuntimeMetrics = payload.discordRuntimeMetrics;
         state.playerPositionHistoryMetrics = payload.playerPositionHistoryMetrics;
         state.admDownloadMetrics = payload.admDownloadMetrics;
@@ -6544,6 +6549,7 @@ function renderAdminPanelHtml(token: string) {
         const payload = await response.json();
         state.serviceSettings = payload.settings;
         state.persistenceMetrics = payload.persistenceMetrics;
+        state.domainPersistenceMetrics = payload.domainPersistenceMetrics;
         state.discordRuntimeMetrics = payload.discordRuntimeMetrics;
         state.playerPositionHistoryMetrics = payload.playerPositionHistoryMetrics;
         state.admDownloadMetrics = payload.admDownloadMetrics;
@@ -6565,6 +6571,7 @@ function renderAdminPanelHtml(token: string) {
         const payload = await response.json();
         state.serviceSettings = payload.settings;
         state.persistenceMetrics = payload.persistenceMetrics;
+        state.domainPersistenceMetrics = payload.domainPersistenceMetrics;
         state.discordRuntimeMetrics = payload.discordRuntimeMetrics;
         state.playerPositionHistoryMetrics = payload.playerPositionHistoryMetrics;
         state.admDownloadMetrics = payload.admDownloadMetrics;
