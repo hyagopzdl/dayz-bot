@@ -1469,6 +1469,87 @@ export function recordInvalidPlayerPositionObservation() {
   playerPositionHistoryMetrics.invalidPositions += 1;
 }
 
+export type PlayerPositionSnapshot = {
+  playerName: string;
+  playerNormalized: string;
+  x: number;
+  z: number;
+  observedAt: string;
+  source: "memory" | "database";
+};
+
+export async function getLatestPlayerPositionSnapshot(playerNames: string[]): Promise<PlayerPositionSnapshot[]> {
+  const requested = new Map<string, string>();
+  for (const rawName of playerNames) {
+    const playerName = String(rawName || "").trim();
+    if (!playerName) continue;
+    requested.set(playerName.toLowerCase(), playerName);
+  }
+  if (!requested.size) return [];
+
+  const byPlayer = new Map<string, PlayerPositionSnapshot>();
+
+  // Prefer the most recent retained in-memory point. This lets the admin map
+  // reflect the latest parser cycle without forcing the pending forensic batch
+  // to be written to Neon first.
+  for (const [playerNormalized, playerName] of requested.entries()) {
+    const retained = lastRetainedPlayerPositions.get(playerNormalized);
+    if (!retained) continue;
+    byPlayer.set(playerNormalized, {
+      playerName,
+      playerNormalized,
+      x: retained.x,
+      z: retained.z,
+      observedAt: new Date(retained.observedAtMs).toISOString(),
+      source: "memory",
+    });
+  }
+
+  if (sql) {
+    try {
+      await ensurePlayerPositionHistoryTable();
+      const normalizedNames = [...requested.keys()];
+      const rows = await sql`
+        SELECT DISTINCT ON (player_normalized)
+          player_name, player_normalized, x, z, observed_at
+        FROM player_position_history
+        WHERE event_type = 'position'
+          AND x IS NOT NULL
+          AND z IS NOT NULL
+          AND observed_at >= NOW() - INTERVAL '24 hours'
+          AND player_normalized IN ${sql(normalizedNames)}
+        ORDER BY player_normalized, observed_at DESC
+      `;
+
+      for (const row of rows as any[]) {
+        const playerNormalized = String(row.player_normalized || "").toLowerCase();
+        if (!requested.has(playerNormalized)) continue;
+        const observedAt = row.observed_at instanceof Date
+          ? row.observed_at.toISOString()
+          : new Date(row.observed_at).toISOString();
+        const candidate: PlayerPositionSnapshot = {
+          playerName: String(row.player_name || requested.get(playerNormalized) || playerNormalized),
+          playerNormalized,
+          x: Number(row.x),
+          z: Number(row.z),
+          observedAt,
+          source: "database",
+        };
+        const current = byPlayer.get(playerNormalized);
+        if (!current || Date.parse(candidate.observedAt) > Date.parse(current.observedAt)) {
+          byPlayer.set(playerNormalized, candidate);
+        }
+      }
+    } catch (err) {
+      // The admin map is observational only. A read failure must never affect
+      // parser, rankings, killfeed or the position-history writer.
+      console.warn("Failed to read latest player position snapshot", err);
+    }
+  }
+
+  return [...byPlayer.values()];
+}
+
 export function getPlayerPositionHistoryMetrics() {
   const uptimeHours = Math.max(1 / 60, (Date.now() - new Date(playerPositionHistoryMetrics.startedAt).getTime()) / 3_600_000);
   const batches = Math.max(1, playerPositionHistoryMetrics.batchesWritten);

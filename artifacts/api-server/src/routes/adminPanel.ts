@@ -58,6 +58,7 @@ import {
   getStatePersistenceMetrics,
   getDiscordRuntimePersistenceMetrics,
   getPlayerPositionHistoryMetrics,
+  getLatestPlayerPositionSnapshot,
   type AppState,
   type PlayerLink,
   type Wallet,
@@ -3898,6 +3899,35 @@ function renderAdminPanelHtml(token: string) {
     .alert-pill { min-height: 42px; display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 12px; background: rgba(242,204,90,.10); color: #f7dfa0; border: 1px solid rgba(242,204,90,.16); }
     .alert-pill.success { background: rgba(91,214,138,.10); color: #aaf2c0; border-color: rgba(91,214,138,.16); }
     .alert-pill .icon { width: 17px; height: 17px; }
+
+    .player-map-shell { display:grid; gap:14px; }
+    .player-map-layout { display:grid; grid-template-columns:minmax(0,1.45fr) minmax(280px,.55fr); gap:14px; align-items:start; }
+    .player-map-card { padding:0; overflow:hidden; }
+    .player-map-toolbar { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:12px; border-bottom:1px solid var(--border); }
+    .player-map-toolbar-copy { min-width:0; }
+    .player-map-toolbar-copy b { display:block; font-size:14px; }
+    .player-map-toolbar-copy span { color:var(--text-3); font-size:11px; }
+    .player-map-actions { display:flex; gap:7px; align-items:center; flex-wrap:wrap; justify-content:flex-end; }
+    .player-map-viewport { width:100%; aspect-ratio:1 / 1; overflow:auto; background:#10131b; position:relative; overscroll-behavior:contain; scrollbar-width:thin; }
+    .player-map-inner { position:relative; width:calc(100% * var(--player-map-zoom, 1)); min-width:100%; aspect-ratio:1 / 1; overflow:hidden; }
+    .player-map-inner > img { position:absolute; inset:0; width:100%; height:100%; object-fit:fill; display:block; user-select:none; -webkit-user-drag:none; }
+    .player-map-marker-layer { position:absolute; inset:0; z-index:3; pointer-events:none; }
+    .player-map-marker { position:absolute; transform:translate(-50%,-50%); display:flex; align-items:center; gap:5px; pointer-events:auto; }
+    .player-map-dot { width:12px; height:12px; border-radius:999px; background:#5be58a; border:2px solid #fff; box-shadow:0 0 0 4px rgba(91,229,138,.18),0 5px 18px rgba(0,0,0,.45); flex:none; }
+    .player-map-marker.stale .player-map-dot { background:#f2c45a; box-shadow:0 0 0 4px rgba(242,196,90,.18),0 5px 18px rgba(0,0,0,.45); }
+    .player-map-marker.old .player-map-dot { background:#f27d86; box-shadow:0 0 0 4px rgba(242,125,134,.18),0 5px 18px rgba(0,0,0,.45); }
+    .player-map-label { max-width:160px; padding:4px 7px; border-radius:8px; background:rgba(13,16,24,.88); border:1px solid rgba(255,255,255,.12); color:#fff; font-size:11px; font-weight:650; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; backdrop-filter:blur(4px); }
+    .player-map-footer { display:flex; justify-content:space-between; gap:10px; padding:9px 12px; border-top:1px solid var(--border); color:var(--text-3); font-size:11px; }
+    .player-map-side { display:grid; gap:12px; }
+    .player-map-search { width:100%; }
+    .player-map-list { display:grid; gap:7px; max-height:620px; overflow:auto; padding-right:2px; }
+    .player-map-row { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px; padding:10px; border:1px solid var(--border); border-radius:11px; background:rgba(255,255,255,.025); }
+    .player-map-row b { font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .player-map-row small { color:var(--text-3); font-size:10px; display:block; margin-top:3px; }
+    .player-map-row-coords { font-size:11px; color:var(--text-2); font-variant-numeric:tabular-nums; text-align:right; }
+    .player-map-empty { padding:18px; border:1px dashed var(--border); border-radius:11px; color:var(--text-3); font-size:12px; text-align:center; }
+    @media (max-width: 980px) { .player-map-layout { grid-template-columns:1fr; } .player-map-list { max-height:320px; } }
+
     @media (max-width: 1180px) { .operation-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } .operation-charts-grid, .alerts-row { grid-template-columns: 1fr; } .ops-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
     @media (max-width: 720px) { .overview-hero { flex-direction: column; } .operation-kpis, .ops-grid { grid-template-columns: 1fr; } .hbar-row { grid-template-columns: 44px minmax(0, 1fr) 48px; gap: 8px; } .operation-card { padding: 14px; } }
 
@@ -3939,6 +3969,7 @@ function renderAdminPanelHtml(token: string) {
         <button data-view="items"><svg class="nav-icon"><use href="#icon-package"></use></svg><span>Itens</span></button>
         <button data-view="map-events"><svg class="nav-icon"><use href="#icon-clock"></use></svg><span>Eventos do Mapa</span></button>
         <button data-view="spawn-zones"><svg class="nav-icon"><use href="#icon-clock"></use></svg><span>Spawn Zones</span></button>
+        <button data-view="player-map"><svg class="nav-icon"><use href="#icon-users"></use></svg><span>Player Map</span></button>
         <button data-view="settings"><svg class="nav-icon"><use href="#icon-database"></use></svg><span>Settings</span></button>
       </nav>
       <div class="sidebar-footer"><div class="avatar">A</div><div><b>Admin</b><div class="member-meta">Painel seguro</div></div></div>
@@ -4350,6 +4381,41 @@ function renderAdminPanelHtml(token: string) {
           </div>
         </section>
 
+
+        <section id="view-player-map" class="view">
+          <div class="player-map-shell">
+            <div class="card">
+              <div class="section-title">
+                <div><h2>Player Map</h2><div class="member-meta">Última posição conhecida dos jogadores online, usando somente dados já capturados pelo parser.</div></div>
+                <div class="player-map-actions"><span id="playerMapUpdatedAt" class="chip">Ainda não carregado</span><button id="playerMapRefresh" class="primary-btn" type="button">Atualizar mapa</button></div>
+              </div>
+              <div class="catalog-breadcrumb">Manual por design: abrir ou atualizar esta tela faz apenas uma leitura pequena do histórico de posições. Nenhuma chamada extra é feita à Nitrado.</div>
+            </div>
+            <div class="player-map-layout">
+              <div class="card player-map-card">
+                <div class="player-map-toolbar">
+                  <div class="player-map-toolbar-copy"><b>Chernarus</b><span id="playerMapSummary">Aguardando snapshot...</span></div>
+                  <div class="player-map-actions"><button id="playerMapZoomOut" class="ghost-btn" type="button">−</button><span id="playerMapZoomLabel" class="chip">100%</span><button id="playerMapZoomIn" class="ghost-btn" type="button">+</button></div>
+                </div>
+                <div id="playerMapViewport" class="player-map-viewport">
+                  <div id="playerMapInner" class="player-map-inner">
+                    <img src="/admin-panel/api/map-events/chernarus-map" alt="Mapa de Chernarus" draggable="false" />
+                    <div id="playerMapMarkers" class="player-map-marker-layer"></div>
+                  </div>
+                </div>
+                <div class="player-map-footer"><span>Verde: ≤5 min · amarelo: 5–10 min · vermelho: &gt;10 min</span><span>15360 × 15360</span></div>
+              </div>
+              <div class="player-map-side">
+                <div class="card">
+                  <div class="section-title"><div><h2>Jogadores</h2><div class="member-meta">Filtre os pins sem consultar o servidor novamente.</div></div><span id="playerMapVisibleCount" class="chip">0</span></div>
+                  <input id="playerMapSearch" class="player-map-search" placeholder="Buscar gamertag..." />
+                  <div id="playerMapList" class="player-map-list" style="margin-top:12px"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
         <section id="view-settings" class="view">
           <div class="items-shell">
             <div class="card">
@@ -4582,7 +4648,7 @@ function renderAdminPanelHtml(token: string) {
   <script>
     const adminToken = ${tokenJson};
     if (adminToken) document.cookie = "${TOKEN_COOKIE}=" + encodeURIComponent(adminToken) + "; path=/admin-panel; SameSite=Lax";
-    const state = { view: "general", cursor: 0, hasMore: true, loadingMembers: false, memberForceRefresh: false, search: "", filter: "", modal: null, catalogModal: null, selectedDiscordId: null, catalog: null, catalogSearch: "", catalogCategory: "", catalogMode: "categories", catalogDrag: null, catalogJustDragged: false, shopQueue: null, shopTransactions: null, shopHistorySearch: "", shopQueueModeBefore: "categories", itemsCursor: 0, itemsHasMore: true, itemsLoading: false, itemsSearch: "", itemsFilter: "all", dayzItems: [], itemsStats: null, itemModal: null, mapEventPresets: [], selectedMapEventPresetId: "locked_container_red_military", mapEventRewardStorageItem: null, mapEventLootItems: [], scheduledMapEvents: [], mapEventBuilderOpen: false, settingsTab: "server", serviceSettings: null, serviceSettingsLoading: false, discordCommands: null, discordCommandsLoading: false, lockedContainerSetup: null, spawnZonesTab: "rotation", spawnZones: null, selectedSpawnZoneId: null, highlightedSpawnPointId: null, spawnZoneMapZoom: 1, spawnZoneMapDragging: false, spawnZoneEditingNameId: null };
+    const state = { view: "general", cursor: 0, hasMore: true, loadingMembers: false, memberForceRefresh: false, search: "", filter: "", modal: null, catalogModal: null, selectedDiscordId: null, catalog: null, catalogSearch: "", catalogCategory: "", catalogMode: "categories", catalogDrag: null, catalogJustDragged: false, shopQueue: null, shopTransactions: null, shopHistorySearch: "", shopQueueModeBefore: "categories", itemsCursor: 0, itemsHasMore: true, itemsLoading: false, itemsSearch: "", itemsFilter: "all", dayzItems: [], itemsStats: null, itemModal: null, mapEventPresets: [], selectedMapEventPresetId: "locked_container_red_military", mapEventRewardStorageItem: null, mapEventLootItems: [], scheduledMapEvents: [], mapEventBuilderOpen: false, settingsTab: "server", serviceSettings: null, serviceSettingsLoading: false, discordCommands: null, discordCommandsLoading: false, lockedContainerSetup: null, spawnZonesTab: "rotation", spawnZones: null, selectedSpawnZoneId: null, highlightedSpawnPointId: null, spawnZoneMapZoom: 1, spawnZoneMapDragging: false, spawnZoneEditingNameId: null, playerMap: null, playerMapZoom: 1, playerMapSearch: "" };
     const els = {
       pageTitle: document.getElementById("pageTitle"), serverName: document.getElementById("serverName"),
       mapEventPresetGrid: document.getElementById("mapEventPresetGrid"), mapEventSelectedPreset: document.getElementById("mapEventSelectedPreset"), mapEventName: document.getElementById("mapEventName"), mapEventCoordinates: document.getElementById("mapEventCoordinates"), mapEventX: document.getElementById("mapEventX"), mapEventZ: document.getElementById("mapEventZ"), mapEventAngle: document.getElementById("mapEventAngle"), mapEventQuantity: document.getElementById("mapEventQuantity"), mapEventLifetime: document.getElementById("mapEventLifetime"), mapEventSafeRadius: document.getElementById("mapEventSafeRadius"), mapEventDistanceRadius: document.getElementById("mapEventDistanceRadius"), mapEventCleanupRadius: document.getElementById("mapEventCleanupRadius"), mapEventLootMode: document.getElementById("mapEventLootMode"), mapEventRewardStorage: document.getElementById("mapEventRewardStorage"), mapEventRewardStorageSearch: document.getElementById("mapEventRewardStorageSearch"), mapEventRewardStorageSelected: document.getElementById("mapEventRewardStorageSelected"), mapEventRewardStorageAutocomplete: document.getElementById("mapEventRewardStorageAutocomplete"), mapEventRewardStorageWrap: document.getElementById("mapEventRewardStorageWrap"), mapEventGuaranteedItemSearch: document.getElementById("mapEventGuaranteedItemSearch"), mapEventGuaranteedItemAutocomplete: document.getElementById("mapEventGuaranteedItemAutocomplete"), mapEventGuaranteedItemsList: document.getElementById("mapEventGuaranteedItemsList"), mapEventGuaranteedItemsWrap: document.getElementById("mapEventGuaranteedItemsWrap"), mapEventMapViewport: document.getElementById("mapEventMapViewport"), mapEventMapInner: document.getElementById("mapEventMapInner"), mapEventMapImage: document.getElementById("mapEventMapImage"), mapEventMapPin: document.getElementById("mapEventMapPin"), mapEventMapZoomIn: document.getElementById("mapEventMapZoomIn"), mapEventMapZoomOut: document.getElementById("mapEventMapZoomOut"), mapEventMapZoomLabel: document.getElementById("mapEventMapZoomLabel"), mapEventStatus: document.getElementById("mapEventStatus"), mapEventBuilder: document.getElementById("mapEventBuilder"), mapEventsNewToggle: document.getElementById("mapEventsNewToggle"), mapEventsBuilderClose: document.getElementById("mapEventsBuilderClose"), mapEventsSchedule: document.getElementById("mapEventsSchedule"), mapEventScheduleFields: document.getElementById("mapEventScheduleFields"), mapEventDate: document.getElementById("mapEventDate"), mapEventTime: document.getElementById("mapEventTime"), mapEventCustomTimeWrap: document.getElementById("mapEventCustomTimeWrap"), mapEventCustomTime: document.getElementById("mapEventCustomTime"), mapEventRecurrence: document.getElementById("mapEventRecurrence"), mapEventsScheduledList: document.getElementById("mapEventsScheduledList"), mapEventsScheduledEmpty: document.getElementById("mapEventsScheduledEmpty"), mapEventsScheduledCount: document.getElementById("mapEventsScheduledCount"), mapEventsRecurringCount: document.getElementById("mapEventsRecurringCount"), mapEventsNextRun: document.getElementById("mapEventsNextRun"), mapEventsScheduleRuntime: document.getElementById("mapEventsScheduleRuntime"),
@@ -4596,7 +4662,8 @@ function renderAdminPanelHtml(token: string) {
       lockedContainerSetupStatus: document.getElementById("lockedContainerSetupStatus"), lockedContainerModalStatus: document.getElementById("lockedContainerModalStatus"), lockedContainerInstalledSection: document.getElementById("lockedContainerInstalledSection"), lockedContainerInstalledGrid: document.getElementById("lockedContainerInstalledGrid"), lockedContainerAvailableGrid: document.getElementById("lockedContainerAvailableGrid"), eventIntegrationModalBackdrop: document.getElementById("eventIntegrationModalBackdrop"), eventIntegrationModalClose: document.getElementById("eventIntegrationModalClose"),
       itemModalBackdrop: document.getElementById("itemModalBackdrop"), itemModalTitle: document.getElementById("itemModalTitle"), itemModalSubtitle: document.getElementById("itemModalSubtitle"), itemModalPreviewImage: document.getElementById("itemModalPreviewImage"), itemModalPreviewName: document.getElementById("itemModalPreviewName"), itemModalPreviewClass: document.getElementById("itemModalPreviewClass"), itemModalPopularName: document.getElementById("itemModalPopularName"), itemModalImageUrl: document.getElementById("itemModalImageUrl"), itemModalSpawnEventName: document.getElementById("itemModalSpawnEventName"), itemModalEnabled: document.getElementById("itemModalEnabled"),
       spawnZonesCurrentZone: document.getElementById("spawnZonesCurrentZone"), spawnZonesNextZone: document.getElementById("spawnZonesNextZone"), spawnZonesEnabledCount: document.getElementById("spawnZonesEnabledCount"), spawnZonesVoteHistory: document.getElementById("spawnZonesVoteHistory"), spawnZonesActivePoll: document.getElementById("spawnZonesActivePoll"), spawnZonesNextSelect: document.getElementById("spawnZonesNextSelect"), spawnZonesSetNext: document.getElementById("spawnZonesSetNext"), spawnZonesApplyNext: document.getElementById("spawnZonesApplyNext"), spawnZonesApplyServer: document.getElementById("spawnZonesApplyServer"), spawnZonesCreatePoll: document.getElementById("spawnZonesCreatePoll"), spawnZonesRefreshPoll: document.getElementById("spawnZonesRefreshPoll"), spawnZonesFinalizePoll: document.getElementById("spawnZonesFinalizePoll"), spawnZonesRunAutomation: document.getElementById("spawnZonesRunAutomation"), spawnZonesAutomationStatus: document.getElementById("spawnZonesAutomationStatus"), spawnZonesWelcomeMessage: document.getElementById("spawnZonesWelcomeMessage"), spawnZonesWelcomeStatus: document.getElementById("spawnZonesWelcomeStatus"),
-      spawnZonesMapTitle: document.getElementById("spawnZonesMapTitle"), spawnZonesMapHint: document.getElementById("spawnZonesMapHint"), spawnZonesAutosaveStatus: document.getElementById("spawnZonesAutosaveStatus"), spawnZonesMapViewport: document.getElementById("spawnZonesMapViewport"), spawnZonesMapInner: document.getElementById("spawnZonesMapInner"), spawnZonesMarkers: document.getElementById("spawnZonesMarkers"), spawnZonesMapTiles: document.getElementById("spawnZonesMapTiles"), spawnZonesMapZoomIn: document.getElementById("spawnZonesMapZoomIn"), spawnZonesMapZoomOut: document.getElementById("spawnZonesMapZoomOut"), spawnZonesMapZoomLabel: document.getElementById("spawnZonesMapZoomLabel"), spawnZonesCursor: document.getElementById("spawnZonesCursor"), spawnZoneCreate: document.getElementById("spawnZoneCreate"), spawnZoneImport: document.getElementById("spawnZoneImport"), spawnZoneImportFile: document.getElementById("spawnZoneImportFile"), spawnZoneList: document.getElementById("spawnZoneList"), spawnZonesPollChannel: document.getElementById("spawnZonesPollChannel"), spawnZonesPollCategory: document.getElementById("spawnZonesPollCategory"), spawnZonesPollQuestion: document.getElementById("spawnZonesPollQuestion"), spawnZonesPollOpenDay: document.getElementById("spawnZonesPollOpenDay"), spawnZonesPollOpenTime: document.getElementById("spawnZonesPollOpenTime"), spawnZonesPollCloseDay: document.getElementById("spawnZonesPollCloseDay"), spawnZonesPollCloseTime: document.getElementById("spawnZonesPollCloseTime"), spawnZonesPollTimezone: document.getElementById("spawnZonesPollTimezone"), spawnZonesMinVotes: document.getElementById("spawnZonesMinVotes"), spawnZonesTiePolicy: document.getElementById("spawnZonesTiePolicy"), spawnZonesAutoCreatePoll: document.getElementById("spawnZonesAutoCreatePoll"), spawnZonesRecurringPollAfterFinish: document.getElementById("spawnZonesRecurringPollAfterFinish"), spawnZonesAutoApplyWinner: document.getElementById("spawnZonesAutoApplyWinner"), spawnZonesApplyOnNextRestart: document.getElementById("spawnZonesApplyOnNextRestart"), spawnZonesSpawnFilePath: document.getElementById("spawnZonesSpawnFilePath"), spawnZonesServerName: document.getElementById("spawnZonesServerName"), spawnZonesSettingsStatus: document.getElementById("spawnZonesSettingsStatus"), spawnZonesTiePolicyHelp: document.getElementById("spawnZonesTiePolicyHelp"), spawnZonesApplyOnNextRestartRow: document.getElementById("spawnZonesApplyOnNextRestartRow")
+      spawnZonesMapTitle: document.getElementById("spawnZonesMapTitle"), spawnZonesMapHint: document.getElementById("spawnZonesMapHint"), spawnZonesAutosaveStatus: document.getElementById("spawnZonesAutosaveStatus"), spawnZonesMapViewport: document.getElementById("spawnZonesMapViewport"), spawnZonesMapInner: document.getElementById("spawnZonesMapInner"), spawnZonesMarkers: document.getElementById("spawnZonesMarkers"), spawnZonesMapTiles: document.getElementById("spawnZonesMapTiles"), spawnZonesMapZoomIn: document.getElementById("spawnZonesMapZoomIn"), spawnZonesMapZoomOut: document.getElementById("spawnZonesMapZoomOut"), spawnZonesMapZoomLabel: document.getElementById("spawnZonesMapZoomLabel"), spawnZonesCursor: document.getElementById("spawnZonesCursor"), spawnZoneCreate: document.getElementById("spawnZoneCreate"), spawnZoneImport: document.getElementById("spawnZoneImport"), spawnZoneImportFile: document.getElementById("spawnZoneImportFile"), spawnZoneList: document.getElementById("spawnZoneList"), spawnZonesPollChannel: document.getElementById("spawnZonesPollChannel"), spawnZonesPollCategory: document.getElementById("spawnZonesPollCategory"), spawnZonesPollQuestion: document.getElementById("spawnZonesPollQuestion"), spawnZonesPollOpenDay: document.getElementById("spawnZonesPollOpenDay"), spawnZonesPollOpenTime: document.getElementById("spawnZonesPollOpenTime"), spawnZonesPollCloseDay: document.getElementById("spawnZonesPollCloseDay"), spawnZonesPollCloseTime: document.getElementById("spawnZonesPollCloseTime"), spawnZonesPollTimezone: document.getElementById("spawnZonesPollTimezone"), spawnZonesMinVotes: document.getElementById("spawnZonesMinVotes"), spawnZonesTiePolicy: document.getElementById("spawnZonesTiePolicy"), spawnZonesAutoCreatePoll: document.getElementById("spawnZonesAutoCreatePoll"), spawnZonesRecurringPollAfterFinish: document.getElementById("spawnZonesRecurringPollAfterFinish"), spawnZonesAutoApplyWinner: document.getElementById("spawnZonesAutoApplyWinner"), spawnZonesApplyOnNextRestart: document.getElementById("spawnZonesApplyOnNextRestart"), spawnZonesSpawnFilePath: document.getElementById("spawnZonesSpawnFilePath"), spawnZonesServerName: document.getElementById("spawnZonesServerName"), spawnZonesSettingsStatus: document.getElementById("spawnZonesSettingsStatus"), spawnZonesTiePolicyHelp: document.getElementById("spawnZonesTiePolicyHelp"), spawnZonesApplyOnNextRestartRow: document.getElementById("spawnZonesApplyOnNextRestartRow"),
+      playerMapUpdatedAt: document.getElementById("playerMapUpdatedAt"), playerMapSummary: document.getElementById("playerMapSummary"), playerMapRefresh: document.getElementById("playerMapRefresh"), playerMapZoomOut: document.getElementById("playerMapZoomOut"), playerMapZoomIn: document.getElementById("playerMapZoomIn"), playerMapZoomLabel: document.getElementById("playerMapZoomLabel"), playerMapViewport: document.getElementById("playerMapViewport"), playerMapInner: document.getElementById("playerMapInner"), playerMapMarkers: document.getElementById("playerMapMarkers"), playerMapSearch: document.getElementById("playerMapSearch"), playerMapList: document.getElementById("playerMapList"), playerMapVisibleCount: document.getElementById("playerMapVisibleCount")
     };
     function apiUrl(path) { const separator = path.includes("?") ? "&" : "?"; return adminToken ? path + separator + "token=" + encodeURIComponent(adminToken) : path; }
     async function apiFetch(path, options) { const headers = Object.assign({ "Content-Type": "application/json" }, (options && options.headers) || {}); if (adminToken) headers["x-admin-token"] = adminToken; return fetch(apiUrl(path), Object.assign({}, options || {}, { headers, credentials: "same-origin" })); }
@@ -6573,15 +6640,74 @@ function renderAdminPanelHtml(token: string) {
       setMapEventStatus('<div class="map-event-result"><b>Cleanup concluído.</b><br>events.xml: ' + (result.clearedEventsXml ? 'limpo' : 'sem bloco') + '<br>cfgeventspawns.xml: ' + (result.clearedEventSpawnsXml ? 'limpo' : 'sem bloco') + '<br>cfgspawnabletypes.xml: ' + (result.clearedSpawnableTypesXml ? 'limpo' : 'sem bloco') + '</div>');
       showToast('Eventos do mapa limpos.');
     }
+    const PLAYER_MAP_WORLD_SIZE = 15360;
+    function playerMapAgeLabel(seconds) {
+      const value = Math.max(0, Number(seconds || 0));
+      if (value < 60) return Math.round(value) + 's';
+      if (value < 3600) return Math.floor(value / 60) + ' min';
+      return (value / 3600).toFixed(1) + 'h';
+    }
+    function setPlayerMapZoom(value) {
+      state.playerMapZoom = Math.max(1, Math.min(5, Number(value || 1)));
+      if (els.playerMapInner) els.playerMapInner.style.setProperty('--player-map-zoom', String(state.playerMapZoom));
+      if (els.playerMapZoomLabel) els.playerMapZoomLabel.textContent = Math.round(state.playerMapZoom * 100) + '%';
+    }
+    function filteredPlayerMapPlayers() {
+      const players = Array.isArray(state.playerMap?.players) ? state.playerMap.players : [];
+      const search = String(state.playerMapSearch || '').trim().toLowerCase();
+      return search ? players.filter((player) => String(player.name || '').toLowerCase().includes(search)) : players;
+    }
+    function renderPlayerMap() {
+      const payload = state.playerMap || { players: [], onlineCount: 0, positionedCount: 0 };
+      const players = filteredPlayerMapPlayers();
+      const positioned = players.filter((player) => Number.isFinite(Number(player.x)) && Number.isFinite(Number(player.z)));
+      if (els.playerMapVisibleCount) els.playerMapVisibleCount.textContent = String(players.length);
+      if (els.playerMapSummary) els.playerMapSummary.textContent = Number(payload.onlineCount || 0) + ' online · ' + Number(payload.positionedCount || 0) + ' com posição';
+      if (els.playerMapUpdatedAt) els.playerMapUpdatedAt.textContent = payload.generatedAt ? relativeDate(payload.generatedAt) : 'Ainda não carregado';
+      if (els.playerMapMarkers) {
+        els.playerMapMarkers.innerHTML = positioned.map((player) => {
+          const left = Math.max(0, Math.min(100, (Number(player.x) / PLAYER_MAP_WORLD_SIZE) * 100));
+          const top = Math.max(0, Math.min(100, (1 - (Number(player.z) / PLAYER_MAP_WORLD_SIZE)) * 100));
+          const age = Number(player.ageSeconds || 0);
+          const freshness = age > 600 ? ' old' : age > 300 ? ' stale' : '';
+          const title = String(player.name || '') + ' · X ' + Number(player.x).toFixed(1) + ' / Z ' + Number(player.z).toFixed(1) + ' · ' + playerMapAgeLabel(age);
+          return '<div class="player-map-marker' + freshness + '" style="left:' + left.toFixed(4) + '%;top:' + top.toFixed(4) + '%" title="' + escapeHtml(title) + '"><span class="player-map-dot"></span><span class="player-map-label">' + escapeHtml(player.name || 'Player') + '</span></div>';
+        }).join('');
+      }
+      if (els.playerMapList) {
+        if (!players.length) { els.playerMapList.innerHTML = '<div class="player-map-empty">Nenhum jogador encontrado.</div>'; return; }
+        els.playerMapList.innerHTML = players.map((player) => {
+          const hasPosition = Number.isFinite(Number(player.x)) && Number.isFinite(Number(player.z));
+          const coords = hasPosition ? ('X ' + Number(player.x).toFixed(1) + '<br>Z ' + Number(player.z).toFixed(1)) : 'sem posição';
+          const seen = hasPosition ? ('posição há ' + playerMapAgeLabel(player.ageSeconds)) : 'aguardando posição desta sessão';
+          return '<div class="player-map-row"><div><b>' + escapeHtml(player.name || 'Player') + '</b><small>' + escapeHtml(seen) + '</small></div><div class="player-map-row-coords">' + coords + '</div></div>';
+        }).join('');
+      }
+    }
+    async function loadPlayerMap() {
+      if (els.playerMapRefresh) els.playerMapRefresh.disabled = true;
+      try {
+        const response = await apiFetch('/admin-panel/api/player-map/snapshot');
+        if (!response.ok) throw new Error(await response.text());
+        state.playerMap = await response.json();
+        renderPlayerMap();
+      } catch (err) {
+        showToast(err instanceof Error ? err.message : 'Falha ao carregar Player Map.');
+      } finally {
+        if (els.playerMapRefresh) els.playerMapRefresh.disabled = false;
+      }
+    }
+
     function switchView(view) {
       state.view = view; document.querySelectorAll(".view").forEach((el) => el.classList.toggle("active", el.id === "view-" + view));
     document.querySelectorAll(".nav button").forEach((el) => el.classList.toggle("active", el.dataset.view === view));
-      els.pageTitle.textContent = view === "general" ? "Geral" : view === "members" ? "Membros" : view === "catalog" ? "Shop" : view === "map-events" ? "Eventos do Mapa" : view === "spawn-zones" ? "Spawn Zones" : view === "settings" ? "Settings" : "Itens";
+      els.pageTitle.textContent = view === "general" ? "Geral" : view === "members" ? "Membros" : view === "catalog" ? "Shop" : view === "map-events" ? "Eventos do Mapa" : view === "spawn-zones" ? "Spawn Zones" : view === "player-map" ? "Player Map" : view === "settings" ? "Settings" : "Itens";
       if (view === "members" && !els.memberList.children.length) loadMembers(true);
       if (view === "catalog" && !state.catalog) loadCatalog();
       if (view === "items" && !state.dayzItems.length) loadDayzItems(true);
       if (view === "map-events") { if (!state.mapEventPresets.length) loadMapEventPresets(); loadScheduledMapEvents(); }
       if (view === "spawn-zones") { if (!state.spawnZones) loadSpawnZones(); else renderSpawnZones(); }
+      if (view === "player-map") { if (!state.playerMap) loadPlayerMap(); else renderPlayerMap(); }
       if (view === "settings") renderLockedContainerCards();
     }
     function openCoinModal(action, memberCardEl) {
@@ -6865,7 +6991,11 @@ function renderAdminPanelHtml(token: string) {
     if (mobileMenuButton) mobileMenuButton.addEventListener("click", () => setMobileMenuOpen(!(sidebar && sidebar.classList.contains("open"))));
     if (mobileNavBackdrop) mobileNavBackdrop.addEventListener("click", () => setMobileMenuOpen(false));
     window.addEventListener("keydown", (event) => { if (event.key === "Escape") setMobileMenuOpen(false); });
-    document.getElementById("refreshButton").addEventListener("click", async () => { await loadOverview(); if (state.view === "members") await loadMembers(true); if (state.view === "catalog") { if (state.catalogMode === "queue") await loadShopQueue(); else await loadCatalog(); } if (state.view === "items") await loadDayzItems(true); if (state.view === "map-events") { await loadMapEventPresets(); await loadScheduledMapEvents(); } if (state.view === "spawn-zones") await loadSpawnZones(); if (state.view === "settings") renderLockedContainerCards(); showToast("Dados atualizados."); });
+    document.getElementById("refreshButton").addEventListener("click", async () => { await loadOverview(); if (state.view === "members") await loadMembers(true); if (state.view === "catalog") { if (state.catalogMode === "queue") await loadShopQueue(); else await loadCatalog(); } if (state.view === "items") await loadDayzItems(true); if (state.view === "map-events") { await loadMapEventPresets(); await loadScheduledMapEvents(); } if (state.view === "spawn-zones") await loadSpawnZones(); if (state.view === "player-map") await loadPlayerMap(); if (state.view === "settings") renderLockedContainerCards(); showToast("Dados atualizados."); });
+    if (els.playerMapRefresh) els.playerMapRefresh.addEventListener('click', () => loadPlayerMap());
+    if (els.playerMapZoomIn) els.playerMapZoomIn.addEventListener('click', () => setPlayerMapZoom(state.playerMapZoom + 0.5));
+    if (els.playerMapZoomOut) els.playerMapZoomOut.addEventListener('click', () => setPlayerMapZoom(state.playerMapZoom - 0.5));
+    if (els.playerMapSearch) els.playerMapSearch.addEventListener('input', (event) => { state.playerMapSearch = event.target.value || ''; renderPlayerMap(); });
     document.getElementById("membersRefresh").addEventListener("click", () => { state.memberForceRefresh = true; loadMembers(true); });
     let searchTimer = null;
     function updateSearch(value) { state.search = value; clearTimeout(searchTimer); searchTimer = setTimeout(() => loadMembers(true), 240); }
@@ -7863,10 +7993,58 @@ router.delete("/api/spawn-zones/zones/:zoneId/points/:pointId", async (req, res)
   return;
 });
 
+router.get("/api/player-map/snapshot", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+
+  const state = await getStateAsync();
+  const onlineEntries = Object.entries(state.onlinePlayers || {});
+  const onlineNames = onlineEntries.map(([name]) => name);
+  const positions = await getLatestPlayerPositionSnapshot(onlineNames);
+  const byPlayer = new Map(positions.map((position) => [position.playerNormalized, position]));
+  const now = Date.now();
+
+  const players = onlineEntries.map(([name, online]) => {
+    const normalized = String(name || "").trim().toLowerCase();
+    const position = byPlayer.get(normalized);
+    const connectedAtMs = online?.connectedAt ? Date.parse(online.connectedAt) : NaN;
+    const positionAtMs = position?.observedAt ? Date.parse(position.observedAt) : NaN;
+    const belongsToCurrentSession = !position
+      ? false
+      : !Number.isFinite(connectedAtMs) || !Number.isFinite(positionAtMs) || positionAtMs >= connectedAtMs - 5_000;
+
+    return {
+      name,
+      connectedAt: online?.connectedAt || null,
+      lastSeenAt: online?.lastSeenAt || null,
+      x: belongsToCurrentSession ? position?.x ?? null : null,
+      z: belongsToCurrentSession ? position?.z ?? null : null,
+      observedAt: belongsToCurrentSession ? position?.observedAt ?? null : null,
+      ageSeconds: belongsToCurrentSession && Number.isFinite(positionAtMs)
+        ? Math.max(0, Math.round((now - positionAtMs) / 1000))
+        : null,
+      source: belongsToCurrentSession ? position?.source ?? null : null,
+    };
+  }).sort((a, b) => {
+    const aPositioned = a.x != null && a.z != null ? 1 : 0;
+    const bPositioned = b.x != null && b.z != null ? 1 : 0;
+    if (aPositioned !== bPositioned) return bPositioned - aPositioned;
+    return String(a.name).localeCompare(String(b.name), "pt-BR");
+  });
+
+  res.setHeader("Cache-Control", "no-store");
+  res.json({
+    generatedAt: new Date(now).toISOString(),
+    onlineCount: players.length,
+    positionedCount: players.filter((player) => player.x != null && player.z != null).length,
+    players,
+  });
+});
+
 router.get("/api/map-events/chernarus-map", (req, res) => {
   if (!requireAdmin(req, res)) return;
 
   const mapPath = resolveChernarusMapPath();
+  res.setHeader("Cache-Control", "private, max-age=3600");
 
   res.sendFile(mapPath, (err) => {
     if (err && !res.headersSent) res.status(404).send("Chernarus map image not found");
