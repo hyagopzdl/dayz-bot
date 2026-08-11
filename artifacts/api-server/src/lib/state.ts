@@ -23,7 +23,9 @@ const STATE_DEBUG = process.env.STATE_DEBUG === "true";
 // commerce and configuration changes still flush immediately.
 const STATE_PERSISTENCE_V2_ENABLED = process.env.STATE_PERSISTENCE_V2 !== "false";
 const STATE_BACKGROUND_PERSIST_MS = Math.max(60_000, Number(process.env.STATE_BACKGROUND_PERSIST_MS || 10 * 60 * 1000));
-const STATE_COMPAT_SNAPSHOT_MS = Math.max(15 * 60_000, Number(process.env.STATE_COMPAT_SNAPSHOT_MS || 60 * 60 * 1000));
+const STATE_PROCESSING_PERSIST_MS = Math.max(60_000, Number(process.env.STATE_PROCESSING_PERSIST_MS || 10 * 60 * 1000));
+const STATE_STATS_PERSIST_MS = Math.max(60_000, Number(process.env.STATE_STATS_PERSIST_MS || 20 * 60 * 1000));
+const STATE_COMPAT_SNAPSHOT_MS = Math.max(60 * 60_000, Number(process.env.STATE_COMPAT_SNAPSHOT_MS || 6 * 60 * 60 * 1000));
 
 let cachedState: AppState | null = null;
 let lastPersistedHash = "";
@@ -50,6 +52,7 @@ type PendingDomainState = {
   serialized: string;
   hash: string;
   reasons: Set<string>;
+  dueAt: number;
 };
 
 const STATE_DOMAIN_IDS: Record<StateDomainName, string> = {
@@ -78,6 +81,8 @@ const domainPersistenceMetrics = {
   startedAt: new Date().toISOString(),
   enabled: STATE_PERSISTENCE_V2_ENABLED,
   backgroundCadenceMs: STATE_BACKGROUND_PERSIST_MS,
+  processingCadenceMs: STATE_PROCESSING_PERSIST_MS,
+  statsCadenceMs: STATE_STATS_PERSIST_MS,
   compatibilitySnapshotMs: STATE_COMPAT_SNAPSHOT_MS,
   saveRequests: 0,
   backgroundQueued: 0,
@@ -985,13 +990,41 @@ function initializeDomainHashes(data: AppState) {
   }
 }
 
+function nextAlignedDelay(intervalMs: number, now = Date.now()) {
+  const remainder = now % intervalMs;
+  return Math.max(1000, intervalMs - remainder);
+}
+
 function nextAlignedBackgroundDelay() {
-  const remainder = Date.now() % STATE_BACKGROUND_PERSIST_MS;
-  return Math.max(1000, STATE_BACKGROUND_PERSIST_MS - remainder);
+  return nextAlignedDelay(STATE_BACKGROUND_PERSIST_MS);
+}
+
+function domainPersistIntervalMs(domain: StateDomainName) {
+  if (domain === "stats") return STATE_STATS_PERSIST_MS;
+  if (domain === "processing") return STATE_PROCESSING_PERSIST_MS;
+  return 0;
+}
+
+function domainDueAt(domain: StateDomainName, now = Date.now()) {
+  const intervalMs = domainPersistIntervalMs(domain);
+  return intervalMs > 0 ? now + nextAlignedDelay(intervalMs, now) : now;
+}
+
+function canonicalPersistenceReason(reason: string) {
+  const normalized = String(reason || "").replace(/\\/g, "/").trim();
+  if (!normalized) return "unknown";
+  if (normalized === "parser" || /(?:^|\/)lib\/parser(?:\.|$|\/)/.test(normalized)) return "parser";
+  const discordMatch = normalized.match(/(?:^|\/)lib\/discord\/([^/:]+)(?:\.|\/|$)/);
+  if (discordMatch) return `discord:${discordMatch[1].replace(/\.(ts|js)$/, "")}`;
+  if (/(?:^|\/)routes\/adminPanel(?:\.|$|\/)/.test(normalized)) return "admin-panel";
+  if (/(?:^|\/)routes\/playerPortal(?:\.|$|\/)/.test(normalized)) return "player-portal";
+  if (/(?:^|\/)routes\/admin(?:\.|$|\/)/.test(normalized)) return "admin-api";
+  return normalized.slice(0, 120);
 }
 
 function isBackgroundPersistenceReason(reason: string) {
-  return reason === "parser" || reason.startsWith("discord:") || reason.startsWith("lib:discord:");
+  const canonical = canonicalPersistenceReason(reason);
+  return canonical === "parser" || canonical.startsWith("discord:") || canonical.startsWith("lib:discord:");
 }
 
 function domainNeedsImmediateFlush(domain: StateDomainName) {
@@ -1010,7 +1043,8 @@ function queueStateDomains(data: AppState, reason: string) {
     if (hash === lastDomainHashes[domain] || hash === currentPending?.hash) continue;
     const reasons = new Set(currentPending?.reasons || []);
     reasons.add(reason);
-    pendingDomains.set(domain, { payload, serialized, hash, reasons });
+    const dueAt = currentPending?.dueAt ?? domainDueAt(domain);
+    pendingDomains.set(domain, { payload, serialized, hash, reasons, dueAt });
     domainPersistenceMetrics.domains[domain].changes += 1;
     changed.push(domain);
   }
@@ -1028,7 +1062,7 @@ function logStateDebug(message: string, meta?: Record<string, unknown>) {
 
 function normalizePersistenceReason(value?: string): string {
   const explicit = String(value || "").trim();
-  if (explicit) return explicit.slice(0, 120);
+  if (explicit) return canonicalPersistenceReason(explicit);
 
   const stack = new Error().stack || "";
   const line = stack
@@ -1234,16 +1268,36 @@ async function maybeWriteCompatibilitySnapshot(force = false) {
   domainPersistenceMetrics.compatibilitySnapshots += 1;
 }
 
-async function flushPendingDomains(forceCompatibilitySnapshot = false) {
+async function flushPendingDomains(
+  forceCompatibilitySnapshot = false,
+  onlyDomains?: StateDomainName[],
+  forceAllPending = false,
+): Promise<void> {
   if (!STATE_PERSISTENCE_V2_ENABLED || !sql) return;
-  if (domainFlushPromise) return domainFlushPromise;
+  if (domainFlushPromise) {
+    await domainFlushPromise;
+    if (onlyDomains?.length || forceAllPending || forceCompatibilitySnapshot) {
+      return flushPendingDomains(forceCompatibilitySnapshot, onlyDomains, forceAllPending);
+    }
+    return;
+  }
   if (domainFlushTimer) {
     clearTimeout(domainFlushTimer);
     domainFlushTimer = null;
   }
 
-  const entries = [...pendingDomains.entries()];
-  if (!entries.length && !forceCompatibilitySnapshot) return;
+  const now = Date.now();
+  const only = onlyDomains?.length ? new Set(onlyDomains) : null;
+  const entries = [...pendingDomains.entries()].filter(([domain, entry]) => {
+    if (only) return only.has(domain);
+    if (forceAllPending) return true;
+    return entry.dueAt <= now + 250;
+  });
+
+  if (!entries.length && !forceCompatibilitySnapshot) {
+    if (pendingDomains.size) scheduleDomainFlush();
+    return;
+  }
   for (const [domain] of entries) pendingDomains.delete(domain);
 
   domainFlushPromise = (async () => {
@@ -1252,9 +1306,12 @@ async function flushPendingDomains(forceCompatibilitySnapshot = false) {
         try {
           await persistDomainBatchToNeon(entries);
         } catch (err) {
+          const retryAt = Date.now() + 30_000;
           for (const [domain, entry] of entries) {
             const existing = pendingDomains.get(domain);
-            if (!existing || existing.hash === entry.hash) pendingDomains.set(domain, entry);
+            if (!existing || existing.hash === entry.hash) {
+              pendingDomains.set(domain, { ...entry, dueAt: Math.max(entry.dueAt, retryAt) });
+            }
           }
           scheduleDomainFlush();
           throw err;
@@ -1262,8 +1319,8 @@ async function flushPendingDomains(forceCompatibilitySnapshot = false) {
       }
 
       if (forceCompatibilitySnapshot || (cachedState && Date.now() - lastCompatibilitySnapshotAt >= STATE_COMPAT_SNAPSHOT_MS)) {
-        // Compatibility is a rollback safety net. Domain rows remain the source
-        // of truth even if this non-critical snapshot fails.
+        // Compatibility is only a rollback safety net. V2 domain rows remain
+        // the source of truth and the snapshot is intentionally infrequent.
         await maybeWriteCompatibilitySnapshot(forceCompatibilitySnapshot);
       }
     } finally {
@@ -1277,27 +1334,44 @@ async function flushPendingDomains(forceCompatibilitySnapshot = false) {
 function scheduleDomainFlush() {
   if (!STATE_PERSISTENCE_V2_ENABLED || !sql || !pendingDomains.size || domainFlushTimer) return;
   domainPersistenceMetrics.backgroundQueued += 1;
+  const nextDueAt = Math.min(...[...pendingDomains.values()].map((entry) => entry.dueAt));
+  const delay = Math.max(1000, nextDueAt - Date.now());
   domainFlushTimer = setTimeout(() => {
     domainFlushTimer = null;
     Promise.all([flushPendingDomains(), flushPendingDiscordRuntime()]).catch((err) => {
       console.error("❌ erro no flush V2 em background:", err);
     });
-  }, nextAlignedBackgroundDelay());
+  }, delay);
 }
 
 async function queueAndPersistStateDomains(data: AppState, reason: string) {
   domainPersistenceMetrics.saveRequests += 1;
   const changed = queueStateDomains(data, reason);
   if (!changed.length) return false;
-  const immediate =
-    !isBackgroundPersistenceReason(reason) ||
-    (reason !== "parser" && changed.some(domainNeedsImmediateFlush));
-  if (immediate) {
-    domainPersistenceMetrics.immediateFlushes += 1;
-    await Promise.all([flushPendingDomains(), flushPendingDiscordRuntime()]);
-  } else {
-    scheduleDomainFlush();
+
+  const backgroundReason = isBackgroundPersistenceReason(reason);
+  const immediateDomains = changed.filter((domain) => domainNeedsImmediateFlush(domain));
+
+  // Stats and processing are a consistency pair for parser work: when stats
+  // changed, never persist an ADM cursor earlier than the corresponding stats.
+  // Processing-only cycles may still flush every 10 minutes, while kill/stat
+  // cycles coalesce both rows on the 20-minute stats boundary.
+  const pendingStats = pendingDomains.get("stats");
+  const pendingProcessing = pendingDomains.get("processing");
+  if (pendingStats && pendingProcessing) {
+    pendingProcessing.dueAt = Math.max(pendingProcessing.dueAt, pendingStats.dueAt);
   }
+
+  // Parser/Discord telemetry is recoverable and must not wake Neon on every
+  // five-minute cycle. User-facing durable mutations (shop, economy, clans,
+  // config) remain immediate. Crucially, an immediate commerce/social write no
+  // longer drags pending stats/processing along with it.
+  if (!backgroundReason && immediateDomains.length) {
+    domainPersistenceMetrics.immediateFlushes += 1;
+    await flushPendingDomains(false, immediateDomains);
+  }
+
+  if (pendingDomains.size) scheduleDomainFlush();
   return true;
 }
 
@@ -1511,7 +1585,11 @@ function scheduleNeonPersist() {
 
 export async function flushStateAsync(forceCompatibilitySnapshot = false) {
   if (STATE_PERSISTENCE_V2_ENABLED) {
-    await Promise.all([flushPendingDomains(forceCompatibilitySnapshot), flushPendingDiscordRuntime(), flushPlayerPositionHistoryBatch()]);
+    await Promise.all([
+      flushPendingDomains(forceCompatibilitySnapshot, undefined, forceCompatibilitySnapshot),
+      flushPendingDiscordRuntime(),
+      flushPlayerPositionHistoryBatch(),
+    ]);
     return;
   }
   await Promise.all([flushPendingState(), flushPendingDiscordRuntime(), flushPlayerPositionHistoryBatch()]);
@@ -1687,6 +1765,8 @@ export function getStateDomainPersistenceMetrics() {
     ...domainPersistenceMetrics,
     pendingDomains: pendingDomains.size,
     backgroundCadenceMinutes: Math.round(STATE_BACKGROUND_PERSIST_MS / 60_000),
+    processingCadenceMinutes: Math.round(STATE_PROCESSING_PERSIST_MS / 60_000),
+    statsCadenceMinutes: Math.round(STATE_STATS_PERSIST_MS / 60_000),
     compatibilitySnapshotMinutes: Math.round(STATE_COMPAT_SNAPSHOT_MS / 60_000),
     averageFlushPayloadBytes: Math.round(domainPersistenceMetrics.totalPayloadBytesWritten / flushes),
     averageWriteDurationMs: Math.round(domainPersistenceMetrics.totalWriteDurationMs / flushes),
