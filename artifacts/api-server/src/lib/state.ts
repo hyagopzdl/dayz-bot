@@ -22,10 +22,13 @@ const STATE_DEBUG = process.env.STATE_DEBUG === "true";
 // time idle between bursts instead of being touched every few minutes. Social,
 // commerce and configuration changes still flush immediately.
 const STATE_PERSISTENCE_V2_ENABLED = process.env.STATE_PERSISTENCE_V2 !== "false";
-const STATE_BACKGROUND_PERSIST_MS = Math.max(60_000, Number(process.env.STATE_BACKGROUND_PERSIST_MS || 10 * 60 * 1000));
-const STATE_PROCESSING_PERSIST_MS = Math.max(60_000, Number(process.env.STATE_PROCESSING_PERSIST_MS || 10 * 60 * 1000));
-const STATE_STATS_PERSIST_MS = Math.max(60_000, Number(process.env.STATE_STATS_PERSIST_MS || 20 * 60 * 1000));
-const STATE_COMPAT_SNAPSHOT_MS = Math.max(60 * 60_000, Number(process.env.STATE_COMPAT_SNAPSHOT_MS || 6 * 60 * 60 * 1000));
+// Safe minimums are intentional. Older Render env vars from previous iterations
+// must not silently restore the 5-minute/60-minute behavior we are replacing.
+const STATE_BACKGROUND_PERSIST_MS = Math.max(10 * 60_000, Number(process.env.STATE_BACKGROUND_PERSIST_MS || 10 * 60 * 1000));
+const STATE_PROCESSING_PERSIST_MS = Math.max(10 * 60_000, Number(process.env.STATE_PROCESSING_PERSIST_MS || 10 * 60 * 1000));
+const STATE_STATS_PERSIST_MS = Math.max(20 * 60_000, Number(process.env.STATE_STATS_PERSIST_MS || 20 * 60 * 1000));
+const STATE_COMPAT_SNAPSHOT_MS = Math.max(6 * 60 * 60_000, Number(process.env.STATE_COMPAT_SNAPSHOT_MS || 6 * 60 * 60 * 1000));
+const STATE_SCHEDULER_POLICY_VERSION = "v2-safe-2026-08-11";
 
 let cachedState: AppState | null = null;
 let lastPersistedHash = "";
@@ -80,6 +83,7 @@ type DomainMetric = {
 const domainPersistenceMetrics = {
   startedAt: new Date().toISOString(),
   enabled: STATE_PERSISTENCE_V2_ENABLED,
+  schedulerPolicyVersion: STATE_SCHEDULER_POLICY_VERSION,
   backgroundCadenceMs: STATE_BACKGROUND_PERSIST_MS,
   processingCadenceMs: STATE_PROCESSING_PERSIST_MS,
   statsCadenceMs: STATE_STATS_PERSIST_MS,
@@ -87,6 +91,9 @@ const domainPersistenceMetrics = {
   saveRequests: 0,
   backgroundQueued: 0,
   immediateFlushes: 0,
+  backgroundFlushes: 0,
+  forcedFlushes: 0,
+  lastFlushTrigger: "none",
   flushes: 0,
   rowsWritten: 0,
   failedFlushes: 0,
@@ -1200,7 +1207,7 @@ function analyzePayload(parsed: AppState, now: string) {
   };
 }
 
-async function persistDomainBatchToNeon(entries: Array<[StateDomainName, PendingDomainState]>) {
+async function persistDomainBatchToNeon(entries: Array<[StateDomainName, PendingDomainState]>, trigger: string) {
   if (!sql || !entries.length) return;
   const startedAt = Date.now();
   const now = new Date().toISOString();
@@ -1219,6 +1226,9 @@ async function persistDomainBatchToNeon(entries: Array<[StateDomainName, Pending
     });
 
     domainPersistenceMetrics.flushes += 1;
+    domainPersistenceMetrics.lastFlushTrigger = trigger;
+    if (trigger.startsWith("background:")) domainPersistenceMetrics.backgroundFlushes += 1;
+    if (trigger.startsWith("forced:")) domainPersistenceMetrics.forcedFlushes += 1;
     domainPersistenceMetrics.rowsWritten += entries.length;
     domainPersistenceMetrics.totalPayloadBytesWritten += payloadBytes;
     domainPersistenceMetrics.lastWriteAt = now;
@@ -1272,12 +1282,13 @@ async function flushPendingDomains(
   forceCompatibilitySnapshot = false,
   onlyDomains?: StateDomainName[],
   forceAllPending = false,
+  trigger = "background:scheduled",
 ): Promise<void> {
   if (!STATE_PERSISTENCE_V2_ENABLED || !sql) return;
   if (domainFlushPromise) {
     await domainFlushPromise;
     if (onlyDomains?.length || forceAllPending || forceCompatibilitySnapshot) {
-      return flushPendingDomains(forceCompatibilitySnapshot, onlyDomains, forceAllPending);
+      return flushPendingDomains(forceCompatibilitySnapshot, onlyDomains, forceAllPending, trigger);
     }
     return;
   }
@@ -1304,7 +1315,7 @@ async function flushPendingDomains(
     try {
       if (entries.length) {
         try {
-          await persistDomainBatchToNeon(entries);
+          await persistDomainBatchToNeon(entries, trigger);
         } catch (err) {
           const retryAt = Date.now() + 30_000;
           for (const [domain, entry] of entries) {
@@ -1338,7 +1349,7 @@ function scheduleDomainFlush() {
   const delay = Math.max(1000, nextDueAt - Date.now());
   domainFlushTimer = setTimeout(() => {
     domainFlushTimer = null;
-    Promise.all([flushPendingDomains(), flushPendingDiscordRuntime()]).catch((err) => {
+    Promise.all([flushPendingDomains(false, undefined, false, "background:timer"), flushPendingDiscordRuntime()]).catch((err) => {
       console.error("❌ erro no flush V2 em background:", err);
     });
   }, delay);
@@ -1368,7 +1379,7 @@ async function queueAndPersistStateDomains(data: AppState, reason: string) {
   // longer drags pending stats/processing along with it.
   if (!backgroundReason && immediateDomains.length) {
     domainPersistenceMetrics.immediateFlushes += 1;
-    await flushPendingDomains(false, immediateDomains);
+    await flushPendingDomains(false, immediateDomains, false, `immediate:${canonicalPersistenceReason(reason)}`);
   }
 
   if (pendingDomains.size) scheduleDomainFlush();
@@ -1586,7 +1597,7 @@ function scheduleNeonPersist() {
 export async function flushStateAsync(forceCompatibilitySnapshot = false) {
   if (STATE_PERSISTENCE_V2_ENABLED) {
     await Promise.all([
-      flushPendingDomains(forceCompatibilitySnapshot, undefined, forceCompatibilitySnapshot),
+      flushPendingDomains(forceCompatibilitySnapshot, undefined, forceCompatibilitySnapshot, forceCompatibilitySnapshot ? "forced:compat" : "forced:flush-state"),
       flushPendingDiscordRuntime(),
       flushPlayerPositionHistoryBatch(),
     ]);
@@ -1768,6 +1779,7 @@ export function getStateDomainPersistenceMetrics() {
     processingCadenceMinutes: Math.round(STATE_PROCESSING_PERSIST_MS / 60_000),
     statsCadenceMinutes: Math.round(STATE_STATS_PERSIST_MS / 60_000),
     compatibilitySnapshotMinutes: Math.round(STATE_COMPAT_SNAPSHOT_MS / 60_000),
+    schedulerPolicyVersion: STATE_SCHEDULER_POLICY_VERSION,
     averageFlushPayloadBytes: Math.round(domainPersistenceMetrics.totalPayloadBytesWritten / flushes),
     averageWriteDurationMs: Math.round(domainPersistenceMetrics.totalWriteDurationMs / flushes),
     writeRatePerHour: Number((domainPersistenceMetrics.flushes / uptimeHours).toFixed(2)),
