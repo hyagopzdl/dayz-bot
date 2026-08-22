@@ -17,6 +17,11 @@ export type ServerNamespacePersistenceStatus = {
   initialized: boolean;
   botStateTableReady: boolean;
   playerStatsTableReady: boolean;
+  botStateCompositeKeyReady: boolean;
+  playerStatsCompositeKeyReady: boolean;
+  scopedReadsEnabled: boolean;
+  scopedReadFallbacks: number;
+  lastScopedReadSource?: "server-scoped" | "legacy-fallback" | "legacy";
   botStateTaggedRows: number;
   botStateUntaggedRows: number;
   playerStatsTaggedRows: number;
@@ -49,6 +54,10 @@ let namespacePersistenceStatus: ServerNamespacePersistenceStatus = {
   initialized: false,
   botStateTableReady: false,
   playerStatsTableReady: false,
+  botStateCompositeKeyReady: false,
+  playerStatsCompositeKeyReady: false,
+  scopedReadsEnabled: false,
+  scopedReadFallbacks: 0,
   botStateTaggedRows: 0,
   botStateUntaggedRows: 0,
   playerStatsTaggedRows: 0,
@@ -97,7 +106,7 @@ export function getPrimaryServerDescriptor(): ManagedServerDescriptor {
 }
 
 export function listManagedServers(): ManagedServerDescriptor[] {
-  // Phase 3 still exposes only the primary server operationally. Registry rows may
+  // Phase 4 still exposes only the primary server operationally. Registry rows may
   // exist, but additional servers remain blocked until persistence keys and
   // routing are safely scoped in later phases.
   if (persistedServers.length) return persistedServers.map((server) => ({ ...server, integrations: { ...server.integrations } }));
@@ -159,19 +168,19 @@ export function getServerFoundationDiagnostics() {
   const registry = getServerRegistryPersistenceStatus();
   const namespace = getServerNamespacePersistenceStatus();
   return {
-    phase: 3,
+    phase: 4,
     mode: server.mode,
     currentServerId: server.id,
     currentServerName: server.name,
     managedServers: listManagedServers().length,
     additionalServersEnabled: false,
     registryPersisted: registry.initialized && registry.tableReady && registry.primarySeeded,
-    persistenceNamespaced: false,
+    persistenceNamespaced: namespace.scopedReadsEnabled && namespace.botStateCompositeKeyReady,
     persistenceTaggedWithServerId: namespace.initialized && namespace.botStateTableReady && namespace.botStateUntaggedRows === 0 && (!namespace.playerStatsTableReady || namespace.playerStatsUntaggedRows === 0),
     parserNamespaced: false,
     discordRoutingNamespaced: false,
     nitradoRoutingNamespaced: false,
-    currentDataPathChanged: false,
+    currentDataPathChanged: namespace.scopedReadsEnabled && namespace.botStateCompositeKeyReady,
     registry,
     namespace,
     safety: {
@@ -181,9 +190,11 @@ export function getServerFoundationDiagnostics() {
       legacyNitradoServicePreserved: true,
       operationalDatabaseWritesAdded: false,
       registryMetadataOnly: false,
-      activeReadsStillLegacy: true,
+      activeReadsStillLegacy: !namespace.scopedReadsEnabled,
       activePrimaryKeysPreserved: true,
-      serverIdTaggingOnly: true,
+      serverIdTaggingOnly: false,
+      legacyFallbackAvailable: true,
+      compositeUniqueKeysPrepared: namespace.botStateCompositeKeyReady && (!namespace.playerStatsTableReady || namespace.playerStatsCompositeKeyReady),
     },
     integrations: server.integrations,
   };
