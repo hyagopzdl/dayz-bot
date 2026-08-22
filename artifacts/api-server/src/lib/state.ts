@@ -29,6 +29,7 @@ const STATE_PROCESSING_PERSIST_MS = Math.max(10 * 60_000, Number(process.env.STA
 const STATE_STATS_PERSIST_MS = Math.max(20 * 60_000, Number(process.env.STATE_STATS_PERSIST_MS || 20 * 60 * 1000));
 const STATE_COMPAT_SNAPSHOT_MS = Math.max(6 * 60 * 60_000, Number(process.env.STATE_COMPAT_SNAPSHOT_MS || 6 * 60 * 60 * 1000));
 const STATE_SCHEDULER_POLICY_VERSION = "v2-safe-2026-08-11";
+const GRANULAR_PLAYER_STATS_ENABLED = process.env.GRANULAR_PLAYER_STATS !== "false";
 
 let cachedState: AppState | null = null;
 let lastPersistedHash = "";
@@ -71,6 +72,33 @@ let pendingDomains = new Map<StateDomainName, PendingDomainState>();
 let domainFlushTimer: NodeJS.Timeout | null = null;
 let domainFlushPromise: Promise<void> | null = null;
 let lastCompatibilitySnapshotAt = 0;
+
+type PendingGranularPlayerStats = {
+  stats: PlayerStats;
+  currentStreak: number;
+  signature: string;
+  dueAt: number;
+};
+
+let granularPlayerStatsTableReadyPromise: Promise<void> | null = null;
+let lastGranularPlayerSignatures = new Map<string, string>();
+let pendingGranularPlayerStats = new Map<string, PendingGranularPlayerStats>();
+
+const granularPlayerStatsMetrics = {
+  startedAt: new Date().toISOString(),
+  enabled: GRANULAR_PLAYER_STATS_ENABLED,
+  changes: 0,
+  batchesWritten: 0,
+  rowsWritten: 0,
+  failedBatches: 0,
+  totalPayloadBytesWritten: 0,
+  totalWriteDurationMs: 0,
+  lastWriteDurationMs: 0,
+  lastWriteAt: undefined as string | undefined,
+  lastError: undefined as string | undefined,
+  rowsAppliedAtBoot: 0,
+  newestRowAtBoot: undefined as string | undefined,
+};
 
 type DomainMetric = {
   changes: number;
@@ -891,12 +919,18 @@ function serializeDiscordRuntime(data: Partial<AppState> | Partial<DiscordRuntim
 function buildStateDomains(data: AppState): Record<StateDomainName, StateDomainPayload> {
   return {
     stats: {
-      players: data.players || {},
+      // Global player totals and current streaks are persisted granularly in
+      // player_stats_state. Keeping them out of this blob prevents every kill
+      // from retransmitting the full historical player population. The env
+      // fallback restores the old V2 blob shape without a rollback deploy.
+      ...(GRANULAR_PLAYER_STATS_ENABLED ? {} : {
+        players: data.players || {},
+        currentKillStreaks: data.currentKillStreaks || {},
+      }),
       dailyPlayers: data.dailyPlayers || {},
       weeklyPlayers: data.weeklyPlayers || {},
       portalKillFeedEvents: (data.portalKillFeedEvents || []).slice(-99),
       longShotEvents: (data.longShotEvents || []).slice(-100),
-      currentKillStreaks: data.currentKillStreaks || {},
       lastDailyReset: data.lastDailyReset || "",
       lastWeeklyReset: data.lastWeeklyReset || "",
       globalStartedAt: data.globalStartedAt,
@@ -943,12 +977,15 @@ function buildStateDomains(data: AppState): Record<StateDomainName, StateDomainP
 function applyStateDomain(state: AppState, domain: StateDomainName, payload: any): AppState {
   if (!payload || typeof payload !== "object") return state;
   if (domain === "stats") {
-    state.players = payload.players || {};
+    // Older V2 rows contained players/currentKillStreaks. Apply them when
+    // present so rollout/rollback stays safe, but never wipe the compatibility
+    // snapshot when a newer V3 stats row intentionally omits them.
+    if (payload.players && typeof payload.players === "object") state.players = payload.players;
     state.dailyPlayers = payload.dailyPlayers || {};
     state.weeklyPlayers = payload.weeklyPlayers || {};
     state.portalKillFeedEvents = Array.isArray(payload.portalKillFeedEvents) ? payload.portalKillFeedEvents.slice(-99) : [];
     state.longShotEvents = Array.isArray(payload.longShotEvents) ? payload.longShotEvents.slice(-100) : [];
-    state.currentKillStreaks = payload.currentKillStreaks || {};
+    if (payload.currentKillStreaks && typeof payload.currentKillStreaks === "object") state.currentKillStreaks = payload.currentKillStreaks;
     state.lastDailyReset = payload.lastDailyReset || "";
     state.lastWeeklyReset = payload.lastWeeklyReset || "";
     state.globalStartedAt = payload.globalStartedAt;
@@ -1036,6 +1073,60 @@ function isBackgroundPersistenceReason(reason: string) {
 
 function domainNeedsImmediateFlush(domain: StateDomainName) {
   return domain === "social" || domain === "commerce" || domain === "config";
+}
+
+function granularPlayerSignature(stats: PlayerStats, currentStreak: number) {
+  return `${Number(stats.kills || 0)}:${Number(stats.deaths || 0)}:${Number(currentStreak || 0)}`;
+}
+
+function initializeGranularPlayerSignatures(data: AppState) {
+  lastGranularPlayerSignatures = new Map<string, string>();
+  for (const [playerKey, stats] of Object.entries(data.players || {})) {
+    const currentStreak = Number((data.currentKillStreaks || {})[playerKey] || 0);
+    lastGranularPlayerSignatures.set(playerKey, granularPlayerSignature(stats, currentStreak));
+  }
+  pendingGranularPlayerStats.clear();
+}
+
+function queueGranularPlayerStats(data: AppState) {
+  if (!GRANULAR_PLAYER_STATS_ENABLED) return 0;
+  let changed = 0;
+  const dueAt = domainDueAt("stats");
+  for (const [playerKey, stats] of Object.entries(data.players || {})) {
+    const currentStreak = Number((data.currentKillStreaks || {})[playerKey] || 0);
+    const signature = granularPlayerSignature(stats, currentStreak);
+    const pending = pendingGranularPlayerStats.get(playerKey);
+    if (signature === lastGranularPlayerSignatures.get(playerKey) || signature === pending?.signature) continue;
+    pendingGranularPlayerStats.set(playerKey, {
+      stats: { kills: Number(stats.kills || 0), deaths: Number(stats.deaths || 0) },
+      currentStreak,
+      signature,
+      dueAt: pending?.dueAt ?? dueAt,
+    });
+    changed += 1;
+    granularPlayerStatsMetrics.changes += 1;
+  }
+  return changed;
+}
+
+async function ensureGranularPlayerStatsTable() {
+  if (!sql || !GRANULAR_PLAYER_STATS_ENABLED) return;
+  if (granularPlayerStatsTableReadyPromise) return granularPlayerStatsTableReadyPromise;
+  granularPlayerStatsTableReadyPromise = (async () => {
+    await sql`
+      CREATE TABLE IF NOT EXISTS player_stats_state (
+        player_key TEXT PRIMARY KEY,
+        stats JSONB NOT NULL,
+        current_streak INTEGER NOT NULL DEFAULT 0,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `;
+    await sql`CREATE INDEX IF NOT EXISTS player_stats_state_updated_at_idx ON player_stats_state (updated_at)`;
+  })().catch((err) => {
+    granularPlayerStatsTableReadyPromise = null;
+    throw err;
+  });
+  return granularPlayerStatsTableReadyPromise;
 }
 
 function queueStateDomains(data: AppState, reason: string) {
@@ -1207,13 +1298,24 @@ function analyzePayload(parsed: AppState, now: string) {
   };
 }
 
-async function persistDomainBatchToNeon(entries: Array<[StateDomainName, PendingDomainState]>, trigger: string) {
-  if (!sql || !entries.length) return;
+async function persistDomainBatchToNeon(
+  entries: Array<[StateDomainName, PendingDomainState]>,
+  trigger: string,
+  playerEntries: Array<[string, PendingGranularPlayerStats]> = [],
+) {
+  if (!sql || (!entries.length && !playerEntries.length)) return;
   const startedAt = Date.now();
   const now = new Date().toISOString();
-  const payloadBytes = entries.reduce((total, [, entry]) => total + Buffer.byteLength(entry.serialized, "utf8"), 0);
+  const domainPayloadBytes = entries.reduce((total, [, entry]) => total + Buffer.byteLength(entry.serialized, "utf8"), 0);
+  const playerPayload = playerEntries.map(([playerKey, entry]) => ({
+    player_key: playerKey,
+    stats: entry.stats,
+    current_streak: entry.currentStreak,
+  }));
+  const playerPayloadBytes = Buffer.byteLength(JSON.stringify(playerPayload), "utf8");
 
   try {
+    if (playerEntries.length) await ensureGranularPlayerStatsTable();
     await sql.begin(async (tx: any) => {
       for (const [domain, entry] of entries) {
         await tx`
@@ -1223,6 +1325,19 @@ async function persistDomainBatchToNeon(entries: Array<[StateDomainName, Pending
           DO UPDATE SET data = EXCLUDED.data, updated_at = NOW()
         `;
       }
+      if (playerPayload.length) {
+        await tx`
+          INSERT INTO player_stats_state (player_key, stats, current_streak, updated_at)
+          SELECT incoming.player_key, incoming.stats, incoming.current_streak, NOW()
+          FROM jsonb_to_recordset(${tx.json(playerPayload)}::jsonb)
+            AS incoming(player_key TEXT, stats JSONB, current_streak INTEGER)
+          ON CONFLICT (player_key)
+          DO UPDATE SET
+            stats = EXCLUDED.stats,
+            current_streak = EXCLUDED.current_streak,
+            updated_at = NOW()
+        `;
+      }
     });
 
     domainPersistenceMetrics.flushes += 1;
@@ -1230,7 +1345,7 @@ async function persistDomainBatchToNeon(entries: Array<[StateDomainName, Pending
     if (trigger.startsWith("background:")) domainPersistenceMetrics.backgroundFlushes += 1;
     if (trigger.startsWith("forced:")) domainPersistenceMetrics.forcedFlushes += 1;
     domainPersistenceMetrics.rowsWritten += entries.length;
-    domainPersistenceMetrics.totalPayloadBytesWritten += payloadBytes;
+    domainPersistenceMetrics.totalPayloadBytesWritten += domainPayloadBytes;
     domainPersistenceMetrics.lastWriteAt = now;
     domainPersistenceMetrics.lastError = undefined;
     for (const [domain, entry] of entries) {
@@ -1242,21 +1357,49 @@ async function persistDomainBatchToNeon(entries: Array<[StateDomainName, Pending
       metric.lastWriteAt = now;
       lastDomainHashes[domain] = entry.hash;
     }
+    if (playerEntries.length) {
+      granularPlayerStatsMetrics.batchesWritten += 1;
+      granularPlayerStatsMetrics.rowsWritten += playerEntries.length;
+      granularPlayerStatsMetrics.totalPayloadBytesWritten += playerPayloadBytes;
+      granularPlayerStatsMetrics.lastWriteAt = now;
+      granularPlayerStatsMetrics.lastError = undefined;
+      for (const [playerKey, entry] of playerEntries) {
+        lastGranularPlayerSignatures.set(playerKey, entry.signature);
+      }
+      recordNetworkTransfer({
+        service: "neon-player-stats",
+        operation: "player_stats_batch_upsert",
+        direction: "outbound",
+        bytes: playerPayloadBytes,
+        ok: true,
+      });
+    }
     recordNetworkTransfer({
       service: "neon-domain",
       operation: "state_domain_batch_write",
       direction: "outbound",
-      bytes: payloadBytes,
+      bytes: domainPayloadBytes,
       ok: true,
     });
   } catch (err) {
     domainPersistenceMetrics.failedFlushes += 1;
+    if (playerEntries.length) {
+      granularPlayerStatsMetrics.failedBatches += 1;
+      granularPlayerStatsMetrics.lastError = err instanceof Error ? err.message : String(err);
+      recordNetworkTransfer({
+        service: "neon-player-stats",
+        operation: "player_stats_batch_upsert",
+        direction: "outbound",
+        bytes: playerPayloadBytes,
+        ok: false,
+      });
+    }
     domainPersistenceMetrics.lastError = err instanceof Error ? err.message : String(err);
     recordNetworkTransfer({
       service: "neon-domain",
       operation: "state_domain_batch_write",
       direction: "outbound",
-      bytes: payloadBytes,
+      bytes: domainPayloadBytes,
       ok: false,
     });
     throw err;
@@ -1264,6 +1407,10 @@ async function persistDomainBatchToNeon(entries: Array<[StateDomainName, Pending
     const durationMs = Date.now() - startedAt;
     domainPersistenceMetrics.lastWriteDurationMs = durationMs;
     domainPersistenceMetrics.totalWriteDurationMs += durationMs;
+    if (playerEntries.length) {
+      granularPlayerStatsMetrics.lastWriteDurationMs = durationMs;
+      granularPlayerStatsMetrics.totalWriteDurationMs += durationMs;
+    }
   }
 }
 
@@ -1304,24 +1451,35 @@ async function flushPendingDomains(
     if (forceAllPending) return true;
     return entry.dueAt <= now + 250;
   });
+  const playerEntries = only ? [] : [...pendingGranularPlayerStats.entries()].filter(([, entry]) => {
+    if (forceAllPending) return true;
+    return entry.dueAt <= now + 250;
+  });
 
-  if (!entries.length && !forceCompatibilitySnapshot) {
-    if (pendingDomains.size) scheduleDomainFlush();
+  if (!entries.length && !playerEntries.length && !forceCompatibilitySnapshot) {
+    if (pendingDomains.size || pendingGranularPlayerStats.size) scheduleDomainFlush();
     return;
   }
   for (const [domain] of entries) pendingDomains.delete(domain);
+  for (const [playerKey] of playerEntries) pendingGranularPlayerStats.delete(playerKey);
 
   domainFlushPromise = (async () => {
     try {
-      if (entries.length) {
+      if (entries.length || playerEntries.length) {
         try {
-          await persistDomainBatchToNeon(entries, trigger);
+          await persistDomainBatchToNeon(entries, trigger, playerEntries);
         } catch (err) {
           const retryAt = Date.now() + 30_000;
           for (const [domain, entry] of entries) {
             const existing = pendingDomains.get(domain);
             if (!existing || existing.hash === entry.hash) {
               pendingDomains.set(domain, { ...entry, dueAt: Math.max(entry.dueAt, retryAt) });
+            }
+          }
+          for (const [playerKey, entry] of playerEntries) {
+            const existing = pendingGranularPlayerStats.get(playerKey);
+            if (!existing || existing.signature === entry.signature) {
+              pendingGranularPlayerStats.set(playerKey, { ...entry, dueAt: Math.max(entry.dueAt, retryAt) });
             }
           }
           scheduleDomainFlush();
@@ -1336,16 +1494,20 @@ async function flushPendingDomains(
       }
     } finally {
       domainFlushPromise = null;
-      if (pendingDomains.size) scheduleDomainFlush();
+      if (pendingDomains.size || pendingGranularPlayerStats.size) scheduleDomainFlush();
     }
   })();
   return domainFlushPromise;
 }
 
 function scheduleDomainFlush() {
-  if (!STATE_PERSISTENCE_V2_ENABLED || !sql || !pendingDomains.size || domainFlushTimer) return;
+  if (!STATE_PERSISTENCE_V2_ENABLED || !sql || (!pendingDomains.size && !pendingGranularPlayerStats.size) || domainFlushTimer) return;
   domainPersistenceMetrics.backgroundQueued += 1;
-  const nextDueAt = Math.min(...[...pendingDomains.values()].map((entry) => entry.dueAt));
+  const dueTimes = [
+    ...[...pendingDomains.values()].map((entry) => entry.dueAt),
+    ...[...pendingGranularPlayerStats.values()].map((entry) => entry.dueAt),
+  ];
+  const nextDueAt = Math.min(...dueTimes);
   const delay = Math.max(1000, nextDueAt - Date.now());
   domainFlushTimer = setTimeout(() => {
     domainFlushTimer = null;
@@ -1358,7 +1520,8 @@ function scheduleDomainFlush() {
 async function queueAndPersistStateDomains(data: AppState, reason: string) {
   domainPersistenceMetrics.saveRequests += 1;
   const changed = queueStateDomains(data, reason);
-  if (!changed.length) return false;
+  const granularPlayerChanges = queueGranularPlayerStats(data);
+  if (!changed.length && !granularPlayerChanges) return false;
 
   const backgroundReason = isBackgroundPersistenceReason(reason);
   const immediateDomains = changed.filter((domain) => domainNeedsImmediateFlush(domain));
@@ -1369,8 +1532,14 @@ async function queueAndPersistStateDomains(data: AppState, reason: string) {
   // cycles coalesce both rows on the 20-minute stats boundary.
   const pendingStats = pendingDomains.get("stats");
   const pendingProcessing = pendingDomains.get("processing");
-  if (pendingStats && pendingProcessing) {
-    pendingProcessing.dueAt = Math.max(pendingProcessing.dueAt, pendingStats.dueAt);
+  const granularStatsDueAt = pendingGranularPlayerStats.size
+    ? Math.max(...[...pendingGranularPlayerStats.values()].map((entry) => entry.dueAt))
+    : 0;
+  if (pendingProcessing && (pendingStats || granularStatsDueAt)) {
+    pendingProcessing.dueAt = Math.max(pendingProcessing.dueAt, pendingStats?.dueAt || 0, granularStatsDueAt);
+  }
+  if (pendingStats && granularStatsDueAt) {
+    pendingStats.dueAt = Math.max(pendingStats.dueAt, granularStatsDueAt);
   }
 
   // Parser/Discord telemetry is recoverable and must not wake Neon on every
@@ -1382,7 +1551,7 @@ async function queueAndPersistStateDomains(data: AppState, reason: string) {
     await flushPendingDomains(false, immediateDomains, false, `immediate:${canonicalPersistenceReason(reason)}`);
   }
 
-  if (pendingDomains.size) scheduleDomainFlush();
+  if (pendingDomains.size || pendingGranularPlayerStats.size) scheduleDomainFlush();
   return true;
 }
 
@@ -1637,6 +1806,7 @@ export async function getStateAsync(): Promise<AppState> {
     lastCoreHash = hashCoreState(cachedState);
     lastDiscordRuntimeHash = hashState(serializeDiscordRuntime(cachedState));
     initializeDomainHashes(cachedState);
+    initializeGranularPlayerSignatures(cachedState);
     return cachedState;
   }
 
@@ -1670,6 +1840,7 @@ export async function getStateAsync(): Promise<AppState> {
       lastCoreHash = hashCoreState(state);
       lastDiscordRuntimeHash = hashState(serializeDiscordRuntime(state));
       initializeDomainHashes(state);
+      initializeGranularPlayerSignatures(state);
       lastCompatibilitySnapshotAt = Date.now();
       return cachedState;
     }
@@ -1697,11 +1868,35 @@ export async function getStateAsync(): Promise<AppState> {
         }
       }
     }
+    if (STATE_PERSISTENCE_V2_ENABLED && GRANULAR_PLAYER_STATS_ENABLED) {
+      await ensureGranularPlayerStatsTable();
+      const granularRows = await sql`
+        SELECT player_key, stats, current_streak, updated_at
+        FROM player_stats_state
+        WHERE updated_at > ${new Date(mainUpdatedAt || 0)}
+      `;
+      let newestGranularAt = 0;
+      for (const row of granularRows as any[]) {
+        const playerKey = String(row.player_key || "");
+        if (!playerKey || !row.stats || typeof row.stats !== "object") continue;
+        cachedState.players[playerKey] = {
+          kills: Number(row.stats.kills || 0),
+          deaths: Number(row.stats.deaths || 0),
+        };
+        const streak = Number(row.current_streak || 0);
+        if (streak > 0) cachedState.currentKillStreaks[playerKey] = streak;
+        else delete cachedState.currentKillStreaks[playerKey];
+        granularPlayerStatsMetrics.rowsAppliedAtBoot += 1;
+        const rowAt = row.updated_at ? new Date(row.updated_at).getTime() : 0;
+        if (rowAt > newestGranularAt) newestGranularAt = rowAt;
+      }
+      granularPlayerStatsMetrics.newestRowAtBoot = newestGranularAt ? new Date(newestGranularAt).toISOString() : undefined;
+    }
     domainPersistenceMetrics.domainRowsFoundAtBoot = domainRowsFoundAtBoot;
     domainPersistenceMetrics.domainRowsAppliedAtBoot = domainRowsAppliedAtBoot;
     domainPersistenceMetrics.newestDomainUpdatedAtAtBoot = newestDomainUpdatedAt ? new Date(newestDomainUpdatedAt).toISOString() : undefined;
     domainPersistenceMetrics.bootSource = STATE_PERSISTENCE_V2_ENABLED
-      ? (domainRowsAppliedAtBoot > 0 ? "persistence-v2" : "compat-main")
+      ? ((domainRowsAppliedAtBoot > 0 || granularPlayerStatsMetrics.rowsAppliedAtBoot > 0) ? "persistence-v2" : "compat-main")
       : "legacy-main";
 
     const runtimeUpdatedAt = runtimeRow?.updated_at ? new Date(runtimeRow.updated_at).getTime() : 0;
@@ -1723,6 +1918,7 @@ export async function getStateAsync(): Promise<AppState> {
     lastCoreHash = hashCoreState(cachedState);
     lastDiscordRuntimeHash = hashState(serializeDiscordRuntime(cachedState));
     initializeDomainHashes(cachedState);
+    initializeGranularPlayerSignatures(cachedState);
     return cachedState;
   } catch (err) {
     console.error("❌ erro lendo state no Neon, usando state.json local:", err);
@@ -1733,6 +1929,7 @@ export async function getStateAsync(): Promise<AppState> {
     lastCoreHash = hashCoreState(cachedState);
     lastDiscordRuntimeHash = hashState(serializeDiscordRuntime(cachedState));
     initializeDomainHashes(cachedState);
+    initializeGranularPlayerSignatures(cachedState);
     return cachedState;
   }
 }
@@ -1754,6 +1951,20 @@ export function getStatePersistenceMetrics() {
     lastPayloadSections: [...persistenceMetrics.lastPayloadSections],
     detailedSections: [...persistenceMetrics.detailedSections],
     recentWrites: [...persistenceMetrics.recentWrites],
+  };
+}
+
+export function getGranularPlayerStatsPersistenceMetrics() {
+  const uptimeHours = Math.max(1 / 60, (Date.now() - new Date(granularPlayerStatsMetrics.startedAt).getTime()) / 3_600_000);
+  const batches = Math.max(1, granularPlayerStatsMetrics.batchesWritten);
+  return {
+    ...granularPlayerStatsMetrics,
+    pendingPlayers: pendingGranularPlayerStats.size,
+    cadenceMinutes: Math.round(STATE_STATS_PERSIST_MS / 60_000),
+    averageBatchBytes: Math.round(granularPlayerStatsMetrics.totalPayloadBytesWritten / batches),
+    averageRowsPerBatch: Number((granularPlayerStatsMetrics.rowsWritten / batches).toFixed(1)),
+    averageWriteDurationMs: Math.round(granularPlayerStatsMetrics.totalWriteDurationMs / batches),
+    projected30DayPayloadBytes: Math.round((granularPlayerStatsMetrics.totalPayloadBytesWritten / uptimeHours) * 24 * 30),
   };
 }
 

@@ -58,6 +58,7 @@ import {
   getStatePersistenceMetrics,
   getDiscordRuntimePersistenceMetrics,
   getStateDomainPersistenceMetrics,
+  getGranularPlayerStatsPersistenceMetrics,
   getPlayerPositionHistoryMetrics,
   getLatestPlayerPositionSnapshot,
   type AppState,
@@ -6306,6 +6307,7 @@ function renderAdminPanelHtml(token: string) {
         const m = state.persistenceMetrics;
         const discordRuntime = state.discordRuntimeMetrics || {};
         const domainV2 = state.domainPersistenceMetrics || {};
+        const granularPlayers = state.granularPlayerStatsMetrics || {};
         const domainRows = domainV2.domains || {};
         const positionHistory = state.playerPositionHistoryMetrics || {};
         const adm = state.admDownloadMetrics || {};
@@ -6451,6 +6453,19 @@ function renderAdminPanelHtml(token: string) {
             ['stats','processing','social','commerce','config'].map((key) => { const d = domainRows[key] || {}; return '<tr><td><code>' + escapeHtml(key) + '</code></td><td>' + formatBytes(Number(d.currentBytes || 0)) + '</td><td>' + Number(d.changes || 0).toLocaleString() + '</td><td>' + Number(d.writes || 0).toLocaleString() + '</td><td>' + formatBytes(Number(d.bytesWritten || 0)) + '</td></tr>'; }).join('') +
           '</tbody></table></div>' +
         '</div>' +
+        '<div class="settings-card" style="margin-top:16px"><div class="settings-card-head"><div><h3>Granular player stats</h3><p>Global K/D and current streaks are upserted only for players that changed, instead of retransmitting the full historical player map.</p></div></div>' +
+          '<div class="overview-grid" style="grid-template-columns:repeat(8,minmax(0,1fr))">' +
+            '<div class="stat-card"><span>Status</span><strong>' + (granularPlayers.enabled === false ? 'Fallback' : 'Active') + '</strong></div>' +
+            '<div class="stat-card"><span>Changed players</span><strong>' + Number(granularPlayers.changes || 0).toLocaleString() + '</strong></div>' +
+            '<div class="stat-card"><span>Pending</span><strong>' + Number(granularPlayers.pendingPlayers || 0).toLocaleString() + '</strong></div>' +
+            '<div class="stat-card"><span>Batches</span><strong>' + Number(granularPlayers.batchesWritten || 0).toLocaleString() + '</strong></div>' +
+            '<div class="stat-card"><span>Rows written</span><strong>' + Number(granularPlayers.rowsWritten || 0).toLocaleString() + '</strong></div>' +
+            '<div class="stat-card"><span>Avg batch</span><strong>' + formatBytes(Number(granularPlayers.averageBatchBytes || 0)) + '</strong></div>' +
+            '<div class="stat-card"><span>Total written</span><strong>' + formatBytes(Number(granularPlayers.totalPayloadBytesWritten || 0)) + '</strong></div>' +
+            '<div class="stat-card"><span>Projected 30d</span><strong>' + formatBytes(Number(granularPlayers.projected30DayPayloadBytes || 0)) + '</strong></div>' +
+          '</div>' +
+          '<div class="member-meta" style="margin-top:10px">Cadence: ' + Number(granularPlayers.cadenceMinutes || 20).toLocaleString() + ' min · Avg rows/batch: ' + Number(granularPlayers.averageRowsPerBatch || 0).toLocaleString() + ' · Boot rows applied: ' + Number(granularPlayers.rowsAppliedAtBoot || 0).toLocaleString() + ' · Failed: ' + Number(granularPlayers.failedBatches || 0).toLocaleString() + ' · Last write: ' + escapeHtml(granularPlayers.lastWriteAt ? relativeDate(granularPlayers.lastWriteAt) : 'none') + '</div>' +
+        '</div>' +
         '<div class="settings-card" style="margin-top:16px"><div class="settings-card-head"><div><h3>Discord runtime domain</h3><p>Small Neon row used for feed/message/map runtime updates when no core state changed.</p></div></div>' +
           '<div class="overview-grid" style="grid-template-columns:repeat(8,minmax(0,1fr))">' +
             '<div class="stat-card"><span>Requests</span><strong>' + Number(discordRuntime.saveRequests || 0).toLocaleString() + '</strong></div>' +
@@ -6552,6 +6567,7 @@ function renderAdminPanelHtml(token: string) {
         state.serviceSettings = payload.settings;
         state.persistenceMetrics = payload.persistenceMetrics;
         state.domainPersistenceMetrics = payload.domainPersistenceMetrics;
+        state.granularPlayerStatsMetrics = payload.granularPlayerStatsMetrics;
         state.discordRuntimeMetrics = payload.discordRuntimeMetrics;
         state.playerPositionHistoryMetrics = payload.playerPositionHistoryMetrics;
         state.admDownloadMetrics = payload.admDownloadMetrics;
@@ -6571,6 +6587,7 @@ function renderAdminPanelHtml(token: string) {
         state.serviceSettings = payload.settings;
         state.persistenceMetrics = payload.persistenceMetrics;
         state.domainPersistenceMetrics = payload.domainPersistenceMetrics;
+        state.granularPlayerStatsMetrics = payload.granularPlayerStatsMetrics;
         state.discordRuntimeMetrics = payload.discordRuntimeMetrics;
         state.playerPositionHistoryMetrics = payload.playerPositionHistoryMetrics;
         state.admDownloadMetrics = payload.admDownloadMetrics;
@@ -6593,6 +6610,7 @@ function renderAdminPanelHtml(token: string) {
         state.serviceSettings = payload.settings;
         state.persistenceMetrics = payload.persistenceMetrics;
         state.domainPersistenceMetrics = payload.domainPersistenceMetrics;
+        state.granularPlayerStatsMetrics = payload.granularPlayerStatsMetrics;
         state.discordRuntimeMetrics = payload.discordRuntimeMetrics;
         state.playerPositionHistoryMetrics = payload.playerPositionHistoryMetrics;
         state.admDownloadMetrics = payload.admDownloadMetrics;
@@ -7265,7 +7283,7 @@ router.get("/api/service-settings", async (req, res) => {
     const state = await getStateAsync();
     const settings = normalizeServiceSettings(state.serviceSettings);
     setAdmDownloadMode(settings.admDownloadMode);
-    res.json({ settings, persistenceMetrics: getStatePersistenceMetrics(), domainPersistenceMetrics: getStateDomainPersistenceMetrics(), discordRuntimeMetrics: getDiscordRuntimePersistenceMetrics(), playerPositionHistoryMetrics: getPlayerPositionHistoryMetrics(), admDownloadMetrics: getAdmDownloadMetrics(), runtimeMetrics: getRuntimePerformanceMetrics(), networkMetrics: getNetworkMetrics() });
+    res.json({ settings, persistenceMetrics: getStatePersistenceMetrics(), domainPersistenceMetrics: getStateDomainPersistenceMetrics(), granularPlayerStatsMetrics: getGranularPlayerStatsPersistenceMetrics(), discordRuntimeMetrics: getDiscordRuntimePersistenceMetrics(), playerPositionHistoryMetrics: getPlayerPositionHistoryMetrics(), admDownloadMetrics: getAdmDownloadMetrics(), runtimeMetrics: getRuntimePerformanceMetrics(), networkMetrics: getNetworkMetrics() });
   } catch (err) {
     res.status(500).json({ error: String(err) });
   }
@@ -7300,6 +7318,7 @@ router.patch("/api/service-settings", async (req, res) => {
       commands: listDiscordCommandDescriptors(effectiveCommandSettings),
       persistenceMetrics: getStatePersistenceMetrics(),
       domainPersistenceMetrics: getStateDomainPersistenceMetrics(),
+      granularPlayerStatsMetrics: getGranularPlayerStatsPersistenceMetrics(),
       discordRuntimeMetrics: getDiscordRuntimePersistenceMetrics(),
       playerPositionHistoryMetrics: getPlayerPositionHistoryMetrics(),
       admDownloadMetrics: getAdmDownloadMetrics(),
