@@ -7,6 +7,8 @@ import { flushStateAsync, getStateAsync } from "./lib/state";
 import { initializeShopCatalog } from "./lib/shopCatalog";
 import { recordMainCycleCompleted, recordMainCycleSkippedOverlap, recordMainCycleStarted } from "./lib/runtimeMetrics";
 import { normalizeServiceSettings } from "./lib/serviceSettings";
+import { getPrimaryServerId } from "./lib/serverRegistry";
+import { getServerRuntimeContext, runWithServerRuntimeLock } from "./lib/serverRuntime";
 
 function installStateFlushHooks() {
   let flushing = false;
@@ -17,7 +19,7 @@ function installStateFlushHooks() {
 
     try {
       console.log(`💾 flush final do state antes de ${signal}`);
-      await flushStateAsync(true);
+      await flushStateAsync();
     } catch (err) {
       console.error("❌ erro no flush final do state:", err);
     } finally {
@@ -37,16 +39,8 @@ function installStateFlushHooks() {
 installStateFlushHooks();
 
 let started = false;
-let cycleRunning = false;
-
-async function runCycle() {
-  if (cycleRunning) {
-    recordMainCycleSkippedOverlap();
-    console.log("⏭️ ciclo ignorado: execução anterior ainda rodando");
-    return;
-  }
-
-  cycleRunning = true;
+async function runCycle(serverId = getPrimaryServerId()) {
+  const locked = await runWithServerRuntimeLock(serverId, async () => {
   recordMainCycleStarted();
   const startedAt = new Date().toISOString();
   const cycleStarted = Date.now();
@@ -58,7 +52,7 @@ async function runCycle() {
 
   const downloadStarted = Date.now();
   try {
-    await downloadADM();
+    await downloadADM(serverId);
   } catch (err) {
     downloadOk = false;
     console.error("❌ erro download:", err);
@@ -75,7 +69,6 @@ async function runCycle() {
     console.error("❌ erro parser:", err);
   } finally {
     parserDurationMs = Date.now() - parserStarted;
-    cycleRunning = false;
     recordMainCycleCompleted({
       startedAt,
       finishedAt: new Date().toISOString(),
@@ -85,6 +78,11 @@ async function runCycle() {
       downloadOk,
       parserOk,
     });
+  }
+  });
+  if (locked.skipped) {
+    recordMainCycleSkippedOverlap();
+    console.log(`⏭️ ciclo ignorado para ${serverId}: execução anterior ainda rodando`);
   }
 }
 
@@ -102,6 +100,8 @@ function startServer(port: number) {
 
     try {
       const state = await getStateAsync();
+      const runtime = getServerRuntimeContext(getPrimaryServerId());
+      console.log(`🧭 runtime isolado: ${runtime.server.name} (${runtime.serverId})`);
       const settings = normalizeServiceSettings(state.serviceSettings);
       setAdmDownloadMode(settings.admDownloadMode);
       console.log(`📥 ADM download mode: ${settings.admDownloadMode}`);
@@ -121,7 +121,7 @@ function startServer(port: number) {
 
     try {
       console.log("🚀 iniciando bot do Discord...");
-      startDiscordBot();
+      startDiscordBot(getPrimaryServerId());
     } catch (err) {
       console.error("❌ erro ao iniciar Discord:", err);
     }

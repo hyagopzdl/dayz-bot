@@ -1,4 +1,6 @@
 import { Client, TextBasedChannel } from "discord.js";
+import { getPrimaryServerId } from "../serverRegistry";
+import { getServerRuntimeContext } from "../serverRuntime";
 
 export type DiscordChannels = {
   globalChannel: TextBasedChannel;
@@ -21,17 +23,21 @@ async function fetchOptionalTextChannel(client: Client, channelId?: string) {
   return channelId ? fetchTextChannel(client, channelId) : null;
 }
 
-export async function resolveDiscordChannels(client: Client): Promise<DiscordChannels> {
+export async function resolveDiscordChannels(client: Client, serverId = getPrimaryServerId()): Promise<DiscordChannels> {
+  const config = getServerRuntimeContext(serverId).discord;
+  if (!config.globalChannelId || !config.dailyChannelId || !config.weeklyChannelId || !config.onlineCategoryId) {
+    throw new Error(`Discord channel routing is incomplete for server ${serverId}`);
+  }
   return {
-    globalChannel: await fetchTextChannel(client, process.env.DISCORD_CHANNEL_ID!),
-    dailyChannel: await fetchTextChannel(client, process.env.DISCORD_CHANNEL_DAILY_ID!),
-    weeklyChannel: await fetchTextChannel(client, process.env.DISCORD_CHANNEL_WEEKLY_ID!),
-    onlineListChannel: await fetchOptionalTextChannel(client, process.env.DISCORD_ONLINE_LIST_CHANNEL_ID),
-    killfeedChannel: await fetchOptionalTextChannel(client, process.env.DISCORD_KILLFEED_CHANNEL_ID),
-    killStreakChannel: await fetchOptionalTextChannel(client, process.env.DISCORD_KILLSTREAK_CHANNEL_ID),
-    longShotChannel: await fetchOptionalTextChannel(client, process.env.DISCORD_LONGSHOT_CHANNEL_ID),
-    longShotRankingChannel: await fetchOptionalTextChannel(client, process.env.DISCORD_LONGSHOT_RANKING_CHANNEL_ID),
-    streakRankingChannel: await fetchOptionalTextChannel(client, process.env.DISCORD_STREAK_RANKING_CHANNEL_ID),
-    categoryId: process.env.DISCORD_ONLINE_CHANNEL_ID!,
+    globalChannel: await fetchTextChannel(client, config.globalChannelId),
+    dailyChannel: await fetchTextChannel(client, config.dailyChannelId),
+    weeklyChannel: await fetchTextChannel(client, config.weeklyChannelId),
+    onlineListChannel: await fetchOptionalTextChannel(client, config.onlineListChannelId),
+    killfeedChannel: await fetchOptionalTextChannel(client, config.killfeedChannelId),
+    killStreakChannel: await fetchOptionalTextChannel(client, config.killStreakChannelId),
+    longShotChannel: await fetchOptionalTextChannel(client, config.longShotChannelId),
+    longShotRankingChannel: await fetchOptionalTextChannel(client, config.longShotRankingChannelId),
+    streakRankingChannel: await fetchOptionalTextChannel(client, config.streakRankingChannelId),
+    categoryId: config.onlineCategoryId,
   };
 }

@@ -5,9 +5,9 @@ import {
   type TextBasedChannel,
 } from "discord.js";
 import { buildNeutralEmbed, buildSuccessEmbed } from "../ui/embeds";
+import { getPrimaryServerId } from "../../serverRegistry";
+import { getServerRuntimeContext } from "../../serverRuntime";
 
-const MEMBER_FEED_ENABLED = process.env.DISCORD_MEMBER_FEED_ENABLED !== "false";
-const MEMBER_FEED_CHANNEL_ID = process.env.DISCORD_MEMBER_FEED_CHANNEL_ID;
 
 function formatDiscordTimestamp(date: Date | null | undefined, style: "f" | "R" = "f") {
   if (!date) return "Unknown";
@@ -22,11 +22,12 @@ function isSendableTextChannel(channel: TextBasedChannel | null): channel is Tex
   return Boolean(channel && "send" in channel && typeof channel.send === "function");
 }
 
-async function resolveMemberFeedChannel(client: Client) {
-  if (!MEMBER_FEED_ENABLED || !MEMBER_FEED_CHANNEL_ID) return null;
+async function resolveMemberFeedChannel(client: Client, serverId = getPrimaryServerId()) {
+  const config = getServerRuntimeContext(serverId).discord;
+  if (config.memberFeedEnabled === false || !config.memberFeedChannelId) return null;
 
   try {
-    const channel = await client.channels.fetch(MEMBER_FEED_CHANNEL_ID);
+    const channel = await client.channels.fetch(config.memberFeedChannelId);
     if (!channel || !isSendableTextChannel(channel as TextBasedChannel)) return null;
 
     if (
@@ -44,8 +45,8 @@ async function resolveMemberFeedChannel(client: Client) {
   }
 }
 
-async function sendMemberFeedEmbed(client: Client, embed: ReturnType<typeof buildSuccessEmbed>) {
-  const channel = await resolveMemberFeedChannel(client);
+async function sendMemberFeedEmbed(client: Client, embed: ReturnType<typeof buildSuccessEmbed>, serverId = getPrimaryServerId()) {
+  const channel = await resolveMemberFeedChannel(client, serverId);
   if (!channel) return;
 
   try {
@@ -55,18 +56,20 @@ async function sendMemberFeedEmbed(client: Client, embed: ReturnType<typeof buil
   }
 }
 
-export function registerMemberFeed(client: Client) {
-  if (!MEMBER_FEED_ENABLED) {
-    console.log("👥 member feed desativado por DISCORD_MEMBER_FEED_ENABLED=false");
+export function registerMemberFeed(client: Client, serverId = getPrimaryServerId()) {
+  const runtime = getServerRuntimeContext(serverId);
+  if (runtime.discord.memberFeedEnabled === false) {
+    console.log(`👥 member feed desativado para ${serverId}`);
     return;
   }
 
-  if (!MEMBER_FEED_CHANNEL_ID) {
-    console.log("👥 member feed ignorado: DISCORD_MEMBER_FEED_CHANNEL_ID não definido");
+  if (!runtime.discord.memberFeedChannelId) {
+    console.log(`👥 member feed ignorado para ${serverId}: canal não configurado`);
     return;
   }
 
   client.on("guildMemberAdd", async (member) => {
+    if (runtime.discord.guildId && member.guild.id !== runtime.discord.guildId) return;
     const embed = buildSuccessEmbed({
       title: "🟢 Member joined",
       description: [
@@ -78,10 +81,11 @@ export function registerMemberFeed(client: Client) {
       footerSuffix: "member-feed",
     });
 
-    await sendMemberFeedEmbed(client, embed);
+    await sendMemberFeedEmbed(client, embed, serverId);
   });
 
   client.on("guildMemberRemove", async (member) => {
+    if (runtime.discord.guildId && member.guild.id !== runtime.discord.guildId) return;
     const embed = buildNeutralEmbed({
       title: "🔴 Member left",
       description: [
@@ -94,7 +98,7 @@ export function registerMemberFeed(client: Client) {
       footerSuffix: "member-feed",
     });
 
-    await sendMemberFeedEmbed(client, embed);
+    await sendMemberFeedEmbed(client, embed, serverId);
   });
 
   console.log("👥 member feed ativo");

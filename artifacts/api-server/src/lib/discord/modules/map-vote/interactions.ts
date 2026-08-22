@@ -1,3 +1,4 @@
+import { getPrimaryServerDescriptor } from "../../../serverRegistry";
 import { Routes } from "discord.js";
 import crypto from "node:crypto";
 import { setPlayerLocale } from "../../../playerLinks";
@@ -113,7 +114,7 @@ async function ensureMapVotePoll(interaction: any, state: any): Promise<{ create
     closesAt: closeAt.toISOString(),
     options: zones.map((zone: any, index: number) => ({ zoneId: String(zone.id || ""), name: String(zone.name || "Zona"), answerId: index + 1, votes: 0 })),
     totalVotes: 0,
-    rawUrl: `https://discord.com/channels/${process.env.DISCORD_SERVER_ID || process.env.DISCORD_GUILD_ID || "@me"}/${channelId}/${messageId}`,
+    rawUrl: `https://discord.com/channels/${getPrimaryServerDescriptor().integrations.discordGuildId || "@me"}/${channelId}/${messageId}`,
   };
 
   return { created: true };

@@ -1,5 +1,26 @@
 export type ServerFoundationMode = "single-server-compat";
 
+export type ServerDiscordRuntimeConfig = {
+  globalChannelId?: string;
+  dailyChannelId?: string;
+  weeklyChannelId?: string;
+  onlineListChannelId?: string;
+  killfeedChannelId?: string;
+  killStreakChannelId?: string;
+  longShotChannelId?: string;
+  longShotRankingChannelId?: string;
+  streakRankingChannelId?: string;
+  onlineCategoryId?: string;
+  matchCategoryId?: string;
+  memberFeedChannelId?: string;
+  memberFeedEnabled?: boolean;
+};
+
+export type ServerRuntimeConfig = {
+  nitradoBaseDir?: string;
+  discord: ServerDiscordRuntimeConfig;
+};
+
 export type ManagedServerDescriptor = {
   id: string;
   name: string;
@@ -10,6 +31,7 @@ export type ManagedServerDescriptor = {
     nitradoServiceId?: string;
     discordGuildId?: string;
   };
+  runtime: ServerRuntimeConfig;
 };
 
 export type ServerNamespacePersistenceStatus = {
@@ -48,8 +70,23 @@ export type ServerRegistryPersistenceStatus = {
   };
 };
 
+export type ServerRuntimeIsolationStatus = {
+  initialized: boolean;
+  contextServerId?: string;
+  nitradoRoutingNamespaced: boolean;
+  discordRoutingNamespaced: boolean;
+  processingLockNamespaced: boolean;
+  primaryLegacyAdmStoragePreserved: boolean;
+  staggerOffsetMs: number;
+  activeLocks: number;
+  lockSkips: number;
+  lastLockServerId?: string;
+  lastError?: string;
+};
+
 const FALLBACK_SERVER_ID = "pz-deathmatch";
 const FALLBACK_SERVER_NAME = "PZ Deathmatch";
+const FALLBACK_NITRADO_SERVICE_ID = "19149785";
 
 let persistedServers: ManagedServerDescriptor[] = [];
 let namespacePersistenceStatus: ServerNamespacePersistenceStatus = {
@@ -78,6 +115,42 @@ let registryPersistenceStatus: ServerRegistryPersistenceStatus = {
   rowsLoaded: 0,
 };
 
+let runtimeIsolationStatus: ServerRuntimeIsolationStatus = {
+  initialized: false,
+  nitradoRoutingNamespaced: false,
+  discordRoutingNamespaced: false,
+  processingLockNamespaced: false,
+  primaryLegacyAdmStoragePreserved: true,
+  staggerOffsetMs: 0,
+  activeLocks: 0,
+  lockSkips: 0,
+};
+
+function envString(name: string) {
+  return String(process.env[name] || "").trim() || undefined;
+}
+
+function getPrimaryRuntimeConfig(): ServerRuntimeConfig {
+  return {
+    nitradoBaseDir: envString("NITRADO_BASE_DIR") || "/games/ni13029176_1/noftp/dayzps/config",
+    discord: {
+      globalChannelId: envString("DISCORD_CHANNEL_ID"),
+      dailyChannelId: envString("DISCORD_CHANNEL_DAILY_ID"),
+      weeklyChannelId: envString("DISCORD_CHANNEL_WEEKLY_ID"),
+      onlineListChannelId: envString("DISCORD_ONLINE_LIST_CHANNEL_ID"),
+      killfeedChannelId: envString("DISCORD_KILLFEED_CHANNEL_ID"),
+      killStreakChannelId: envString("DISCORD_KILLSTREAK_CHANNEL_ID"),
+      longShotChannelId: envString("DISCORD_LONGSHOT_CHANNEL_ID"),
+      longShotRankingChannelId: envString("DISCORD_LONGSHOT_RANKING_CHANNEL_ID"),
+      streakRankingChannelId: envString("DISCORD_STREAK_RANKING_CHANNEL_ID"),
+      onlineCategoryId: envString("DISCORD_ONLINE_CHANNEL_ID"),
+      matchCategoryId: envString("DISCORD_MATCH_CATEGORY_ID"),
+      memberFeedChannelId: envString("DISCORD_MEMBER_FEED_CHANNEL_ID"),
+      memberFeedEnabled: process.env.DISCORD_MEMBER_FEED_ENABLED !== "false",
+    },
+  };
+}
+
 function normalizeServerId(value: unknown) {
   const normalized = String(value || "")
     .trim()
@@ -105,9 +178,10 @@ export function getPrimaryServerDescriptor(): ManagedServerDescriptor {
     primary: true,
     mode: "single-server-compat",
     integrations: {
-      nitradoServiceId: String(process.env.NITRADO_SERVICE_ID || "").trim() || undefined,
+      nitradoServiceId: String(process.env.NITRADO_SERVICE_ID || FALLBACK_NITRADO_SERVICE_ID).trim() || undefined,
       discordGuildId: String(process.env.DISCORD_SERVER_ID || process.env.DISCORD_GUILD_ID || "").trim() || undefined,
     },
+    runtime: getPrimaryRuntimeConfig(),
   };
 }
 
@@ -115,7 +189,7 @@ export function listManagedServers(): ManagedServerDescriptor[] {
   // Phase 5 still exposes only the primary server operationally. Composite
   // primary keys are being activated, but runtime/Nitrado/Discord routing is
   // not isolated yet, so additional servers remain blocked.
-  if (persistedServers.length) return persistedServers.map((server) => ({ ...server, integrations: { ...server.integrations } }));
+  if (persistedServers.length) return persistedServers.map((server) => ({ ...server, integrations: { ...server.integrations }, runtime: { ...server.runtime, discord: { ...server.runtime.discord } } }));
   return [getPrimaryServerDescriptor()];
 }
 
@@ -129,6 +203,10 @@ export function setPersistedManagedServers(servers: ManagedServerDescriptor[]) {
     integrations: {
       nitradoServiceId: String(server.integrations?.nitradoServiceId || "").trim() || undefined,
       discordGuildId: String(server.integrations?.discordGuildId || "").trim() || undefined,
+    },
+    runtime: {
+      nitradoBaseDir: String(server.runtime?.nitradoBaseDir || "").trim() || undefined,
+      discord: { ...(server.runtime?.discord || {}) },
     },
   }));
 }
@@ -162,6 +240,19 @@ export function getServerRegistryPersistenceStatus(): ServerRegistryPersistenceS
   };
 }
 
+export function getManagedServerById(serverId: unknown): ManagedServerDescriptor | undefined {
+  const normalized = normalizeServerId(serverId);
+  return listManagedServers().find((server) => server.id === normalized);
+}
+
+export function setServerRuntimeIsolationStatus(status: Partial<ServerRuntimeIsolationStatus>) {
+  runtimeIsolationStatus = { ...runtimeIsolationStatus, ...status };
+}
+
+export function getServerRuntimeIsolationStatus(): ServerRuntimeIsolationStatus {
+  return { ...runtimeIsolationStatus };
+}
+
 export function resolveServerIdFromDiscordGuildId(guildId: unknown) {
   const normalizedGuildId = String(guildId || "").trim();
   if (!normalizedGuildId) return undefined;
@@ -174,7 +265,7 @@ export function getServerFoundationDiagnostics() {
   const registry = getServerRegistryPersistenceStatus();
   const namespace = getServerNamespacePersistenceStatus();
   return {
-    phase: 5,
+    phase: 6,
     mode: server.mode,
     currentServerId: server.id,
     currentServerName: server.name,
@@ -183,12 +274,13 @@ export function getServerFoundationDiagnostics() {
     registryPersisted: registry.initialized && registry.tableReady && registry.primarySeeded,
     persistenceNamespaced: namespace.scopedReadsEnabled && namespace.botStateCompositeKeyReady,
     persistenceTaggedWithServerId: namespace.initialized && namespace.botStateTableReady && namespace.botStateUntaggedRows === 0 && (!namespace.playerStatsTableReady || namespace.playerStatsUntaggedRows === 0),
-    parserNamespaced: false,
-    discordRoutingNamespaced: false,
-    nitradoRoutingNamespaced: false,
+    parserNamespaced: runtimeIsolationStatus.processingLockNamespaced,
+    discordRoutingNamespaced: runtimeIsolationStatus.discordRoutingNamespaced,
+    nitradoRoutingNamespaced: runtimeIsolationStatus.nitradoRoutingNamespaced,
     currentDataPathChanged: namespace.scopedReadsEnabled && namespace.botStateCompositeKeyReady,
     registry,
     namespace,
+    runtimeIsolation: getServerRuntimeIsolationStatus(),
     safety: {
       legacyStateIdsPreserved: true,
       legacyAdmCursorsPreserved: true,

@@ -1,3 +1,5 @@
+import { getPrimaryServerId } from "../serverRegistry";
+import { getServerRuntimeContext } from "../serverRuntime";
 import { PermissionsBitField } from "discord.js";
 
 export function buildDiscordCommands() {
@@ -312,12 +314,14 @@ export function buildEnabledDiscordCommands(settings?: DiscordCommandSettingsLik
 export async function registerDiscordCommands(
   client: any,
   settings?: DiscordCommandSettingsLike,
+  serverId = getPrimaryServerId(),
 ) {
   try {
     const commands = buildEnabledDiscordCommands(settings);
 
-    if (process.env.DISCORD_SERVER_ID) {
-      const guild = await client.guilds.fetch(process.env.DISCORD_SERVER_ID);
+    const guildId = getServerRuntimeContext(serverId).discord.guildId;
+    if (guildId) {
+      const guild = await client.guilds.fetch(guildId);
       await guild.commands.set(commands);
     } else {
       await client.application?.commands.set(commands);

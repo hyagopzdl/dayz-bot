@@ -2,9 +2,11 @@ import crypto from "crypto";
 import fs from "fs";
 import path from "path";
 import { byteLengthOfBody, recordNetworkTransfer } from "./networkMetrics";
+import { getPrimaryServerId } from "./serverRegistry";
+import { getServerRuntimeContext } from "./serverRuntime";
 
-const SERVICE_ID = "19149785";
-const BASE_DIR = "/games/ni13029176_1/noftp/dayzps/config";
+const LEGACY_SERVICE_ID = "19149785";
+const LEGACY_BASE_DIR = "/games/ni13029176_1/noftp/dayzps/config";
 
 export const LOG_DIR = path.resolve(process.cwd(), "adm_logs");
 export const MANIFEST_FILE = path.resolve(process.cwd(), "adm_manifest.json");
@@ -255,9 +257,9 @@ function firstString(...values: any[]) {
   return null;
 }
 
-export async function getNitradoGameserverStatus(): Promise<NitradoGameserverStatus> {
+export async function getNitradoGameserverStatus(serverId = getPrimaryServerId()): Promise<NitradoGameserverStatus> {
   if (!process.env.NITRADO_TOKEN) throw new Error("NITRADO_TOKEN não definido");
-  const serviceId = getNitradoServiceId();
+  const serviceId = getNitradoServiceId(serverId);
   const candidates = [`https://api.nitrado.net/services/${serviceId}/gameservers`, `https://api.nitrado.net/services/${serviceId}`];
   const errors: string[] = [];
   for (const url of candidates) {
@@ -276,23 +278,24 @@ export async function getNitradoGameserverStatus(): Promise<NitradoGameserverSta
   throw new Error(`Unable to read Nitrado server status. ${errors.join(" | ")}`);
 }
 
-async function getDownloadUrl(filePath: string): Promise<string | null> {
+async function getDownloadUrl(filePath: string, serverId = getPrimaryServerId()): Promise<string | null> {
   admDownloadMetrics.downloadUrlRequests += 1;
-  const json = await fetchJson(`https://api.nitrado.net/services/${SERVICE_ID}/gameservers/file_server/download?file=${encodeURIComponent(filePath)}`);
+  const serviceId = getNitradoServiceId(serverId);
+  const json = await fetchJson(`https://api.nitrado.net/services/${serviceId}/gameservers/file_server/download?file=${encodeURIComponent(filePath)}`);
   return json?.data?.token?.url || null;
 }
 
-async function downloadText(filePath: string): Promise<string | null> {
-  const url = await getDownloadUrl(filePath);
+async function downloadText(filePath: string, serverId = getPrimaryServerId()): Promise<string | null> {
+  const url = await getDownloadUrl(filePath, serverId);
   if (!url) return null;
   const res = await trackedNitradoFetch(`${url}&t=${Date.now()}`);
   if (!res.ok) throw new Error(`ADM download HTTP ${res.status}: ${await res.text()}`);
   return res.text();
 }
 
-function saveManifest(files: string[]) {
+function saveManifest(files: string[], manifestFile = MANIFEST_FILE) {
   const manifest: Manifest = { files, updatedAt: new Date().toISOString() };
-  fs.writeFileSync(MANIFEST_FILE, JSON.stringify(manifest, null, 2));
+  fs.writeFileSync(manifestFile, JSON.stringify(manifest, null, 2));
 }
 
 function updatePreviousFileStability(admFiles: NitradoEntry[]) {
@@ -355,8 +358,13 @@ function triggerAutomaticFallback(reason: string) {
   console.error(`🚨 ADM optimized downloader fallback para Legacy: ${reason}`);
 }
 
-export async function downloadADM() {
-  ensureLogDir();
+export async function downloadADM(serverId = getPrimaryServerId()) {
+  const runtime = getServerRuntimeContext(serverId);
+  const logDir = runtime.storage.logDir;
+  const manifestFile = runtime.storage.manifestFile;
+  const serviceId = getNitradoServiceId(serverId);
+  const baseDir = runtime.nitrado.baseDir || LEGACY_BASE_DIR;
+  if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true });
   const cycleStarted = Date.now();
   admDownloadMetrics.cycles += 1;
   admDownloadMetrics.lastCycleAt = new Date().toISOString();
@@ -373,7 +381,7 @@ export async function downloadADM() {
   let listJson: any;
   try {
     admDownloadMetrics.listRequests += 1;
-    listJson = await fetchJson(`https://api.nitrado.net/services/${SERVICE_ID}/gameservers/file_server/list?dir=${encodeURIComponent(BASE_DIR)}`);
+    listJson = await fetchJson(`https://api.nitrado.net/services/${serviceId}/gameservers/file_server/list?dir=${encodeURIComponent(baseDir)}`);
   } catch (err) {
     admDownloadMetrics.listFailures += 1;
     throw err;
@@ -390,7 +398,7 @@ export async function downloadADM() {
 
   if (!admFiles.length) {
     console.log("⚠️ nenhum .ADM encontrado");
-    saveManifest([]);
+    saveManifest([], manifestFile);
     admDownloadMetrics.lastCycleDurationMs = Date.now() - cycleStarted;
     admDownloadMetrics.maxCycleDurationMs = Math.max(admDownloadMetrics.maxCycleDurationMs, admDownloadMetrics.lastCycleDurationMs);
     return;
@@ -400,7 +408,7 @@ export async function downloadADM() {
   updatePreviousFileStability(admFiles);
 
   const candidateDecisions = admFiles.map((file, index) => {
-    const localFile = path.join(LOG_DIR, safeLocalName(file.path));
+    const localFile = path.join(logDir, safeLocalName(file.path));
     const baseDecision = createShadowDecision(file, localFile);
     const optimizedDecision = getOptimizedDecision(file, index, baseDecision);
     return { file, index, localFile, baseDecision, optimizedDecision };
@@ -436,7 +444,7 @@ export async function downloadADM() {
     try {
       const previousText = fs.existsSync(localFile) ? fs.readFileSync(localFile, "utf8") : null;
       const previousHash = previousText === null ? null : hashText(previousText);
-      const text = await downloadText(file.path);
+      const text = await downloadText(file.path, serverId);
       if (!text) {
         console.log(`⚠️ sem URL de download: ${file.path}`);
         if (fs.existsSync(localFile)) availableLocalFiles.push(localFile);
@@ -522,14 +530,15 @@ export async function downloadADM() {
     optimizedAuditCursor = (optimizedAuditCursor + 1) % skippableIndexes.length;
   }
 
-  saveManifest(availableLocalFiles);
+  saveManifest(availableLocalFiles, manifestFile);
   admDownloadMetrics.lastCycleDurationMs = Date.now() - cycleStarted;
   admDownloadMetrics.maxCycleDurationMs = Math.max(admDownloadMetrics.maxCycleDurationMs, admDownloadMetrics.lastCycleDurationMs);
   console.log(`📦 ${availableLocalFiles.length} arquivos ADM disponíveis`);
 }
 
-function getNitradoServiceId() {
-  return process.env.NITRADO_SERVICE_ID || SERVICE_ID;
+function getNitradoServiceId(serverId = getPrimaryServerId()) {
+  const runtime = getServerRuntimeContext(serverId);
+  return runtime.nitrado.serviceId || process.env.NITRADO_SERVICE_ID || LEGACY_SERVICE_ID;
 }
 
 function normalizeNitradoFileServerPath(value: string) {
@@ -711,15 +720,16 @@ function uniqueStrings(values: string[]) {
   return Array.from(new Set(values.filter(Boolean)));
 }
 
-function getNoFtpRootFromAdmBaseDir() {
+function getNoFtpRootFromAdmBaseDir(serverId = getPrimaryServerId()) {
+  const baseDir = getServerRuntimeContext(serverId).nitrado.baseDir || LEGACY_BASE_DIR;
   const marker = "/noftp/";
-  const index = BASE_DIR.indexOf(marker);
+  const index = baseDir.indexOf(marker);
 
   if (index === -1) {
     return "";
   }
 
-  return BASE_DIR.slice(0, index + marker.length - 1);
+  return baseDir.slice(0, index + marker.length - 1);
 }
 
 function withDayzMissionFolderVariants(pathValue: string) {

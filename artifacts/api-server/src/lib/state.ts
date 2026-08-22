@@ -284,28 +284,50 @@ async function ensurePrimaryServerRegistryMetadata() {
           mode TEXT NOT NULL DEFAULT 'single-server-compat',
           nitrado_service_id TEXT,
           discord_guild_id TEXT,
+          runtime_config JSONB,
           created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
       `;
+      await sql`ALTER TABLE managed_servers ADD COLUMN IF NOT EXISTS runtime_config JSONB`;
       setServerRegistryPersistenceStatus({ tableReady: true });
 
       // Never overwrite an existing registry row from environment variables.
       // This avoids a deploy unexpectedly remapping the production server.
       const inserted = await sql`
         INSERT INTO managed_servers (
-          id, name, enabled, primary_server, mode, nitrado_service_id, discord_guild_id, created_at, updated_at
+          id, name, enabled, primary_server, mode, nitrado_service_id, discord_guild_id, runtime_config, created_at, updated_at
         )
         VALUES (
           ${primary.id}, ${primary.name}, TRUE, TRUE, ${primary.mode},
-          ${primary.integrations.nitradoServiceId || null}, ${primary.integrations.discordGuildId || null}, NOW(), NOW()
+          ${primary.integrations.nitradoServiceId || null}, ${primary.integrations.discordGuildId || null}, ${JSON.stringify(primary.runtime)}::jsonb, NOW(), NOW()
         )
         ON CONFLICT (id) DO NOTHING
         RETURNING id
       `;
 
+      const runtimeBackfill = await sql`
+        UPDATE managed_servers
+        SET
+          nitrado_service_id = COALESCE(nitrado_service_id, ${primary.integrations.nitradoServiceId || null}),
+          discord_guild_id = COALESCE(discord_guild_id, ${primary.integrations.discordGuildId || null}),
+          runtime_config = CASE
+            WHEN runtime_config IS NULL OR runtime_config = '{}'::jsonb THEN ${JSON.stringify(primary.runtime)}::jsonb
+            ELSE runtime_config
+          END,
+          updated_at = NOW()
+        WHERE id = ${primary.id}
+          AND (
+            nitrado_service_id IS NULL
+            OR discord_guild_id IS NULL
+            OR runtime_config IS NULL
+            OR runtime_config = '{}'::jsonb
+          )
+        RETURNING id
+      `;
+
       const rows = await sql`
-        SELECT id, name, enabled, primary_server, mode, nitrado_service_id, discord_guild_id
+        SELECT id, name, enabled, primary_server, mode, nitrado_service_id, discord_guild_id, runtime_config
         FROM managed_servers
         ORDER BY primary_server DESC, created_at ASC, id ASC
       `;
@@ -319,6 +341,10 @@ async function ensurePrimaryServerRegistryMetadata() {
         integrations: {
           nitradoServiceId: String(row.nitrado_service_id || "").trim() || undefined,
           discordGuildId: String(row.discord_guild_id || "").trim() || undefined,
+        },
+        runtime: {
+          nitradoBaseDir: String(row.runtime_config?.nitradoBaseDir || primary.runtime.nitradoBaseDir || "").trim() || undefined,
+          discord: { ...(primary.runtime.discord || {}), ...(row.runtime_config?.discord || {}) },
         },
       }));
       setPersistedManagedServers(descriptors.length ? descriptors : [primary]);
@@ -341,10 +367,10 @@ async function ensurePrimaryServerRegistryMetadata() {
 
       // One tiny metadata INSERT is expected only on the first Phase 2 boot.
       // Existing deployments thereafter perform reads only here.
-      if ((inserted as any[]).length) {
+      if ((inserted as any[]).length || (runtimeBackfill as any[]).length) {
         recordNetworkTransfer({
           service: "neon-server-registry",
-          operation: "seed_primary_server_metadata",
+          operation: (inserted as any[]).length ? "seed_primary_server_metadata" : "backfill_primary_runtime_config",
           direction: "outbound",
           bytes: Buffer.byteLength(JSON.stringify(primary), "utf8"),
           ok: true,
