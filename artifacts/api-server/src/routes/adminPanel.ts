@@ -74,6 +74,7 @@ import { downloadTextFile, uploadTextFile } from "../lib/nitradoFtp";
 import { getAdmDownloadMetrics, setAdmDownloadMode } from "../lib/nitradoDownloader";
 import { getRuntimePerformanceMetrics } from "../lib/runtimeMetrics";
 import { getNetworkMetrics } from "../lib/networkMetrics";
+import { getPrimaryServerDescriptor, getServerFoundationDiagnostics, listManagedServers } from "../lib/serverRegistry";
 
 const router = Router();
 startMapEventScheduler();
@@ -6453,6 +6454,9 @@ function renderAdminPanelHtml(token: string) {
             ['stats','processing','social','commerce','config'].map((key) => { const d = domainRows[key] || {}; return '<tr><td><code>' + escapeHtml(key) + '</code></td><td>' + formatBytes(Number(d.currentBytes || 0)) + '</td><td>' + Number(d.changes || 0).toLocaleString() + '</td><td>' + Number(d.writes || 0).toLocaleString() + '</td><td>' + formatBytes(Number(d.bytesWritten || 0)) + '</td></tr>'; }).join('') +
           '</tbody></table></div>' +
         '</div>' +
+        '<div class="settings-card" style="margin-top:16px"><div class="settings-card-head"><div><h3>Multi-server foundation</h3><p>Phase 1 is read-only: the current server is registered as the primary tenant without changing any existing data keys, ADM cursors or integrations.</p></div></div>' +
+        '<div class="diag-grid"><div><span>Mode</span><strong>' + escapeHtml(String(state.serverFoundation?.mode || 'single-server-compat')) + '</strong></div><div><span>Current server</span><strong>' + escapeHtml(String(state.serverFoundation?.currentServerName || 'PZ Deathmatch')) + '</strong></div><div><span>Server ID</span><strong>' + escapeHtml(String(state.serverFoundation?.currentServerId || 'pz-deathmatch')) + '</strong></div><div><span>Data path changed</span><strong>' + (state.serverFoundation?.currentDataPathChanged ? 'Yes' : 'No') + '</strong></div></div>' +
+        '<div class="settings-note" style="margin-top:12px">No additional server can be activated in this phase. Existing persistence IDs, Nitrado service and Discord guild remain untouched.</div></div>' +
         '<div class="settings-card" style="margin-top:16px"><div class="settings-card-head"><div><h3>Granular player stats</h3><p>Global K/D and current streaks are upserted only for players that changed, instead of retransmitting the full historical player map.</p></div></div>' +
           '<div class="overview-grid" style="grid-template-columns:repeat(8,minmax(0,1fr))">' +
             '<div class="stat-card"><span>Status</span><strong>' + (granularPlayers.enabled === false ? 'Fallback' : 'Active') + '</strong></div>' +
@@ -6568,6 +6572,7 @@ function renderAdminPanelHtml(token: string) {
         state.persistenceMetrics = payload.persistenceMetrics;
         state.domainPersistenceMetrics = payload.domainPersistenceMetrics;
         state.granularPlayerStatsMetrics = payload.granularPlayerStatsMetrics;
+        state.serverFoundation = payload.serverFoundation;
         state.discordRuntimeMetrics = payload.discordRuntimeMetrics;
         state.playerPositionHistoryMetrics = payload.playerPositionHistoryMetrics;
         state.admDownloadMetrics = payload.admDownloadMetrics;
@@ -6588,6 +6593,7 @@ function renderAdminPanelHtml(token: string) {
         state.persistenceMetrics = payload.persistenceMetrics;
         state.domainPersistenceMetrics = payload.domainPersistenceMetrics;
         state.granularPlayerStatsMetrics = payload.granularPlayerStatsMetrics;
+        state.serverFoundation = payload.serverFoundation;
         state.discordRuntimeMetrics = payload.discordRuntimeMetrics;
         state.playerPositionHistoryMetrics = payload.playerPositionHistoryMetrics;
         state.admDownloadMetrics = payload.admDownloadMetrics;
@@ -6611,6 +6617,7 @@ function renderAdminPanelHtml(token: string) {
         state.persistenceMetrics = payload.persistenceMetrics;
         state.domainPersistenceMetrics = payload.domainPersistenceMetrics;
         state.granularPlayerStatsMetrics = payload.granularPlayerStatsMetrics;
+        state.serverFoundation = payload.serverFoundation;
         state.discordRuntimeMetrics = payload.discordRuntimeMetrics;
         state.playerPositionHistoryMetrics = payload.playerPositionHistoryMetrics;
         state.admDownloadMetrics = payload.admDownloadMetrics;
@@ -7283,7 +7290,7 @@ router.get("/api/service-settings", async (req, res) => {
     const state = await getStateAsync();
     const settings = normalizeServiceSettings(state.serviceSettings);
     setAdmDownloadMode(settings.admDownloadMode);
-    res.json({ settings, persistenceMetrics: getStatePersistenceMetrics(), domainPersistenceMetrics: getStateDomainPersistenceMetrics(), granularPlayerStatsMetrics: getGranularPlayerStatsPersistenceMetrics(), discordRuntimeMetrics: getDiscordRuntimePersistenceMetrics(), playerPositionHistoryMetrics: getPlayerPositionHistoryMetrics(), admDownloadMetrics: getAdmDownloadMetrics(), runtimeMetrics: getRuntimePerformanceMetrics(), networkMetrics: getNetworkMetrics() });
+    res.json({ settings, serverFoundation: getServerFoundationDiagnostics(), persistenceMetrics: getStatePersistenceMetrics(), domainPersistenceMetrics: getStateDomainPersistenceMetrics(), granularPlayerStatsMetrics: getGranularPlayerStatsPersistenceMetrics(), discordRuntimeMetrics: getDiscordRuntimePersistenceMetrics(), playerPositionHistoryMetrics: getPlayerPositionHistoryMetrics(), admDownloadMetrics: getAdmDownloadMetrics(), runtimeMetrics: getRuntimePerformanceMetrics(), networkMetrics: getNetworkMetrics() });
   } catch (err) {
     res.status(500).json({ error: String(err) });
   }
@@ -7324,6 +7331,7 @@ router.patch("/api/service-settings", async (req, res) => {
       admDownloadMetrics: getAdmDownloadMetrics(),
       runtimeMetrics: getRuntimePerformanceMetrics(),
       networkMetrics: getNetworkMetrics(),
+      serverFoundation: getServerFoundationDiagnostics(),
     });
   } catch (err) {
     res.status(500).json({ error: String(err) });
@@ -7378,12 +7386,29 @@ router.patch("/api/discord-commands/:commandName", async (req, res) => {
   }
 });
 
+router.get("/api/servers", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  res.json({
+    mode: "single-server-compat",
+    currentServer: getPrimaryServerDescriptor(),
+    servers: listManagedServers(),
+    canCreateServer: false,
+    foundation: getServerFoundationDiagnostics(),
+  });
+});
+
+router.get("/api/servers/current", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  res.json({ server: getPrimaryServerDescriptor(), foundation: getServerFoundationDiagnostics() });
+});
+
 router.get("/api/overview", async (req, res) => {
   if (!requireAdmin(req, res)) return;
 
   try {
     const state = await getStateAsync();
-    res.json(await buildOverviewPayload(state as AdminState));
+    const overview = await buildOverviewPayload(state as AdminState);
+    res.json({ ...overview, server: getPrimaryServerDescriptor() });
   } catch (err) {
     res.status(500).json({ error: String(err) });
   }
