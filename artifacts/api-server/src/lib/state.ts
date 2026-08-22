@@ -8,6 +8,12 @@ import type { Locale } from "./i18n";
 import { normalizeDiscordCommandSettings, type DiscordCommandSettings } from "./discord/commandSettings";
 import { normalizeServiceSettings, type ServiceSettings } from "./serviceSettings";
 import { recordNetworkTransfer } from "./networkMetrics";
+import {
+  getPrimaryServerDescriptor,
+  setPersistedManagedServers,
+  setServerRegistryPersistenceStatus,
+  type ManagedServerDescriptor,
+} from "./serverRegistry";
 
 const FILE = path.resolve(process.cwd(), "state.json");
 const STATE_ID = "main";
@@ -239,6 +245,118 @@ const sql = process.env.DATABASE_URL
       max: 1,
     })
   : null;
+
+let serverRegistryReadyPromise: Promise<void> | null = null;
+
+async function ensurePrimaryServerRegistryMetadata() {
+  if (!sql) {
+    setServerRegistryPersistenceStatus({
+      enabled: false,
+      initialized: true,
+      tableReady: false,
+      primarySeeded: false,
+      rowsLoaded: 0,
+    });
+    return;
+  }
+  if (serverRegistryReadyPromise) return serverRegistryReadyPromise;
+
+  serverRegistryReadyPromise = (async () => {
+    const primary = getPrimaryServerDescriptor();
+    try {
+      // Phase 2 deliberately persists only tenant metadata. No bot_state ids,
+      // ADM cursors, granular stats, Discord routing or Nitrado routing are
+      // renamed or moved in this deploy.
+      await sql`
+        CREATE TABLE IF NOT EXISTS managed_servers (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          enabled BOOLEAN NOT NULL DEFAULT TRUE,
+          primary_server BOOLEAN NOT NULL DEFAULT FALSE,
+          mode TEXT NOT NULL DEFAULT 'single-server-compat',
+          nitrado_service_id TEXT,
+          discord_guild_id TEXT,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `;
+      setServerRegistryPersistenceStatus({ tableReady: true });
+
+      // Never overwrite an existing registry row from environment variables.
+      // This avoids a deploy unexpectedly remapping the production server.
+      const inserted = await sql`
+        INSERT INTO managed_servers (
+          id, name, enabled, primary_server, mode, nitrado_service_id, discord_guild_id, created_at, updated_at
+        )
+        VALUES (
+          ${primary.id}, ${primary.name}, TRUE, TRUE, ${primary.mode},
+          ${primary.integrations.nitradoServiceId || null}, ${primary.integrations.discordGuildId || null}, NOW(), NOW()
+        )
+        ON CONFLICT (id) DO NOTHING
+        RETURNING id
+      `;
+
+      const rows = await sql`
+        SELECT id, name, enabled, primary_server, mode, nitrado_service_id, discord_guild_id
+        FROM managed_servers
+        ORDER BY primary_server DESC, created_at ASC, id ASC
+      `;
+
+      const descriptors: ManagedServerDescriptor[] = (rows as any[]).map((row) => ({
+        id: String(row.id || ""),
+        name: String(row.name || row.id || "Server"),
+        enabled: row.enabled !== false,
+        primary: Boolean(row.primary_server),
+        mode: "single-server-compat",
+        integrations: {
+          nitradoServiceId: String(row.nitrado_service_id || "").trim() || undefined,
+          discordGuildId: String(row.discord_guild_id || "").trim() || undefined,
+        },
+      }));
+      setPersistedManagedServers(descriptors.length ? descriptors : [primary]);
+
+      const persistedPrimary = descriptors.find((server) => server.id === primary.id) || descriptors.find((server) => server.primary);
+      setServerRegistryPersistenceStatus({
+        enabled: true,
+        initialized: true,
+        tableReady: true,
+        primarySeeded: Boolean(persistedPrimary),
+        rowsLoaded: descriptors.length,
+        lastLoadedAt: new Date().toISOString(),
+        lastError: undefined,
+        configDrift: persistedPrimary ? {
+          name: persistedPrimary.name !== primary.name,
+          nitradoServiceId: (persistedPrimary.integrations.nitradoServiceId || "") !== (primary.integrations.nitradoServiceId || ""),
+          discordGuildId: (persistedPrimary.integrations.discordGuildId || "") !== (primary.integrations.discordGuildId || ""),
+        } : undefined,
+      });
+
+      // One tiny metadata INSERT is expected only on the first Phase 2 boot.
+      // Existing deployments thereafter perform reads only here.
+      if ((inserted as any[]).length) {
+        recordNetworkTransfer({
+          service: "neon-server-registry",
+          operation: "seed_primary_server_metadata",
+          direction: "outbound",
+          bytes: Buffer.byteLength(JSON.stringify(primary), "utf8"),
+          ok: true,
+        });
+      }
+    } catch (err) {
+      setServerRegistryPersistenceStatus({
+        initialized: true,
+        lastError: err instanceof Error ? err.message : String(err),
+      });
+      // Registry metadata must never block the current production state path.
+      console.error("❌ erro inicializando metadata multi-server:", err);
+    }
+  })().finally(() => {
+    // Keep the resolved promise cached so repeated getStateAsync calls do not
+    // query Neon again during the lifetime of this process.
+  });
+
+  return serverRegistryReadyPromise;
+}
 
 
 export type PlayerPositionHistoryEventType = "position" | "connect" | "disconnect";
@@ -1794,6 +1912,7 @@ function writeLocalState(data: AppState) {
 }
 
 export async function getStateAsync(): Promise<AppState> {
+  await ensurePrimaryServerRegistryMetadata();
   if (cachedState) {
     return cachedState;
   }
