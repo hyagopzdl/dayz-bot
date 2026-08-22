@@ -17,8 +17,16 @@ export type ServerDiscordRuntimeConfig = {
   memberFeedEnabled?: boolean;
 };
 
+export type ServerNitradoValidation = {
+  serviceId: string;
+  baseDir: string;
+  validatedAt: string;
+  source: "phase10-on-demand";
+};
+
 export type ServerRuntimeConfig = {
   nitradoBaseDir?: string;
+  nitradoValidation?: ServerNitradoValidation;
   discord: ServerDiscordRuntimeConfig;
 };
 
@@ -201,9 +209,9 @@ function normalizeServerOnboardingStatus(value: unknown): ServerOnboardingStatus
 
 export function canExecuteManagedServerRuntime(serverId: unknown) {
   const normalized = normalizeServerId(serverId);
-  // Phase 9 deliberately keeps execution restricted to the production primary.
-  // Draft/configured rows may exist in the registry, but cannot run parser, ADM,
-  // Discord or schedulers until an explicit activation phase changes this policy.
+  // Phase 10 still keeps execution restricted to the production primary.
+  // Integration discovery and validation are on-demand control-plane actions;
+  // they never authorize parser, ADM, Discord loops or schedulers to start.
   return normalized === getPrimaryServerId();
 }
 
@@ -229,9 +237,9 @@ export function getPrimaryServerDescriptor(): ManagedServerDescriptor {
 }
 
 export function listManagedServers(): ManagedServerDescriptor[] {
-  // Phase 9 allows additional servers to exist as draft/configured registry rows,
+  // Phase 10 allows additional servers to exist as draft/configured registry rows,
   // while runtime execution remains explicitly primary-only.
-  if (persistedServers.length) return persistedServers.map((server) => ({ ...server, integrations: { ...server.integrations }, runtime: { ...server.runtime, discord: { ...server.runtime.discord } } }));
+  if (persistedServers.length) return persistedServers.map((server) => ({ ...server, integrations: { ...server.integrations }, runtime: { ...server.runtime, nitradoValidation: server.runtime.nitradoValidation ? { ...server.runtime.nitradoValidation } : undefined, discord: { ...server.runtime.discord } } }));
   return [getPrimaryServerDescriptor()];
 }
 
@@ -250,6 +258,7 @@ export function setPersistedManagedServers(servers: ManagedServerDescriptor[]) {
     },
     runtime: {
       nitradoBaseDir: String(server.runtime?.nitradoBaseDir || "").trim() || undefined,
+      nitradoValidation: server.runtime?.nitradoValidation ? { ...server.runtime.nitradoValidation } : undefined,
       discord: { ...(server.runtime?.discord || {}) },
     },
   }));
@@ -311,7 +320,7 @@ export function getServerFoundationDiagnostics() {
   const managedServers = listManagedServers();
   const additionalServers = managedServers.filter((candidate) => !candidate.primary);
   return {
-    phase: 9,
+    phase: 10,
     mode: server.mode,
     currentServerId: server.id,
     currentServerName: server.name,
@@ -327,6 +336,10 @@ export function getServerFoundationDiagnostics() {
       runtimeEnabledServers: managedServers.filter((candidate) => candidate.runtimeEnabled).length,
       activationPolicy: "primary-only",
       secretsStoredInRegistry: false,
+      nitradoDiscoveryEnabled: true,
+      nitradoCredentialSource: process.env.NITRADO_TOKEN ? "environment" : "missing",
+      discordDiscoveryEnabled: true,
+      integrationValidationMode: "on-demand",
       backgroundPollingAdded: false,
       backgroundRegistryWritesAdded: false,
     },
@@ -368,6 +381,8 @@ export function getServerFoundationDiagnostics() {
       secretsStoredInRegistry: false,
       onDemandRegistryWritesOnly: true,
       backgroundRegistryPollingAdded: false,
+      onDemandIntegrationDiscoveryOnly: true,
+      nitradoTokenNeverReturnedToBrowser: true,
     },
     integrations: server.integrations,
   };

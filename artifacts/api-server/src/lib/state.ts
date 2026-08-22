@@ -20,6 +20,7 @@ import {
   setServerRuntimeIsolationStatus,
   type ManagedServerDescriptor,
   type ServerDiscordRuntimeConfig,
+  type ServerNitradoValidation,
 } from "./serverRegistry";
 import { getActiveServerId, getServerStateStoragePath, runInServerRuntimeContext } from "./serverRuntime";
 
@@ -326,7 +327,7 @@ function assertNoServerSecrets(value: unknown, pathName = "server") {
   if (!value || typeof value !== "object") return;
   for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
     if (SERVER_SECRET_KEY_PATTERN.test(key)) {
-      throw new Error(`Phase 9 does not persist secrets in managed_servers (${pathName}.${key}). Keep credentials out of this form until the secure-secret phase.`);
+      throw new Error(`Phase 10 does not persist secrets in managed_servers (${pathName}.${key}). Nitrado credentials stay server-side and are never accepted by this registry form.`);
     }
     if (child && typeof child === "object" && !Array.isArray(child)) {
       assertNoServerSecrets(child, `${pathName}.${key}`);
@@ -356,14 +357,25 @@ function normalizeServerDiscordDraft(value: unknown, existing: ServerDiscordRunt
   return next;
 }
 
+function hasMatchingNitradoValidation(descriptor: Pick<ManagedServerDescriptor, "integrations" | "runtime">) {
+  const serviceId = String(descriptor.integrations.nitradoServiceId || "").trim();
+  const baseDir = String(descriptor.runtime.nitradoBaseDir || "").trim();
+  const validation = descriptor.runtime.nitradoValidation;
+  return Boolean(
+    serviceId
+    && baseDir
+    && validation
+    && validation.serviceId === serviceId
+    && validation.baseDir === baseDir
+    && validation.validatedAt
+  );
+}
+
 function deriveServerOnboardingStatus(descriptor: Pick<ManagedServerDescriptor, "integrations" | "runtime">) {
-  // Discord is an optional integration. A future server is considered
-  // configured once the DayZ/Nitrado routing metadata required by the core is
-  // complete; Discord can be linked later without blocking onboarding.
-  return descriptor.integrations.nitradoServiceId
-    && descriptor.runtime.nitradoBaseDir
-    ? "configured" as const
-    : "draft" as const;
+  // Discord remains optional. Phase 10 only promotes a future server to
+  // Configured after its Nitrado service/base directory pair was validated
+  // on demand by the backend. Merely typing IDs no longer unlocks the state.
+  return hasMatchingNitradoValidation(descriptor) ? "configured" as const : "draft" as const;
 }
 
 function mapManagedServerRow(row: any, primary: ManagedServerDescriptor): ManagedServerDescriptor {
@@ -387,6 +399,14 @@ function mapManagedServerRow(row: any, primary: ManagedServerDescriptor): Manage
       // must stay empty when a field is not explicitly configured, otherwise
       // it could silently point at PZ paths/channels during a future activation.
       nitradoBaseDir: String(runtimeConfig?.nitradoBaseDir || (isPrimary ? primary.runtime.nitradoBaseDir : "") || "").trim() || undefined,
+      nitradoValidation: !isPrimary && runtimeConfig?.nitradoValidation && typeof runtimeConfig.nitradoValidation === "object"
+        ? {
+            serviceId: String(runtimeConfig.nitradoValidation.serviceId || "").trim(),
+            baseDir: String(runtimeConfig.nitradoValidation.baseDir || "").trim(),
+            validatedAt: String(runtimeConfig.nitradoValidation.validatedAt || "").trim(),
+            source: "phase10-on-demand",
+          }
+        : undefined,
       discord: isPrimary
         ? { ...(primary.runtime.discord || {}), ...(runtimeConfig?.discord || {}) }
         : { ...(runtimeConfig?.discord || {}) },
@@ -395,7 +415,7 @@ function mapManagedServerRow(row: any, primary: ManagedServerDescriptor): Manage
 
   if (!isPrimary) {
     const storedStatus = String(row.onboarding_status || "draft").trim().toLowerCase();
-    descriptor.onboardingStatus = storedStatus === "ready"
+    descriptor.onboardingStatus = storedStatus === "ready" && hasMatchingNitradoValidation(descriptor)
       ? "ready"
       : deriveServerOnboardingStatus(descriptor);
   }
@@ -503,7 +523,7 @@ async function ensurePrimaryServerRegistryMetadata() {
       `;
 
       // Fail closed: registry rows for future servers may be edited, but none
-      // may become executable during Phase 9 even if a stale/manual DB value
+      // may become executable during Phase 10 even if a stale/manual DB value
       // was set before this deploy. This UPDATE is a no-op in the normal case.
       await sql`
         UPDATE managed_servers
@@ -1604,10 +1624,19 @@ export async function updateManagedServerDraft(serverId: string, input: ManagedS
   }
 
   const id = buildManagedServerId(serverId);
-  if (!id || id === getPrimaryServerId()) throw new Error("O servidor primario nao pode ser alterado pelo onboarding da Fase 9.");
+  if (!id || id === getPrimaryServerId()) throw new Error("O servidor primario nao pode ser alterado pelo onboarding da Fase 10.");
   const currentServers = await reloadManagedServerRegistryFromDb();
   const current = currentServers.find((server) => server.id === id);
   if (!current) throw new Error(`Servidor ${id} nao encontrado.`);
+
+  const nextNitradoServiceId = input?.nitradoServiceId === undefined
+    ? current.integrations.nitradoServiceId
+    : optionalServerText(input.nitradoServiceId, 64);
+  const nextNitradoBaseDir = input?.nitradoBaseDir === undefined
+    ? current.runtime.nitradoBaseDir
+    : optionalServerText(input.nitradoBaseDir, 512);
+  const nitradoRoutingUnchanged = nextNitradoServiceId === current.integrations.nitradoServiceId
+    && nextNitradoBaseDir === current.runtime.nitradoBaseDir;
 
   const next: ManagedServerDescriptor = {
     ...current,
@@ -1617,11 +1646,14 @@ export async function updateManagedServerDraft(serverId: string, input: ManagedS
     runtimeEnabled: false,
     onboardingStatus: "draft",
     integrations: {
-      nitradoServiceId: input?.nitradoServiceId === undefined ? current.integrations.nitradoServiceId : optionalServerText(input.nitradoServiceId, 64),
+      nitradoServiceId: nextNitradoServiceId,
       discordGuildId: input?.discordGuildId === undefined ? current.integrations.discordGuildId : optionalServerText(input.discordGuildId, 64),
     },
     runtime: {
-      nitradoBaseDir: input?.nitradoBaseDir === undefined ? current.runtime.nitradoBaseDir : optionalServerText(input.nitradoBaseDir, 512),
+      nitradoBaseDir: nextNitradoBaseDir,
+      nitradoValidation: nitradoRoutingUnchanged && current.runtime.nitradoValidation
+        ? { ...current.runtime.nitradoValidation }
+        : undefined,
       discord: normalizeServerDiscordDraft(input?.discord, current.runtime.discord),
     },
   };
@@ -1656,6 +1688,76 @@ export async function updateManagedServerDraft(serverId: string, input: ManagedS
     operation: "update_server_draft",
     direction: "outbound",
     bytes: Buffer.byteLength(JSON.stringify(next), "utf8"),
+    ok: true,
+  });
+  return servers.find((server) => server.id === id) || next;
+}
+
+export async function markManagedServerNitradoValidated(
+  serverId: string,
+  validation: { serviceId: string; baseDir: string },
+) {
+  await ensurePrimaryServerRegistryMetadata();
+  if (!sql || !getServerRegistryPersistenceStatus().tableReady) {
+    throw new Error("Server registry is unavailable. DATABASE_URL and managed_servers must be ready.");
+  }
+
+  const id = buildManagedServerId(serverId);
+  if (!id || id === getPrimaryServerId()) {
+    throw new Error("O servidor primario nao usa o fluxo de validacao da Fase 10.");
+  }
+
+  const serviceId = optionalServerText(validation?.serviceId, 64);
+  const baseDir = optionalServerText(validation?.baseDir, 512);
+  if (!serviceId || !baseDir) throw new Error("Service ID e base dir sao obrigatorios para validar o Nitrado.");
+
+  const currentServers = await reloadManagedServerRegistryFromDb();
+  const current = currentServers.find((server) => server.id === id);
+  if (!current) throw new Error(`Servidor ${id} nao encontrado.`);
+  if (currentServers.some((server) => server.id !== id && server.integrations.nitradoServiceId === serviceId)) {
+    throw new Error("Este Nitrado Service ID ja esta vinculado a outro servidor.");
+  }
+
+  const nitradoValidation: ServerNitradoValidation = {
+    serviceId,
+    baseDir,
+    validatedAt: new Date().toISOString(),
+    source: "phase10-on-demand",
+  };
+  const next: ManagedServerDescriptor = {
+    ...current,
+    enabled: true,
+    primary: false,
+    runtimeEnabled: false,
+    onboardingStatus: "configured",
+    integrations: { ...current.integrations, nitradoServiceId: serviceId },
+    runtime: {
+      ...current.runtime,
+      nitradoBaseDir: baseDir,
+      nitradoValidation,
+      discord: { ...(current.runtime.discord || {}) },
+    },
+  };
+  next.onboardingStatus = deriveServerOnboardingStatus(next);
+
+  await sql`
+    UPDATE managed_servers
+    SET enabled = TRUE,
+        primary_server = FALSE,
+        runtime_enabled = FALSE,
+        onboarding_status = ${next.onboardingStatus},
+        nitrado_service_id = ${serviceId},
+        runtime_config = ${JSON.stringify(next.runtime)}::jsonb,
+        updated_at = NOW()
+    WHERE id = ${id} AND id <> ${getPrimaryServerId()}
+  `;
+
+  const servers = await reloadManagedServerRegistryFromDb();
+  recordNetworkTransfer({
+    service: "neon-server-registry",
+    operation: "validate_server_nitrado",
+    direction: "outbound",
+    bytes: Buffer.byteLength(JSON.stringify({ serverId: id, serviceId, baseDir, validatedAt: nitradoValidation.validatedAt }), "utf8"),
     ok: true,
   });
   return servers.find((server) => server.id === id) || next;

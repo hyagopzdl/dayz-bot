@@ -66,6 +66,7 @@ import {
   type PlayerLink,
   type Wallet,
   updateManagedServerDraft,
+  markManagedServerNitradoValidated,
 } from "../lib/state";
 import { getDiscordClient } from "../lib/discordBot";
 import { listDiscordCommandDescriptors, normalizeDiscordCommandSettings } from "../lib/discord/commandSettings";
@@ -78,6 +79,13 @@ import { getRuntimePerformanceMetrics } from "../lib/runtimeMetrics";
 import { getNetworkMetrics } from "../lib/networkMetrics";
 import { getPrimaryServerDescriptor, getPrimaryServerId, getServerFoundationDiagnostics, listManagedServers } from "../lib/serverRegistry";
 import { getActiveServerId, runInServerRuntimeContext } from "../lib/serverRuntime";
+import {
+  discoverNitradoServices,
+  getIntegrationOnboardingStatus,
+  listDiscordGuildChannels,
+  listDiscordGuildOptions,
+  validateNitradoServiceSetup,
+} from "../lib/serverIntegrations";
 
 const router = Router();
 startMapEventScheduler();
@@ -4493,10 +4501,10 @@ function renderAdminPanelHtml(token: string) {
             <div id="settingsPanelServers" class="settings-panel">
               <div class="card">
                 <div class="section-title">
-                  <div><h2>Server onboarding</h2><div class="member-meta">Crie o servidor primeiro e configure Nitrado e Discord em etapas separadas. Discord é opcional.</div></div>
-                  <span class="chip pending">Phase 9 · runtime blocked</span>
+                  <div><h2>Server onboarding</h2><div class="member-meta">Conecte integrações sob demanda, valide o Nitrado e mantenha Discord opcional antes da ativação.</div></div>
+                  <span class="chip pending">Phase 10 · runtime blocked</span>
                 </div>
-                <div class="server-onboarding-notice">A ativação continua indisponível nesta fase. Criar ou configurar um servidor não inicia parser, ADM, Discord, scheduler ou polling. Tokens, senhas e credenciais também continuam fora do registry.</div>
+                <div class="server-onboarding-notice">A ativação continua indisponível. A Fase 10 usa apenas ações manuais de discovery/validation: nenhum parser, ADM, Discord loop, scheduler ou polling adicional é iniciado. O token Nitrado permanece somente no backend.</div>
               </div>
 
               <div class="server-onboarding-grid">
@@ -4560,43 +4568,60 @@ function renderAdminPanelHtml(token: string) {
                         <div id="managedServerOverviewDiscord" class="server-setup-status-card"><span>Discord</span><strong>Opcional</strong><p>Pode ser conectado agora ou depois.</p></div>
                         <div id="managedServerOverviewRuntime" class="server-setup-status-card"><span>Runtime</span><strong>Bloqueado</strong><p>Somente o PZ pode executar nesta fase.</p></div>
                       </div>
-                      <div class="server-onboarding-info">Configure primeiro o Nitrado. Quando Service ID e base dir estiverem preenchidos, o servidor passa de <strong>Draft</strong> para <strong>Configured</strong>. Discord não bloqueia essa etapa.</div>
+                      <div class="server-onboarding-info">Configure primeiro o Nitrado. O servidor só passa de <strong>Draft</strong> para <strong>Configured</strong> depois que Service ID e base dir forem validados pelo backend. Discord não bloqueia essa etapa.</div>
                     </div>
 
                     <div id="managedServerSetupNitrado" class="server-setup-panel">
                       <div class="server-integration-head">
-                        <div><h3>Nitrado</h3><p>Associe este cadastro ao serviço DayZ correto. Nenhuma chamada automática é feita enquanto o runtime estiver bloqueado.</p></div>
+                        <div><h3>Nitrado</h3><p>Use a conexão Nitrado já protegida no backend para localizar e validar o serviço DayZ sem copiar o token para o navegador.</p></div>
                         <span id="managedServerNitradoState" class="chip pending">Obrigatório</span>
                       </div>
                       <div class="server-onboarding-form">
-                        <div class="form-grid">
-                          <label>Nitrado Service ID<input id="managedServerNitradoServiceId" maxlength="64" placeholder="12345678" autocomplete="off" /></label>
-                          <label class="full">Nitrado base dir<input id="managedServerNitradoBaseDir" maxlength="512" placeholder="/games/.../noftp/dayzps/config" autocomplete="off" /></label>
+                        <div id="managedServerNitradoConnection" class="server-onboarding-info">Verificando conexão Nitrado...</div>
+                        <div class="server-onboarding-actions">
+                          <button id="managedServerNitradoDiscover" class="ghost-btn" type="button">Carregar meus servidores Nitrado</button>
                         </div>
-                        <div class="server-onboarding-info">O token da conta Nitrado não é armazenado neste cadastro. Esta etapa salva apenas os metadados não sensíveis necessários para identificar o servidor.</div>
-                        <div class="server-onboarding-actions"><button id="managedServerNitradoSave" class="primary-btn" type="button">Salvar Nitrado</button></div>
+                        <div class="form-grid">
+                          <label class="full">Servidor Nitrado
+                            <select id="managedServerNitradoServiceSelect"><option value="">Carregue os servidores da conta</option></select>
+                          </label>
+                          <label class="full">Nitrado base dir<input id="managedServerNitradoBaseDir" maxlength="512" placeholder="Detectado automaticamente quando possível" autocomplete="off" /></label>
+                        </div>
+                        <details class="server-advanced-details">
+                          <summary>Configuração manual / fallback</summary>
+                          <div class="form-grid">
+                            <label class="full">Nitrado Service ID<input id="managedServerNitradoServiceId" maxlength="64" placeholder="12345678" autocomplete="off" /></label>
+                          </div>
+                        </details>
+                        <div id="managedServerNitradoValidationMeta" class="member-meta">Configured só é liberado depois de uma validação manual bem-sucedida do Service ID + base dir.</div>
+                        <div class="server-onboarding-actions"><button id="managedServerNitradoSave" class="primary-btn" type="button">Validar e salvar</button></div>
                       </div>
                     </div>
 
                     <div id="managedServerSetupDiscord" class="server-setup-panel">
                       <div class="server-integration-head">
-                        <div><h3>Discord</h3><p>Integração opcional para rankings, killfeed, online players e outros recursos da comunidade.</p></div>
+                        <div><h3>Discord</h3><p>Opcional. O ADM pode descobrir as guilds onde o bot já está presente e carregar os canais para você selecionar.</p></div>
                         <span id="managedServerDiscordState" class="chip">Opcional</span>
                       </div>
                       <div class="server-onboarding-form">
+                        <div id="managedServerDiscordConnection" class="server-onboarding-info">A descoberta acontece somente quando você clicar em carregar.</div>
+                        <div class="server-onboarding-actions"><button id="managedServerDiscordDiscover" class="ghost-btn" type="button">Carregar servidores Discord</button></div>
                         <div class="form-grid">
-                          <label class="full">Discord Guild ID<input id="managedServerDiscordGuildId" maxlength="64" placeholder="123456789..." autocomplete="off" /></label>
+                          <label class="full">Servidor Discord
+                            <select id="managedServerDiscordGuildSelect"><option value="">Nenhum · opcional</option></select>
+                          </label>
+                        </div>
+                        <div class="server-onboarding-info">Depois de escolher a guild, os canais disponíveis são carregados sob demanda. Nenhum loop do Discord é iniciado para este servidor.</div>
+                        <div class="form-grid">
+                          <label>Global ranking<select id="managedServerDiscordGlobal"><option value="">Não configurado</option></select></label>
+                          <label>Daily ranking<select id="managedServerDiscordDaily"><option value="">Não configurado</option></select></label>
+                          <label>Weekly ranking<select id="managedServerDiscordWeekly"><option value="">Não configurado</option></select></label>
+                          <label>Online category<select id="managedServerDiscordOnlineCategory"><option value="">Não configurado</option></select></label>
                         </div>
                         <details class="server-advanced-details">
-                          <summary>Mapeamento manual de canais</summary>
-                          <div class="form-grid">
-                            <label>Global ranking<input id="managedServerDiscordGlobal" maxlength="64" placeholder="Channel ID" autocomplete="off" /></label>
-                            <label>Daily ranking<input id="managedServerDiscordDaily" maxlength="64" placeholder="Channel ID" autocomplete="off" /></label>
-                            <label>Weekly ranking<input id="managedServerDiscordWeekly" maxlength="64" placeholder="Channel ID" autocomplete="off" /></label>
-                            <label>Online category<input id="managedServerDiscordOnlineCategory" maxlength="64" placeholder="Category ID" autocomplete="off" /></label>
-                          </div>
+                          <summary>Guild ID manual / fallback</summary>
+                          <div class="form-grid"><label class="full">Discord Guild ID<input id="managedServerDiscordGuildId" maxlength="64" placeholder="123456789..." autocomplete="off" /></label></div>
                         </details>
-                        <div class="server-onboarding-info">Pode deixar tudo em branco e configurar depois. Nesta fase os IDs manuais são apenas metadata; conectar o bot e selecionar canais automaticamente ficará para a etapa de integração segura.</div>
                         <div class="server-onboarding-actions"><button id="managedServerDiscordSave" class="primary-btn" type="button">Salvar Discord</button></div>
                       </div>
                     </div>
@@ -4820,7 +4845,7 @@ function renderAdminPanelHtml(token: string) {
   <script>
     const adminToken = ${tokenJson};
     if (adminToken) document.cookie = "${TOKEN_COOKIE}=" + encodeURIComponent(adminToken) + "; path=/admin-panel; SameSite=Lax";
-    const state = { view: "general", cursor: 0, hasMore: true, loadingMembers: false, memberForceRefresh: false, search: "", filter: "", modal: null, catalogModal: null, selectedDiscordId: null, catalog: null, catalogSearch: "", catalogCategory: "", catalogMode: "categories", catalogDrag: null, catalogJustDragged: false, shopQueue: null, shopTransactions: null, shopHistorySearch: "", shopQueueModeBefore: "categories", itemsCursor: 0, itemsHasMore: true, itemsLoading: false, itemsSearch: "", itemsFilter: "all", dayzItems: [], itemsStats: null, itemModal: null, mapEventPresets: [], selectedMapEventPresetId: "locked_container_red_military", mapEventRewardStorageItem: null, mapEventLootItems: [], scheduledMapEvents: [], mapEventBuilderOpen: false, settingsTab: "server", managedServers: null, managedServersLoading: false, selectedManagedServerId: null, managedServerSetupTab: "overview", serviceSettings: null, serviceSettingsLoading: false, discordCommands: null, discordCommandsLoading: false, lockedContainerSetup: null, spawnZonesTab: "rotation", spawnZones: null, selectedSpawnZoneId: null, highlightedSpawnPointId: null, spawnZoneMapZoom: 1, spawnZoneMapDragging: false, spawnZoneEditingNameId: null, playerMap: null, playerMapZoom: 1, playerMapSearch: "" };
+    const state = { view: "general", cursor: 0, hasMore: true, loadingMembers: false, memberForceRefresh: false, search: "", filter: "", modal: null, catalogModal: null, selectedDiscordId: null, catalog: null, catalogSearch: "", catalogCategory: "", catalogMode: "categories", catalogDrag: null, catalogJustDragged: false, shopQueue: null, shopTransactions: null, shopHistorySearch: "", shopQueueModeBefore: "categories", itemsCursor: 0, itemsHasMore: true, itemsLoading: false, itemsSearch: "", itemsFilter: "all", dayzItems: [], itemsStats: null, itemModal: null, mapEventPresets: [], selectedMapEventPresetId: "locked_container_red_military", mapEventRewardStorageItem: null, mapEventLootItems: [], scheduledMapEvents: [], mapEventBuilderOpen: false, settingsTab: "server", managedServers: null, managedServersLoading: false, selectedManagedServerId: null, managedServerSetupTab: "overview", managedServerIntegrationSetup: null, managedServerNitradoServices: [], managedServerDiscordGuilds: [], managedServerDiscordChannels: [], serviceSettings: null, serviceSettingsLoading: false, discordCommands: null, discordCommandsLoading: false, lockedContainerSetup: null, spawnZonesTab: "rotation", spawnZones: null, selectedSpawnZoneId: null, highlightedSpawnPointId: null, spawnZoneMapZoom: 1, spawnZoneMapDragging: false, spawnZoneEditingNameId: null, playerMap: null, playerMapZoom: 1, playerMapSearch: "" };
     const els = {
       pageTitle: document.getElementById("pageTitle"), serverName: document.getElementById("serverName"),
       mapEventPresetGrid: document.getElementById("mapEventPresetGrid"), mapEventSelectedPreset: document.getElementById("mapEventSelectedPreset"), mapEventName: document.getElementById("mapEventName"), mapEventCoordinates: document.getElementById("mapEventCoordinates"), mapEventX: document.getElementById("mapEventX"), mapEventZ: document.getElementById("mapEventZ"), mapEventAngle: document.getElementById("mapEventAngle"), mapEventQuantity: document.getElementById("mapEventQuantity"), mapEventLifetime: document.getElementById("mapEventLifetime"), mapEventSafeRadius: document.getElementById("mapEventSafeRadius"), mapEventDistanceRadius: document.getElementById("mapEventDistanceRadius"), mapEventCleanupRadius: document.getElementById("mapEventCleanupRadius"), mapEventLootMode: document.getElementById("mapEventLootMode"), mapEventRewardStorage: document.getElementById("mapEventRewardStorage"), mapEventRewardStorageSearch: document.getElementById("mapEventRewardStorageSearch"), mapEventRewardStorageSelected: document.getElementById("mapEventRewardStorageSelected"), mapEventRewardStorageAutocomplete: document.getElementById("mapEventRewardStorageAutocomplete"), mapEventRewardStorageWrap: document.getElementById("mapEventRewardStorageWrap"), mapEventGuaranteedItemSearch: document.getElementById("mapEventGuaranteedItemSearch"), mapEventGuaranteedItemAutocomplete: document.getElementById("mapEventGuaranteedItemAutocomplete"), mapEventGuaranteedItemsList: document.getElementById("mapEventGuaranteedItemsList"), mapEventGuaranteedItemsWrap: document.getElementById("mapEventGuaranteedItemsWrap"), mapEventMapViewport: document.getElementById("mapEventMapViewport"), mapEventMapInner: document.getElementById("mapEventMapInner"), mapEventMapImage: document.getElementById("mapEventMapImage"), mapEventMapPin: document.getElementById("mapEventMapPin"), mapEventMapZoomIn: document.getElementById("mapEventMapZoomIn"), mapEventMapZoomOut: document.getElementById("mapEventMapZoomOut"), mapEventMapZoomLabel: document.getElementById("mapEventMapZoomLabel"), mapEventStatus: document.getElementById("mapEventStatus"), mapEventBuilder: document.getElementById("mapEventBuilder"), mapEventsNewToggle: document.getElementById("mapEventsNewToggle"), mapEventsBuilderClose: document.getElementById("mapEventsBuilderClose"), mapEventsSchedule: document.getElementById("mapEventsSchedule"), mapEventScheduleFields: document.getElementById("mapEventScheduleFields"), mapEventDate: document.getElementById("mapEventDate"), mapEventTime: document.getElementById("mapEventTime"), mapEventCustomTimeWrap: document.getElementById("mapEventCustomTimeWrap"), mapEventCustomTime: document.getElementById("mapEventCustomTime"), mapEventRecurrence: document.getElementById("mapEventRecurrence"), mapEventsScheduledList: document.getElementById("mapEventsScheduledList"), mapEventsScheduledEmpty: document.getElementById("mapEventsScheduledEmpty"), mapEventsScheduledCount: document.getElementById("mapEventsScheduledCount"), mapEventsRecurringCount: document.getElementById("mapEventsRecurringCount"), mapEventsNextRun: document.getElementById("mapEventsNextRun"), mapEventsScheduleRuntime: document.getElementById("mapEventsScheduleRuntime"),
@@ -4835,7 +4860,7 @@ function renderAdminPanelHtml(token: string) {
       itemModalBackdrop: document.getElementById("itemModalBackdrop"), itemModalTitle: document.getElementById("itemModalTitle"), itemModalSubtitle: document.getElementById("itemModalSubtitle"), itemModalPreviewImage: document.getElementById("itemModalPreviewImage"), itemModalPreviewName: document.getElementById("itemModalPreviewName"), itemModalPreviewClass: document.getElementById("itemModalPreviewClass"), itemModalPopularName: document.getElementById("itemModalPopularName"), itemModalImageUrl: document.getElementById("itemModalImageUrl"), itemModalSpawnEventName: document.getElementById("itemModalSpawnEventName"), itemModalEnabled: document.getElementById("itemModalEnabled"),
       spawnZonesCurrentZone: document.getElementById("spawnZonesCurrentZone"), spawnZonesNextZone: document.getElementById("spawnZonesNextZone"), spawnZonesEnabledCount: document.getElementById("spawnZonesEnabledCount"), spawnZonesVoteHistory: document.getElementById("spawnZonesVoteHistory"), spawnZonesActivePoll: document.getElementById("spawnZonesActivePoll"), spawnZonesNextSelect: document.getElementById("spawnZonesNextSelect"), spawnZonesSetNext: document.getElementById("spawnZonesSetNext"), spawnZonesApplyNext: document.getElementById("spawnZonesApplyNext"), spawnZonesApplyServer: document.getElementById("spawnZonesApplyServer"), spawnZonesCreatePoll: document.getElementById("spawnZonesCreatePoll"), spawnZonesRefreshPoll: document.getElementById("spawnZonesRefreshPoll"), spawnZonesFinalizePoll: document.getElementById("spawnZonesFinalizePoll"), spawnZonesRunAutomation: document.getElementById("spawnZonesRunAutomation"), spawnZonesAutomationStatus: document.getElementById("spawnZonesAutomationStatus"), spawnZonesWelcomeMessage: document.getElementById("spawnZonesWelcomeMessage"), spawnZonesWelcomeStatus: document.getElementById("spawnZonesWelcomeStatus"),
       spawnZonesMapTitle: document.getElementById("spawnZonesMapTitle"), spawnZonesMapHint: document.getElementById("spawnZonesMapHint"), spawnZonesAutosaveStatus: document.getElementById("spawnZonesAutosaveStatus"), spawnZonesMapViewport: document.getElementById("spawnZonesMapViewport"), spawnZonesMapInner: document.getElementById("spawnZonesMapInner"), spawnZonesMarkers: document.getElementById("spawnZonesMarkers"), spawnZonesMapTiles: document.getElementById("spawnZonesMapTiles"), spawnZonesMapZoomIn: document.getElementById("spawnZonesMapZoomIn"), spawnZonesMapZoomOut: document.getElementById("spawnZonesMapZoomOut"), spawnZonesMapZoomLabel: document.getElementById("spawnZonesMapZoomLabel"), spawnZonesCursor: document.getElementById("spawnZonesCursor"), spawnZoneCreate: document.getElementById("spawnZoneCreate"), spawnZoneImport: document.getElementById("spawnZoneImport"), spawnZoneImportFile: document.getElementById("spawnZoneImportFile"), spawnZoneList: document.getElementById("spawnZoneList"), spawnZonesPollChannel: document.getElementById("spawnZonesPollChannel"), spawnZonesPollCategory: document.getElementById("spawnZonesPollCategory"), spawnZonesPollQuestion: document.getElementById("spawnZonesPollQuestion"), spawnZonesPollOpenDay: document.getElementById("spawnZonesPollOpenDay"), spawnZonesPollOpenTime: document.getElementById("spawnZonesPollOpenTime"), spawnZonesPollCloseDay: document.getElementById("spawnZonesPollCloseDay"), spawnZonesPollCloseTime: document.getElementById("spawnZonesPollCloseTime"), spawnZonesPollTimezone: document.getElementById("spawnZonesPollTimezone"), spawnZonesMinVotes: document.getElementById("spawnZonesMinVotes"), spawnZonesTiePolicy: document.getElementById("spawnZonesTiePolicy"), spawnZonesAutoCreatePoll: document.getElementById("spawnZonesAutoCreatePoll"), spawnZonesRecurringPollAfterFinish: document.getElementById("spawnZonesRecurringPollAfterFinish"), spawnZonesAutoApplyWinner: document.getElementById("spawnZonesAutoApplyWinner"), spawnZonesApplyOnNextRestart: document.getElementById("spawnZonesApplyOnNextRestart"), spawnZonesSpawnFilePath: document.getElementById("spawnZonesSpawnFilePath"), spawnZonesServerName: document.getElementById("spawnZonesServerName"), spawnZonesSettingsStatus: document.getElementById("spawnZonesSettingsStatus"), spawnZonesTiePolicyHelp: document.getElementById("spawnZonesTiePolicyHelp"), spawnZonesApplyOnNextRestartRow: document.getElementById("spawnZonesApplyOnNextRestartRow"),
-      managedServersSummary: document.getElementById("managedServersSummary"), managedServersList: document.getElementById("managedServersList"), managedServersRefresh: document.getElementById("managedServersRefresh"), managedServerCreateNew: document.getElementById("managedServerCreateNew"), managedServerCreatePanel: document.getElementById("managedServerCreatePanel"), managedServerSetupPanel: document.getElementById("managedServerSetupPanel"), managedServerFormTitle: document.getElementById("managedServerFormTitle"), managedServerFormStatus: document.getElementById("managedServerFormStatus"), managedServerSetupId: document.getElementById("managedServerSetupId"), managedServerSetupProgressText: document.getElementById("managedServerSetupProgressText"), managedServerSetupProgressBar: document.getElementById("managedServerSetupProgressBar"), managedServerOverviewNitrado: document.getElementById("managedServerOverviewNitrado"), managedServerOverviewDiscord: document.getElementById("managedServerOverviewDiscord"), managedServerOverviewRuntime: document.getElementById("managedServerOverviewRuntime"), managedServerNitradoState: document.getElementById("managedServerNitradoState"), managedServerDiscordState: document.getElementById("managedServerDiscordState"), managedServerName: document.getElementById("managedServerName"), managedServerId: document.getElementById("managedServerId"), managedServerNitradoServiceId: document.getElementById("managedServerNitradoServiceId"), managedServerNitradoBaseDir: document.getElementById("managedServerNitradoBaseDir"), managedServerDiscordGuildId: document.getElementById("managedServerDiscordGuildId"), managedServerDiscordGlobal: document.getElementById("managedServerDiscordGlobal"), managedServerDiscordDaily: document.getElementById("managedServerDiscordDaily"), managedServerDiscordWeekly: document.getElementById("managedServerDiscordWeekly"), managedServerDiscordOnlineCategory: document.getElementById("managedServerDiscordOnlineCategory"), managedServerSave: document.getElementById("managedServerSave"), managedServerNitradoSave: document.getElementById("managedServerNitradoSave"), managedServerDiscordSave: document.getElementById("managedServerDiscordSave"), managedServerCancel: document.getElementById("managedServerCancel"),
+      managedServersSummary: document.getElementById("managedServersSummary"), managedServersList: document.getElementById("managedServersList"), managedServersRefresh: document.getElementById("managedServersRefresh"), managedServerCreateNew: document.getElementById("managedServerCreateNew"), managedServerCreatePanel: document.getElementById("managedServerCreatePanel"), managedServerSetupPanel: document.getElementById("managedServerSetupPanel"), managedServerFormTitle: document.getElementById("managedServerFormTitle"), managedServerFormStatus: document.getElementById("managedServerFormStatus"), managedServerSetupId: document.getElementById("managedServerSetupId"), managedServerSetupProgressText: document.getElementById("managedServerSetupProgressText"), managedServerSetupProgressBar: document.getElementById("managedServerSetupProgressBar"), managedServerOverviewNitrado: document.getElementById("managedServerOverviewNitrado"), managedServerOverviewDiscord: document.getElementById("managedServerOverviewDiscord"), managedServerOverviewRuntime: document.getElementById("managedServerOverviewRuntime"), managedServerNitradoState: document.getElementById("managedServerNitradoState"), managedServerDiscordState: document.getElementById("managedServerDiscordState"), managedServerName: document.getElementById("managedServerName"), managedServerId: document.getElementById("managedServerId"), managedServerNitradoConnection: document.getElementById("managedServerNitradoConnection"), managedServerNitradoDiscover: document.getElementById("managedServerNitradoDiscover"), managedServerNitradoServiceSelect: document.getElementById("managedServerNitradoServiceSelect"), managedServerNitradoServiceId: document.getElementById("managedServerNitradoServiceId"), managedServerNitradoBaseDir: document.getElementById("managedServerNitradoBaseDir"), managedServerNitradoValidationMeta: document.getElementById("managedServerNitradoValidationMeta"), managedServerDiscordConnection: document.getElementById("managedServerDiscordConnection"), managedServerDiscordDiscover: document.getElementById("managedServerDiscordDiscover"), managedServerDiscordGuildSelect: document.getElementById("managedServerDiscordGuildSelect"), managedServerDiscordGuildId: document.getElementById("managedServerDiscordGuildId"), managedServerDiscordGlobal: document.getElementById("managedServerDiscordGlobal"), managedServerDiscordDaily: document.getElementById("managedServerDiscordDaily"), managedServerDiscordWeekly: document.getElementById("managedServerDiscordWeekly"), managedServerDiscordOnlineCategory: document.getElementById("managedServerDiscordOnlineCategory"), managedServerSave: document.getElementById("managedServerSave"), managedServerNitradoSave: document.getElementById("managedServerNitradoSave"), managedServerDiscordSave: document.getElementById("managedServerDiscordSave"), managedServerCancel: document.getElementById("managedServerCancel"),
       playerMapUpdatedAt: document.getElementById("playerMapUpdatedAt"), playerMapSummary: document.getElementById("playerMapSummary"), playerMapRefresh: document.getElementById("playerMapRefresh"), playerMapZoomOut: document.getElementById("playerMapZoomOut"), playerMapZoomIn: document.getElementById("playerMapZoomIn"), playerMapZoomLabel: document.getElementById("playerMapZoomLabel"), playerMapViewport: document.getElementById("playerMapViewport"), playerMapInner: document.getElementById("playerMapInner"), playerMapMarkers: document.getElementById("playerMapMarkers"), playerMapSearch: document.getElementById("playerMapSearch"), playerMapList: document.getElementById("playerMapList"), playerMapVisibleCount: document.getElementById("playerMapVisibleCount")
     };
     function apiUrl(path) { const separator = path.includes("?") ? "&" : "?"; return adminToken ? path + separator + "token=" + encodeURIComponent(adminToken) : path; }
@@ -6624,10 +6649,10 @@ function renderAdminPanelHtml(token: string) {
             ['stats','processing','social','commerce','config'].map((key) => { const d = domainRows[key] || {}; return '<tr><td><code>' + escapeHtml(key) + '</code></td><td>' + formatBytes(Number(d.currentBytes || 0)) + '</td><td>' + Number(d.changes || 0).toLocaleString() + '</td><td>' + Number(d.writes || 0).toLocaleString() + '</td><td>' + formatBytes(Number(d.bytesWritten || 0)) + '</td></tr>'; }).join('') +
           '</tbody></table></div>' +
         '</div>' +
-        '<div class="settings-card" style="margin-top:16px"><div class="settings-card-head"><div><h3>Multi-server foundation</h3><p>Phase 9 uses modular server onboarding: create the server first, configure Nitrado separately and keep Discord optional, while runtime execution remains primary-only.</p></div></div>' +
-        '<div class="diag-grid"><div><span>Phase</span><strong>' + Number(state.serverFoundation?.phase || 1).toLocaleString() + '</strong></div><div><span>Mode</span><strong>' + escapeHtml(String(state.serverFoundation?.mode || 'single-server-compat')) + '</strong></div><div><span>Current server</span><strong>' + escapeHtml(String(state.serverFoundation?.currentServerName || 'PZ Deathmatch')) + '</strong></div><div><span>Server ID</span><strong>' + escapeHtml(String(state.serverFoundation?.currentServerId || 'pz-deathmatch')) + '</strong></div><div><span>Registry persisted</span><strong>' + (state.serverFoundation?.registryPersisted ? 'Yes' : 'No') + '</strong></div><div><span>Rows tagged</span><strong>' + (state.serverFoundation?.persistenceTaggedWithServerId ? 'Yes' : 'No') + '</strong></div><div><span>bot_state PK</span><strong>' + (state.serverFoundation?.namespace?.botStatePrimaryKeyReady ? 'server + id' : 'Legacy') + '</strong></div><div><span>Player stats PK</span><strong>' + (state.serverFoundation?.namespace?.playerStatsPrimaryKeyReady ? 'server + player' : 'Legacy') + '</strong></div><div><span>Scoped reads</span><strong>' + (state.serverFoundation?.persistenceNamespaced ? 'Enabled' : 'Fallback') + '</strong></div><div><span>Nitrado routing</span><strong>' + (state.serverFoundation?.runtimeIsolation?.nitradoRoutingNamespaced ? 'Server-scoped' : 'Legacy') + '</strong></div><div><span>Discord routing</span><strong>' + (state.serverFoundation?.runtimeIsolation?.discordRoutingNamespaced ? 'Server-scoped' : 'Legacy') + '</strong></div><div><span>Processing lock</span><strong>' + (state.serverFoundation?.runtimeIsolation?.processingLockNamespaced ? 'Per server' : 'Global') + '</strong></div><div><span>ADM storage</span><strong>' + (state.serverFoundation?.runtimeIsolation?.primaryLegacyAdmStoragePreserved ? 'Primary preserved' : 'Namespaced') + '</strong></div><div><span>Execution context</span><strong>' + (state.serverFoundation?.runtimeIsolation?.executionContextNamespaced ? 'Per server' : 'Legacy') + '</strong></div><div><span>State cache</span><strong>' + (state.serverFoundation?.runtimeIsolation?.stateCacheNamespaced ? 'Per server' : 'Legacy') + '</strong></div><div><span>ADM strategy</span><strong>' + (state.serverFoundation?.runtimeIsolation?.admStrategyNamespaced ? 'Per server' : 'Global') + '</strong></div><div><span>ADM parser storage</span><strong>' + (state.serverFoundation?.runtimeIsolation?.admParserStorageNamespaced ? 'Per server' : 'Legacy') + '</strong></div><div><span>Persistence runtime</span><strong>' + (state.serverFoundation?.runtimeIsolation?.persistenceRuntimeNamespaced ? 'Per server' : 'Global') + '</strong></div><div><span>Position history</span><strong>' + (state.serverFoundation?.runtimeIsolation?.positionHistoryNamespaced ? 'Server-scoped' : 'Global') + '</strong></div><div><span>HTTP context</span><strong>' + (state.serverFoundation?.runtimeIsolation?.httpContextNamespaced ? 'Explicit primary' : 'Fallback') + '</strong></div><div><span>FTP safety</span><strong>' + (state.serverFoundation?.runtimeIsolation?.ftpPrimaryGuarded ? 'Primary guarded' : 'Global credentials') + '</strong></div><div><span>Discord loop guards</span><strong>' + (state.serverFoundation?.runtimeIsolation?.discordLoopGuardsNamespaced ? 'Per server' : 'Global') + '</strong></div><div><span>Scheduler</span><strong>' + (state.serverFoundation?.runtimeIsolation?.schedulerCentralized ? 'Centralized' : 'Unknown') + '</strong></div><div><span>Activation readiness</span><strong>' + (state.serverFoundation?.runtimeIsolation?.activationReadiness ? 'Prepared' : 'Pending') + '</strong></div><div><span>Context runs</span><strong>' + Number(state.serverFoundation?.runtimeIsolation?.contextRuns || 0).toLocaleString() + '</strong></div><div><span>Context fallbacks</span><strong>' + Number(state.serverFoundation?.runtimeIsolation?.contextFallbacks || 0).toLocaleString() + '</strong></div><div><span>Managed servers</span><strong>' + Number(state.serverFoundation?.managedServers || 1).toLocaleString() + '</strong></div><div><span>Server onboarding</span><strong>' + (state.serverFoundation?.onboarding?.canCreateDrafts ? 'Drafts enabled' : 'Unavailable') + '</strong></div><div><span>Draft servers</span><strong>' + Number(state.serverFoundation?.onboarding?.draftServers || 0).toLocaleString() + '</strong></div><div><span>Configured servers</span><strong>' + Number(state.serverFoundation?.onboarding?.configuredServers || 0).toLocaleString() + '</strong></div><div><span>Runtime policy</span><strong>' + escapeHtml(String(state.serverFoundation?.onboarding?.activationPolicy || 'primary-only')) + '</strong></div><div><span>Secrets in registry</span><strong>' + (state.serverFoundation?.onboarding?.secretsStoredInRegistry ? 'Yes' : 'No') + '</strong></div><div><span>Additional servers</span><strong>' + (state.serverFoundation?.additionalServersEnabled ? 'Enabled' : 'Blocked') + '</strong></div></div>' +
+        '<div class="settings-card" style="margin-top:16px"><div class="settings-card-head"><div><h3>Multi-server foundation</h3><p>Phase 10 adds on-demand Nitrado/Discord discovery and Nitrado validation while runtime execution remains primary-only.</p></div></div>' +
+        '<div class="diag-grid"><div><span>Phase</span><strong>' + Number(state.serverFoundation?.phase || 1).toLocaleString() + '</strong></div><div><span>Mode</span><strong>' + escapeHtml(String(state.serverFoundation?.mode || 'single-server-compat')) + '</strong></div><div><span>Current server</span><strong>' + escapeHtml(String(state.serverFoundation?.currentServerName || 'PZ Deathmatch')) + '</strong></div><div><span>Server ID</span><strong>' + escapeHtml(String(state.serverFoundation?.currentServerId || 'pz-deathmatch')) + '</strong></div><div><span>Registry persisted</span><strong>' + (state.serverFoundation?.registryPersisted ? 'Yes' : 'No') + '</strong></div><div><span>Rows tagged</span><strong>' + (state.serverFoundation?.persistenceTaggedWithServerId ? 'Yes' : 'No') + '</strong></div><div><span>bot_state PK</span><strong>' + (state.serverFoundation?.namespace?.botStatePrimaryKeyReady ? 'server + id' : 'Legacy') + '</strong></div><div><span>Player stats PK</span><strong>' + (state.serverFoundation?.namespace?.playerStatsPrimaryKeyReady ? 'server + player' : 'Legacy') + '</strong></div><div><span>Scoped reads</span><strong>' + (state.serverFoundation?.persistenceNamespaced ? 'Enabled' : 'Fallback') + '</strong></div><div><span>Nitrado routing</span><strong>' + (state.serverFoundation?.runtimeIsolation?.nitradoRoutingNamespaced ? 'Server-scoped' : 'Legacy') + '</strong></div><div><span>Discord routing</span><strong>' + (state.serverFoundation?.runtimeIsolation?.discordRoutingNamespaced ? 'Server-scoped' : 'Legacy') + '</strong></div><div><span>Processing lock</span><strong>' + (state.serverFoundation?.runtimeIsolation?.processingLockNamespaced ? 'Per server' : 'Global') + '</strong></div><div><span>ADM storage</span><strong>' + (state.serverFoundation?.runtimeIsolation?.primaryLegacyAdmStoragePreserved ? 'Primary preserved' : 'Namespaced') + '</strong></div><div><span>Execution context</span><strong>' + (state.serverFoundation?.runtimeIsolation?.executionContextNamespaced ? 'Per server' : 'Legacy') + '</strong></div><div><span>State cache</span><strong>' + (state.serverFoundation?.runtimeIsolation?.stateCacheNamespaced ? 'Per server' : 'Legacy') + '</strong></div><div><span>ADM strategy</span><strong>' + (state.serverFoundation?.runtimeIsolation?.admStrategyNamespaced ? 'Per server' : 'Global') + '</strong></div><div><span>ADM parser storage</span><strong>' + (state.serverFoundation?.runtimeIsolation?.admParserStorageNamespaced ? 'Per server' : 'Legacy') + '</strong></div><div><span>Persistence runtime</span><strong>' + (state.serverFoundation?.runtimeIsolation?.persistenceRuntimeNamespaced ? 'Per server' : 'Global') + '</strong></div><div><span>Position history</span><strong>' + (state.serverFoundation?.runtimeIsolation?.positionHistoryNamespaced ? 'Server-scoped' : 'Global') + '</strong></div><div><span>HTTP context</span><strong>' + (state.serverFoundation?.runtimeIsolation?.httpContextNamespaced ? 'Explicit primary' : 'Fallback') + '</strong></div><div><span>FTP safety</span><strong>' + (state.serverFoundation?.runtimeIsolation?.ftpPrimaryGuarded ? 'Primary guarded' : 'Global credentials') + '</strong></div><div><span>Discord loop guards</span><strong>' + (state.serverFoundation?.runtimeIsolation?.discordLoopGuardsNamespaced ? 'Per server' : 'Global') + '</strong></div><div><span>Scheduler</span><strong>' + (state.serverFoundation?.runtimeIsolation?.schedulerCentralized ? 'Centralized' : 'Unknown') + '</strong></div><div><span>Activation readiness</span><strong>' + (state.serverFoundation?.runtimeIsolation?.activationReadiness ? 'Prepared' : 'Pending') + '</strong></div><div><span>Context runs</span><strong>' + Number(state.serverFoundation?.runtimeIsolation?.contextRuns || 0).toLocaleString() + '</strong></div><div><span>Context fallbacks</span><strong>' + Number(state.serverFoundation?.runtimeIsolation?.contextFallbacks || 0).toLocaleString() + '</strong></div><div><span>Managed servers</span><strong>' + Number(state.serverFoundation?.managedServers || 1).toLocaleString() + '</strong></div><div><span>Server onboarding</span><strong>' + (state.serverFoundation?.onboarding?.canCreateDrafts ? 'Drafts enabled' : 'Unavailable') + '</strong></div><div><span>Draft servers</span><strong>' + Number(state.serverFoundation?.onboarding?.draftServers || 0).toLocaleString() + '</strong></div><div><span>Configured servers</span><strong>' + Number(state.serverFoundation?.onboarding?.configuredServers || 0).toLocaleString() + '</strong></div><div><span>Runtime policy</span><strong>' + escapeHtml(String(state.serverFoundation?.onboarding?.activationPolicy || 'primary-only')) + '</strong></div><div><span>Secrets in registry</span><strong>' + (state.serverFoundation?.onboarding?.secretsStoredInRegistry ? 'Yes' : 'No') + '</strong></div><div><span>Integration setup</span><strong>' + escapeHtml(String(state.serverFoundation?.onboarding?.integrationValidationMode || 'on-demand')) + '</strong></div><div><span>Nitrado credential</span><strong>' + escapeHtml(String(state.serverFoundation?.onboarding?.nitradoCredentialSource || 'missing')) + '</strong></div><div><span>Integration polling</span><strong>' + (state.serverFoundation?.onboarding?.backgroundPollingAdded ? 'Added' : 'None') + '</strong></div><div><span>Additional servers</span><strong>' + (state.serverFoundation?.additionalServersEnabled ? 'Enabled' : 'Blocked') + '</strong></div></div>' +
         '<div class="member-meta" style="margin-top:10px">Registry table: ' + (state.serverFoundation?.registry?.tableReady ? 'ready' : 'not ready') + ' · Primary seeded: ' + (state.serverFoundation?.registry?.primarySeeded ? 'yes' : 'no') + ' · bot_state tagged/untagged: ' + Number(state.serverFoundation?.namespace?.botStateTaggedRows || 0).toLocaleString() + '/' + Number(state.serverFoundation?.namespace?.botStateUntaggedRows || 0).toLocaleString() + ' · player stats tagged/untagged: ' + Number(state.serverFoundation?.namespace?.playerStatsTaggedRows || 0).toLocaleString() + '/' + Number(state.serverFoundation?.namespace?.playerStatsUntaggedRows || 0).toLocaleString() + ' · PK cutover: ' + (state.serverFoundation?.namespace?.primaryKeyCutoverComplete ? 'complete' : 'pending') + ' · Scoped read source: ' + escapeHtml(String(state.serverFoundation?.namespace?.lastScopedReadSource || 'legacy')) + ' · Fallbacks: ' + Number(state.serverFoundation?.namespace?.scopedReadFallbacks || 0).toLocaleString() + ' · Registry drafts/configured: ' + Number(state.serverFoundation?.registry?.draftRows || 0).toLocaleString() + '/' + Number(state.serverFoundation?.registry?.configuredRows || 0).toLocaleString() + ' · Runtime rows: ' + Number(state.serverFoundation?.registry?.runtimeEnabledRows || 0).toLocaleString() + (state.serverFoundation?.namespace?.lastError ? ' · Namespace error: ' + escapeHtml(String(state.serverFoundation.namespace.lastError)) : '') + '</div>' +
-        '<div class="settings-note" style="margin-top:12px">Safety: Phase 9 may create metadata-only draft/configured rows, but PZ keeps its existing ADM/state paths and remains the only executable runtime. Discord is optional, drafts do not inherit PZ defaults, secrets are rejected, and activation is still blocked.</div></div>' +
+        '<div class="settings-note" style="margin-top:12px">Safety: Phase 10 keeps PZ as the only executable runtime. Integration discovery runs only on user action, the Nitrado token stays server-side, Discord remains optional, and activation is still blocked.</div></div>' +
         '<div class="settings-card" style="margin-top:16px"><div class="settings-card-head"><div><h3>Granular player stats</h3><p>Global K/D and current streaks are upserted only for players that changed, instead of retransmitting the full historical player map.</p></div></div>' +
           '<div class="overview-grid" style="grid-template-columns:repeat(8,minmax(0,1fr))">' +
             '<div class="stat-card"><span>Status</span><strong>' + (granularPlayers.enabled === false ? 'Fallback' : 'Active') + '</strong></div>' +
@@ -6856,8 +6881,14 @@ function renderAdminPanelHtml(token: string) {
       return '<span class="chip ' + cls + '">' + escapeHtml(status.charAt(0).toUpperCase() + status.slice(1)) + '</span>';
     }
     function managedServerIntegrationState(server) {
+      const serviceId = String(server?.integrations?.nitradoServiceId || '');
+      const baseDir = String(server?.runtime?.nitradoBaseDir || '');
+      const validation = server?.runtime?.nitradoValidation;
+      const nitradoValidated = Boolean(serviceId && baseDir && validation && validation.serviceId === serviceId && validation.baseDir === baseDir && validation.validatedAt);
       return {
-        nitradoConfigured: Boolean(server?.integrations?.nitradoServiceId && server?.runtime?.nitradoBaseDir),
+        nitradoConfigured: nitradoValidated,
+        nitradoMetadataPresent: Boolean(serviceId && baseDir),
+        nitradoValidatedAt: nitradoValidated ? validation.validatedAt : null,
         discordConfigured: Boolean(server?.integrations?.discordGuildId),
       };
     }
@@ -6876,10 +6907,11 @@ function renderAdminPanelHtml(token: string) {
       els.managedServersList.innerHTML = servers.map((server) => {
         const integration = managedServerIntegrationState(server);
         const selected = state.selectedManagedServerId === server.id ? ' selected' : '';
+        const nitradoLabel = integration.nitradoConfigured ? 'validated' : (integration.nitradoMetadataPresent ? 'needs validation' : 'required');
         return '<div class="server-onboarding-row' + selected + '">' +
           '<div class="server-onboarding-row-head"><div><h3>' + escapeHtml(server.name || server.id) + '</h3><p><code>' + escapeHtml(server.id) + '</code></p></div>' + managedServerStatusChip(server) + '</div>' +
           '<div class="server-onboarding-meta">' +
-            '<span class="chip ' + (integration.nitradoConfigured ? 'success' : 'pending') + '">Nitrado ' + (integration.nitradoConfigured ? 'configured' : 'required') + '</span>' +
+            '<span class="chip ' + (integration.nitradoConfigured ? 'success' : 'pending') + '">Nitrado ' + nitradoLabel + '</span>' +
             '<span class="chip ' + (integration.discordConfigured ? 'success' : '') + '">Discord ' + (integration.discordConfigured ? 'configured' : 'optional') + '</span>' +
             '<span class="chip ' + (server.runtimeEnabled ? 'success' : 'pending') + '">Runtime ' + (server.runtimeEnabled ? 'enabled' : 'blocked') + '</span>' +
           '</div>' +
@@ -6896,6 +6928,42 @@ function renderAdminPanelHtml(token: string) {
         if (panel) panel.classList.toggle('active', key === next);
       });
     }
+    function setManagedServerSelectOptions(select, options, currentValue, placeholder) {
+      if (!select) return;
+      const selected = String(currentValue || '');
+      const rows = ['<option value="">' + escapeHtml(placeholder || 'Não configurado') + '</option>'];
+      (options || []).forEach((option) => {
+        const value = String(option.value || option.id || '');
+        if (!value) return;
+        rows.push('<option value="' + escapeHtml(value) + '"' + (selected === value ? ' selected' : '') + (option.disabled && selected !== value ? ' disabled' : '') + '>' + escapeHtml(option.label || option.name || value) + '</option>');
+      });
+      if (selected && !(options || []).some((option) => String(option.value || option.id || '') === selected)) {
+        rows.push('<option value="' + escapeHtml(selected) + '" selected>' + escapeHtml(selected + ' · salvo') + '</option>');
+      }
+      select.innerHTML = rows.join('');
+      select.value = selected;
+    }
+    function renderManagedServerNitradoServices(currentValue) {
+      const options = (state.managedServerNitradoServices || []).map((service) => ({
+        value: service.id,
+        label: (service.name || ('Service ' + service.id)) + ' · #' + service.id + (service.game ? ' · ' + service.game : '') + (service.status ? ' · ' + service.status : '') + (service.assignedServerName ? ' · em uso por ' + service.assignedServerName : ''),
+        disabled: Boolean(service.assignedServerId),
+      }));
+      setManagedServerSelectOptions(els.managedServerNitradoServiceSelect, options, currentValue, options.length ? 'Selecione um servidor Nitrado' : 'Carregue os servidores da conta');
+    }
+    function renderManagedServerDiscordGuilds(currentValue) {
+      const options = (state.managedServerDiscordGuilds || []).map((guild) => ({ value: guild.id, label: guild.name + (guild.memberCount ? ' · ' + guild.memberCount + ' membros' : '') }));
+      setManagedServerSelectOptions(els.managedServerDiscordGuildSelect, options, currentValue, 'Nenhum · opcional');
+    }
+    function renderManagedServerDiscordChannels(server) {
+      const channels = state.managedServerDiscordChannels || [];
+      const textOptions = channels.filter((channel) => channel.type === 'text').map((channel) => ({ value: channel.id, label: '#' + channel.name }));
+      const categoryOptions = channels.filter((channel) => channel.type === 'category').map((channel) => ({ value: channel.id, label: channel.name }));
+      setManagedServerSelectOptions(els.managedServerDiscordGlobal, textOptions, server?.runtime?.discord?.globalChannelId || '', 'Não configurado');
+      setManagedServerSelectOptions(els.managedServerDiscordDaily, textOptions, server?.runtime?.discord?.dailyChannelId || '', 'Não configurado');
+      setManagedServerSelectOptions(els.managedServerDiscordWeekly, textOptions, server?.runtime?.discord?.weeklyChannelId || '', 'Não configurado');
+      setManagedServerSelectOptions(els.managedServerDiscordOnlineCategory, categoryOptions, server?.runtime?.discord?.onlineCategoryId || '', 'Não configurado');
+    }
     function renderManagedServerSetup(server) {
       if (!server || server.primary) return;
       const integration = managedServerIntegrationState(server);
@@ -6909,22 +6977,36 @@ function renderAdminPanelHtml(token: string) {
       if (els.managedServerSetupProgressText) els.managedServerSetupProgressText.textContent = configured ? '2 de 2 etapas' : '1 de 2 etapas';
       if (els.managedServerSetupProgressBar) els.managedServerSetupProgressBar.style.width = configured ? '100%' : '50%';
       if (els.managedServerNitradoState) {
-        els.managedServerNitradoState.textContent = configured ? 'Configured' : 'Obrigatório';
+        els.managedServerNitradoState.textContent = configured ? 'Validated' : (integration.nitradoMetadataPresent ? 'Validar' : 'Obrigatório');
         els.managedServerNitradoState.className = 'chip ' + (configured ? 'success' : 'pending');
       }
       if (els.managedServerDiscordState) {
         els.managedServerDiscordState.textContent = integration.discordConfigured ? 'Configured · opcional' : 'Opcional';
         els.managedServerDiscordState.className = 'chip ' + (integration.discordConfigured ? 'success' : '');
       }
+      const nitradoConnection = state.managedServerIntegrationSetup?.nitrado;
+      if (els.managedServerNitradoConnection) {
+        els.managedServerNitradoConnection.innerHTML = nitradoConnection?.tokenConfigured
+          ? '<strong>Conta Nitrado disponível</strong><br>Usando a credencial protegida no backend. O token não é retornado para esta página.'
+          : '<strong>Conexão Nitrado indisponível</strong><br>NITRADO_TOKEN não está configurado no ambiente do serviço.';
+      }
+      if (els.managedServerNitradoValidationMeta) {
+        els.managedServerNitradoValidationMeta.textContent = configured
+          ? 'Validado em ' + new Date(integration.nitradoValidatedAt).toLocaleString('pt-BR') + '. Alterar Service ID ou base dir exige validar novamente.'
+          : 'Configured só é liberado depois de uma validação manual bem-sucedida do Service ID + base dir.';
+      }
       if (els.managedServerOverviewNitrado) {
-        els.managedServerOverviewNitrado.innerHTML = '<span>Nitrado</span><strong>' + (configured ? 'Configured' : 'Não configurado') + '</strong><p>' + (configured ? 'Service ID e base dir salvos.' : 'Obrigatório para completar o core setup.') + '</p>';
+        els.managedServerOverviewNitrado.innerHTML = '<span>Nitrado</span><strong>' + (configured ? 'Validated' : (integration.nitradoMetadataPresent ? 'Needs validation' : 'Não configurado')) + '</strong><p>' + (configured ? 'Service ID e base dir validados sob demanda.' : 'Obrigatório para completar o core setup.') + '</p>';
       }
       if (els.managedServerOverviewDiscord) {
         els.managedServerOverviewDiscord.innerHTML = '<span>Discord</span><strong>' + (integration.discordConfigured ? 'Configured' : 'Opcional') + '</strong><p>' + (integration.discordConfigured ? 'Guild vinculada ao cadastro.' : 'Pode ser conectado agora ou depois.') + '</p>';
       }
       if (els.managedServerOverviewRuntime) {
-        els.managedServerOverviewRuntime.innerHTML = '<span>Runtime</span><strong>Bloqueado</strong><p>' + (configured ? 'Core preparado, mas ativação continua indisponível.' : 'Nenhum processo será iniciado durante o setup.') + '</p>';
+        els.managedServerOverviewRuntime.innerHTML = '<span>Runtime</span><strong>Bloqueado</strong><p>' + (configured ? 'Integração validada, mas ativação continua indisponível.' : 'Nenhum processo será iniciado durante o setup.') + '</p>';
       }
+      renderManagedServerNitradoServices(server.integrations?.nitradoServiceId || '');
+      renderManagedServerDiscordGuilds(server.integrations?.discordGuildId || '');
+      renderManagedServerDiscordChannels(server);
     }
     async function loadManagedServers() {
       if (state.managedServersLoading) return;
@@ -6935,6 +7017,7 @@ function renderAdminPanelHtml(token: string) {
         if (!response.ok) { showToast(await response.text()); return; }
         const payload = await response.json();
         state.managedServers = payload.servers || [];
+        state.managedServerIntegrationSetup = payload.integrationSetup || null;
         state.serverFoundation = payload.foundation || state.serverFoundation;
         renderManagedServers();
         const selected = (state.managedServers || []).find((server) => server.id === state.selectedManagedServerId && !server.primary);
@@ -6944,7 +7027,13 @@ function renderAdminPanelHtml(token: string) {
     function resetManagedServerForm() {
       state.selectedManagedServerId = null;
       state.managedServerSetupTab = 'overview';
-      [els.managedServerName, els.managedServerId, els.managedServerNitradoServiceId, els.managedServerNitradoBaseDir, els.managedServerDiscordGuildId, els.managedServerDiscordGlobal, els.managedServerDiscordDaily, els.managedServerDiscordWeekly, els.managedServerDiscordOnlineCategory].forEach((input) => { if (input) input.value = ''; });
+      state.managedServerNitradoServices = [];
+      state.managedServerDiscordGuilds = [];
+      state.managedServerDiscordChannels = [];
+      [els.managedServerName, els.managedServerId, els.managedServerNitradoServiceId, els.managedServerNitradoBaseDir, els.managedServerDiscordGuildId].forEach((input) => { if (input) input.value = ''; });
+      renderManagedServerNitradoServices('');
+      renderManagedServerDiscordGuilds('');
+      renderManagedServerDiscordChannels(null);
       if (els.managedServerId) els.managedServerId.dataset.autoId = 'true';
       if (els.managedServerCreatePanel) els.managedServerCreatePanel.style.display = '';
       if (els.managedServerSetupPanel) els.managedServerSetupPanel.style.display = 'none';
@@ -6955,15 +7044,14 @@ function renderAdminPanelHtml(token: string) {
       const server = (state.managedServers || []).find((candidate) => candidate.id === serverId && !candidate.primary);
       if (!server) return;
       state.selectedManagedServerId = server.id;
+      state.managedServerNitradoServices = [];
+      state.managedServerDiscordGuilds = [];
+      state.managedServerDiscordChannels = [];
       if (els.managedServerCreatePanel) els.managedServerCreatePanel.style.display = 'none';
       if (els.managedServerSetupPanel) els.managedServerSetupPanel.style.display = '';
       if (els.managedServerNitradoServiceId) els.managedServerNitradoServiceId.value = server.integrations?.nitradoServiceId || '';
       if (els.managedServerNitradoBaseDir) els.managedServerNitradoBaseDir.value = server.runtime?.nitradoBaseDir || '';
       if (els.managedServerDiscordGuildId) els.managedServerDiscordGuildId.value = server.integrations?.discordGuildId || '';
-      if (els.managedServerDiscordGlobal) els.managedServerDiscordGlobal.value = server.runtime?.discord?.globalChannelId || '';
-      if (els.managedServerDiscordDaily) els.managedServerDiscordDaily.value = server.runtime?.discord?.dailyChannelId || '';
-      if (els.managedServerDiscordWeekly) els.managedServerDiscordWeekly.value = server.runtime?.discord?.weeklyChannelId || '';
-      if (els.managedServerDiscordOnlineCategory) els.managedServerDiscordOnlineCategory.value = server.runtime?.discord?.onlineCategoryId || '';
       renderManagedServerSetup(server);
       switchManagedServerSetupTab(state.managedServerSetupTab || 'overview');
       renderManagedServers();
@@ -6973,9 +7061,9 @@ function renderAdminPanelHtml(token: string) {
       return {
         id: editing?.id || els.managedServerId?.value || '',
         name: editing?.name || els.managedServerName?.value || '',
-        nitradoServiceId: els.managedServerNitradoServiceId?.value || '',
+        nitradoServiceId: els.managedServerNitradoServiceSelect?.value || els.managedServerNitradoServiceId?.value || '',
         nitradoBaseDir: els.managedServerNitradoBaseDir?.value || '',
-        discordGuildId: els.managedServerDiscordGuildId?.value || '',
+        discordGuildId: els.managedServerDiscordGuildSelect?.value || els.managedServerDiscordGuildId?.value || '',
         discord: {
           globalChannelId: els.managedServerDiscordGlobal?.value || '',
           dailyChannelId: els.managedServerDiscordDaily?.value || '',
@@ -6984,15 +7072,110 @@ function renderAdminPanelHtml(token: string) {
         },
       };
     }
+    async function discoverManagedServerNitradoServices() {
+      const serverId = state.selectedManagedServerId;
+      if (!serverId || !els.managedServerNitradoDiscover) return;
+      const button = els.managedServerNitradoDiscover;
+      button.disabled = true;
+      const previous = button.textContent;
+      button.textContent = 'Carregando...';
+      try {
+        const response = await apiFetch('/admin-panel/api/servers/' + encodeURIComponent(serverId) + '/nitrado/services');
+        if (!response.ok) { showToast(await response.text()); return; }
+        const payload = await response.json();
+        state.managedServerNitradoServices = payload.services || [];
+        state.managedServerIntegrationSetup = { ...(state.managedServerIntegrationSetup || {}), nitrado: payload.connection || state.managedServerIntegrationSetup?.nitrado };
+        const current = els.managedServerNitradoServiceId?.value || '';
+        renderManagedServerNitradoServices(current);
+        if (els.managedServerNitradoConnection) els.managedServerNitradoConnection.innerHTML = '<strong>Conta Nitrado conectada</strong><br>' + state.managedServerNitradoServices.length + ' serviço(s) encontrado(s). Escolha um e valide antes de continuar.';
+        showToast(state.managedServerNitradoServices.length + ' serviço(s) Nitrado carregado(s).');
+      } finally {
+        button.disabled = false;
+        button.textContent = previous;
+      }
+    }
+    async function validateManagedServerNitrado() {
+      const serverId = state.selectedManagedServerId;
+      const button = els.managedServerNitradoSave;
+      if (!serverId || !button) return;
+      const payload = readManagedServerForm();
+      if (!String(payload.nitradoServiceId || '').trim()) { showToast('Selecione um servidor Nitrado ou informe o Service ID.'); return; }
+      button.disabled = true;
+      const previous = button.textContent;
+      button.textContent = 'Validando...';
+      try {
+        const response = await apiFetch('/admin-panel/api/servers/' + encodeURIComponent(serverId) + '/nitrado/validate', {
+          method: 'POST',
+          body: JSON.stringify({ serviceId: payload.nitradoServiceId, baseDir: payload.nitradoBaseDir }),
+        });
+        if (!response.ok) { showToast(await response.text()); return; }
+        const result = await response.json();
+        state.managedServers = result.servers || state.managedServers;
+        state.serverFoundation = result.foundation || state.serverFoundation;
+        if (els.managedServerNitradoServiceId) els.managedServerNitradoServiceId.value = result.validation?.serviceId || payload.nitradoServiceId;
+        if (els.managedServerNitradoBaseDir) els.managedServerNitradoBaseDir.value = result.validation?.baseDir || payload.nitradoBaseDir;
+        renderManagedServers();
+        const selected = (state.managedServers || []).find((server) => server.id === serverId);
+        if (selected) renderManagedServerSetup(selected);
+        showToast('Nitrado validado. O servidor agora está Configured, mas o runtime continua bloqueado.');
+      } finally {
+        button.disabled = false;
+        button.textContent = previous;
+      }
+    }
+    async function loadManagedServerDiscordChannels(guildId) {
+      const serverId = state.selectedManagedServerId;
+      if (!serverId || !guildId) {
+        state.managedServerDiscordChannels = [];
+        renderManagedServerDiscordChannels(null);
+        return;
+      }
+      const response = await apiFetch('/admin-panel/api/servers/' + encodeURIComponent(serverId) + '/discord/guilds/' + encodeURIComponent(guildId) + '/channels');
+      if (!response.ok) { showToast(await response.text()); return; }
+      const payload = await response.json();
+      state.managedServerDiscordChannels = payload.channels || [];
+      const selected = (state.managedServers || []).find((server) => server.id === serverId);
+      const preserveSavedChannels = selected?.integrations?.discordGuildId === guildId ? selected : null;
+      renderManagedServerDiscordChannels(preserveSavedChannels);
+      if (els.managedServerDiscordConnection) els.managedServerDiscordConnection.innerHTML = '<strong>' + escapeHtml(payload.guild?.name || 'Discord') + '</strong><br>' + state.managedServerDiscordChannels.length + ' canal(is)/categoria(s) carregado(s) sob demanda.';
+    }
+    async function discoverManagedServerDiscordGuilds() {
+      const serverId = state.selectedManagedServerId;
+      const button = els.managedServerDiscordDiscover;
+      if (!serverId || !button) return;
+      button.disabled = true;
+      const previous = button.textContent;
+      button.textContent = 'Carregando...';
+      try {
+        const response = await apiFetch('/admin-panel/api/servers/' + encodeURIComponent(serverId) + '/discord/options');
+        if (!response.ok) { showToast(await response.text()); return; }
+        const payload = await response.json();
+        state.managedServerDiscordGuilds = payload.guilds || [];
+        const currentServer = (state.managedServers || []).find((server) => server.id === serverId);
+        const currentGuildId = currentServer?.integrations?.discordGuildId || els.managedServerDiscordGuildId?.value || '';
+        renderManagedServerDiscordGuilds(currentGuildId);
+        if (els.managedServerDiscordConnection) {
+          els.managedServerDiscordConnection.innerHTML = payload.ready
+            ? '<strong>Discord bot conectado</strong><br>' + state.managedServerDiscordGuilds.length + ' servidor(es) disponível(is).'
+            : '<strong>Discord indisponível</strong><br>' + escapeHtml(payload.message || 'Bot não conectado.');
+        }
+        if (currentGuildId && payload.ready) await loadManagedServerDiscordChannels(currentGuildId);
+      } finally {
+        button.disabled = false;
+        button.textContent = previous;
+      }
+    }
     async function saveManagedServerForm(section) {
       const editingId = state.selectedManagedServerId;
-      const button = editingId
-        ? (section === 'discord' ? els.managedServerDiscordSave : els.managedServerNitradoSave)
-        : els.managedServerSave;
+      if (editingId && section === 'nitrado') return validateManagedServerNitrado();
+      const button = editingId ? els.managedServerDiscordSave : els.managedServerSave;
       if (!button) return;
-      const payload = readManagedServerForm();
-      if (!editingId && !String(payload.name || '').trim()) { showToast('Informe o nome do servidor.'); return; }
-      if (!editingId && !String(payload.id || '').trim()) { showToast('Informe o Server ID.'); return; }
+      const form = readManagedServerForm();
+      if (!editingId && !String(form.name || '').trim()) { showToast('Informe o nome do servidor.'); return; }
+      if (!editingId && !String(form.id || '').trim()) { showToast('Informe o Server ID.'); return; }
+      const payload = editingId
+        ? { discordGuildId: form.discordGuildId, discord: form.discord }
+        : { id: form.id, name: form.name };
       button.disabled = true;
       try {
         const path = editingId ? '/admin-panel/api/servers/' + encodeURIComponent(editingId) : '/admin-panel/api/servers';
@@ -7004,11 +7187,11 @@ function renderAdminPanelHtml(token: string) {
         renderManagedServers();
         if (!editingId) {
           editManagedServer(result.server?.id || '');
-          showToast('Servidor criado. Configure o Nitrado quando quiser continuar.');
+          showToast('Servidor criado. Agora conecte e valide o Nitrado.');
         } else {
           const selected = (state.managedServers || []).find((server) => server.id === editingId);
           if (selected) renderManagedServerSetup(selected);
-          showToast(section === 'discord' ? 'Configuração do Discord salva.' : 'Configuração do Nitrado salva.');
+          showToast('Configuração do Discord salva.');
         }
       } finally { button.disabled = false; }
     }
@@ -7448,8 +7631,22 @@ function renderAdminPanelHtml(token: string) {
     els.managedServersRefresh?.addEventListener("click", () => loadManagedServers());
     els.managedServerCreateNew?.addEventListener("click", () => resetManagedServerForm());
     els.managedServerSave?.addEventListener("click", () => saveManagedServerForm('create'));
+    els.managedServerNitradoDiscover?.addEventListener("click", () => discoverManagedServerNitradoServices());
     els.managedServerNitradoSave?.addEventListener("click", () => saveManagedServerForm('nitrado'));
+    els.managedServerDiscordDiscover?.addEventListener("click", () => discoverManagedServerDiscordGuilds());
     els.managedServerDiscordSave?.addEventListener("click", () => saveManagedServerForm('discord'));
+    els.managedServerNitradoServiceSelect?.addEventListener('change', () => {
+      const serviceId = els.managedServerNitradoServiceSelect?.value || '';
+      const previousServiceId = els.managedServerNitradoServiceId?.value || '';
+      const service = (state.managedServerNitradoServices || []).find((candidate) => candidate.id === serviceId);
+      if (els.managedServerNitradoServiceId) els.managedServerNitradoServiceId.value = serviceId;
+      if (service?.detectedBaseDir && els.managedServerNitradoBaseDir && (previousServiceId !== serviceId || !els.managedServerNitradoBaseDir.value.trim())) els.managedServerNitradoBaseDir.value = service.detectedBaseDir;
+    });
+    els.managedServerDiscordGuildSelect?.addEventListener('change', async () => {
+      const guildId = els.managedServerDiscordGuildSelect?.value || '';
+      if (els.managedServerDiscordGuildId) els.managedServerDiscordGuildId.value = guildId;
+      await loadManagedServerDiscordChannels(guildId);
+    });
     els.managedServerCancel?.addEventListener("click", () => resetManagedServerForm());
     els.managedServersList?.addEventListener("click", (event) => { const button = event.target.closest("button[data-managed-server-edit]"); if (button) editManagedServer(button.dataset.managedServerEdit || ""); });
     document.querySelectorAll('[data-managed-server-tab]').forEach((button) => button.addEventListener('click', () => switchManagedServerSetupTab(button.dataset.managedServerTab || 'overview')));
@@ -7748,6 +7945,7 @@ router.get("/api/servers", async (req, res) => {
     canCreateServer: Boolean(foundation.onboarding?.canCreateDrafts),
     runtimeActivationBlocked: true,
     secretsAccepted: false,
+    integrationSetup: getIntegrationOnboardingStatus(),
     foundation,
   });
 });
@@ -7778,6 +7976,59 @@ router.patch("/api/servers/:serverId", async (req, res) => {
       runtimeActivationBlocked: true,
       foundation: getServerFoundationDiagnostics(),
     });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(/nao encontrado/i.test(message) ? 404 : 400).send(message);
+  }
+});
+
+router.get("/api/servers/:serverId/nitrado/services", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  try {
+    const result = await discoverNitradoServices(String(req.params.serverId || ""));
+    res.json({ ...result, backgroundPolling: false });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(/nao encontrado/i.test(message) ? 404 : 400).send(message);
+  }
+});
+
+router.post("/api/servers/:serverId/nitrado/validate", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  try {
+    const serverId = String(req.params.serverId || "");
+    const validation = await validateNitradoServiceSetup(serverId, req.body?.serviceId, req.body?.baseDir);
+    const server = await markManagedServerNitradoValidated(serverId, {
+      serviceId: validation.serviceId,
+      baseDir: validation.baseDir,
+    });
+    res.json({
+      server,
+      validation,
+      servers: listManagedServers(),
+      runtimeActivationBlocked: true,
+      foundation: getServerFoundationDiagnostics(),
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(/nao encontrado/i.test(message) ? 404 : 400).send(message);
+  }
+});
+
+router.get("/api/servers/:serverId/discord/options", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  try {
+    res.json(listDiscordGuildOptions(String(req.params.serverId || "")));
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(/nao encontrado/i.test(message) ? 404 : 400).send(message);
+  }
+});
+
+router.get("/api/servers/:serverId/discord/guilds/:guildId/channels", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  try {
+    res.json(await listDiscordGuildChannels(String(req.params.serverId || ""), req.params.guildId));
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     res.status(/nao encontrado/i.test(message) ? 404 : 400).send(message);
