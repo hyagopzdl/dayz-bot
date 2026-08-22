@@ -10,8 +10,10 @@ import { normalizeServiceSettings, type ServiceSettings } from "./serviceSetting
 import { recordNetworkTransfer } from "./networkMetrics";
 import {
   getPrimaryServerDescriptor,
+  getPrimaryServerId,
   setPersistedManagedServers,
   setServerRegistryPersistenceStatus,
+  setServerNamespacePersistenceStatus,
   type ManagedServerDescriptor,
 } from "./serverRegistry";
 
@@ -341,6 +343,47 @@ async function ensurePrimaryServerRegistryMetadata() {
           bytes: Buffer.byteLength(JSON.stringify(primary), "utf8"),
           ok: true,
         });
+      }
+
+      // Phase 3 only tags the existing single-server rows. Reads and primary
+      // keys intentionally remain unchanged, so this cannot route production
+      // state to a different tenant yet.
+      try {
+        const tableCheck = await sql`SELECT to_regclass('public.bot_state') IS NOT NULL AS exists`;
+        const botStateExists = Boolean((tableCheck as any[])[0]?.exists);
+        let taggedRows = 0;
+        let untaggedRows = 0;
+        if (botStateExists) {
+          await sql`ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS server_id TEXT`;
+          await sql`UPDATE bot_state SET server_id = ${primary.id} WHERE server_id IS NULL`;
+          await sql`CREATE INDEX IF NOT EXISTS bot_state_server_id_idx ON bot_state (server_id)`;
+          const counts = await sql`
+            SELECT
+              COUNT(*) FILTER (WHERE server_id = ${primary.id})::int AS tagged_rows,
+              COUNT(*) FILTER (WHERE server_id IS NULL)::int AS untagged_rows
+            FROM bot_state
+          `;
+          taggedRows = Number((counts as any[])[0]?.tagged_rows || 0);
+          untaggedRows = Number((counts as any[])[0]?.untagged_rows || 0);
+        }
+        setServerNamespacePersistenceStatus({
+          enabled: true,
+          initialized: true,
+          botStateTableReady: botStateExists,
+          botStateTaggedRows: taggedRows,
+          botStateUntaggedRows: untaggedRows,
+          lastCheckedAt: new Date().toISOString(),
+          lastError: undefined,
+        });
+      } catch (namespaceErr) {
+        setServerNamespacePersistenceStatus({
+          initialized: true,
+          lastCheckedAt: new Date().toISOString(),
+          lastError: namespaceErr instanceof Error ? namespaceErr.message : String(namespaceErr),
+        });
+        // Namespace preparation is non-blocking in Phase 3. The production
+        // single-server persistence path remains valid even if tagging fails.
+        console.error("❌ erro preparando namespace multi-server:", namespaceErr);
       }
     } catch (err) {
       setServerRegistryPersistenceStatus({
@@ -1236,10 +1279,28 @@ async function ensureGranularPlayerStatsTable() {
         player_key TEXT PRIMARY KEY,
         stats JSONB NOT NULL,
         current_streak INTEGER NOT NULL DEFAULT 0,
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        server_id TEXT
       )
     `;
+    await sql`ALTER TABLE player_stats_state ADD COLUMN IF NOT EXISTS server_id TEXT`;
+    await sql`UPDATE player_stats_state SET server_id = ${getPrimaryServerId()} WHERE server_id IS NULL`;
     await sql`CREATE INDEX IF NOT EXISTS player_stats_state_updated_at_idx ON player_stats_state (updated_at)`;
+    await sql`CREATE INDEX IF NOT EXISTS player_stats_state_server_id_idx ON player_stats_state (server_id)`;
+    const namespaceCounts = await sql`
+      SELECT
+        COUNT(*) FILTER (WHERE server_id = ${getPrimaryServerId()})::int AS tagged_rows,
+        COUNT(*) FILTER (WHERE server_id IS NULL)::int AS untagged_rows
+      FROM player_stats_state
+    `;
+    setServerNamespacePersistenceStatus({
+      enabled: true,
+      initialized: true,
+      playerStatsTableReady: true,
+      playerStatsTaggedRows: Number((namespaceCounts as any[])[0]?.tagged_rows || 0),
+      playerStatsUntaggedRows: Number((namespaceCounts as any[])[0]?.untagged_rows || 0),
+      lastCheckedAt: new Date().toISOString(),
+    });
   })().catch((err) => {
     granularPlayerStatsTableReadyPromise = null;
     throw err;
@@ -1426,6 +1487,7 @@ async function persistDomainBatchToNeon(
   const now = new Date().toISOString();
   const domainPayloadBytes = entries.reduce((total, [, entry]) => total + Buffer.byteLength(entry.serialized, "utf8"), 0);
   const playerPayload = playerEntries.map(([playerKey, entry]) => ({
+    server_id: getPrimaryServerId(),
     player_key: playerKey,
     stats: entry.stats,
     current_streak: entry.currentStreak,
@@ -1437,20 +1499,21 @@ async function persistDomainBatchToNeon(
     await sql.begin(async (tx: any) => {
       for (const [domain, entry] of entries) {
         await tx`
-          INSERT INTO bot_state (id, data, updated_at)
-          VALUES (${STATE_DOMAIN_IDS[domain]}, ${tx.json(entry.payload)}, NOW())
+          INSERT INTO bot_state (id, data, updated_at, server_id)
+          VALUES (${STATE_DOMAIN_IDS[domain]}, ${tx.json(entry.payload)}, NOW(), ${getPrimaryServerId()})
           ON CONFLICT (id)
-          DO UPDATE SET data = EXCLUDED.data, updated_at = NOW()
+          DO UPDATE SET data = EXCLUDED.data, updated_at = NOW(), server_id = EXCLUDED.server_id
         `;
       }
       if (playerPayload.length) {
         await tx`
-          INSERT INTO player_stats_state (player_key, stats, current_streak, updated_at)
-          SELECT incoming.player_key, incoming.stats, incoming.current_streak, NOW()
+          INSERT INTO player_stats_state (server_id, player_key, stats, current_streak, updated_at)
+          SELECT incoming.server_id, incoming.player_key, incoming.stats, incoming.current_streak, NOW()
           FROM jsonb_to_recordset(${tx.json(playerPayload)}::jsonb)
-            AS incoming(player_key TEXT, stats JSONB, current_streak INTEGER)
+            AS incoming(server_id TEXT, player_key TEXT, stats JSONB, current_streak INTEGER)
           ON CONFLICT (player_key)
           DO UPDATE SET
+            server_id = EXCLUDED.server_id,
             stats = EXCLUDED.stats,
             current_streak = EXCLUDED.current_streak,
             updated_at = NOW()
@@ -1690,10 +1753,10 @@ async function persistDiscordRuntimeToNeon(serialized: string, hash: string) {
 
   try {
     await sql`
-      INSERT INTO bot_state (id, data, updated_at)
-      VALUES (${DISCORD_RUNTIME_STATE_ID}, ${sql.json(runtime)}, NOW())
+      INSERT INTO bot_state (id, data, updated_at, server_id)
+      VALUES (${DISCORD_RUNTIME_STATE_ID}, ${sql.json(runtime)}, NOW(), ${getPrimaryServerId()})
       ON CONFLICT (id)
-      DO UPDATE SET data = EXCLUDED.data, updated_at = NOW()
+      DO UPDATE SET data = EXCLUDED.data, updated_at = NOW(), server_id = EXCLUDED.server_id
     `;
     recordNetworkTransfer({
       service: "neon-runtime",
@@ -1789,12 +1852,13 @@ async function persistStateToNeon(serialized: string, hash: string, reasons: str
   const writeStarted = Date.now();
   try {
     await sql`
-      INSERT INTO bot_state (id, data, updated_at)
-      VALUES (${STATE_ID}, ${sql.json(parsed)}, NOW())
+      INSERT INTO bot_state (id, data, updated_at, server_id)
+      VALUES (${STATE_ID}, ${sql.json(parsed)}, NOW(), ${getPrimaryServerId()})
       ON CONFLICT (id)
       DO UPDATE SET
         data = EXCLUDED.data,
-        updated_at = NOW()
+        updated_at = NOW(),
+        server_id = EXCLUDED.server_id
     `;
     // The serialized JSON dominates the outbound payload to Neon. This counter
     // intentionally measures application bytes, not PostgreSQL/TLS overhead.
@@ -1948,8 +2012,8 @@ export async function getStateAsync(): Promise<AppState> {
       const hash = hashState(serialized);
 
       await sql`
-        INSERT INTO bot_state (id, data, updated_at)
-        VALUES (${STATE_ID}, ${sql.json(state)}, NOW())
+        INSERT INTO bot_state (id, data, updated_at, server_id)
+        VALUES (${STATE_ID}, ${sql.json(state)}, NOW(), ${getPrimaryServerId()})
         ON CONFLICT (id) DO NOTHING
       `;
 

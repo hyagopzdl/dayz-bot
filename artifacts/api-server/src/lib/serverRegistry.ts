@@ -12,6 +12,19 @@ export type ManagedServerDescriptor = {
   };
 };
 
+export type ServerNamespacePersistenceStatus = {
+  enabled: boolean;
+  initialized: boolean;
+  botStateTableReady: boolean;
+  playerStatsTableReady: boolean;
+  botStateTaggedRows: number;
+  botStateUntaggedRows: number;
+  playerStatsTaggedRows: number;
+  playerStatsUntaggedRows: number;
+  lastCheckedAt?: string;
+  lastError?: string;
+};
+
 export type ServerRegistryPersistenceStatus = {
   enabled: boolean;
   initialized: boolean;
@@ -31,6 +44,17 @@ const FALLBACK_SERVER_ID = "pz-deathmatch";
 const FALLBACK_SERVER_NAME = "PZ Deathmatch";
 
 let persistedServers: ManagedServerDescriptor[] = [];
+let namespacePersistenceStatus: ServerNamespacePersistenceStatus = {
+  enabled: Boolean(process.env.DATABASE_URL),
+  initialized: false,
+  botStateTableReady: false,
+  playerStatsTableReady: false,
+  botStateTaggedRows: 0,
+  botStateUntaggedRows: 0,
+  playerStatsTaggedRows: 0,
+  playerStatsUntaggedRows: 0,
+};
+
 let registryPersistenceStatus: ServerRegistryPersistenceStatus = {
   enabled: Boolean(process.env.DATABASE_URL),
   initialized: false,
@@ -73,9 +97,9 @@ export function getPrimaryServerDescriptor(): ManagedServerDescriptor {
 }
 
 export function listManagedServers(): ManagedServerDescriptor[] {
-  // Phase 2 persists the registry metadata only. Operational state, ADM cursors,
-  // Discord routing and Nitrado routing still use the exact single-server path
-  // from production, so the existing server cannot be split or remapped yet.
+  // Phase 3 still exposes only the primary server operationally. Registry rows may
+  // exist, but additional servers remain blocked until persistence keys and
+  // routing are safely scoped in later phases.
   if (persistedServers.length) return persistedServers.map((server) => ({ ...server, integrations: { ...server.integrations } }));
   return [getPrimaryServerDescriptor()];
 }
@@ -104,6 +128,18 @@ export function setServerRegistryPersistenceStatus(status: Partial<ServerRegistr
   };
 }
 
+
+export function setServerNamespacePersistenceStatus(status: Partial<ServerNamespacePersistenceStatus>) {
+  namespacePersistenceStatus = {
+    ...namespacePersistenceStatus,
+    ...status,
+  };
+}
+
+export function getServerNamespacePersistenceStatus(): ServerNamespacePersistenceStatus {
+  return { ...namespacePersistenceStatus };
+}
+
 export function getServerRegistryPersistenceStatus(): ServerRegistryPersistenceStatus {
   return {
     ...registryPersistenceStatus,
@@ -121,8 +157,9 @@ export function resolveServerIdFromDiscordGuildId(guildId: unknown) {
 export function getServerFoundationDiagnostics() {
   const server = getPrimaryServerDescriptor();
   const registry = getServerRegistryPersistenceStatus();
+  const namespace = getServerNamespacePersistenceStatus();
   return {
-    phase: 2,
+    phase: 3,
     mode: server.mode,
     currentServerId: server.id,
     currentServerName: server.name,
@@ -130,18 +167,23 @@ export function getServerFoundationDiagnostics() {
     additionalServersEnabled: false,
     registryPersisted: registry.initialized && registry.tableReady && registry.primarySeeded,
     persistenceNamespaced: false,
+    persistenceTaggedWithServerId: namespace.initialized && namespace.botStateTableReady && namespace.botStateUntaggedRows === 0 && (!namespace.playerStatsTableReady || namespace.playerStatsUntaggedRows === 0),
     parserNamespaced: false,
     discordRoutingNamespaced: false,
     nitradoRoutingNamespaced: false,
     currentDataPathChanged: false,
     registry,
+    namespace,
     safety: {
       legacyStateIdsPreserved: true,
       legacyAdmCursorsPreserved: true,
       legacyDiscordGuildPreserved: true,
       legacyNitradoServicePreserved: true,
       operationalDatabaseWritesAdded: false,
-      registryMetadataOnly: true,
+      registryMetadataOnly: false,
+      activeReadsStillLegacy: true,
+      activePrimaryKeysPreserved: true,
+      serverIdTaggingOnly: true,
     },
     integrations: server.integrations,
   };
