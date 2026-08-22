@@ -1,6 +1,7 @@
 import path from "path";
 import { AsyncLocalStorage } from "async_hooks";
 import {
+  canExecuteManagedServerRuntime,
   getManagedServerById,
   getPrimaryServerDescriptor,
   getPrimaryServerId,
@@ -110,6 +111,9 @@ export function getActiveServerId() {
 
 export function runInServerRuntimeContext<T>(serverId: string, work: () => T): T {
   const context = getServerRuntimeContext(serverId);
+  if (!canExecuteManagedServerRuntime(context.serverId)) {
+    throw new Error(`Server ${context.serverId} is registered for onboarding only. Runtime execution remains blocked in Phase 9.`);
+  }
   contextRuns += 1;
   lastContextServerId = context.serverId;
   setServerRuntimeIsolationStatus({
@@ -129,6 +133,9 @@ export function getServerStateStoragePath(serverId = getActiveServerId()) {
 
 export async function runWithServerRuntimeLock<T>(serverId: string, work: () => Promise<T>): Promise<{ skipped: boolean; value?: T }> {
   const context = getServerRuntimeContext(serverId);
+  if (!canExecuteManagedServerRuntime(context.serverId)) {
+    throw new Error(`Server ${context.serverId} is registered for onboarding only. Processing locks cannot activate it in Phase 9.`);
+  }
   if (runtimeLocks.has(context.serverId)) {
     lockSkips += 1;
     setServerRuntimeIsolationStatus({ activeLocks: runtimeLocks.size, lockSkips, lastLockServerId: context.serverId });
@@ -148,6 +155,6 @@ export async function runWithServerRuntimeLock<T>(serverId: string, work: () => 
 export function assertPrimaryRuntimeServer(serverId: string) {
   const primaryId = getPrimaryServerId();
   if (serverId !== primaryId) {
-    throw new Error(`Server ${serverId} is registered but runtime activation is still blocked until the post-Phase 8 activation phase.`);
+    throw new Error(`Server ${serverId} is registered but runtime activation is still blocked during Phase 9 onboarding.`);
   }
 }

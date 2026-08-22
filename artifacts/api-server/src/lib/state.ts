@@ -9,13 +9,17 @@ import { normalizeDiscordCommandSettings, type DiscordCommandSettings } from "./
 import { normalizeServiceSettings, type ServiceSettings } from "./serviceSettings";
 import { recordNetworkTransfer } from "./networkMetrics";
 import {
+  buildManagedServerId,
   getPrimaryServerDescriptor,
   getPrimaryServerId,
+  getServerRegistryPersistenceStatus,
+  normalizeManagedServerName,
   setPersistedManagedServers,
   setServerRegistryPersistenceStatus,
   setServerNamespacePersistenceStatus,
   setServerRuntimeIsolationStatus,
   type ManagedServerDescriptor,
+  type ServerDiscordRuntimeConfig,
 } from "./serverRegistry";
 import { getActiveServerId, getServerStateStoragePath, runInServerRuntimeContext } from "./serverRuntime";
 
@@ -307,6 +311,112 @@ let playerStatsPrimaryKeyReady = false;
 let scopedReadFallbacks = 0;
 let lastScopedReadSource: "server-scoped" | "legacy-fallback" | "legacy" = "legacy";
 
+type ManagedServerDraftInput = {
+  id?: unknown;
+  name?: unknown;
+  nitradoServiceId?: unknown;
+  nitradoBaseDir?: unknown;
+  discordGuildId?: unknown;
+  discord?: Partial<Record<keyof ServerDiscordRuntimeConfig, unknown>>;
+};
+
+const SERVER_SECRET_KEY_PATTERN = /(token|password|secret|api[_-]?key|authorization|credentials)/i;
+
+function assertNoServerSecrets(value: unknown, pathName = "server") {
+  if (!value || typeof value !== "object") return;
+  for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+    if (SERVER_SECRET_KEY_PATTERN.test(key)) {
+      throw new Error(`Phase 9 does not persist secrets in managed_servers (${pathName}.${key}). Keep credentials out of this form until the secure-secret phase.`);
+    }
+    if (child && typeof child === "object" && !Array.isArray(child)) {
+      assertNoServerSecrets(child, `${pathName}.${key}`);
+    }
+  }
+}
+
+function optionalServerText(value: unknown, maxLength = 255) {
+  return String(value || "").trim().slice(0, maxLength) || undefined;
+}
+
+function normalizeServerDiscordDraft(value: unknown, existing: ServerDiscordRuntimeConfig = {}): ServerDiscordRuntimeConfig {
+  const source = value && typeof value === "object" ? value as Record<string, unknown> : {};
+  const next: ServerDiscordRuntimeConfig = { ...existing };
+  const textKeys = [
+    "globalChannelId", "dailyChannelId", "weeklyChannelId", "onlineListChannelId",
+    "killfeedChannelId", "killStreakChannelId", "longShotChannelId", "longShotRankingChannelId",
+    "streakRankingChannelId", "onlineCategoryId", "matchCategoryId", "memberFeedChannelId",
+  ] as const;
+  for (const key of textKeys) {
+    if (!(key in source)) continue;
+    const normalized = optionalServerText(source[key], 64);
+    if (normalized) (next as Record<string, unknown>)[key] = normalized;
+    else delete (next as Record<string, unknown>)[key];
+  }
+  if ("memberFeedEnabled" in source) next.memberFeedEnabled = source.memberFeedEnabled !== false;
+  return next;
+}
+
+function deriveServerOnboardingStatus(descriptor: Pick<ManagedServerDescriptor, "integrations" | "runtime">) {
+  return descriptor.integrations.nitradoServiceId
+    && descriptor.runtime.nitradoBaseDir
+    && descriptor.integrations.discordGuildId
+    ? "configured" as const
+    : "draft" as const;
+}
+
+function mapManagedServerRow(row: any, primary: ManagedServerDescriptor): ManagedServerDescriptor {
+  const id = String(row.id || "").trim();
+  const isPrimary = id === primary.id;
+  const runtimeConfig = row.runtime_config && typeof row.runtime_config === "object" ? row.runtime_config : {};
+  return {
+    id,
+    name: String(row.name || row.id || "Server"),
+    enabled: row.enabled !== false,
+    primary: isPrimary,
+    runtimeEnabled: isPrimary ? true : Boolean(row.runtime_enabled),
+    onboardingStatus: isPrimary
+      ? "active"
+      : (String(row.onboarding_status || "draft") === "configured" ? "configured"
+        : String(row.onboarding_status || "draft") === "ready" ? "ready" : "draft"),
+    mode: "single-server-compat",
+    integrations: {
+      nitradoServiceId: String(row.nitrado_service_id || "").trim() || undefined,
+      discordGuildId: String(row.discord_guild_id || "").trim() || undefined,
+    },
+    runtime: {
+      // Only the production primary may inherit legacy ENV defaults. A draft
+      // must stay empty when a field is not explicitly configured, otherwise
+      // it could silently point at PZ paths/channels during a future activation.
+      nitradoBaseDir: String(runtimeConfig?.nitradoBaseDir || (isPrimary ? primary.runtime.nitradoBaseDir : "") || "").trim() || undefined,
+      discord: isPrimary
+        ? { ...(primary.runtime.discord || {}), ...(runtimeConfig?.discord || {}) }
+        : { ...(runtimeConfig?.discord || {}) },
+    },
+  };
+}
+
+async function reloadManagedServerRegistryFromDb(primary = getPrimaryServerDescriptor()) {
+  if (!sql) return [primary];
+  const rows = await sql`
+    SELECT id, name, enabled, primary_server, runtime_enabled, onboarding_status,
+           mode, nitrado_service_id, discord_guild_id, runtime_config
+    FROM managed_servers
+    ORDER BY primary_server DESC, created_at ASC, id ASC
+  `;
+  const descriptors = (rows as any[]).map((row) => mapManagedServerRow(row, primary));
+  const next = descriptors.length ? descriptors : [primary];
+  setPersistedManagedServers(next);
+  setServerRegistryPersistenceStatus({
+    rowsLoaded: next.length,
+    draftRows: next.filter((server) => !server.primary && server.onboardingStatus === "draft").length,
+    configuredRows: next.filter((server) => !server.primary && server.onboardingStatus === "configured").length,
+    readyRows: next.filter((server) => !server.primary && server.onboardingStatus === "ready").length,
+    runtimeEnabledRows: next.filter((server) => server.runtimeEnabled).length,
+    lastLoadedAt: new Date().toISOString(),
+  });
+  return next;
+}
+
 async function ensurePrimaryServerRegistryMetadata() {
   if (!sql) {
     setServerRegistryPersistenceStatus({
@@ -332,6 +442,8 @@ async function ensurePrimaryServerRegistryMetadata() {
           name TEXT NOT NULL,
           enabled BOOLEAN NOT NULL DEFAULT TRUE,
           primary_server BOOLEAN NOT NULL DEFAULT FALSE,
+          runtime_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+          onboarding_status TEXT NOT NULL DEFAULT 'draft',
           mode TEXT NOT NULL DEFAULT 'single-server-compat',
           nitrado_service_id TEXT,
           discord_guild_id TEXT,
@@ -341,16 +453,18 @@ async function ensurePrimaryServerRegistryMetadata() {
         )
       `;
       await sql`ALTER TABLE managed_servers ADD COLUMN IF NOT EXISTS runtime_config JSONB`;
+      await sql`ALTER TABLE managed_servers ADD COLUMN IF NOT EXISTS runtime_enabled BOOLEAN NOT NULL DEFAULT FALSE`;
+      await sql`ALTER TABLE managed_servers ADD COLUMN IF NOT EXISTS onboarding_status TEXT NOT NULL DEFAULT 'draft'`;
       setServerRegistryPersistenceStatus({ tableReady: true });
 
       // Never overwrite an existing registry row from environment variables.
       // This avoids a deploy unexpectedly remapping the production server.
       const inserted = await sql`
         INSERT INTO managed_servers (
-          id, name, enabled, primary_server, mode, nitrado_service_id, discord_guild_id, runtime_config, created_at, updated_at
+          id, name, enabled, primary_server, runtime_enabled, onboarding_status, mode, nitrado_service_id, discord_guild_id, runtime_config, created_at, updated_at
         )
         VALUES (
-          ${primary.id}, ${primary.name}, TRUE, TRUE, ${primary.mode},
+          ${primary.id}, ${primary.name}, TRUE, TRUE, TRUE, 'active', ${primary.mode},
           ${primary.integrations.nitradoServiceId || null}, ${primary.integrations.discordGuildId || null}, ${JSON.stringify(primary.runtime)}::jsonb, NOW(), NOW()
         )
         ON CONFLICT (id) DO NOTHING
@@ -366,6 +480,8 @@ async function ensurePrimaryServerRegistryMetadata() {
             WHEN runtime_config IS NULL OR runtime_config = '{}'::jsonb THEN ${JSON.stringify(primary.runtime)}::jsonb
             ELSE runtime_config
           END,
+          runtime_enabled = TRUE,
+          onboarding_status = 'active',
           updated_at = NOW()
         WHERE id = ${primary.id}
           AND (
@@ -373,32 +489,22 @@ async function ensurePrimaryServerRegistryMetadata() {
             OR discord_guild_id IS NULL
             OR runtime_config IS NULL
             OR runtime_config = '{}'::jsonb
+            OR runtime_enabled IS DISTINCT FROM TRUE
+            OR onboarding_status IS DISTINCT FROM 'active'
           )
         RETURNING id
       `;
 
-      const rows = await sql`
-        SELECT id, name, enabled, primary_server, mode, nitrado_service_id, discord_guild_id, runtime_config
-        FROM managed_servers
-        ORDER BY primary_server DESC, created_at ASC, id ASC
+      // Fail closed: registry rows for future servers may be edited, but none
+      // may become executable during Phase 9 even if a stale/manual DB value
+      // was set before this deploy. This UPDATE is a no-op in the normal case.
+      await sql`
+        UPDATE managed_servers
+        SET runtime_enabled = FALSE, updated_at = NOW()
+        WHERE id <> ${primary.id} AND runtime_enabled IS DISTINCT FROM FALSE
       `;
 
-      const descriptors: ManagedServerDescriptor[] = (rows as any[]).map((row) => ({
-        id: String(row.id || ""),
-        name: String(row.name || row.id || "Server"),
-        enabled: row.enabled !== false,
-        primary: Boolean(row.primary_server),
-        mode: "single-server-compat",
-        integrations: {
-          nitradoServiceId: String(row.nitrado_service_id || "").trim() || undefined,
-          discordGuildId: String(row.discord_guild_id || "").trim() || undefined,
-        },
-        runtime: {
-          nitradoBaseDir: String(row.runtime_config?.nitradoBaseDir || primary.runtime.nitradoBaseDir || "").trim() || undefined,
-          discord: { ...(primary.runtime.discord || {}), ...(row.runtime_config?.discord || {}) },
-        },
-      }));
-      setPersistedManagedServers(descriptors.length ? descriptors : [primary]);
+      const descriptors = await reloadManagedServerRegistryFromDb(primary);
 
       const persistedPrimary = descriptors.find((server) => server.id === primary.id) || descriptors.find((server) => server.primary);
       setServerRegistryPersistenceStatus({
@@ -407,6 +513,10 @@ async function ensurePrimaryServerRegistryMetadata() {
         tableReady: true,
         primarySeeded: Boolean(persistedPrimary),
         rowsLoaded: descriptors.length,
+        draftRows: descriptors.filter((server) => !server.primary && server.onboardingStatus === "draft").length,
+        configuredRows: descriptors.filter((server) => !server.primary && server.onboardingStatus === "configured").length,
+        readyRows: descriptors.filter((server) => !server.primary && server.onboardingStatus === "ready").length,
+        runtimeEnabledRows: descriptors.filter((server) => server.runtimeEnabled).length,
         lastLoadedAt: new Date().toISOString(),
         lastError: undefined,
         configDrift: persistedPrimary ? {
@@ -1410,6 +1520,138 @@ function queueGranularPlayerStats(data: AppState) {
     granularPlayerStatsMetrics.changes += 1;
   }
   return changed;
+}
+
+export async function createManagedServerDraft(input: ManagedServerDraftInput) {
+  assertNoServerSecrets(input);
+  await ensurePrimaryServerRegistryMetadata();
+  if (!sql || !getServerRegistryPersistenceStatus().tableReady) {
+    throw new Error("Server registry is unavailable. DATABASE_URL and managed_servers must be ready.");
+  }
+
+  const rawName = String(input?.name || "").trim();
+  if (!rawName) throw new Error("Informe o nome do servidor.");
+  const name = normalizeManagedServerName(rawName);
+  const id = buildManagedServerId(input?.id || name);
+  if (!id) throw new Error("Informe um nome ou Server ID valido.");
+  if (id === getPrimaryServerId()) throw new Error("O Server ID do PZ Deathmatch e reservado e nao pode ser reutilizado.");
+
+  const discord = normalizeServerDiscordDraft(input?.discord);
+  const descriptor: ManagedServerDescriptor = {
+    id,
+    name,
+    enabled: true,
+    primary: false,
+    runtimeEnabled: false,
+    onboardingStatus: "draft",
+    mode: "single-server-compat",
+    integrations: {
+      nitradoServiceId: optionalServerText(input?.nitradoServiceId, 64),
+      discordGuildId: optionalServerText(input?.discordGuildId, 64),
+    },
+    runtime: {
+      nitradoBaseDir: optionalServerText(input?.nitradoBaseDir, 512),
+      discord,
+    },
+  };
+  descriptor.onboardingStatus = deriveServerOnboardingStatus(descriptor);
+
+  const existingServers = await reloadManagedServerRegistryFromDb();
+  if (descriptor.integrations.nitradoServiceId && existingServers.some((server) => server.integrations.nitradoServiceId === descriptor.integrations.nitradoServiceId)) {
+    throw new Error("Este Nitrado Service ID ja esta vinculado a outro servidor.");
+  }
+  if (descriptor.integrations.discordGuildId && existingServers.some((server) => server.integrations.discordGuildId === descriptor.integrations.discordGuildId)) {
+    throw new Error("Este Discord Guild ID ja esta vinculado a outro servidor.");
+  }
+
+  const inserted = await sql`
+    INSERT INTO managed_servers (
+      id, name, enabled, primary_server, runtime_enabled, onboarding_status,
+      mode, nitrado_service_id, discord_guild_id, runtime_config, created_at, updated_at
+    ) VALUES (
+      ${descriptor.id}, ${descriptor.name}, TRUE, FALSE, FALSE, ${descriptor.onboardingStatus},
+      ${descriptor.mode}, ${descriptor.integrations.nitradoServiceId || null}, ${descriptor.integrations.discordGuildId || null},
+      ${JSON.stringify(descriptor.runtime)}::jsonb, NOW(), NOW()
+    )
+    ON CONFLICT (id) DO NOTHING
+    RETURNING id
+  `;
+  if (!(inserted as any[]).length) throw new Error(`Server ID ${descriptor.id} ja existe.`);
+
+  const servers = await reloadManagedServerRegistryFromDb();
+  recordNetworkTransfer({
+    service: "neon-server-registry",
+    operation: "create_server_draft",
+    direction: "outbound",
+    bytes: Buffer.byteLength(JSON.stringify(descriptor), "utf8"),
+    ok: true,
+  });
+  return servers.find((server) => server.id === descriptor.id) || descriptor;
+}
+
+export async function updateManagedServerDraft(serverId: string, input: ManagedServerDraftInput) {
+  assertNoServerSecrets(input);
+  await ensurePrimaryServerRegistryMetadata();
+  if (!sql || !getServerRegistryPersistenceStatus().tableReady) {
+    throw new Error("Server registry is unavailable. DATABASE_URL and managed_servers must be ready.");
+  }
+
+  const id = buildManagedServerId(serverId);
+  if (!id || id === getPrimaryServerId()) throw new Error("O servidor primario nao pode ser alterado pelo onboarding da Fase 9.");
+  const currentServers = await reloadManagedServerRegistryFromDb();
+  const current = currentServers.find((server) => server.id === id);
+  if (!current) throw new Error(`Servidor ${id} nao encontrado.`);
+
+  const next: ManagedServerDescriptor = {
+    ...current,
+    name: input?.name === undefined ? current.name : normalizeManagedServerName(input.name),
+    enabled: true,
+    primary: false,
+    runtimeEnabled: false,
+    onboardingStatus: "draft",
+    integrations: {
+      nitradoServiceId: input?.nitradoServiceId === undefined ? current.integrations.nitradoServiceId : optionalServerText(input.nitradoServiceId, 64),
+      discordGuildId: input?.discordGuildId === undefined ? current.integrations.discordGuildId : optionalServerText(input.discordGuildId, 64),
+    },
+    runtime: {
+      nitradoBaseDir: input?.nitradoBaseDir === undefined ? current.runtime.nitradoBaseDir : optionalServerText(input.nitradoBaseDir, 512),
+      discord: normalizeServerDiscordDraft(input?.discord, current.runtime.discord),
+    },
+  };
+  next.onboardingStatus = deriveServerOnboardingStatus(next);
+
+  const allServers = currentServers;
+  if (next.integrations.nitradoServiceId && allServers.some((server) => server.id !== id && server.integrations.nitradoServiceId === next.integrations.nitradoServiceId)) {
+    throw new Error("Este Nitrado Service ID ja esta vinculado a outro servidor.");
+  }
+  if (next.integrations.discordGuildId && allServers.some((server) => server.id !== id && server.integrations.discordGuildId === next.integrations.discordGuildId)) {
+    throw new Error("Este Discord Guild ID ja esta vinculado a outro servidor.");
+  }
+
+  await sql`
+    UPDATE managed_servers
+    SET name = ${next.name},
+        enabled = TRUE,
+        primary_server = FALSE,
+        runtime_enabled = FALSE,
+        onboarding_status = ${next.onboardingStatus},
+        mode = ${next.mode},
+        nitrado_service_id = ${next.integrations.nitradoServiceId || null},
+        discord_guild_id = ${next.integrations.discordGuildId || null},
+        runtime_config = ${JSON.stringify(next.runtime)}::jsonb,
+        updated_at = NOW()
+    WHERE id = ${id} AND id <> ${getPrimaryServerId()}
+  `;
+
+  const servers = await reloadManagedServerRegistryFromDb();
+  recordNetworkTransfer({
+    service: "neon-server-registry",
+    operation: "update_server_draft",
+    direction: "outbound",
+    bytes: Buffer.byteLength(JSON.stringify(next), "utf8"),
+    ok: true,
+  });
+  return servers.find((server) => server.id === id) || next;
 }
 
 async function ensureGranularPlayerStatsTable() {

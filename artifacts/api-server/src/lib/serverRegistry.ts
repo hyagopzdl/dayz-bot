@@ -1,4 +1,5 @@
 export type ServerFoundationMode = "single-server-compat";
+export type ServerOnboardingStatus = "active" | "draft" | "configured" | "ready";
 
 export type ServerDiscordRuntimeConfig = {
   globalChannelId?: string;
@@ -26,6 +27,8 @@ export type ManagedServerDescriptor = {
   name: string;
   enabled: boolean;
   primary: boolean;
+  runtimeEnabled: boolean;
+  onboardingStatus: ServerOnboardingStatus;
   mode: ServerFoundationMode;
   integrations: {
     nitradoServiceId?: string;
@@ -61,6 +64,10 @@ export type ServerRegistryPersistenceStatus = {
   tableReady: boolean;
   primarySeeded: boolean;
   rowsLoaded: number;
+  draftRows?: number;
+  configuredRows?: number;
+  readyRows?: number;
+  runtimeEnabledRows?: number;
   lastLoadedAt?: string;
   lastError?: string;
   configDrift?: {
@@ -166,19 +173,38 @@ function getPrimaryRuntimeConfig(): ServerRuntimeConfig {
   };
 }
 
-function normalizeServerId(value: unknown) {
-  const normalized = String(value || "")
+export function buildManagedServerId(value: unknown) {
+  return String(value || "")
     .trim()
     .toLowerCase()
     .replace(/[^a-z0-9_-]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 64);
+}
+
+function normalizeServerId(value: unknown) {
+  const normalized = buildManagedServerId(value);
   return normalized || FALLBACK_SERVER_ID;
 }
 
-function normalizeServerName(value: unknown) {
+export function normalizeManagedServerName(value: unknown) {
   const normalized = String(value || "").trim().replace(/\s+/g, " ").slice(0, 80);
   return normalized || FALLBACK_SERVER_NAME;
+}
+
+
+function normalizeServerOnboardingStatus(value: unknown): ServerOnboardingStatus {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (normalized === "active" || normalized === "configured" || normalized === "ready") return normalized;
+  return "draft";
+}
+
+export function canExecuteManagedServerRuntime(serverId: unknown) {
+  const normalized = normalizeServerId(serverId);
+  // Phase 9 deliberately keeps execution restricted to the production primary.
+  // Draft/configured rows may exist in the registry, but cannot run parser, ADM,
+  // Discord or schedulers until an explicit activation phase changes this policy.
+  return normalized === getPrimaryServerId();
 }
 
 export function getPrimaryServerId() {
@@ -188,9 +214,11 @@ export function getPrimaryServerId() {
 export function getPrimaryServerDescriptor(): ManagedServerDescriptor {
   return {
     id: getPrimaryServerId(),
-    name: normalizeServerName(process.env.SERVER_DISPLAY_NAME || process.env.SERVER_NAME || FALLBACK_SERVER_NAME),
+    name: normalizeManagedServerName(process.env.SERVER_DISPLAY_NAME || process.env.SERVER_NAME || FALLBACK_SERVER_NAME),
     enabled: true,
     primary: true,
+    runtimeEnabled: true,
+    onboardingStatus: "active",
     mode: "single-server-compat",
     integrations: {
       nitradoServiceId: String(process.env.NITRADO_SERVICE_ID || FALLBACK_NITRADO_SERVICE_ID).trim() || undefined,
@@ -201,9 +229,8 @@ export function getPrimaryServerDescriptor(): ManagedServerDescriptor {
 }
 
 export function listManagedServers(): ManagedServerDescriptor[] {
-  // Phase 8 keeps additional servers registry-visible but operationally blocked.
-  // Runtime/state isolation is prepared first; activation/onboarding remains a
-  // separate explicit step so the primary PZ server cannot be affected.
+  // Phase 9 allows additional servers to exist as draft/configured registry rows,
+  // while runtime execution remains explicitly primary-only.
   if (persistedServers.length) return persistedServers.map((server) => ({ ...server, integrations: { ...server.integrations }, runtime: { ...server.runtime, discord: { ...server.runtime.discord } } }));
   return [getPrimaryServerDescriptor()];
 }
@@ -211,9 +238,11 @@ export function listManagedServers(): ManagedServerDescriptor[] {
 export function setPersistedManagedServers(servers: ManagedServerDescriptor[]) {
   persistedServers = servers.map((server) => ({
     id: normalizeServerId(server.id),
-    name: normalizeServerName(server.name),
+    name: normalizeManagedServerName(server.name),
     enabled: server.enabled !== false,
     primary: Boolean(server.primary),
+    runtimeEnabled: Boolean(server.primary ? true : server.runtimeEnabled),
+    onboardingStatus: server.primary ? "active" : normalizeServerOnboardingStatus(server.onboardingStatus),
     mode: "single-server-compat",
     integrations: {
       nitradoServiceId: String(server.integrations?.nitradoServiceId || "").trim() || undefined,
@@ -279,13 +308,28 @@ export function getServerFoundationDiagnostics() {
   const server = getPrimaryServerDescriptor();
   const registry = getServerRegistryPersistenceStatus();
   const namespace = getServerNamespacePersistenceStatus();
+  const managedServers = listManagedServers();
+  const additionalServers = managedServers.filter((candidate) => !candidate.primary);
   return {
-    phase: 8,
+    phase: 9,
     mode: server.mode,
     currentServerId: server.id,
     currentServerName: server.name,
-    managedServers: listManagedServers().length,
+    managedServers: managedServers.length,
     additionalServersEnabled: false,
+    onboarding: {
+      registryWritesEnabled: Boolean(registry.enabled && registry.tableReady),
+      canCreateDrafts: Boolean(registry.enabled && registry.tableReady),
+      additionalServerRows: additionalServers.length,
+      draftServers: additionalServers.filter((candidate) => candidate.onboardingStatus === "draft").length,
+      configuredServers: additionalServers.filter((candidate) => candidate.onboardingStatus === "configured").length,
+      readyServers: additionalServers.filter((candidate) => candidate.onboardingStatus === "ready").length,
+      runtimeEnabledServers: managedServers.filter((candidate) => candidate.runtimeEnabled).length,
+      activationPolicy: "primary-only",
+      secretsStoredInRegistry: false,
+      backgroundPollingAdded: false,
+      backgroundRegistryWritesAdded: false,
+    },
     registryPersisted: registry.initialized && registry.tableReady && registry.primarySeeded,
     persistenceNamespaced: namespace.scopedReadsEnabled && namespace.botStateCompositeKeyReady,
     persistenceTaggedWithServerId: namespace.initialized && namespace.botStateTableReady && namespace.botStateUntaggedRows === 0 && (!namespace.playerStatsTableReady || namespace.playerStatsUntaggedRows === 0),
@@ -318,6 +362,12 @@ export function getServerFoundationDiagnostics() {
       perServerPositionHistory: Boolean(runtimeIsolationStatus.positionHistoryNamespaced),
       perServerAdmParserStorage: Boolean(runtimeIsolationStatus.admParserStorageNamespaced),
       activationReadiness: Boolean(runtimeIsolationStatus.activationReadiness),
+      draftRegistrationAvailable: Boolean(registry.enabled && registry.tableReady),
+      additionalRuntimeActivationBlocked: true,
+      nonPrimaryConfigInheritanceBlocked: true,
+      secretsStoredInRegistry: false,
+      onDemandRegistryWritesOnly: true,
+      backgroundRegistryPollingAdded: false,
     },
     integrations: server.integrations,
   };
