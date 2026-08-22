@@ -1830,8 +1830,9 @@ async function flushPendingDomains(
     }
     return;
   }
-  if (getPersistenceRuntime().domainFlushTimer) {
-    clearTimeout(getPersistenceRuntime().domainFlushTimer);
+  const domainFlushTimer = getPersistenceRuntime().domainFlushTimer;
+  if (domainFlushTimer) {
+    clearTimeout(domainFlushTimer);
     getPersistenceRuntime().domainFlushTimer = null;
   }
 
@@ -1854,7 +1855,7 @@ async function flushPendingDomains(
   for (const [domain] of entries) getPersistenceRuntime().pendingDomains.delete(domain);
   for (const [playerKey] of playerEntries) getPersistenceRuntime().pendingGranularPlayerStats.delete(playerKey);
 
-  getPersistenceRuntime().domainFlushPromise = (async () => {
+  const domainFlushPromise = (async () => {
     try {
       if (entries.length || playerEntries.length) {
         try {
@@ -1888,7 +1889,8 @@ async function flushPendingDomains(
       if (getPersistenceRuntime().pendingDomains.size || getPersistenceRuntime().pendingGranularPlayerStats.size) scheduleDomainFlush();
     }
   })();
-  return getPersistenceRuntime().domainFlushPromise;
+  getPersistenceRuntime().domainFlushPromise = domainFlushPromise;
+  return domainFlushPromise;
 }
 
 function scheduleDomainFlush() {
@@ -2007,8 +2009,9 @@ async function flushPendingDiscordRuntime() {
   const hash = getPersistenceRuntime().pendingDiscordRuntimeHash;
   getPersistenceRuntime().pendingDiscordRuntimeJson = "";
   getPersistenceRuntime().pendingDiscordRuntimeHash = "";
-  if (getPersistenceRuntime().discordRuntimeSaveTimer) {
-    clearTimeout(getPersistenceRuntime().discordRuntimeSaveTimer);
+  const discordRuntimeSaveTimer = getPersistenceRuntime().discordRuntimeSaveTimer;
+  if (discordRuntimeSaveTimer) {
+    clearTimeout(discordRuntimeSaveTimer);
     getPersistenceRuntime().discordRuntimeSaveTimer = null;
   }
 
@@ -2146,8 +2149,9 @@ async function flushPendingState() {
   getPersistenceRuntime().pendingPersistReasons = new Set<string>();
   getPersistenceRuntime().pendingPersistStartedAt = 0;
 
-  if (getPersistenceRuntime().saveTimer) {
-    clearTimeout(getPersistenceRuntime().saveTimer);
+  const saveTimer = getPersistenceRuntime().saveTimer;
+  if (saveTimer) {
+    clearTimeout(saveTimer);
     getPersistenceRuntime().saveTimer = null;
   }
 
@@ -2509,8 +2513,9 @@ async function ensurePlayerPositionHistoryTable() {
 }
 
 async function flushPlayerPositionHistoryBatch() {
-  if (getPlayerPositionRuntime().flushTimer) {
-    clearTimeout(getPlayerPositionRuntime().flushTimer);
+  const playerPositionFlushTimer = getPlayerPositionRuntime().flushTimer;
+  if (playerPositionFlushTimer) {
+    clearTimeout(playerPositionFlushTimer);
     getPlayerPositionRuntime().flushTimer = null;
   }
   if (!sql || !getPlayerPositionRuntime().pendingObservations.size) return;
