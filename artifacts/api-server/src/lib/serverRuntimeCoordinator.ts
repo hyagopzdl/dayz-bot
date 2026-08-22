@@ -79,7 +79,7 @@ export async function runManagedServerRuntimeCycle(
     status.lastReason = reason;
     status.lastStartedAt = startedAt;
     status.lastError = undefined;
-    recordMainCycleStarted();
+    recordMainCycleStarted(serverId);
     console.log(`🔁 LOOP PRINCIPAL [${serverId}] (${reason})`);
 
     // Loading the server-scoped state first initializes a brand-new namespace
@@ -127,13 +127,13 @@ export async function runManagedServerRuntimeCycle(
         parserDurationMs,
         downloadOk,
         parserOk,
-      });
+      }, serverId);
     }
   }));
 
   if (locked.skipped) {
     status.skippedOverlaps += 1;
-    recordMainCycleSkippedOverlap();
+    recordMainCycleSkippedOverlap(serverId);
     console.log(`⏭️ ciclo ignorado para ${serverId}: execução anterior ainda rodando`);
   }
   return { skipped: locked.skipped };

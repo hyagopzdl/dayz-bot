@@ -102,6 +102,72 @@ const MAX_PAGE_SIZE = 50;
 
 type AdminState = AppState & Record<string, any>;
 
+function buildServerRuntimeObservability() {
+  const coordinator = getManagedServerRuntimeCoordinatorDiagnostics();
+  const coordinatorByServer = new Map((coordinator.servers || []).map((item: any) => [item.serverId, item]));
+  const adm = getAdmDownloadMetrics();
+  const admByServer = new Map((adm.servers || []).map((item: any) => [item.serverId, item]));
+
+  return listManagedServers().map((server) => {
+    const persistence = getStatePersistenceMetrics(server.id);
+    const domains = getStateDomainPersistenceMetrics(server.id);
+    const granular = getGranularPlayerStatsPersistenceMetrics(server.id);
+    const discordRuntime = getDiscordRuntimePersistenceMetrics(server.id);
+    const positions = getPlayerPositionHistoryMetrics(server.id);
+    const runtime = getRuntimePerformanceMetrics(server.id);
+    const coordinatorStatus = coordinatorByServer.get(server.id) as any;
+    const admStatus = admByServer.get(server.id) as any;
+    return {
+      serverId: server.id,
+      serverName: server.name,
+      primary: server.primary,
+      runtimeEnabled: server.runtimeEnabled,
+      onboardingStatus: server.onboardingStatus,
+      executable: Boolean(coordinatorStatus?.executable),
+      state: {
+        bootSource: domains.bootSource,
+        reads: persistence.reads,
+        writes: persistence.writes,
+        failedWrites: persistence.failedWrites,
+        totalPayloadBytesWritten: persistence.totalPayloadBytesWritten,
+        pendingDomains: domains.pendingDomains,
+        domainFlushes: domains.flushes,
+        domainRowsWritten: domains.rowsWritten,
+        domainBytesWritten: domains.totalPayloadBytesWritten,
+        granularRowsAppliedAtBoot: granular.rowsAppliedAtBoot,
+        granularPendingPlayers: granular.pendingPlayers,
+        granularRowsWritten: granular.rowsWritten,
+        granularFailedBatches: granular.failedBatches,
+        positionObservations: positions.observationsReceived,
+        positionPlayers: positions.uniquePlayersObserved,
+        positionRowsWritten: positions.rowsWritten,
+        positionFailedBatches: positions.failedBatches,
+        discordRuntimeWrites: discordRuntime.writes,
+        discordRuntimeFailedWrites: discordRuntime.failedWrites,
+      },
+      runtime: {
+        cyclesStarted: runtime.cyclesStarted,
+        cyclesCompleted: runtime.cyclesCompleted,
+        skippedOverlaps: runtime.cyclesSkippedOverlap,
+        cycleFailures: runtime.cycleFailures,
+        averageCycleDurationMs: runtime.averageCycleDurationMs,
+        averageDownloadDurationMs: runtime.averageDownloadDurationMs,
+        averageParserDurationMs: runtime.averageParserDurationMs,
+        lastCycleFinishedAt: runtime.lastCycleFinishedAt,
+        lastError: coordinatorStatus?.lastError,
+      },
+      adm: {
+        cycles: Number(admStatus?.cycles || 0),
+        downloads: Number(admStatus?.downloads || 0),
+        bytesDownloaded: Number(admStatus?.bytesDownloaded || 0),
+        averageBytesPerCycle: Number(admStatus?.averageBytesPerCycle || 0),
+        projected30DayBytes: Number(admStatus?.projected30DayBytes || 0),
+        downloadFailures: Number(admStatus?.downloadFailures || 0),
+      },
+    };
+  });
+}
+
 
 type SpawnZonePointPayload = { id: string; x: number; z: number; createdAt?: string; updatedAt?: string };
 type SpawnZonePayload = { id: string; name: string; color: string; enabled: boolean; points: SpawnZonePointPayload[]; createdAt: string; updatedAt: string };
@@ -6537,6 +6603,7 @@ function renderAdminPanelHtml(token: string) {
         const positionHistory = state.playerPositionHistoryMetrics || {};
         const adm = state.admDownloadMetrics || {};
         const runtime = state.runtimeMetrics || {};
+        const serverRuntimeObservability = Array.isArray(state.serverRuntimeObservability) ? state.serverRuntimeObservability : [];
         const network = state.networkMetrics || {};
         const reasons = Object.entries(m.reasons || {})
           .map(([reason, value]) => ({ reason, ...(value || {}) }))
@@ -6642,7 +6709,27 @@ function renderAdminPanelHtml(token: string) {
         const cycleRows = recentCycles.length ? recentCycles.map((item) =>
           '<tr><td>' + escapeHtml(item.finishedAt ? relativeDate(item.finishedAt) : '-') + '</td><td>' + Number(item.durationMs || 0).toLocaleString() + ' ms</td><td>' + Number(item.downloadDurationMs || 0).toLocaleString() + ' ms</td><td>' + Number(item.parserDurationMs || 0).toLocaleString() + ' ms</td><td>' + (item.downloadOk ? 'OK' : 'Error') + '</td><td>' + (item.parserOk ? 'OK' : 'Error') + '</td></tr>'
         ).join('') : '<tr><td colspan="6" class="member-meta">No main cycles recorded yet.</td></tr>';
-        metrics.innerHTML = '<div class="overview-grid" style="grid-template-columns:repeat(6,minmax(0,1fr))">' +
+        const serverObservabilityRows = serverRuntimeObservability.length ? serverRuntimeObservability.map((item) => {
+          const stateMetrics = item.state || {};
+          const runtimeMetrics = item.runtime || {};
+          const admMetrics = item.adm || {};
+          const failureCount = Number(stateMetrics.failedWrites || 0) + Number(stateMetrics.granularFailedBatches || 0) + Number(stateMetrics.positionFailedBatches || 0) + Number(stateMetrics.discordRuntimeFailedWrites || 0) + Number(runtimeMetrics.cycleFailures || 0) + Number(admMetrics.downloadFailures || 0);
+          return '<tr>' +
+            '<td><strong>' + escapeHtml(item.serverName || item.serverId || '-') + '</strong><br><code>' + escapeHtml(item.serverId || '-') + '</code></td>' +
+            '<td>' + (item.runtimeEnabled && item.executable ? '<span class="chip online">Running</span>' : '<span class="chip">' + escapeHtml(item.onboardingStatus || 'inactive') + '</span>') + '</td>' +
+            '<td><code>' + escapeHtml(stateMetrics.bootSource || 'pending') + '</code></td>' +
+            '<td>' + Number(stateMetrics.domainFlushes || 0).toLocaleString() + ' / ' + Number(stateMetrics.domainRowsWritten || 0).toLocaleString() + '<br><span class="member-meta">' + formatBytes(Number(stateMetrics.domainBytesWritten || 0)) + '</span></td>' +
+            '<td>' + Number(stateMetrics.granularRowsWritten || 0).toLocaleString() + '<br><span class="member-meta">boot ' + Number(stateMetrics.granularRowsAppliedAtBoot || 0).toLocaleString() + ' · pending ' + Number(stateMetrics.granularPendingPlayers || 0).toLocaleString() + '</span></td>' +
+            '<td>' + Number(stateMetrics.positionRowsWritten || 0).toLocaleString() + '<br><span class="member-meta">' + Number(stateMetrics.positionPlayers || 0).toLocaleString() + ' players · ' + Number(stateMetrics.positionObservations || 0).toLocaleString() + ' obs</span></td>' +
+            '<td>' + Number(admMetrics.cycles || 0).toLocaleString() + ' / ' + Number(admMetrics.downloads || 0).toLocaleString() + '<br><span class="member-meta">' + formatBytes(Number(admMetrics.bytesDownloaded || 0)) + '</span></td>' +
+            '<td>' + Number(runtimeMetrics.cyclesCompleted || 0).toLocaleString() + '<br><span class="member-meta">avg ' + Number(runtimeMetrics.averageCycleDurationMs || 0).toLocaleString() + ' ms</span></td>' +
+            '<td>' + (failureCount ? '<span class="chip" style="color:#ff7b7b">' + failureCount.toLocaleString() + '</span>' : '<span class="chip online">0</span>') + (runtimeMetrics.lastError ? '<br><span class="member-meta">' + escapeHtml(runtimeMetrics.lastError) + '</span>' : '') + '</td>' +
+          '</tr>';
+        }).join('') : '<tr><td colspan="9" class="member-meta">Per-server runtime diagnostics become available after the server registry is loaded.</td></tr>';
+        metrics.innerHTML = '<div class="settings-card" style="margin-bottom:16px"><div class="settings-card-head"><div><h3>Runtime diagnostics by server</h3><p>Phase 12 observability hardening keeps persistence, player stats, position history and loop timing attributed to the runtime that produced them.</p></div></div>' +
+          '<div class="table-wrap"><table><thead><tr><th>Server</th><th>Runtime</th><th>Boot source</th><th>V2 flushes / rows</th><th>Player stats rows</th><th>Position rows</th><th>ADM cycles / downloads</th><th>Main cycles</th><th>Failures</th></tr></thead><tbody>' + serverObservabilityRows + '</tbody></table></div>' +
+          '<div class="member-meta" style="margin-top:10px">The detailed persistence sections below are scoped to <strong>' + escapeHtml(state.serverFoundation?.currentServerName || 'the primary server') + '</strong>. Network & Render bandwidth remains process-wide by design.</div></div>' +
+        '<div class="overview-grid" style="grid-template-columns:repeat(6,minmax(0,1fr))">' +
           '<div class="stat-card"><span>Reads</span><strong>' + Number(m.reads || 0).toLocaleString() + '</strong></div>' +
           '<div class="stat-card"><span>Save requests</span><strong>' + Number(m.saveRequests || 0).toLocaleString() + '</strong></div>' +
           '<div class="stat-card"><span>Writes</span><strong>' + Number(m.writes || 0).toLocaleString() + '</strong></div>' +
@@ -6808,6 +6895,7 @@ function renderAdminPanelHtml(token: string) {
         state.admDownloadMetrics = payload.admDownloadMetrics;
         state.runtimeMetrics = payload.runtimeMetrics;
         state.runtimeCoordinator = payload.runtimeCoordinator;
+        state.serverRuntimeObservability = payload.serverRuntimeObservability || [];
         state.networkMetrics = payload.networkMetrics;
         renderServiceSettings();
       } finally { state.serviceSettingsLoading = false; }
@@ -8065,7 +8153,20 @@ router.get("/api/service-settings", async (req, res) => {
     const state = await getStateAsync();
     const settings = normalizeServiceSettings(state.serviceSettings);
     setAdmDownloadMode(settings.admDownloadMode);
-    res.json({ settings, serverFoundation: getServerFoundationDiagnostics(), persistenceMetrics: getStatePersistenceMetrics(), domainPersistenceMetrics: getStateDomainPersistenceMetrics(), granularPlayerStatsMetrics: getGranularPlayerStatsPersistenceMetrics(), discordRuntimeMetrics: getDiscordRuntimePersistenceMetrics(), playerPositionHistoryMetrics: getPlayerPositionHistoryMetrics(), admDownloadMetrics: getAdmDownloadMetrics(), runtimeMetrics: getRuntimePerformanceMetrics(), runtimeCoordinator: getManagedServerRuntimeCoordinatorDiagnostics(), networkMetrics: getNetworkMetrics() });
+    res.json({
+      settings,
+      serverFoundation: getServerFoundationDiagnostics(),
+      persistenceMetrics: getStatePersistenceMetrics(),
+      domainPersistenceMetrics: getStateDomainPersistenceMetrics(),
+      granularPlayerStatsMetrics: getGranularPlayerStatsPersistenceMetrics(),
+      discordRuntimeMetrics: getDiscordRuntimePersistenceMetrics(),
+      playerPositionHistoryMetrics: getPlayerPositionHistoryMetrics(),
+      admDownloadMetrics: getAdmDownloadMetrics(),
+      runtimeMetrics: getRuntimePerformanceMetrics(),
+      runtimeCoordinator: getManagedServerRuntimeCoordinatorDiagnostics(),
+      serverRuntimeObservability: buildServerRuntimeObservability(),
+      networkMetrics: getNetworkMetrics(),
+    });
   } catch (err) {
     res.status(500).json({ error: String(err) });
   }
@@ -8106,6 +8207,7 @@ router.patch("/api/service-settings", async (req, res) => {
       admDownloadMetrics: getAdmDownloadMetrics(),
       runtimeMetrics: getRuntimePerformanceMetrics(),
       runtimeCoordinator: getManagedServerRuntimeCoordinatorDiagnostics(),
+      serverRuntimeObservability: buildServerRuntimeObservability(),
       networkMetrics: getNetworkMetrics(),
       serverFoundation: getServerFoundationDiagnostics(),
     });

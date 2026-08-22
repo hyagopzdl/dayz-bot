@@ -55,6 +55,35 @@ const GRANULAR_PLAYER_STATS_ENABLED = process.env.GRANULAR_PLAYER_STATS !== "fal
 
 const cachedStates = new Map<string, AppState>();
 
+type ServerScopedMetricStore<T extends object> = {
+  proxy: T;
+  get: (serverId?: string) => T;
+  entries: () => Array<[string, T]>;
+};
+
+function createServerScopedMetricStore<T extends object>(factory: () => T): ServerScopedMetricStore<T> {
+  const buckets = new Map<string, T>();
+  const get = (serverId = getActiveServerId()) => {
+    let bucket = buckets.get(serverId);
+    if (!bucket) {
+      bucket = factory();
+      buckets.set(serverId, bucket);
+    }
+    return bucket;
+  };
+  const proxy = new Proxy({} as T, {
+    get: (_target, property) => Reflect.get(get(), property),
+    set: (_target, property, value) => Reflect.set(get(), property, value),
+    has: (_target, property) => Reflect.has(get(), property),
+    ownKeys: () => Reflect.ownKeys(get()),
+    getOwnPropertyDescriptor: (_target, property) => {
+      const descriptor = Reflect.getOwnPropertyDescriptor(get(), property);
+      return descriptor ? { ...descriptor, configurable: true } : undefined;
+    },
+  });
+  return { proxy, get, entries: () => [...buckets.entries()] };
+}
+
 function getCachedState(): AppState | null {
   return cachedStates.get(getActiveServerId()) || null;
 }
@@ -155,21 +184,26 @@ function getPersistenceRuntime(serverId = getActiveServerId()): ServerPersistenc
 
 let granularPlayerStatsTableReadyPromise: Promise<void> | null = null;
 
-const granularPlayerStatsMetrics = {
-  startedAt: new Date().toISOString(),
-  enabled: GRANULAR_PLAYER_STATS_ENABLED,
-  changes: 0,
-  batchesWritten: 0,
-  rowsWritten: 0,
-  failedBatches: 0,
-  totalPayloadBytesWritten: 0,
-  totalWriteDurationMs: 0,
-  lastWriteDurationMs: 0,
-  lastWriteAt: undefined as string | undefined,
-  lastError: undefined as string | undefined,
-  rowsAppliedAtBoot: 0,
-  newestRowAtBoot: undefined as string | undefined,
-};
+function createGranularPlayerStatsMetrics() {
+  return {
+    startedAt: new Date().toISOString(),
+    enabled: GRANULAR_PLAYER_STATS_ENABLED,
+    changes: 0,
+    batchesWritten: 0,
+    rowsWritten: 0,
+    failedBatches: 0,
+    totalPayloadBytesWritten: 0,
+    totalWriteDurationMs: 0,
+    lastWriteDurationMs: 0,
+    lastWriteAt: undefined as string | undefined,
+    lastError: undefined as string | undefined,
+    rowsAppliedAtBoot: 0,
+    newestRowAtBoot: undefined as string | undefined,
+  };
+}
+
+const granularPlayerStatsMetricsStore = createServerScopedMetricStore(createGranularPlayerStatsMetrics);
+const granularPlayerStatsMetrics = granularPlayerStatsMetricsStore.proxy;
 
 type DomainMetric = {
   changes: number;
@@ -179,58 +213,68 @@ type DomainMetric = {
   lastWriteAt?: string;
 };
 
-const domainPersistenceMetrics = {
-  startedAt: new Date().toISOString(),
-  enabled: STATE_PERSISTENCE_V2_ENABLED,
-  schedulerPolicyVersion: STATE_SCHEDULER_POLICY_VERSION,
-  backgroundCadenceMs: STATE_BACKGROUND_PERSIST_MS,
-  processingCadenceMs: STATE_PROCESSING_PERSIST_MS,
-  statsCadenceMs: STATE_STATS_PERSIST_MS,
-  compatibilitySnapshotMs: STATE_COMPAT_SNAPSHOT_MS,
-  saveRequests: 0,
-  backgroundQueued: 0,
-  immediateFlushes: 0,
-  backgroundFlushes: 0,
-  forcedFlushes: 0,
-  lastFlushTrigger: "none",
-  flushes: 0,
-  rowsWritten: 0,
-  failedFlushes: 0,
-  compatibilitySnapshots: 0,
-  totalPayloadBytesWritten: 0,
-  totalWriteDurationMs: 0,
-  lastWriteDurationMs: 0,
-  lastWriteAt: undefined as string | undefined,
-  lastError: undefined as string | undefined,
-  bootSource: "pending" as "pending" | "persistence-v2" | "compat-main" | "legacy-main" | "fresh-main" | "local-file" | "local-fallback",
-  domainRowsFoundAtBoot: 0,
-  domainRowsAppliedAtBoot: 0,
-  mainUpdatedAtAtBoot: undefined as string | undefined,
-  newestDomainUpdatedAtAtBoot: undefined as string | undefined,
-  domains: {
-    stats: { changes: 0, writes: 0, bytesWritten: 0, currentBytes: 0 },
-    processing: { changes: 0, writes: 0, bytesWritten: 0, currentBytes: 0 },
-    social: { changes: 0, writes: 0, bytesWritten: 0, currentBytes: 0 },
-    commerce: { changes: 0, writes: 0, bytesWritten: 0, currentBytes: 0 },
-    config: { changes: 0, writes: 0, bytesWritten: 0, currentBytes: 0 },
-  } as Record<StateDomainName, DomainMetric>,
-};
+function createDomainPersistenceMetrics() {
+  return {
+    startedAt: new Date().toISOString(),
+    enabled: STATE_PERSISTENCE_V2_ENABLED,
+    schedulerPolicyVersion: STATE_SCHEDULER_POLICY_VERSION,
+    backgroundCadenceMs: STATE_BACKGROUND_PERSIST_MS,
+    processingCadenceMs: STATE_PROCESSING_PERSIST_MS,
+    statsCadenceMs: STATE_STATS_PERSIST_MS,
+    compatibilitySnapshotMs: STATE_COMPAT_SNAPSHOT_MS,
+    saveRequests: 0,
+    backgroundQueued: 0,
+    immediateFlushes: 0,
+    backgroundFlushes: 0,
+    forcedFlushes: 0,
+    lastFlushTrigger: "none",
+    flushes: 0,
+    rowsWritten: 0,
+    failedFlushes: 0,
+    compatibilitySnapshots: 0,
+    totalPayloadBytesWritten: 0,
+    totalWriteDurationMs: 0,
+    lastWriteDurationMs: 0,
+    lastWriteAt: undefined as string | undefined,
+    lastError: undefined as string | undefined,
+    bootSource: "pending" as "pending" | "persistence-v2" | "compat-main" | "legacy-main" | "fresh-main" | "local-file" | "local-fallback",
+    domainRowsFoundAtBoot: 0,
+    domainRowsAppliedAtBoot: 0,
+    mainUpdatedAtAtBoot: undefined as string | undefined,
+    newestDomainUpdatedAtAtBoot: undefined as string | undefined,
+    domains: {
+      stats: { changes: 0, writes: 0, bytesWritten: 0, currentBytes: 0 },
+      processing: { changes: 0, writes: 0, bytesWritten: 0, currentBytes: 0 },
+      social: { changes: 0, writes: 0, bytesWritten: 0, currentBytes: 0 },
+      commerce: { changes: 0, writes: 0, bytesWritten: 0, currentBytes: 0 },
+      config: { changes: 0, writes: 0, bytesWritten: 0, currentBytes: 0 },
+    } as Record<StateDomainName, DomainMetric>,
+  };
+}
 
-const discordRuntimeMetrics = {
-  startedAt: new Date().toISOString(),
-  saveRequests: 0,
-  explicitRuntimeRequests: 0,
-  fallbackToCore: 0,
-  writes: 0,
-  skippedWrites: 0,
-  failedWrites: 0,
-  totalPayloadBytesWritten: 0,
-  totalWriteDurationMs: 0,
-  lastPayloadBytes: 0,
-  lastWriteDurationMs: 0,
-  lastWriteAt: undefined as string | undefined,
-  lastWriteError: undefined as string | undefined,
-};
+const domainPersistenceMetricsStore = createServerScopedMetricStore(createDomainPersistenceMetrics);
+const domainPersistenceMetrics = domainPersistenceMetricsStore.proxy;
+
+function createDiscordRuntimeMetrics() {
+  return {
+    startedAt: new Date().toISOString(),
+    saveRequests: 0,
+    explicitRuntimeRequests: 0,
+    fallbackToCore: 0,
+    writes: 0,
+    skippedWrites: 0,
+    failedWrites: 0,
+    totalPayloadBytesWritten: 0,
+    totalWriteDurationMs: 0,
+    lastPayloadBytes: 0,
+    lastWriteDurationMs: 0,
+    lastWriteAt: undefined as string | undefined,
+    lastWriteError: undefined as string | undefined,
+  };
+}
+
+const discordRuntimeMetricsStore = createServerScopedMetricStore(createDiscordRuntimeMetrics);
+const discordRuntimeMetrics = discordRuntimeMetricsStore.proxy;
 
 type PersistenceReasonMetric = {
   saveRequests: number;
@@ -274,35 +318,57 @@ type PersistenceWriteSample = {
   changedBytes: number;
 };
 
-const persistenceMetrics = {
-  startedAt: new Date().toISOString(),
-  reads: 0,
-  writes: 0,
-  failedWrites: 0,
-  saveRequests: 0,
-  skippedWrites: 0,
-  consolidatedWrites: 0,
-  totalPayloadBytesWritten: 0,
-  totalChangedBytes: 0,
-  totalWriteDurationMs: 0,
-  maxWriteDurationMs: 0,
-  lastWriteDurationMs: 0,
-  lastReadAt: undefined as string | undefined,
-  lastWriteAt: undefined as string | undefined,
-  lastWriteError: undefined as string | undefined,
-  lastPayloadBytes: 0,
-  lastChangedBytes: 0,
-  lastChangedSections: [] as string[],
-  lastWriteReasons: [] as string[],
-  reasons: {} as Record<string, PersistenceReasonMetric>,
-  sections: {} as Record<string, PersistenceSectionMetric>,
-  lastPayloadSections: [] as Array<{ key: string; bytes: number; entries: number }>,
-  detailedSections: [] as PayloadSectionAnalysis[],
-  recentWrites: [] as PersistenceWriteSample[],
-};
+function createPersistenceMetrics() {
+  return {
+    startedAt: new Date().toISOString(),
+    reads: 0,
+    writes: 0,
+    failedWrites: 0,
+    saveRequests: 0,
+    skippedWrites: 0,
+    consolidatedWrites: 0,
+    totalPayloadBytesWritten: 0,
+    totalChangedBytes: 0,
+    totalWriteDurationMs: 0,
+    maxWriteDurationMs: 0,
+    lastWriteDurationMs: 0,
+    lastReadAt: undefined as string | undefined,
+    lastWriteAt: undefined as string | undefined,
+    lastWriteError: undefined as string | undefined,
+    lastPayloadBytes: 0,
+    lastChangedBytes: 0,
+    lastChangedSections: [] as string[],
+    lastWriteReasons: [] as string[],
+    reasons: {} as Record<string, PersistenceReasonMetric>,
+    sections: {} as Record<string, PersistenceSectionMetric>,
+    lastPayloadSections: [] as Array<{ key: string; bytes: number; entries: number }>,
+    detailedSections: [] as PayloadSectionAnalysis[],
+    recentWrites: [] as PersistenceWriteSample[],
+  };
+}
 
-let lastSectionHashes: Record<string, string> = {};
-let lastSectionBytes: Record<string, number> = {};
+const persistenceMetricsStore = createServerScopedMetricStore(createPersistenceMetrics);
+const persistenceMetrics = persistenceMetricsStore.proxy;
+const lastSectionHashesByServer = new Map<string, Record<string, string>>();
+const lastSectionBytesByServer = new Map<string, Record<string, number>>();
+
+function getLastSectionHashes(serverId = getActiveServerId()) {
+  let value = lastSectionHashesByServer.get(serverId);
+  if (!value) {
+    value = {};
+    lastSectionHashesByServer.set(serverId, value);
+  }
+  return value;
+}
+
+function getLastSectionBytes(serverId = getActiveServerId()) {
+  let value = lastSectionBytesByServer.get(serverId);
+  if (!value) {
+    value = {};
+    lastSectionBytesByServer.set(serverId, value);
+  }
+  return value;
+}
 
 const sql = process.env.DATABASE_URL
   ? postgres(process.env.DATABASE_URL, {
@@ -771,26 +837,31 @@ function getPlayerPositionRuntime(serverId = getActiveServerId()): ServerPlayerP
   return runtime;
 }
 
-const playerPositionHistoryMetrics = {
-  startedAt: new Date().toISOString(),
-  observationsReceived: 0,
-  positionEvents: 0,
-  queuedPositionEvents: 0,
-  suppressedPositionEvents: 0,
-  connectEvents: 0,
-  disconnectEvents: 0,
-  invalidPositions: 0,
-  batchesWritten: 0,
-  rowsWritten: 0,
-  failedBatches: 0,
-  totalPayloadBytesWritten: 0,
-  totalWriteDurationMs: 0,
-  lastWriteDurationMs: 0,
-  lastWriteAt: undefined as string | undefined,
-  lastError: undefined as string | undefined,
-  recentSamples: [] as PlayerPositionHistoryObservation[],
-  observedPlayers: new Set<string>(),
-};
+function createPlayerPositionHistoryMetrics() {
+  return {
+    startedAt: new Date().toISOString(),
+    observationsReceived: 0,
+    positionEvents: 0,
+    queuedPositionEvents: 0,
+    suppressedPositionEvents: 0,
+    connectEvents: 0,
+    disconnectEvents: 0,
+    invalidPositions: 0,
+    batchesWritten: 0,
+    rowsWritten: 0,
+    failedBatches: 0,
+    totalPayloadBytesWritten: 0,
+    totalWriteDurationMs: 0,
+    lastWriteDurationMs: 0,
+    lastWriteAt: undefined as string | undefined,
+    lastError: undefined as string | undefined,
+    recentSamples: [] as PlayerPositionHistoryObservation[],
+    observedPlayers: new Set<string>(),
+  };
+}
+
+const playerPositionHistoryMetricsStore = createServerScopedMetricStore(createPlayerPositionHistoryMetrics);
+const playerPositionHistoryMetrics = playerPositionHistoryMetricsStore.proxy;
 
 export type PlayerStats = {
   kills: number;
@@ -2175,6 +2246,8 @@ function analyzeSectionFields(value: unknown): { topFields: PayloadFieldMetric[]
 }
 
 function analyzePayload(parsed: AppState, now: string) {
+  const lastSectionHashes = getLastSectionHashes();
+  const lastSectionBytes = getLastSectionBytes();
   const allSections = Object.entries(parsed).map(([key, value]) => {
     const serialized = JSON.stringify(value ?? null);
     const bytes = Buffer.byteLength(serialized, "utf8");
@@ -3004,67 +3077,75 @@ export async function getStateAsync(): Promise<AppState> {
 }
 
 
-export function getStatePersistenceMetrics() {
-  const writes = Math.max(1, persistenceMetrics.writes);
-  const uptimeHours = Math.max(1 / 60, (Date.now() - new Date(persistenceMetrics.startedAt).getTime()) / 3_600_000);
-  const bytesPerHour = persistenceMetrics.totalPayloadBytesWritten / uptimeHours;
+export function getStatePersistenceMetrics(serverId = getActiveServerId()) {
+  const metric = persistenceMetricsStore.get(serverId);
+  const writes = Math.max(1, metric.writes);
+  const uptimeHours = Math.max(1 / 60, (Date.now() - new Date(metric.startedAt).getTime()) / 3_600_000);
+  const bytesPerHour = metric.totalPayloadBytesWritten / uptimeHours;
   return {
-    ...persistenceMetrics,
-    averagePayloadBytes: Math.round(persistenceMetrics.totalPayloadBytesWritten / writes),
-    averageChangedBytes: Math.round(persistenceMetrics.totalChangedBytes / writes),
-    averageWriteDurationMs: Math.round(persistenceMetrics.totalWriteDurationMs / writes),
+    serverId,
+    ...metric,
+    averagePayloadBytes: Math.round(metric.totalPayloadBytesWritten / writes),
+    averageChangedBytes: Math.round(metric.totalChangedBytes / writes),
+    averageWriteDurationMs: Math.round(metric.totalWriteDurationMs / writes),
     projected30DayPayloadBytes: Math.round(bytesPerHour * 24 * 30),
-    writeRatePerHour: Number((persistenceMetrics.writes / uptimeHours).toFixed(2)),
-    reasons: { ...persistenceMetrics.reasons },
-    sections: { ...persistenceMetrics.sections },
-    lastPayloadSections: [...persistenceMetrics.lastPayloadSections],
-    detailedSections: [...persistenceMetrics.detailedSections],
-    recentWrites: [...persistenceMetrics.recentWrites],
+    writeRatePerHour: Number((metric.writes / uptimeHours).toFixed(2)),
+    reasons: { ...metric.reasons },
+    sections: { ...metric.sections },
+    lastPayloadSections: [...metric.lastPayloadSections],
+    detailedSections: [...metric.detailedSections],
+    recentWrites: [...metric.recentWrites],
   };
 }
 
-export function getGranularPlayerStatsPersistenceMetrics() {
-  const uptimeHours = Math.max(1 / 60, (Date.now() - new Date(granularPlayerStatsMetrics.startedAt).getTime()) / 3_600_000);
-  const batches = Math.max(1, granularPlayerStatsMetrics.batchesWritten);
+export function getGranularPlayerStatsPersistenceMetrics(serverId = getActiveServerId()) {
+  const metric = granularPlayerStatsMetricsStore.get(serverId);
+  const uptimeHours = Math.max(1 / 60, (Date.now() - new Date(metric.startedAt).getTime()) / 3_600_000);
+  const batches = Math.max(1, metric.batchesWritten);
   return {
-    ...granularPlayerStatsMetrics,
-    pendingPlayers: getPersistenceRuntime().pendingGranularPlayerStats.size,
+    serverId,
+    ...metric,
+    pendingPlayers: getPersistenceRuntime(serverId).pendingGranularPlayerStats.size,
     cadenceMinutes: Math.round(STATE_STATS_PERSIST_MS / 60_000),
-    averageBatchBytes: Math.round(granularPlayerStatsMetrics.totalPayloadBytesWritten / batches),
-    averageRowsPerBatch: Number((granularPlayerStatsMetrics.rowsWritten / batches).toFixed(1)),
-    averageWriteDurationMs: Math.round(granularPlayerStatsMetrics.totalWriteDurationMs / batches),
-    projected30DayPayloadBytes: Math.round((granularPlayerStatsMetrics.totalPayloadBytesWritten / uptimeHours) * 24 * 30),
+    averageBatchBytes: Math.round(metric.totalPayloadBytesWritten / batches),
+    averageRowsPerBatch: Number((metric.rowsWritten / batches).toFixed(1)),
+    averageWriteDurationMs: Math.round(metric.totalWriteDurationMs / batches),
+    projected30DayPayloadBytes: Math.round((metric.totalPayloadBytesWritten / uptimeHours) * 24 * 30),
   };
 }
 
-export function getDiscordRuntimePersistenceMetrics() {
-  const uptimeHours = Math.max(1 / 60, (Date.now() - new Date(discordRuntimeMetrics.startedAt).getTime()) / 3_600_000);
-  const writes = Math.max(1, discordRuntimeMetrics.writes);
+export function getDiscordRuntimePersistenceMetrics(serverId = getActiveServerId()) {
+  const metric = discordRuntimeMetricsStore.get(serverId);
+  const uptimeHours = Math.max(1 / 60, (Date.now() - new Date(metric.startedAt).getTime()) / 3_600_000);
+  const writes = Math.max(1, metric.writes);
   return {
-    ...discordRuntimeMetrics,
-    averagePayloadBytes: Math.round(discordRuntimeMetrics.totalPayloadBytesWritten / writes),
-    averageWriteDurationMs: Math.round(discordRuntimeMetrics.totalWriteDurationMs / writes),
-    writeRatePerHour: Number((discordRuntimeMetrics.writes / uptimeHours).toFixed(2)),
-    projected30DayPayloadBytes: Math.round((discordRuntimeMetrics.totalPayloadBytesWritten / uptimeHours) * 24 * 30),
+    serverId,
+    ...metric,
+    averagePayloadBytes: Math.round(metric.totalPayloadBytesWritten / writes),
+    averageWriteDurationMs: Math.round(metric.totalWriteDurationMs / writes),
+    writeRatePerHour: Number((metric.writes / uptimeHours).toFixed(2)),
+    projected30DayPayloadBytes: Math.round((metric.totalPayloadBytesWritten / uptimeHours) * 24 * 30),
   };
 }
 
-export function getStateDomainPersistenceMetrics() {
-  const uptimeHours = Math.max(1 / 60, (Date.now() - new Date(domainPersistenceMetrics.startedAt).getTime()) / 3_600_000);
-  const flushes = Math.max(1, domainPersistenceMetrics.flushes);
+export function getStateDomainPersistenceMetrics(serverId = getActiveServerId()) {
+  const metric = domainPersistenceMetricsStore.get(serverId);
+  const uptimeHours = Math.max(1 / 60, (Date.now() - new Date(metric.startedAt).getTime()) / 3_600_000);
+  const flushes = Math.max(1, metric.flushes);
   return {
-    ...domainPersistenceMetrics,
-    pendingDomains: getPersistenceRuntime().pendingDomains.size,
+    serverId,
+    ...metric,
+    pendingDomains: getPersistenceRuntime(serverId).pendingDomains.size,
     backgroundCadenceMinutes: Math.round(STATE_BACKGROUND_PERSIST_MS / 60_000),
     processingCadenceMinutes: Math.round(STATE_PROCESSING_PERSIST_MS / 60_000),
     statsCadenceMinutes: Math.round(STATE_STATS_PERSIST_MS / 60_000),
     compatibilitySnapshotMinutes: Math.round(STATE_COMPAT_SNAPSHOT_MS / 60_000),
     schedulerPolicyVersion: STATE_SCHEDULER_POLICY_VERSION,
-    averageFlushPayloadBytes: Math.round(domainPersistenceMetrics.totalPayloadBytesWritten / flushes),
-    averageWriteDurationMs: Math.round(domainPersistenceMetrics.totalWriteDurationMs / flushes),
-    writeRatePerHour: Number((domainPersistenceMetrics.flushes / uptimeHours).toFixed(2)),
-    projected30DayPayloadBytes: Math.round((domainPersistenceMetrics.totalPayloadBytesWritten / uptimeHours) * 24 * 30),
-    domains: Object.fromEntries(Object.entries(domainPersistenceMetrics.domains).map(([key, value]) => [key, { ...value }])),
+    averageFlushPayloadBytes: Math.round(metric.totalPayloadBytesWritten / flushes),
+    averageWriteDurationMs: Math.round(metric.totalWriteDurationMs / flushes),
+    writeRatePerHour: Number((metric.flushes / uptimeHours).toFixed(2)),
+    projected30DayPayloadBytes: Math.round((metric.totalPayloadBytesWritten / uptimeHours) * 24 * 30),
+    domains: Object.fromEntries(Object.entries(metric.domains).map(([key, value]) => [key, { ...value }])),
   };
 }
 
@@ -3354,38 +3435,40 @@ export async function getLatestPlayerPositionSnapshot(playerNames: string[]): Pr
   return [...byPlayer.values()];
 }
 
-export function getPlayerPositionHistoryMetrics() {
-  const uptimeHours = Math.max(1 / 60, (Date.now() - new Date(playerPositionHistoryMetrics.startedAt).getTime()) / 3_600_000);
-  const batches = Math.max(1, playerPositionHistoryMetrics.batchesWritten);
+export function getPlayerPositionHistoryMetrics(serverId = getActiveServerId()) {
+  const metric = playerPositionHistoryMetricsStore.get(serverId);
+  const uptimeHours = Math.max(1 / 60, (Date.now() - new Date(metric.startedAt).getTime()) / 3_600_000);
+  const batches = Math.max(1, metric.batchesWritten);
   return {
-    startedAt: playerPositionHistoryMetrics.startedAt,
+    serverId,
+    startedAt: metric.startedAt,
     retentionHours: PLAYER_POSITION_RETENTION_HOURS,
     flushIntervalMinutes: PLAYER_POSITION_FLUSH_INTERVAL_MS / 60_000,
     minMovementMeters: PLAYER_POSITION_MIN_MOVEMENT_METERS,
     maxSampleIntervalMinutes: PLAYER_POSITION_MAX_SAMPLE_INTERVAL_MS / 60_000,
-    observationsReceived: playerPositionHistoryMetrics.observationsReceived,
-    positionEvents: playerPositionHistoryMetrics.positionEvents,
-    queuedPositionEvents: playerPositionHistoryMetrics.queuedPositionEvents,
-    suppressedPositionEvents: playerPositionHistoryMetrics.suppressedPositionEvents,
-    positionReductionPercent: playerPositionHistoryMetrics.positionEvents > 0
-      ? Number(((playerPositionHistoryMetrics.suppressedPositionEvents / playerPositionHistoryMetrics.positionEvents) * 100).toFixed(2))
+    observationsReceived: metric.observationsReceived,
+    positionEvents: metric.positionEvents,
+    queuedPositionEvents: metric.queuedPositionEvents,
+    suppressedPositionEvents: metric.suppressedPositionEvents,
+    positionReductionPercent: metric.positionEvents > 0
+      ? Number(((metric.suppressedPositionEvents / metric.positionEvents) * 100).toFixed(2))
       : 0,
-    connectEvents: playerPositionHistoryMetrics.connectEvents,
-    disconnectEvents: playerPositionHistoryMetrics.disconnectEvents,
-    invalidPositions: playerPositionHistoryMetrics.invalidPositions,
-    uniquePlayersObserved: playerPositionHistoryMetrics.observedPlayers.size,
-    pendingObservations: getPlayerPositionRuntime().pendingObservations.size,
-    batchesWritten: playerPositionHistoryMetrics.batchesWritten,
-    rowsWritten: playerPositionHistoryMetrics.rowsWritten,
-    failedBatches: playerPositionHistoryMetrics.failedBatches,
-    totalPayloadBytesWritten: playerPositionHistoryMetrics.totalPayloadBytesWritten,
-    averageBatchPayloadBytes: Math.round(playerPositionHistoryMetrics.totalPayloadBytesWritten / batches),
-    averageWriteDurationMs: Math.round(playerPositionHistoryMetrics.totalWriteDurationMs / batches),
-    projected30DayPayloadBytes: Math.round((playerPositionHistoryMetrics.totalPayloadBytesWritten / uptimeHours) * 24 * 30),
-    lastWriteAt: playerPositionHistoryMetrics.lastWriteAt,
-    lastWriteDurationMs: playerPositionHistoryMetrics.lastWriteDurationMs,
-    lastError: playerPositionHistoryMetrics.lastError,
-    recentSamples: [...playerPositionHistoryMetrics.recentSamples],
+    connectEvents: metric.connectEvents,
+    disconnectEvents: metric.disconnectEvents,
+    invalidPositions: metric.invalidPositions,
+    uniquePlayersObserved: metric.observedPlayers.size,
+    pendingObservations: getPlayerPositionRuntime(serverId).pendingObservations.size,
+    batchesWritten: metric.batchesWritten,
+    rowsWritten: metric.rowsWritten,
+    failedBatches: metric.failedBatches,
+    totalPayloadBytesWritten: metric.totalPayloadBytesWritten,
+    averageBatchPayloadBytes: Math.round(metric.totalPayloadBytesWritten / batches),
+    averageWriteDurationMs: Math.round(metric.totalWriteDurationMs / batches),
+    projected30DayPayloadBytes: Math.round((metric.totalPayloadBytesWritten / uptimeHours) * 24 * 30),
+    lastWriteAt: metric.lastWriteAt,
+    lastWriteDurationMs: metric.lastWriteDurationMs,
+    lastError: metric.lastError,
+    recentSamples: [...metric.recentSamples],
   };
 }
 
