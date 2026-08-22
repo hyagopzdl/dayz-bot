@@ -7002,7 +7002,9 @@ function renderAdminPanelHtml(token: string) {
         els.managedServerPreflightState.className = 'chip ' + (integration.preflightReady ? 'success' : (failed ? 'danger' : 'pending'));
       }
       if (els.managedServerPreflightRun) {
-        els.managedServerPreflightRun.disabled = !integration.nitradoConfigured;
+        // Keep the control interactive even if the browser has stale integration metadata.
+        // The backend preflight is fail-closed and remains the source of truth.
+        els.managedServerPreflightRun.disabled = false;
         els.managedServerPreflightRun.textContent = integration.preflightReady ? 'Executar preflight novamente' : 'Executar preflight';
       }
       if (els.managedServerPreflightIntro) {
@@ -7245,13 +7247,37 @@ function renderAdminPanelHtml(token: string) {
     async function runManagedServerPreflight() {
       const serverId = state.selectedManagedServerId;
       const button = els.managedServerPreflightRun;
-      if (!serverId || !button) return;
+      if (!serverId || !button) {
+        showToast('Selecione um servidor antes de executar o preflight.');
+        return;
+      }
+
+      const selectedBeforeRun = (state.managedServers || []).find((server) => server.id === serverId && !server.primary);
+      if (!selectedBeforeRun) {
+        showToast('Servidor não encontrado no registry carregado. Atualize a lista e tente novamente.');
+        return;
+      }
+
+      const integrationBeforeRun = managedServerIntegrationState(selectedBeforeRun);
+      const onboardingStatus = String(selectedBeforeRun.onboardingStatus || 'draft');
+      if (!integrationBeforeRun.nitradoConfigured && onboardingStatus !== 'configured' && onboardingStatus !== 'ready') {
+        showToast('Valide o Nitrado antes de executar o preflight.');
+        switchManagedServerSetupTab('nitrado');
+        return;
+      }
+
       button.disabled = true;
       const previous = button.textContent;
       button.textContent = 'Verificando...';
+      if (els.managedServerPreflightSummary) els.managedServerPreflightSummary.textContent = 'Executando preflight...';
       try {
         const response = await apiFetch('/admin-panel/api/servers/' + encodeURIComponent(serverId) + '/preflight', { method:'POST', body:JSON.stringify({}) });
-        if (!response.ok) { showToast(await response.text()); return; }
+        if (!response.ok) {
+          const message = await response.text();
+          if (els.managedServerPreflightSummary) els.managedServerPreflightSummary.textContent = message || 'Falha ao executar o preflight.';
+          showToast(message || 'Falha ao executar o preflight.');
+          return;
+        }
         const payload = await response.json();
         state.managedServerPreflightResult = payload;
         state.managedServers = payload.servers || state.managedServers;
@@ -7262,6 +7288,10 @@ function renderAdminPanelHtml(token: string) {
         showToast(payload.passed
           ? 'Preflight aprovado. Servidor Ready, mas runtime continua bloqueado.'
           : 'Preflight bloqueado. Revise os checks antes de continuar.');
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (els.managedServerPreflightSummary) els.managedServerPreflightSummary.textContent = 'Erro ao executar preflight: ' + message;
+        showToast('Erro ao executar preflight: ' + message);
       } finally {
         button.disabled = false;
         button.textContent = previous;
