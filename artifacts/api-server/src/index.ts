@@ -19,7 +19,8 @@ function installStateFlushHooks() {
 
     try {
       console.log(`💾 flush final do state antes de ${signal}`);
-      await flushStateAsync();
+      const primaryServerId = getPrimaryServerId();
+      await runInServerRuntimeContext(primaryServerId, () => flushStateAsync());
     } catch (err) {
       console.error("❌ erro no flush final do state:", err);
     } finally {

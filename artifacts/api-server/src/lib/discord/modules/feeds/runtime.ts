@@ -23,6 +23,7 @@ import { getKillStreakMeta } from "../killstreak/service";
 import { getCoreStateFingerprint } from "../../../state";
 
 type DiscordFeedRuntimeContext = {
+  serverId: string;
   client: Client;
   categoryId: string;
   globalChannel: TextBasedChannel;
@@ -39,10 +40,11 @@ type DiscordFeedRuntimeContext = {
   saveRuntimeState: (state: any) => Promise<void>;
 };
 
-let discordLoopRunning = false;
+const discordLoopRunningServers = new Set<string>();
 
 export function createDiscordFeedRuntime(ctx: DiscordFeedRuntimeContext) {
   const {
+    serverId,
     client,
     categoryId: CATEGORY_ID,
     globalChannel,
@@ -1089,9 +1091,9 @@ async function updateLongShotFeed(state: any) {
 }
 
 async function updateLeaderboard() {
-  if (discordLoopRunning) return;
+  if (discordLoopRunningServers.has(serverId)) return;
 
-  discordLoopRunning = true;
+  discordLoopRunningServers.add(serverId);
 
   try {
     const state = await getState();
@@ -1179,7 +1181,7 @@ async function updateLeaderboard() {
   } catch (err) {
     console.error("❌ erro ao atualizar leaderboard", err);
   } finally {
-    discordLoopRunning = false;
+    discordLoopRunningServers.delete(serverId);
   }
 }
 

@@ -10,6 +10,8 @@ import { recordNetworkTransfer } from "./lib/networkMetrics";
 import authRoutes from "./routes/auth";
 import playerPortalRoutes from "./routes/playerPortal";
 import { attachPortalSession } from "./middlewares/portalAuth";
+import { getPrimaryServerId, setServerRuntimeIsolationStatus } from "./lib/serverRegistry";
+import { runInServerRuntimeContext } from "./lib/serverRuntime";
 
 const app: Express = express();
 
@@ -65,6 +67,14 @@ app.use((req, res, next) => {
 app.use(cookieParser());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+// Phase 8 keeps the public/admin surface pinned to the primary server while
+// ensuring every request executes inside an explicit server context. Future
+// onboarding can replace this resolver without changing route internals.
+app.use((_req, _res, next) => {
+  const serverId = getPrimaryServerId();
+  runInServerRuntimeContext(serverId, next);
+});
+setServerRuntimeIsolationStatus({ httpContextNamespaced: true });
 app.use(
   "/app-assets",
   express.static("assets/player-portal", {

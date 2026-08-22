@@ -14,9 +14,10 @@ import {
   setPersistedManagedServers,
   setServerRegistryPersistenceStatus,
   setServerNamespacePersistenceStatus,
+  setServerRuntimeIsolationStatus,
   type ManagedServerDescriptor,
 } from "./serverRegistry";
-import { getActiveServerId, getServerStateStoragePath } from "./serverRuntime";
+import { getActiveServerId, getServerStateStoragePath, runInServerRuntimeContext } from "./serverRuntime";
 
 const LEGACY_FILE = path.resolve(process.cwd(), "state.json");
 const STATE_ID = "main";
@@ -54,21 +55,6 @@ function getLocalStateFile() {
   const serverId = getActiveServerId();
   return serverId === getPrimaryServerId() ? LEGACY_FILE : getServerStateStoragePath(serverId);
 }
-let lastPersistedHash = "";
-let lastPersistedJson = "";
-let pendingPersistJson = "";
-let pendingPersistHash = "";
-let pendingPersistStartedAt = 0;
-let saveTimer: NodeJS.Timeout | null = null;
-let flushPromise: Promise<void> | null = null;
-let pendingPersistReasons = new Set<string>();
-
-let lastCoreHash = "";
-let lastDiscordRuntimeHash = "";
-let pendingDiscordRuntimeJson = "";
-let pendingDiscordRuntimeHash = "";
-let discordRuntimeSaveTimer: NodeJS.Timeout | null = null;
-let discordRuntimeFlushPromise: Promise<void> | null = null;
 
 type StateDomainName = "stats" | "processing" | "social" | "commerce" | "config";
 type StateDomainPayload = Record<string, unknown>;
@@ -89,11 +75,6 @@ const STATE_DOMAIN_IDS: Record<StateDomainName, string> = {
   config: "v2_config",
 };
 
-let lastDomainHashes: Partial<Record<StateDomainName, string>> = {};
-let pendingDomains = new Map<StateDomainName, PendingDomainState>();
-let domainFlushTimer: NodeJS.Timeout | null = null;
-let domainFlushPromise: Promise<void> | null = null;
-let lastCompatibilitySnapshotAt = 0;
 
 type PendingGranularPlayerStats = {
   stats: PlayerStats;
@@ -102,9 +83,65 @@ type PendingGranularPlayerStats = {
   dueAt: number;
 };
 
+type ServerPersistenceRuntime = {
+  lastPersistedHash: string;
+  lastPersistedJson: string;
+  pendingPersistJson: string;
+  pendingPersistHash: string;
+  pendingPersistStartedAt: number;
+  saveTimer: NodeJS.Timeout | null;
+  flushPromise: Promise<void> | null;
+  pendingPersistReasons: Set<string>;
+  lastCoreHash: string;
+  lastDiscordRuntimeHash: string;
+  pendingDiscordRuntimeJson: string;
+  pendingDiscordRuntimeHash: string;
+  discordRuntimeSaveTimer: NodeJS.Timeout | null;
+  discordRuntimeFlushPromise: Promise<void> | null;
+  lastDomainHashes: Partial<Record<StateDomainName, string>>;
+  pendingDomains: Map<StateDomainName, PendingDomainState>;
+  domainFlushTimer: NodeJS.Timeout | null;
+  domainFlushPromise: Promise<void> | null;
+  lastCompatibilitySnapshotAt: number;
+  lastGranularPlayerSignatures: Map<string, string>;
+  pendingGranularPlayerStats: Map<string, PendingGranularPlayerStats>;
+};
+
+const serverPersistenceRuntimes = new Map<string, ServerPersistenceRuntime>();
+
+function getPersistenceRuntime(serverId = getActiveServerId()): ServerPersistenceRuntime {
+  let runtime = serverPersistenceRuntimes.get(serverId);
+  if (!runtime) {
+    runtime = {
+      lastPersistedHash: "",
+      lastPersistedJson: "",
+      pendingPersistJson: "",
+      pendingPersistHash: "",
+      pendingPersistStartedAt: 0,
+      saveTimer: null,
+      flushPromise: null,
+      pendingPersistReasons: new Set<string>(),
+      lastCoreHash: "",
+      lastDiscordRuntimeHash: "",
+      pendingDiscordRuntimeJson: "",
+      pendingDiscordRuntimeHash: "",
+      discordRuntimeSaveTimer: null,
+      discordRuntimeFlushPromise: null,
+      lastDomainHashes: {},
+      pendingDomains: new Map<StateDomainName, PendingDomainState>(),
+      domainFlushTimer: null,
+      domainFlushPromise: null,
+      lastCompatibilitySnapshotAt: 0,
+      lastGranularPlayerSignatures: new Map<string, string>(),
+      pendingGranularPlayerStats: new Map<string, PendingGranularPlayerStats>(),
+    };
+    serverPersistenceRuntimes.set(serverId, runtime);
+    setServerRuntimeIsolationStatus({ persistenceRuntimeNamespaced: true });
+  }
+  return runtime;
+}
+
 let granularPlayerStatsTableReadyPromise: Promise<void> | null = null;
-let lastGranularPlayerSignatures = new Map<string, string>();
-let pendingGranularPlayerStats = new Map<string, PendingGranularPlayerStats>();
 
 const granularPlayerStatsMetrics = {
   startedAt: new Date().toISOString(),
@@ -510,12 +547,31 @@ const PLAYER_POSITION_MIN_MOVEMENT_METERS = 25;
 const PLAYER_POSITION_MAX_SAMPLE_INTERVAL_MS = 2 * 60 * 1000;
 
 let playerPositionTableReadyPromise: Promise<void> | null = null;
-let pendingPlayerPositionObservations = new Map<string, PlayerPositionHistoryObservation>();
-let playerPositionFlushTimer: NodeJS.Timeout | null = null;
-let lastPlayerPositionCleanupAt = 0;
 
 type RetainedPlayerPosition = { x: number; z: number; observedAtMs: number };
-const lastRetainedPlayerPositions = new Map<string, RetainedPlayerPosition>();
+type ServerPlayerPositionRuntime = {
+  pendingObservations: Map<string, PlayerPositionHistoryObservation>;
+  flushTimer: NodeJS.Timeout | null;
+  lastCleanupAt: number;
+  retainedPositions: Map<string, RetainedPlayerPosition>;
+};
+
+const serverPlayerPositionRuntimes = new Map<string, ServerPlayerPositionRuntime>();
+
+function getPlayerPositionRuntime(serverId = getActiveServerId()): ServerPlayerPositionRuntime {
+  let runtime = serverPlayerPositionRuntimes.get(serverId);
+  if (!runtime) {
+    runtime = {
+      pendingObservations: new Map<string, PlayerPositionHistoryObservation>(),
+      flushTimer: null,
+      lastCleanupAt: 0,
+      retainedPositions: new Map<string, RetainedPlayerPosition>(),
+    };
+    serverPlayerPositionRuntimes.set(serverId, runtime);
+    setServerRuntimeIsolationStatus({ positionHistoryNamespaced: true });
+  }
+  return runtime;
+}
 
 const playerPositionHistoryMetrics = {
   startedAt: new Date().toISOString(),
@@ -1130,9 +1186,9 @@ function hasPersistedSpawnZones(value: any) {
 }
 
 function parseLastPersistedState(): Partial<AppState> | null {
-  if (!lastPersistedJson) return null;
+  if (!getPersistenceRuntime().lastPersistedJson) return null;
   try {
-    return JSON.parse(lastPersistedJson) as Partial<AppState>;
+    return JSON.parse(getPersistenceRuntime().lastPersistedJson) as Partial<AppState>;
   } catch {
     return null;
   }
@@ -1276,7 +1332,7 @@ function initializeDomainHashes(data: AppState) {
   const domains = buildStateDomains(data);
   for (const domain of Object.keys(STATE_DOMAIN_IDS) as StateDomainName[]) {
     const serialized = JSON.stringify(domains[domain]);
-    lastDomainHashes[domain] = hashState(serialized);
+    getPersistenceRuntime().lastDomainHashes[domain] = hashState(serialized);
     domainPersistenceMetrics.domains[domain].currentBytes = Buffer.byteLength(serialized, "utf8");
   }
 }
@@ -1327,12 +1383,12 @@ function granularPlayerSignature(stats: PlayerStats, currentStreak: number) {
 }
 
 function initializeGranularPlayerSignatures(data: AppState) {
-  lastGranularPlayerSignatures = new Map<string, string>();
+  getPersistenceRuntime().lastGranularPlayerSignatures = new Map<string, string>();
   for (const [playerKey, stats] of Object.entries(data.players || {})) {
     const currentStreak = Number((data.currentKillStreaks || {})[playerKey] || 0);
-    lastGranularPlayerSignatures.set(playerKey, granularPlayerSignature(stats, currentStreak));
+    getPersistenceRuntime().lastGranularPlayerSignatures.set(playerKey, granularPlayerSignature(stats, currentStreak));
   }
-  pendingGranularPlayerStats.clear();
+  getPersistenceRuntime().pendingGranularPlayerStats.clear();
 }
 
 function queueGranularPlayerStats(data: AppState) {
@@ -1342,9 +1398,9 @@ function queueGranularPlayerStats(data: AppState) {
   for (const [playerKey, stats] of Object.entries(data.players || {})) {
     const currentStreak = Number((data.currentKillStreaks || {})[playerKey] || 0);
     const signature = granularPlayerSignature(stats, currentStreak);
-    const pending = pendingGranularPlayerStats.get(playerKey);
-    if (signature === lastGranularPlayerSignatures.get(playerKey) || signature === pending?.signature) continue;
-    pendingGranularPlayerStats.set(playerKey, {
+    const pending = getPersistenceRuntime().pendingGranularPlayerStats.get(playerKey);
+    if (signature === getPersistenceRuntime().lastGranularPlayerSignatures.get(playerKey) || signature === pending?.signature) continue;
+    getPersistenceRuntime().pendingGranularPlayerStats.set(playerKey, {
       stats: { kills: Number(stats.kills || 0), deaths: Number(stats.deaths || 0) },
       currentStreak,
       signature,
@@ -1444,13 +1500,13 @@ function queueStateDomains(data: AppState, reason: string) {
     const payload = domains[domain];
     const serialized = JSON.stringify(payload);
     const hash = hashState(serialized);
-    const currentPending = pendingDomains.get(domain);
+    const currentPending = getPersistenceRuntime().pendingDomains.get(domain);
     domainPersistenceMetrics.domains[domain].currentBytes = Buffer.byteLength(serialized, "utf8");
-    if (hash === lastDomainHashes[domain] || hash === currentPending?.hash) continue;
+    if (hash === getPersistenceRuntime().lastDomainHashes[domain] || hash === currentPending?.hash) continue;
     const reasons = new Set(currentPending?.reasons || []);
     reasons.add(reason);
     const dueAt = currentPending?.dueAt ?? domainDueAt(domain);
-    pendingDomains.set(domain, { payload, serialized, hash, reasons, dueAt });
+    getPersistenceRuntime().pendingDomains.set(domain, { payload, serialized, hash, reasons, dueAt });
     domainPersistenceMetrics.domains[domain].changes += 1;
     changed.push(domain);
   }
@@ -1689,7 +1745,7 @@ async function persistDomainBatchToNeon(
       metric.bytesWritten += bytes;
       metric.currentBytes = bytes;
       metric.lastWriteAt = now;
-      lastDomainHashes[domain] = entry.hash;
+      getPersistenceRuntime().lastDomainHashes[domain] = entry.hash;
     }
     if (playerEntries.length) {
       granularPlayerStatsMetrics.batchesWritten += 1;
@@ -1698,7 +1754,7 @@ async function persistDomainBatchToNeon(
       granularPlayerStatsMetrics.lastWriteAt = now;
       granularPlayerStatsMetrics.lastError = undefined;
       for (const [playerKey, entry] of playerEntries) {
-        lastGranularPlayerSignatures.set(playerKey, entry.signature);
+        getPersistenceRuntime().lastGranularPlayerSignatures.set(playerKey, entry.signature);
       }
       recordNetworkTransfer({
         service: "neon-player-stats",
@@ -1752,11 +1808,11 @@ async function maybeWriteCompatibilitySnapshot(force = false) {
   const cachedState = getCachedState();
   if (!sql || !cachedState) return;
   const now = Date.now();
-  if (!force && lastCompatibilitySnapshotAt > 0 && now - lastCompatibilitySnapshotAt < STATE_COMPAT_SNAPSHOT_MS) return;
+  if (!force && getPersistenceRuntime().lastCompatibilitySnapshotAt > 0 && now - getPersistenceRuntime().lastCompatibilitySnapshotAt < STATE_COMPAT_SNAPSHOT_MS) return;
   const serialized = serializeState(cachedState);
   const hash = hashState(serialized);
   await persistStateToNeon(serialized, hash, ["v2:compat-snapshot"]);
-  lastCompatibilitySnapshotAt = Date.now();
+  getPersistenceRuntime().lastCompatibilitySnapshotAt = Date.now();
   domainPersistenceMetrics.compatibilitySnapshots += 1;
 }
 
@@ -1767,38 +1823,38 @@ async function flushPendingDomains(
   trigger = "background:scheduled",
 ): Promise<void> {
   if (!STATE_PERSISTENCE_V2_ENABLED || !sql) return;
-  if (domainFlushPromise) {
-    await domainFlushPromise;
+  if (getPersistenceRuntime().domainFlushPromise) {
+    await getPersistenceRuntime().domainFlushPromise;
     if (onlyDomains?.length || forceAllPending || forceCompatibilitySnapshot) {
       return flushPendingDomains(forceCompatibilitySnapshot, onlyDomains, forceAllPending, trigger);
     }
     return;
   }
-  if (domainFlushTimer) {
-    clearTimeout(domainFlushTimer);
-    domainFlushTimer = null;
+  if (getPersistenceRuntime().domainFlushTimer) {
+    clearTimeout(getPersistenceRuntime().domainFlushTimer);
+    getPersistenceRuntime().domainFlushTimer = null;
   }
 
   const now = Date.now();
   const only = onlyDomains?.length ? new Set(onlyDomains) : null;
-  const entries = [...pendingDomains.entries()].filter(([domain, entry]) => {
+  const entries = [...getPersistenceRuntime().pendingDomains.entries()].filter(([domain, entry]) => {
     if (only) return only.has(domain);
     if (forceAllPending) return true;
     return entry.dueAt <= now + 250;
   });
-  const playerEntries = only ? [] : [...pendingGranularPlayerStats.entries()].filter(([, entry]) => {
+  const playerEntries = only ? [] : [...getPersistenceRuntime().pendingGranularPlayerStats.entries()].filter(([, entry]) => {
     if (forceAllPending) return true;
     return entry.dueAt <= now + 250;
   });
 
   if (!entries.length && !playerEntries.length && !forceCompatibilitySnapshot) {
-    if (pendingDomains.size || pendingGranularPlayerStats.size) scheduleDomainFlush();
+    if (getPersistenceRuntime().pendingDomains.size || getPersistenceRuntime().pendingGranularPlayerStats.size) scheduleDomainFlush();
     return;
   }
-  for (const [domain] of entries) pendingDomains.delete(domain);
-  for (const [playerKey] of playerEntries) pendingGranularPlayerStats.delete(playerKey);
+  for (const [domain] of entries) getPersistenceRuntime().pendingDomains.delete(domain);
+  for (const [playerKey] of playerEntries) getPersistenceRuntime().pendingGranularPlayerStats.delete(playerKey);
 
-  domainFlushPromise = (async () => {
+  getPersistenceRuntime().domainFlushPromise = (async () => {
     try {
       if (entries.length || playerEntries.length) {
         try {
@@ -1806,15 +1862,15 @@ async function flushPendingDomains(
         } catch (err) {
           const retryAt = Date.now() + 30_000;
           for (const [domain, entry] of entries) {
-            const existing = pendingDomains.get(domain);
+            const existing = getPersistenceRuntime().pendingDomains.get(domain);
             if (!existing || existing.hash === entry.hash) {
-              pendingDomains.set(domain, { ...entry, dueAt: Math.max(entry.dueAt, retryAt) });
+              getPersistenceRuntime().pendingDomains.set(domain, { ...entry, dueAt: Math.max(entry.dueAt, retryAt) });
             }
           }
           for (const [playerKey, entry] of playerEntries) {
-            const existing = pendingGranularPlayerStats.get(playerKey);
+            const existing = getPersistenceRuntime().pendingGranularPlayerStats.get(playerKey);
             if (!existing || existing.signature === entry.signature) {
-              pendingGranularPlayerStats.set(playerKey, { ...entry, dueAt: Math.max(entry.dueAt, retryAt) });
+              getPersistenceRuntime().pendingGranularPlayerStats.set(playerKey, { ...entry, dueAt: Math.max(entry.dueAt, retryAt) });
             }
           }
           scheduleDomainFlush();
@@ -1822,32 +1878,35 @@ async function flushPendingDomains(
         }
       }
 
-      if (forceCompatibilitySnapshot || (getCachedState() && Date.now() - lastCompatibilitySnapshotAt >= STATE_COMPAT_SNAPSHOT_MS)) {
+      if (forceCompatibilitySnapshot || (getCachedState() && Date.now() - getPersistenceRuntime().lastCompatibilitySnapshotAt >= STATE_COMPAT_SNAPSHOT_MS)) {
         // Compatibility is only a rollback safety net. V2 domain rows remain
         // the source of truth and the snapshot is intentionally infrequent.
         await maybeWriteCompatibilitySnapshot(forceCompatibilitySnapshot);
       }
     } finally {
-      domainFlushPromise = null;
-      if (pendingDomains.size || pendingGranularPlayerStats.size) scheduleDomainFlush();
+      getPersistenceRuntime().domainFlushPromise = null;
+      if (getPersistenceRuntime().pendingDomains.size || getPersistenceRuntime().pendingGranularPlayerStats.size) scheduleDomainFlush();
     }
   })();
-  return domainFlushPromise;
+  return getPersistenceRuntime().domainFlushPromise;
 }
 
 function scheduleDomainFlush() {
-  if (!STATE_PERSISTENCE_V2_ENABLED || !sql || (!pendingDomains.size && !pendingGranularPlayerStats.size) || domainFlushTimer) return;
+  if (!STATE_PERSISTENCE_V2_ENABLED || !sql || (!getPersistenceRuntime().pendingDomains.size && !getPersistenceRuntime().pendingGranularPlayerStats.size) || getPersistenceRuntime().domainFlushTimer) return;
   domainPersistenceMetrics.backgroundQueued += 1;
   const dueTimes = [
-    ...[...pendingDomains.values()].map((entry) => entry.dueAt),
-    ...[...pendingGranularPlayerStats.values()].map((entry) => entry.dueAt),
+    ...[...getPersistenceRuntime().pendingDomains.values()].map((entry) => entry.dueAt),
+    ...[...getPersistenceRuntime().pendingGranularPlayerStats.values()].map((entry) => entry.dueAt),
   ];
   const nextDueAt = Math.min(...dueTimes);
   const delay = Math.max(1000, nextDueAt - Date.now());
-  domainFlushTimer = setTimeout(() => {
-    domainFlushTimer = null;
-    Promise.all([flushPendingDomains(false, undefined, false, "background:timer"), flushPendingDiscordRuntime()]).catch((err) => {
-      console.error("❌ erro no flush V2 em background:", err);
+  const serverId = getActiveServerId();
+  getPersistenceRuntime().domainFlushTimer = setTimeout(() => {
+    runInServerRuntimeContext(serverId, () => {
+      getPersistenceRuntime().domainFlushTimer = null;
+      Promise.all([flushPendingDomains(false, undefined, false, "background:timer"), flushPendingDiscordRuntime()]).catch((err) => {
+        console.error("❌ erro no flush V2 em background:", err);
+      });
     });
   }, delay);
 }
@@ -1865,10 +1924,10 @@ async function queueAndPersistStateDomains(data: AppState, reason: string) {
   // changed, never persist an ADM cursor earlier than the corresponding stats.
   // Processing-only cycles may still flush every 10 minutes, while kill/stat
   // cycles coalesce both rows on the 20-minute stats boundary.
-  const pendingStats = pendingDomains.get("stats");
-  const pendingProcessing = pendingDomains.get("processing");
-  const granularStatsDueAt = pendingGranularPlayerStats.size
-    ? Math.max(...[...pendingGranularPlayerStats.values()].map((entry) => entry.dueAt))
+  const pendingStats = getPersistenceRuntime().pendingDomains.get("stats");
+  const pendingProcessing = getPersistenceRuntime().pendingDomains.get("processing");
+  const granularStatsDueAt = getPersistenceRuntime().pendingGranularPlayerStats.size
+    ? Math.max(...[...getPersistenceRuntime().pendingGranularPlayerStats.values()].map((entry) => entry.dueAt))
     : 0;
   if (pendingProcessing && (pendingStats || granularStatsDueAt)) {
     pendingProcessing.dueAt = Math.max(pendingProcessing.dueAt, pendingStats?.dueAt || 0, granularStatsDueAt);
@@ -1886,13 +1945,13 @@ async function queueAndPersistStateDomains(data: AppState, reason: string) {
     await flushPendingDomains(false, immediateDomains, false, `immediate:${canonicalPersistenceReason(reason)}`);
   }
 
-  if (pendingDomains.size || pendingGranularPlayerStats.size) scheduleDomainFlush();
+  if (getPersistenceRuntime().pendingDomains.size || getPersistenceRuntime().pendingGranularPlayerStats.size) scheduleDomainFlush();
   return true;
 }
 
 async function persistDiscordRuntimeToNeon(serialized: string, hash: string) {
   if (!sql) return;
-  if (hash === lastDiscordRuntimeHash) {
+  if (hash === getPersistenceRuntime().lastDiscordRuntimeHash) {
     discordRuntimeMetrics.skippedWrites += 1;
     return;
   }
@@ -1928,7 +1987,7 @@ async function persistDiscordRuntimeToNeon(serialized: string, hash: string) {
       bytes: payloadBytes,
       ok: true,
     });
-    lastDiscordRuntimeHash = hash;
+    getPersistenceRuntime().lastDiscordRuntimeHash = hash;
   } catch (err) {
     discordRuntimeMetrics.failedWrites += 1;
     discordRuntimeMetrics.lastWriteError = err instanceof Error ? err.message : String(err);
@@ -1941,46 +2000,49 @@ async function persistDiscordRuntimeToNeon(serialized: string, hash: string) {
 }
 
 async function flushPendingDiscordRuntime() {
-  if (!pendingDiscordRuntimeJson || !pendingDiscordRuntimeHash) return;
-  if (discordRuntimeFlushPromise) return discordRuntimeFlushPromise;
+  if (!getPersistenceRuntime().pendingDiscordRuntimeJson || !getPersistenceRuntime().pendingDiscordRuntimeHash) return;
+  if (getPersistenceRuntime().discordRuntimeFlushPromise) return getPersistenceRuntime().discordRuntimeFlushPromise;
 
-  const serialized = pendingDiscordRuntimeJson;
-  const hash = pendingDiscordRuntimeHash;
-  pendingDiscordRuntimeJson = "";
-  pendingDiscordRuntimeHash = "";
-  if (discordRuntimeSaveTimer) {
-    clearTimeout(discordRuntimeSaveTimer);
-    discordRuntimeSaveTimer = null;
+  const serialized = getPersistenceRuntime().pendingDiscordRuntimeJson;
+  const hash = getPersistenceRuntime().pendingDiscordRuntimeHash;
+  getPersistenceRuntime().pendingDiscordRuntimeJson = "";
+  getPersistenceRuntime().pendingDiscordRuntimeHash = "";
+  if (getPersistenceRuntime().discordRuntimeSaveTimer) {
+    clearTimeout(getPersistenceRuntime().discordRuntimeSaveTimer);
+    getPersistenceRuntime().discordRuntimeSaveTimer = null;
   }
 
-  discordRuntimeFlushPromise = persistDiscordRuntimeToNeon(serialized, hash)
+  getPersistenceRuntime().discordRuntimeFlushPromise = persistDiscordRuntimeToNeon(serialized, hash)
     .catch((err) => {
       console.error("❌ erro salvando discord_runtime no Neon:", err);
-      pendingDiscordRuntimeJson = serialized;
-      pendingDiscordRuntimeHash = hash;
+      getPersistenceRuntime().pendingDiscordRuntimeJson = serialized;
+      getPersistenceRuntime().pendingDiscordRuntimeHash = hash;
       scheduleDiscordRuntimePersist();
     })
     .finally(() => {
-      discordRuntimeFlushPromise = null;
-      if (pendingDiscordRuntimeJson) scheduleDiscordRuntimePersist();
+      getPersistenceRuntime().discordRuntimeFlushPromise = null;
+      if (getPersistenceRuntime().pendingDiscordRuntimeJson) scheduleDiscordRuntimePersist();
     });
 
-  return discordRuntimeFlushPromise;
+  return getPersistenceRuntime().discordRuntimeFlushPromise;
 }
 
 function scheduleDiscordRuntimePersist() {
-  if (!sql || !pendingDiscordRuntimeJson || discordRuntimeSaveTimer) return;
+  if (!sql || !getPersistenceRuntime().pendingDiscordRuntimeJson || getPersistenceRuntime().discordRuntimeSaveTimer) return;
   const delay = STATE_PERSISTENCE_V2_ENABLED ? nextAlignedBackgroundDelay() : STATE_SAVE_DEBOUNCE_MS;
-  discordRuntimeSaveTimer = setTimeout(() => {
-    discordRuntimeSaveTimer = null;
-    Promise.all([flushPendingDiscordRuntime(), flushPendingDomains()]).catch((err) => console.error("❌ erro no flush do discord_runtime:", err));
+  const serverId = getActiveServerId();
+  getPersistenceRuntime().discordRuntimeSaveTimer = setTimeout(() => {
+    runInServerRuntimeContext(serverId, () => {
+      getPersistenceRuntime().discordRuntimeSaveTimer = null;
+      Promise.all([flushPendingDiscordRuntime(), flushPendingDomains()]).catch((err) => console.error("❌ erro no flush do discord_runtime:", err));
+    });
   }, delay);
 }
 
 async function persistStateToNeon(serialized: string, hash: string, reasons: string[]) {
   if (!sql) return;
 
-  if (hash === lastPersistedHash) {
+  if (hash === getPersistenceRuntime().lastPersistedHash) {
     persistenceMetrics.skippedWrites += 1;
     logStateDebug("⏭️ STATE NEON ignorado: sem alterações");
     return;
@@ -2067,55 +2129,58 @@ async function persistStateToNeon(serialized: string, hash: string, reasons: str
     persistenceMetrics.recentWrites.splice(0, persistenceMetrics.recentWrites.length - 100);
   }
 
-  lastPersistedHash = hash;
-  lastPersistedJson = serialized;
+  getPersistenceRuntime().lastPersistedHash = hash;
+  getPersistenceRuntime().lastPersistedJson = serialized;
   logStateDebug("💾 STATE SALVO NO NEON", { bytes: payloadBytes, changedBytes: analysis.changedBytes, changedSections: analysis.changedSections });
 }
 
 async function flushPendingState() {
-  if (!pendingPersistJson || !pendingPersistHash) return;
-  if (flushPromise) return flushPromise;
+  if (!getPersistenceRuntime().pendingPersistJson || !getPersistenceRuntime().pendingPersistHash) return;
+  if (getPersistenceRuntime().flushPromise) return getPersistenceRuntime().flushPromise;
 
-  const serialized = pendingPersistJson;
-  const hash = pendingPersistHash;
-  const reasons = [...pendingPersistReasons];
-  pendingPersistJson = "";
-  pendingPersistHash = "";
-  pendingPersistReasons = new Set<string>();
-  pendingPersistStartedAt = 0;
+  const serialized = getPersistenceRuntime().pendingPersistJson;
+  const hash = getPersistenceRuntime().pendingPersistHash;
+  const reasons = [...getPersistenceRuntime().pendingPersistReasons];
+  getPersistenceRuntime().pendingPersistJson = "";
+  getPersistenceRuntime().pendingPersistHash = "";
+  getPersistenceRuntime().pendingPersistReasons = new Set<string>();
+  getPersistenceRuntime().pendingPersistStartedAt = 0;
 
-  if (saveTimer) {
-    clearTimeout(saveTimer);
-    saveTimer = null;
+  if (getPersistenceRuntime().saveTimer) {
+    clearTimeout(getPersistenceRuntime().saveTimer);
+    getPersistenceRuntime().saveTimer = null;
   }
 
-  flushPromise = persistStateToNeon(serialized, hash, reasons)
+  getPersistenceRuntime().flushPromise = persistStateToNeon(serialized, hash, reasons)
     .catch((err) => {
       console.error("❌ erro salvando state no Neon:", err);
-      pendingPersistJson = serialized;
-      pendingPersistHash = hash;
-      pendingPersistReasons = new Set([...pendingPersistReasons, ...reasons]);
-      pendingPersistStartedAt = pendingPersistStartedAt || Date.now();
+      getPersistenceRuntime().pendingPersistJson = serialized;
+      getPersistenceRuntime().pendingPersistHash = hash;
+      getPersistenceRuntime().pendingPersistReasons = new Set([...getPersistenceRuntime().pendingPersistReasons, ...reasons]);
+      getPersistenceRuntime().pendingPersistStartedAt = getPersistenceRuntime().pendingPersistStartedAt || Date.now();
       scheduleNeonPersist();
     })
     .finally(() => {
-      flushPromise = null;
+      getPersistenceRuntime().flushPromise = null;
     });
 
-  return flushPromise;
+  return getPersistenceRuntime().flushPromise;
 }
 
 function scheduleNeonPersist() {
-  if (!sql || !pendingPersistJson) return;
-  if (saveTimer) return;
+  if (!sql || !getPersistenceRuntime().pendingPersistJson) return;
+  if (getPersistenceRuntime().saveTimer) return;
 
-  const elapsed = pendingPersistStartedAt ? Date.now() - pendingPersistStartedAt : 0;
+  const elapsed = getPersistenceRuntime().pendingPersistStartedAt ? Date.now() - getPersistenceRuntime().pendingPersistStartedAt : 0;
   const delay = elapsed >= STATE_FORCE_SAVE_AFTER_MS ? 0 : STATE_SAVE_DEBOUNCE_MS;
 
-  saveTimer = setTimeout(() => {
-    saveTimer = null;
-    flushPendingState().catch((err) => {
-      console.error("❌ erro no flush agendado do state:", err);
+  const serverId = getActiveServerId();
+  getPersistenceRuntime().saveTimer = setTimeout(() => {
+    runInServerRuntimeContext(serverId, () => {
+      getPersistenceRuntime().saveTimer = null;
+      flushPendingState().catch((err) => {
+        console.error("❌ erro no flush agendado do state:", err);
+      });
     });
   }, delay);
 }
@@ -2163,10 +2228,10 @@ export async function getStateAsync(): Promise<AppState> {
   if (!sql) {
     domainPersistenceMetrics.bootSource = "local-file";
     setCachedState(readLocalState());
-    lastPersistedJson = serializeState(getCachedState()!);
-    lastPersistedHash = hashState(lastPersistedJson);
-    lastCoreHash = hashCoreState(getCachedState()!);
-    lastDiscordRuntimeHash = hashState(serializeDiscordRuntime(getCachedState()!));
+    getPersistenceRuntime().lastPersistedJson = serializeState(getCachedState()!);
+    getPersistenceRuntime().lastPersistedHash = hashState(getPersistenceRuntime().lastPersistedJson);
+    getPersistenceRuntime().lastCoreHash = hashCoreState(getCachedState()!);
+    getPersistenceRuntime().lastDiscordRuntimeHash = hashState(serializeDiscordRuntime(getCachedState()!));
     initializeDomainHashes(getCachedState()!);
     initializeGranularPlayerSignatures(getCachedState()!);
     return getCachedState()!;
@@ -2232,20 +2297,20 @@ export async function getStateAsync(): Promise<AppState> {
       }
 
       setCachedState(state);
-      lastPersistedJson = serialized;
-      lastPersistedHash = hash;
-      lastCoreHash = hashCoreState(state);
-      lastDiscordRuntimeHash = hashState(serializeDiscordRuntime(state));
+      getPersistenceRuntime().lastPersistedJson = serialized;
+      getPersistenceRuntime().lastPersistedHash = hash;
+      getPersistenceRuntime().lastCoreHash = hashCoreState(state);
+      getPersistenceRuntime().lastDiscordRuntimeHash = hashState(serializeDiscordRuntime(state));
       initializeDomainHashes(state);
       initializeGranularPlayerSignatures(state);
-      lastCompatibilitySnapshotAt = Date.now();
+      getPersistenceRuntime().lastCompatibilitySnapshotAt = Date.now();
       return getCachedState()!;
     }
 
     setCachedState(migrateLegacyState(mainRow.data || {}));
     const mainPersistedHash = hashState(serializeState(getCachedState()!));
     const mainUpdatedAt = mainRow.updated_at ? new Date(mainRow.updated_at).getTime() : 0;
-    lastCompatibilitySnapshotAt = mainUpdatedAt || Date.now();
+    getPersistenceRuntime().lastCompatibilitySnapshotAt = mainUpdatedAt || Date.now();
     domainPersistenceMetrics.mainUpdatedAtAtBoot = mainUpdatedAt ? new Date(mainUpdatedAt).toISOString() : undefined;
 
     let domainRowsFoundAtBoot = 0;
@@ -2315,12 +2380,12 @@ export async function getStateAsync(): Promise<AppState> {
       bytes: Buffer.byteLength(loadedStateJson, "utf8"),
       ok: true,
     });
-    lastPersistedJson = loadedStateJson;
+    getPersistenceRuntime().lastPersistedJson = loadedStateJson;
     // Track the actual compatibility row, not the merged V2 view. Otherwise an
     // hourly compatibility snapshot could be incorrectly skipped after restart.
-    lastPersistedHash = mainPersistedHash;
-    lastCoreHash = hashCoreState(getCachedState()!);
-    lastDiscordRuntimeHash = hashState(serializeDiscordRuntime(getCachedState()!));
+    getPersistenceRuntime().lastPersistedHash = mainPersistedHash;
+    getPersistenceRuntime().lastCoreHash = hashCoreState(getCachedState()!);
+    getPersistenceRuntime().lastDiscordRuntimeHash = hashState(serializeDiscordRuntime(getCachedState()!));
     initializeDomainHashes(getCachedState()!);
     initializeGranularPlayerSignatures(getCachedState()!);
     return getCachedState()!;
@@ -2328,10 +2393,10 @@ export async function getStateAsync(): Promise<AppState> {
     console.error("❌ erro lendo state no Neon, usando state.json local:", err);
     domainPersistenceMetrics.bootSource = "local-fallback";
     setCachedState(readLocalState());
-    lastPersistedJson = serializeState(getCachedState()!);
-    lastPersistedHash = hashState(lastPersistedJson);
-    lastCoreHash = hashCoreState(getCachedState()!);
-    lastDiscordRuntimeHash = hashState(serializeDiscordRuntime(getCachedState()!));
+    getPersistenceRuntime().lastPersistedJson = serializeState(getCachedState()!);
+    getPersistenceRuntime().lastPersistedHash = hashState(getPersistenceRuntime().lastPersistedJson);
+    getPersistenceRuntime().lastCoreHash = hashCoreState(getCachedState()!);
+    getPersistenceRuntime().lastDiscordRuntimeHash = hashState(serializeDiscordRuntime(getCachedState()!));
     initializeDomainHashes(getCachedState()!);
     initializeGranularPlayerSignatures(getCachedState()!);
     return getCachedState()!;
@@ -2363,7 +2428,7 @@ export function getGranularPlayerStatsPersistenceMetrics() {
   const batches = Math.max(1, granularPlayerStatsMetrics.batchesWritten);
   return {
     ...granularPlayerStatsMetrics,
-    pendingPlayers: pendingGranularPlayerStats.size,
+    pendingPlayers: getPersistenceRuntime().pendingGranularPlayerStats.size,
     cadenceMinutes: Math.round(STATE_STATS_PERSIST_MS / 60_000),
     averageBatchBytes: Math.round(granularPlayerStatsMetrics.totalPayloadBytesWritten / batches),
     averageRowsPerBatch: Number((granularPlayerStatsMetrics.rowsWritten / batches).toFixed(1)),
@@ -2389,7 +2454,7 @@ export function getStateDomainPersistenceMetrics() {
   const flushes = Math.max(1, domainPersistenceMetrics.flushes);
   return {
     ...domainPersistenceMetrics,
-    pendingDomains: pendingDomains.size,
+    pendingDomains: getPersistenceRuntime().pendingDomains.size,
     backgroundCadenceMinutes: Math.round(STATE_BACKGROUND_PERSIST_MS / 60_000),
     processingCadenceMinutes: Math.round(STATE_PROCESSING_PERSIST_MS / 60_000),
     statsCadenceMinutes: Math.round(STATE_STATS_PERSIST_MS / 60_000),
@@ -2412,7 +2477,8 @@ async function ensurePlayerPositionHistoryTable() {
     await sql`
       CREATE TABLE IF NOT EXISTS player_position_history (
         id BIGSERIAL PRIMARY KEY,
-        source_key TEXT NOT NULL UNIQUE,
+        server_id TEXT NOT NULL,
+        source_key TEXT NOT NULL,
         player_name TEXT NOT NULL,
         player_normalized TEXT NOT NULL,
         event_type TEXT NOT NULL,
@@ -2421,11 +2487,19 @@ async function ensurePlayerPositionHistoryTable() {
         y DOUBLE PRECISION,
         observed_at TIMESTAMPTZ NOT NULL,
         source_file TEXT,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE (server_id, source_key)
       )
     `;
-    await sql`CREATE INDEX IF NOT EXISTS player_position_history_observed_at_idx ON player_position_history (observed_at)`;
-    await sql`CREATE INDEX IF NOT EXISTS player_position_history_player_time_idx ON player_position_history (player_normalized, observed_at)`;
+    // Existing Phase 7 installs used a global source_key. Tag those rows as the
+    // primary server before promoting uniqueness to (server_id, source_key).
+    await sql`ALTER TABLE player_position_history ADD COLUMN IF NOT EXISTS server_id TEXT`;
+    await sql`UPDATE player_position_history SET server_id = ${getPrimaryServerId()} WHERE server_id IS NULL`;
+    await sql`ALTER TABLE player_position_history ALTER COLUMN server_id SET NOT NULL`;
+    await sql`ALTER TABLE player_position_history DROP CONSTRAINT IF EXISTS player_position_history_source_key_key`;
+    await sql`CREATE UNIQUE INDEX IF NOT EXISTS player_position_history_server_source_key_uidx ON player_position_history (server_id, source_key)`;
+    await sql`CREATE INDEX IF NOT EXISTS player_position_history_server_observed_at_idx ON player_position_history (server_id, observed_at)`;
+    await sql`CREATE INDEX IF NOT EXISTS player_position_history_server_player_time_idx ON player_position_history (server_id, player_normalized, observed_at)`;
   })().catch((err) => {
     playerPositionTableReadyPromise = null;
     throw err;
@@ -2435,20 +2509,22 @@ async function ensurePlayerPositionHistoryTable() {
 }
 
 async function flushPlayerPositionHistoryBatch() {
-  if (playerPositionFlushTimer) {
-    clearTimeout(playerPositionFlushTimer);
-    playerPositionFlushTimer = null;
+  if (getPlayerPositionRuntime().flushTimer) {
+    clearTimeout(getPlayerPositionRuntime().flushTimer);
+    getPlayerPositionRuntime().flushTimer = null;
   }
-  if (!sql || !pendingPlayerPositionObservations.size) return;
+  if (!sql || !getPlayerPositionRuntime().pendingObservations.size) return;
 
-  const rows = [...pendingPlayerPositionObservations.values()];
-  pendingPlayerPositionObservations = new Map<string, PlayerPositionHistoryObservation>();
+  const rows = [...getPlayerPositionRuntime().pendingObservations.values()];
+  getPlayerPositionRuntime().pendingObservations = new Map<string, PlayerPositionHistoryObservation>();
   const startedAt = Date.now();
   const payloadBytes = Buffer.byteLength(JSON.stringify(rows), "utf8");
 
   try {
     await ensurePlayerPositionHistoryTable();
+    const serverId = getActiveServerId();
     const values = rows.map((row) => ({
+      server_id: serverId,
       source_key: row.sourceKey,
       player_name: row.playerName,
       player_normalized: row.playerNormalized,
@@ -2461,7 +2537,7 @@ async function flushPlayerPositionHistoryBatch() {
     }));
     const result = await sql`
       INSERT INTO player_position_history ${sql(values)}
-      ON CONFLICT (source_key) DO NOTHING
+      ON CONFLICT (server_id, source_key) DO NOTHING
     `;
 
     const inserted = Number((result as any).count ?? rows.length);
@@ -2478,14 +2554,14 @@ async function flushPlayerPositionHistoryBatch() {
       ok: true,
     });
 
-    if (now - lastPlayerPositionCleanupAt >= PLAYER_POSITION_CLEANUP_INTERVAL_MS) {
+    if (now - getPlayerPositionRuntime().lastCleanupAt >= PLAYER_POSITION_CLEANUP_INTERVAL_MS) {
       await sql`DELETE FROM player_position_history WHERE observed_at < NOW() - INTERVAL '24 hours'`;
-      lastPlayerPositionCleanupAt = now;
+      getPlayerPositionRuntime().lastCleanupAt = now;
     }
   } catch (err) {
     playerPositionHistoryMetrics.failedBatches += 1;
     playerPositionHistoryMetrics.lastError = err instanceof Error ? err.message : String(err);
-    for (const row of rows) pendingPlayerPositionObservations.set(row.sourceKey, row);
+    for (const row of rows) getPlayerPositionRuntime().pendingObservations.set(row.sourceKey, row);
     recordNetworkTransfer({
       service: "neon-position-history",
       operation: "player_position_history_batch",
@@ -2512,26 +2588,26 @@ export async function queuePlayerPositionHistoryObservations(observations: Playe
       playerPositionHistoryMetrics.connectEvents += 1;
       // A reconnect starts a new forensic session. If the ADM exposes coordinates
       // on the connect line, use them as the baseline for movement sampling.
-      lastRetainedPlayerPositions.delete(observation.playerNormalized);
+      getPlayerPositionRuntime().retainedPositions.delete(observation.playerNormalized);
       if (observation.x != null && observation.z != null) {
         const observedAtMs = Date.parse(observation.observedAt);
-        lastRetainedPlayerPositions.set(observation.playerNormalized, {
+        getPlayerPositionRuntime().retainedPositions.set(observation.playerNormalized, {
           x: observation.x,
           z: observation.z,
           observedAtMs: Number.isFinite(observedAtMs) ? observedAtMs : Date.now(),
         });
       }
-      pendingPlayerPositionObservations.set(observation.sourceKey, observation);
+      getPlayerPositionRuntime().pendingObservations.set(observation.sourceKey, observation);
       playerPositionHistoryMetrics.recentSamples.push(observation);
       continue;
     }
 
     if (observation.eventType === "disconnect") {
       playerPositionHistoryMetrics.disconnectEvents += 1;
-      pendingPlayerPositionObservations.set(observation.sourceKey, observation);
+      getPlayerPositionRuntime().pendingObservations.set(observation.sourceKey, observation);
       playerPositionHistoryMetrics.recentSamples.push(observation);
       // Never carry a location baseline across sessions.
-      lastRetainedPlayerPositions.delete(observation.playerNormalized);
+      getPlayerPositionRuntime().retainedPositions.delete(observation.playerNormalized);
       continue;
     }
 
@@ -2540,7 +2616,7 @@ export async function queuePlayerPositionHistoryObservations(observations: Playe
 
     const observedAtMsRaw = Date.parse(observation.observedAt);
     const observedAtMs = Number.isFinite(observedAtMsRaw) ? observedAtMsRaw : Date.now();
-    const previous = lastRetainedPlayerPositions.get(observation.playerNormalized);
+    const previous = getPlayerPositionRuntime().retainedPositions.get(observation.playerNormalized);
     let shouldRetain = !previous;
 
     if (previous) {
@@ -2559,12 +2635,12 @@ export async function queuePlayerPositionHistoryObservations(observations: Playe
     }
 
     playerPositionHistoryMetrics.queuedPositionEvents += 1;
-    lastRetainedPlayerPositions.set(observation.playerNormalized, {
+    getPlayerPositionRuntime().retainedPositions.set(observation.playerNormalized, {
       x: observation.x,
       z: observation.z,
       observedAtMs,
     });
-    pendingPlayerPositionObservations.set(observation.sourceKey, observation);
+    getPlayerPositionRuntime().pendingObservations.set(observation.sourceKey, observation);
     playerPositionHistoryMetrics.recentSamples.push(observation);
   }
 
@@ -2573,17 +2649,20 @@ export async function queuePlayerPositionHistoryObservations(observations: Playe
   }
 
   if (!sql) return;
-  if (pendingPlayerPositionObservations.size >= PLAYER_POSITION_MAX_PENDING) {
+  if (getPlayerPositionRuntime().pendingObservations.size >= PLAYER_POSITION_MAX_PENDING) {
     await flushPlayerPositionHistoryBatch();
     return;
   }
 
-  if (!playerPositionFlushTimer) {
+  if (!getPlayerPositionRuntime().flushTimer) {
     const remainder = Date.now() % PLAYER_POSITION_FLUSH_INTERVAL_MS;
     const delay = Math.max(1000, PLAYER_POSITION_FLUSH_INTERVAL_MS - remainder);
-    playerPositionFlushTimer = setTimeout(() => {
-      playerPositionFlushTimer = null;
-      flushPlayerPositionHistoryBatch().catch((err) => console.error("❌ erro no flush alinhado do histórico de posições:", err));
+    const serverId = getActiveServerId();
+    getPlayerPositionRuntime().flushTimer = setTimeout(() => {
+      runInServerRuntimeContext(serverId, () => {
+        getPlayerPositionRuntime().flushTimer = null;
+        flushPlayerPositionHistoryBatch().catch((err) => console.error("❌ erro no flush alinhado do histórico de posições:", err));
+      });
     }, delay);
   }
 }
@@ -2616,7 +2695,7 @@ export async function getLatestPlayerPositionSnapshot(playerNames: string[]): Pr
   // reflect the latest parser cycle without forcing the pending forensic batch
   // to be written to Neon first.
   for (const [playerNormalized, playerName] of requested.entries()) {
-    const retained = lastRetainedPlayerPositions.get(playerNormalized);
+    const retained = getPlayerPositionRuntime().retainedPositions.get(playerNormalized);
     if (!retained) continue;
     byPlayer.set(playerNormalized, {
       playerName,
@@ -2636,7 +2715,8 @@ export async function getLatestPlayerPositionSnapshot(playerNames: string[]): Pr
         SELECT DISTINCT ON (player_normalized)
           player_name, player_normalized, x, z, observed_at
         FROM player_position_history
-        WHERE event_type = 'position'
+        WHERE server_id = ${getActiveServerId()}
+          AND event_type = 'position'
           AND x IS NOT NULL
           AND z IS NOT NULL
           AND observed_at >= NOW() - INTERVAL '24 hours'
@@ -2693,7 +2773,7 @@ export function getPlayerPositionHistoryMetrics() {
     disconnectEvents: playerPositionHistoryMetrics.disconnectEvents,
     invalidPositions: playerPositionHistoryMetrics.invalidPositions,
     uniquePlayersObserved: playerPositionHistoryMetrics.observedPlayers.size,
-    pendingObservations: pendingPlayerPositionObservations.size,
+    pendingObservations: getPlayerPositionRuntime().pendingObservations.size,
     batchesWritten: playerPositionHistoryMetrics.batchesWritten,
     rowsWritten: playerPositionHistoryMetrics.rowsWritten,
     failedBatches: playerPositionHistoryMetrics.failedBatches,
@@ -2730,13 +2810,13 @@ async function persistDiscordRuntimeOnly(data: AppState, runtimeReason: string) 
 
   const serialized = JSON.stringify(runtime);
   const hash = hashState(serialized);
-  if (hash === lastDiscordRuntimeHash || hash === pendingDiscordRuntimeHash) {
+  if (hash === getPersistenceRuntime().lastDiscordRuntimeHash || hash === getPersistenceRuntime().pendingDiscordRuntimeHash) {
     discordRuntimeMetrics.skippedWrites += 1;
     return;
   }
 
-  pendingDiscordRuntimeJson = serialized;
-  pendingDiscordRuntimeHash = hash;
+  getPersistenceRuntime().pendingDiscordRuntimeJson = serialized;
+  getPersistenceRuntime().pendingDiscordRuntimeHash = hash;
   scheduleDiscordRuntimePersist();
 }
 
@@ -2747,7 +2827,7 @@ export async function saveDiscordStateAsync(data: AppState, reason?: string) {
   // Generic Discord mutations remain conservative: if core state changed, persist it fully.
   // The periodic feed loop uses saveDiscordRuntimeStateOnlyAsync only after verifying that
   // the loop itself did not change core state.
-  if (!lastCoreHash || hashCoreState(data) !== lastCoreHash) {
+  if (!getPersistenceRuntime().lastCoreHash || hashCoreState(data) !== getPersistenceRuntime().lastCoreHash) {
     discordRuntimeMetrics.fallbackToCore += 1;
     await saveStateAsync(data, runtimeReason);
     return;
@@ -2812,14 +2892,14 @@ export async function saveStateAsync(data: AppState, reason?: string) {
   };
 
   setCachedState(safeData);
-  lastCoreHash = hashCoreState(safeData);
+  getPersistenceRuntime().lastCoreHash = hashCoreState(safeData);
 
   // If a runtime-only write was waiting while a full/core save became necessary,
   // refresh that pending payload so an older runtime snapshot can never become
   // newer than the full row after a race.
-  if (pendingDiscordRuntimeJson) {
-    pendingDiscordRuntimeJson = serializeDiscordRuntime(safeData);
-    pendingDiscordRuntimeHash = hashState(pendingDiscordRuntimeJson);
+  if (getPersistenceRuntime().pendingDiscordRuntimeJson) {
+    getPersistenceRuntime().pendingDiscordRuntimeJson = serializeDiscordRuntime(safeData);
+    getPersistenceRuntime().pendingDiscordRuntimeHash = hashState(getPersistenceRuntime().pendingDiscordRuntimeJson);
   }
 
   const serialized = serializeState(safeData);
@@ -2828,8 +2908,8 @@ export async function saveStateAsync(data: AppState, reason?: string) {
   writeLocalState(safeData);
 
   if (!sql) {
-    lastPersistedJson = serialized;
-    lastPersistedHash = hash;
+    getPersistenceRuntime().lastPersistedJson = serialized;
+    getPersistenceRuntime().lastPersistedHash = hash;
     initializeDomainHashes(safeData);
     logStateDebug("💾 STATE SALVO EM", { file: getLocalStateFile(), serverId: getActiveServerId() });
     return;
@@ -2840,10 +2920,10 @@ export async function saveStateAsync(data: AppState, reason?: string) {
     // used the generic save API (for example admin/config paths touching mapRotation).
     const runtimeSerialized = serializeDiscordRuntime(safeData);
     const runtimeHash = hashState(runtimeSerialized);
-    const runtimeChanged = runtimeHash !== lastDiscordRuntimeHash && runtimeHash !== pendingDiscordRuntimeHash;
+    const runtimeChanged = runtimeHash !== getPersistenceRuntime().lastDiscordRuntimeHash && runtimeHash !== getPersistenceRuntime().pendingDiscordRuntimeHash;
     if (runtimeChanged) {
-      pendingDiscordRuntimeJson = runtimeSerialized;
-      pendingDiscordRuntimeHash = runtimeHash;
+      getPersistenceRuntime().pendingDiscordRuntimeJson = runtimeSerialized;
+      getPersistenceRuntime().pendingDiscordRuntimeHash = runtimeHash;
       scheduleDiscordRuntimePersist();
     }
 
@@ -2855,21 +2935,21 @@ export async function saveStateAsync(data: AppState, reason?: string) {
     }
     // Keep the latest in-memory/full JSON for local diagnostics and the hourly
     // compatibility snapshot, but do not treat it as already persisted in Neon.
-    lastPersistedJson = serialized;
+    getPersistenceRuntime().lastPersistedJson = serialized;
     return;
   }
 
-  if (hash === lastPersistedHash || serialized === lastPersistedJson) {
+  if (hash === getPersistenceRuntime().lastPersistedHash || serialized === getPersistenceRuntime().lastPersistedJson) {
     persistenceMetrics.skippedWrites += 1;
     getReasonMetric(persistenceReason).skippedRequests += 1;
     logStateDebug("⏭️ STATE ignorado: sem alterações", { reason: persistenceReason });
     return;
   }
 
-  pendingPersistJson = serialized;
-  pendingPersistHash = hash;
-  pendingPersistReasons.add(persistenceReason);
-  pendingPersistStartedAt = pendingPersistStartedAt || Date.now();
+  getPersistenceRuntime().pendingPersistJson = serialized;
+  getPersistenceRuntime().pendingPersistHash = hash;
+  getPersistenceRuntime().pendingPersistReasons.add(persistenceReason);
+  getPersistenceRuntime().pendingPersistStartedAt = getPersistenceRuntime().pendingPersistStartedAt || Date.now();
   scheduleNeonPersist();
 }
 
@@ -2877,10 +2957,10 @@ export function getState(): AppState {
   const cachedState = getCachedState();
   if (cachedState) return cachedState;
   setCachedState(readLocalState());
-  lastPersistedJson = serializeState(getCachedState()!);
-  lastPersistedHash = hashState(lastPersistedJson);
-  lastCoreHash = hashCoreState(getCachedState()!);
-  lastDiscordRuntimeHash = hashState(serializeDiscordRuntime(getCachedState()!));
+  getPersistenceRuntime().lastPersistedJson = serializeState(getCachedState()!);
+  getPersistenceRuntime().lastPersistedHash = hashState(getPersistenceRuntime().lastPersistedJson);
+  getPersistenceRuntime().lastCoreHash = hashCoreState(getCachedState()!);
+  getPersistenceRuntime().lastDiscordRuntimeHash = hashState(serializeDiscordRuntime(getCachedState()!));
   initializeDomainHashes(getCachedState()!);
   return getCachedState()!;
 }
@@ -2888,10 +2968,10 @@ export function getState(): AppState {
 export function saveState(data: AppState) {
   setCachedState(data);
   const serialized = serializeState(data);
-  lastPersistedJson = serialized;
-  lastPersistedHash = hashState(serialized);
-  lastCoreHash = hashCoreState(data);
-  lastDiscordRuntimeHash = hashState(serializeDiscordRuntime(data));
+  getPersistenceRuntime().lastPersistedJson = serialized;
+  getPersistenceRuntime().lastPersistedHash = hashState(serialized);
+  getPersistenceRuntime().lastCoreHash = hashCoreState(data);
+  getPersistenceRuntime().lastDiscordRuntimeHash = hashState(serializeDiscordRuntime(data));
   initializeDomainHashes(data);
   writeLocalState(data);
   logStateDebug("💾 STATE SALVO LOCALMENTE", { file: getLocalStateFile(), serverId: getActiveServerId() });

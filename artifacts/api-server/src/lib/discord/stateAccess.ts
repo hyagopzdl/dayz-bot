@@ -35,5 +35,5 @@ export function createDiscordStateAccess(serverId = getPrimaryServerId()) {
     console.log("💾 runtime do Discord salvo", { serverId });
   }
 
-  return { getState, saveState, saveRuntimeState };
+  return { serverId, getState, saveState, saveRuntimeState };
 }

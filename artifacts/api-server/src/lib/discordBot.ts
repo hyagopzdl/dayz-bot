@@ -33,6 +33,7 @@ export async function startDiscordBot(serverId = getPrimaryServerId()) {
     const stateAccess = createDiscordStateAccess(serverId);
 
     const feeds = createDiscordFeedRuntime({
+      serverId,
       client,
       categoryId: channels.categoryId,
       globalChannel: channels.globalChannel,

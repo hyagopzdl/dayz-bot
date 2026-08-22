@@ -3,6 +3,8 @@ import path from "path";
 import type { MapEventInjectRequest, MapEventPresetId } from "./mapEventTypes";
 import { findMapEventPreset } from "./mapEventPresets";
 import { injectMapEventNow } from "./mapEventService";
+import { getPrimaryServerId } from "../serverRegistry";
+import { getActiveServerId, runInServerRuntimeContext } from "../serverRuntime";
 
 export type ScheduledMapEventRecurrence = "none" | "daily" | "weekly" | "monthly";
 export type ScheduledMapEventStatus = "scheduled" | "active" | "paused" | "completed" | "cancelled" | "failed";
@@ -28,18 +30,24 @@ export type ScheduledMapEvent = {
 
 type Store = { events: ScheduledMapEvent[] };
 
-const SCHEDULE_FILE = path.resolve(process.cwd(), process.env.MAP_EVENTS_SCHEDULE_FILE || "map-events-schedule.json");
+const LEGACY_SCHEDULE_FILE = path.resolve(process.cwd(), process.env.MAP_EVENTS_SCHEDULE_FILE || "map-events-schedule.json");
 let schedulerTimer: NodeJS.Timeout | null = null;
-let schedulerRunning = false;
+const schedulerRunningServers = new Set<string>();
+
+function getScheduleFile(serverId = getActiveServerId()) {
+  if (serverId === getPrimaryServerId()) return LEGACY_SCHEDULE_FILE;
+  return path.resolve(process.cwd(), "map-events-schedules", `${serverId}.json`);
+}
 
 function safeId() {
   return `map_evt_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
 function readStore(): Store {
+  const scheduleFile = getScheduleFile();
   try {
-    if (!fs.existsSync(SCHEDULE_FILE)) return { events: [] };
-    const parsed = JSON.parse(fs.readFileSync(SCHEDULE_FILE, "utf8"));
+    if (!fs.existsSync(scheduleFile)) return { events: [] };
+    const parsed = JSON.parse(fs.readFileSync(scheduleFile, "utf8"));
     return { events: Array.isArray(parsed?.events) ? parsed.events : [] };
   } catch (err) {
     console.warn("Failed to read map event schedule store:", err);
@@ -48,9 +56,10 @@ function readStore(): Store {
 }
 
 function writeStore(store: Store) {
-  const dir = path.dirname(SCHEDULE_FILE);
+  const scheduleFile = getScheduleFile();
+  const dir = path.dirname(scheduleFile);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(SCHEDULE_FILE, `${JSON.stringify({ events: store.events }, null, 2)}\n`, "utf8");
+  fs.writeFileSync(scheduleFile, `${JSON.stringify({ events: store.events }, null, 2)}\n`, "utf8");
 }
 
 function normalizeRecurrence(value: unknown): ScheduledMapEventRecurrence {
@@ -198,8 +207,9 @@ export function deleteScheduledMapEvent(id: string) {
 }
 
 export async function runDueScheduledMapEvents() {
-  if (schedulerRunning) return { ran: 0 };
-  schedulerRunning = true;
+  const serverId = getActiveServerId();
+  if (schedulerRunningServers.has(serverId)) return { ran: 0 };
+  schedulerRunningServers.add(serverId);
   let ran = 0;
   try {
     const store = readStore();
@@ -219,14 +229,17 @@ export async function runDueScheduledMapEvents() {
     }
     return { ran };
   } finally {
-    schedulerRunning = false;
+    schedulerRunningServers.delete(serverId);
   }
 }
 
 export function startMapEventScheduler() {
   if (schedulerTimer) return;
+  const primaryServerId = getPrimaryServerId();
   schedulerTimer = setInterval(() => {
-    runDueScheduledMapEvents().catch((err) => console.error("Map event scheduler failed:", err));
+    runInServerRuntimeContext(primaryServerId, () =>
+      runDueScheduledMapEvents().catch((err) => console.error("Map event scheduler failed:", err)),
+    );
   }, 60_000);
   schedulerTimer.unref?.();
 }

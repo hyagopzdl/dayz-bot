@@ -86,6 +86,14 @@ export type ServerRuntimeIsolationStatus = {
   stateCacheNamespaced?: boolean;
   schedulerCentralized?: boolean;
   admStrategyNamespaced?: boolean;
+  httpContextNamespaced?: boolean;
+  persistenceRuntimeNamespaced?: boolean;
+  positionHistoryNamespaced?: boolean;
+  admParserStorageNamespaced?: boolean;
+  activationReadiness?: boolean;
+  ftpPrimaryGuarded?: boolean;
+  discordLoopGuardsNamespaced?: boolean;
+  mapSchedulersContextualized?: boolean;
   contextRuns?: number;
   contextFallbacks?: number;
   lastContextServerId?: string;
@@ -193,9 +201,9 @@ export function getPrimaryServerDescriptor(): ManagedServerDescriptor {
 }
 
 export function listManagedServers(): ManagedServerDescriptor[] {
-  // Phase 5 still exposes only the primary server operationally. Composite
-  // primary keys are being activated, but runtime/Nitrado/Discord routing is
-  // not isolated yet, so additional servers remain blocked.
+  // Phase 8 keeps additional servers registry-visible but operationally blocked.
+  // Runtime/state isolation is prepared first; activation/onboarding remains a
+  // separate explicit step so the primary PZ server cannot be affected.
   if (persistedServers.length) return persistedServers.map((server) => ({ ...server, integrations: { ...server.integrations }, runtime: { ...server.runtime, discord: { ...server.runtime.discord } } }));
   return [getPrimaryServerDescriptor()];
 }
@@ -272,7 +280,7 @@ export function getServerFoundationDiagnostics() {
   const registry = getServerRegistryPersistenceStatus();
   const namespace = getServerNamespacePersistenceStatus();
   return {
-    phase: 7,
+    phase: 8,
     mode: server.mode,
     currentServerId: server.id,
     currentServerName: server.name,
@@ -305,6 +313,11 @@ export function getServerFoundationDiagnostics() {
       perServerStateCache: Boolean(runtimeIsolationStatus.stateCacheNamespaced),
       centralizedScheduler: Boolean(runtimeIsolationStatus.schedulerCentralized),
       perServerAdmStrategy: Boolean(runtimeIsolationStatus.admStrategyNamespaced),
+      httpContextNamespaced: Boolean(runtimeIsolationStatus.httpContextNamespaced),
+      perServerPersistenceRuntime: Boolean(runtimeIsolationStatus.persistenceRuntimeNamespaced),
+      perServerPositionHistory: Boolean(runtimeIsolationStatus.positionHistoryNamespaced),
+      perServerAdmParserStorage: Boolean(runtimeIsolationStatus.admParserStorageNamespaced),
+      activationReadiness: Boolean(runtimeIsolationStatus.activationReadiness),
     },
     integrations: server.integrations,
   };

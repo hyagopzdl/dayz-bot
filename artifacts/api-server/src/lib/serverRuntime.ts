@@ -27,7 +27,7 @@ function stableHash(value: string) {
 }
 
 export function getServerRuntimeContext(serverId?: string) {
-  const targetId = String(serverId || getPrimaryServerId()).trim();
+  const targetId = String(serverId || executionContext.getStore()?.serverId || getPrimaryServerId()).trim();
   const descriptor = getManagedServerById(targetId) || (targetId === getPrimaryServerId() ? getPrimaryServerDescriptor() : undefined);
   if (!descriptor) throw new Error(`Unknown managed server: ${targetId}`);
 
@@ -56,6 +56,13 @@ export function getServerRuntimeContext(serverId?: string) {
     stateCacheNamespaced: true,
     schedulerCentralized: true,
     admStrategyNamespaced: true,
+    admParserStorageNamespaced: true,
+    persistenceRuntimeNamespaced: true,
+    positionHistoryNamespaced: true,
+    ftpPrimaryGuarded: true,
+    discordLoopGuardsNamespaced: true,
+    mapSchedulersContextualized: true,
+    activationReadiness: true,
     lastError: undefined,
   });
 
@@ -141,6 +148,6 @@ export async function runWithServerRuntimeLock<T>(serverId: string, work: () => 
 export function assertPrimaryRuntimeServer(serverId: string) {
   const primaryId = getPrimaryServerId();
   if (serverId !== primaryId) {
-    throw new Error(`Server ${serverId} is registered but runtime activation is still blocked until Phase 8.`);
+    throw new Error(`Server ${serverId} is registered but runtime activation is still blocked until the post-Phase 8 activation phase.`);
   }
 }

@@ -1,5 +1,6 @@
 import net from "net";
 import { recordNetworkTransfer } from "./networkMetrics";
+import { assertPrimaryRuntimeServer, getActiveServerId } from "./serverRuntime";
 
 type FtpResponse = {
   code: number;
@@ -294,6 +295,11 @@ async function downloadTextViaFtp(options: Omit<UploadOptions, "content">) {
 }
 
 export async function uploadTextFile(filePath: string, content: string) {
+  const serverId = getActiveServerId();
+  // Phase 8 deliberately fails closed: FTP credentials are still the legacy
+  // PZ credentials. A future onboarding phase must provide per-server secrets
+  // before a non-primary runtime is allowed to use this transport.
+  assertPrimaryRuntimeServer(serverId);
   const { host, port, user, password } = getFtpConnectionOptions();
   const remotePath = normalizeFtpPath(filePath);
 
@@ -319,6 +325,8 @@ export async function uploadTextFile(filePath: string, content: string) {
 }
 
 export async function downloadTextFile(filePath: string) {
+  const serverId = getActiveServerId();
+  assertPrimaryRuntimeServer(serverId);
   const { host, port, user, password } = getFtpConnectionOptions();
   const remotePath = normalizeFtpPath(filePath);
 

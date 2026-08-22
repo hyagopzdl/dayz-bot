@@ -10,7 +10,7 @@ import {
   type PlayerPositionHistoryObservation,
 } from "./state";
 import { isPresenceHistoryEnabled } from "./serviceSettings";
-import { MANIFEST_FILE } from "./nitradoDownloader";
+import { getServerRuntimeContext } from "./serverRuntime";
 import {
   getShopResetMonitorPersistenceKey,
   tryAutoClearShopAfterAdmReset,
@@ -856,13 +856,17 @@ function applyResets(state: AppState): boolean {
 }
 
 function readManifestFiles(): string[] {
-  if (!fs.existsSync(MANIFEST_FILE)) {
-    if (fs.existsSync("ADM.log")) return ["ADM.log"];
+  const runtime = getServerRuntimeContext();
+  const manifestFile = runtime.storage.manifestFile;
+  if (!fs.existsSync(manifestFile)) {
+    // Preserve the historical single-file fallback only for the primary PZ
+    // runtime. Future server runtimes must never inspect another server's ADM.
+    if (runtime.isPrimary && fs.existsSync("ADM.log")) return ["ADM.log"];
     return [];
   }
 
   try {
-    const manifest = JSON.parse(fs.readFileSync(MANIFEST_FILE, "utf-8"));
+    const manifest = JSON.parse(fs.readFileSync(manifestFile, "utf-8"));
     return Array.isArray(manifest.files)
       ? sortAdmFilesChronologically(manifest.files)
       : [];

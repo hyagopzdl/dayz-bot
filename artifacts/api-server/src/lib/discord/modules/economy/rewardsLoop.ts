@@ -2,14 +2,16 @@ import { getPlaytimeRewardConfig, processPlaytimeRewards } from "./rewards";
 import type { AppState } from "../../../state";
 
 type EconomyRewardsStateAccess = {
+  serverId: string;
   getState: () => Promise<AppState>;
   saveState: (state: AppState) => Promise<void>;
 };
 
-let rewardsLoopStarted = false;
+const rewardsLoopStartedServers = new Set<string>();
 
 export function startEconomyRewardsLoop(stateAccess: EconomyRewardsStateAccess) {
-  if (rewardsLoopStarted) return;
+  const { serverId } = stateAccess;
+  if (rewardsLoopStartedServers.has(serverId)) return;
 
   const config = getPlaytimeRewardConfig();
   if (!config.enabled) {
@@ -17,7 +19,7 @@ export function startEconomyRewardsLoop(stateAccess: EconomyRewardsStateAccess) 
     return;
   }
 
-  rewardsLoopStarted = true;
+  rewardsLoopStartedServers.add(serverId);
   const intervalMs = Math.max(1, config.tickMinutes) * 60 * 1000;
 
   async function tick() {

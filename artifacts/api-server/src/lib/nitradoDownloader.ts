@@ -3,7 +3,7 @@ import fs from "fs";
 import path from "path";
 import { byteLengthOfBody, recordNetworkTransfer } from "./networkMetrics";
 import { getPrimaryServerId } from "./serverRegistry";
-import { getServerRuntimeContext } from "./serverRuntime";
+import { getActiveServerId, getServerRuntimeContext } from "./serverRuntime";
 
 const LEGACY_SERVICE_ID = "19149785";
 const LEGACY_BASE_DIR = "/games/ni13029176_1/noftp/dayzps/config";
@@ -551,7 +551,7 @@ export async function downloadADM(serverId = getPrimaryServerId()) {
   console.log(`📦 ${availableLocalFiles.length} arquivos ADM disponíveis`);
 }
 
-function getNitradoServiceId(serverId = getPrimaryServerId()) {
+function getNitradoServiceId(serverId = getActiveServerId()) {
   const runtime = getServerRuntimeContext(serverId);
   return runtime.nitrado.serviceId || process.env.NITRADO_SERVICE_ID || LEGACY_SERVICE_ID;
 }
@@ -565,12 +565,13 @@ function normalizeNitradoFileServerPath(value: string) {
 
 export async function listNitradoDirectory(
   dir: string,
+  serverId = getActiveServerId(),
 ): Promise<NitradoEntry[]> {
   if (!process.env.NITRADO_TOKEN) {
     throw new Error("NITRADO_TOKEN não definido");
   }
 
-  const serviceId = getNitradoServiceId();
+  const serviceId = getNitradoServiceId(serverId);
   const normalizedDir = normalizeNitradoFileServerPath(dir);
 
   console.log(`📂 Nitrado list request: dir=${normalizedDir || "/"}`);
@@ -584,7 +585,7 @@ export async function listNitradoDirectory(
   return json?.data?.entries || [];
 }
 
-export async function debugNitradoListRaw(dir: string): Promise<{
+export async function debugNitradoListRaw(dir: string, serverId = getActiveServerId()): Promise<{
   dir: string;
   ok: boolean;
   status: number;
@@ -596,7 +597,7 @@ export async function debugNitradoListRaw(dir: string): Promise<{
     throw new Error("NITRADO_TOKEN não definido");
   }
 
-  const serviceId = getNitradoServiceId();
+  const serviceId = getNitradoServiceId(serverId);
   const normalizedDir = normalizeNitradoFileServerPath(dir);
   const url = `https://api.nitrado.net/services/${serviceId}/gameservers/file_server/list?dir=${encodeURIComponent(
     normalizedDir,
@@ -632,6 +633,7 @@ export async function debugNitradoListRaw(dir: string): Promise<{
 export async function probeNitradoUploadTokenForDirectory(
   dir: string,
   file = "shop_pending.json",
+  serverId = getActiveServerId(),
 ): Promise<{
   dir: string;
   file: string;
@@ -644,7 +646,7 @@ export async function probeNitradoUploadTokenForDirectory(
     throw new Error("NITRADO_TOKEN não definido");
   }
 
-  const serviceId = getNitradoServiceId();
+  const serviceId = getNitradoServiceId(serverId);
   const normalizedDir = String(dir || "")
     .replace(/\\/g, "/")
     .replace(/\/+$/g, "");
@@ -735,7 +737,7 @@ function uniqueStrings(values: string[]) {
   return Array.from(new Set(values.filter(Boolean)));
 }
 
-function getNoFtpRootFromAdmBaseDir(serverId = getPrimaryServerId()) {
+function getNoFtpRootFromAdmBaseDir(serverId = getActiveServerId()) {
   const baseDir = getServerRuntimeContext(serverId).nitrado.baseDir || LEGACY_BASE_DIR;
   const marker = "/noftp/";
   const index = baseDir.indexOf(marker);
@@ -766,8 +768,8 @@ function withDayzMissionFolderVariants(pathValue: string) {
   return uniqueStrings(variants);
 }
 
-function buildUploadPathCandidates(pathValue: string) {
-  const noFtpRoot = getNoFtpRootFromAdmBaseDir();
+function buildUploadPathCandidates(pathValue: string, serverId = getActiveServerId()) {
+  const noFtpRoot = getNoFtpRootFromAdmBaseDir(serverId);
   const candidates: string[] = [];
 
   for (const variant of withDayzMissionFolderVariants(pathValue)) {
@@ -785,12 +787,13 @@ function buildUploadPathCandidates(pathValue: string) {
 
 async function getUploadToken(
   filePath: string,
+  serverId = getActiveServerId(),
 ): Promise<{ url: string; token: string }> {
-  const serviceId = getNitradoServiceId();
+  const serviceId = getNitradoServiceId(serverId);
   const { path, file } = splitRemoteFilePath(filePath);
   const url = `https://api.nitrado.net/services/${serviceId}/gameservers/file_server/upload`;
   const errors: string[] = [];
-  const pathCandidates = buildUploadPathCandidates(path);
+  const pathCandidates = buildUploadPathCandidates(path, serverId);
 
   console.log(`📤 Nitrado upload token request: file=${file}`);
   console.log(
@@ -849,12 +852,13 @@ async function getUploadToken(
 export async function uploadShopSpawnerFile(
   filePath: string,
   payload: unknown,
+  serverId = getActiveServerId(),
 ) {
   if (!process.env.NITRADO_TOKEN) {
     throw new Error("NITRADO_TOKEN não definido");
   }
 
-  const { url, token } = await getUploadToken(filePath);
+  const { url, token } = await getUploadToken(filePath, serverId);
   const body = JSON.stringify(payload, null, 2);
 
   const res = await trackedNitradoFetch(url, {
