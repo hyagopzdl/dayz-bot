@@ -1123,18 +1123,16 @@ export async function getLeaderboard() {
     }
   }
 
-  // Phase 12 activates secondary ADM/parser runtimes only. Legacy shop XML/FTP
-  // operations are still primary-guarded and must never be reached from a
-  // secondary parser until the Phase 13 commerce context is explicitly scoped.
-  if (getServerRuntimeContext().isPrimary) {
-    try {
-      const monitorBefore = getShopResetMonitorPersistenceKey(state);
-      const clearResult = await tryAutoClearShopAfterAdmReset(state, orderedFiles);
-      const monitorChanged = getShopResetMonitorPersistenceKey(state) !== monitorBefore;
-      changed = Boolean(clearResult) || monitorChanged || changed;
-    } catch (err) {
-      console.error("❌ erro no auto-clear da shop após reset ADM:", err);
-    }
+  // Phase 13 routes shop file I/O through the active server context. The PZ keeps
+  // its legacy FTP transport, while secondary runtimes use the scoped Nitrado API.
+  // This check is still a no-op unless that server has a delivery batch waiting.
+  try {
+    const monitorBefore = getShopResetMonitorPersistenceKey(state);
+    const clearResult = await tryAutoClearShopAfterAdmReset(state, orderedFiles);
+    const monitorChanged = getShopResetMonitorPersistenceKey(state) !== monitorBefore;
+    changed = Boolean(clearResult) || monitorChanged || changed;
+  } catch (err) {
+    console.error(`❌ erro no auto-clear da shop [${getServerRuntimeContext().serverId}]:`, err);
   }
 
   cleanupOnlinePlayers(state);

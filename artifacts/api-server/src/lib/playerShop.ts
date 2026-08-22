@@ -20,6 +20,7 @@ import {
   getShopItemsByCategory,
 } from "./shopCatalog";
 import type { AppState, ShopOrder, ShopPendingCheckout } from "./state";
+import { getActiveServerId } from "./serverRuntime";
 
 const CHECKOUT_TTL_MS = 10 * 60 * 1000;
 const activeConfirmations = new Set<string>();
@@ -165,8 +166,9 @@ function presentCheckout(checkout: ShopPendingCheckout, balance: number, runtime
 }
 
 export function confirmPlayerShopCheckout(state: AppState, session: PortalSession, checkoutId: string) {
-  if (activeConfirmations.has(checkoutId)) throw new Error("This purchase is already being processed.");
-  activeConfirmations.add(checkoutId);
+  const confirmationKey = `${getActiveServerId()}:${checkoutId}`;
+  if (activeConfirmations.has(confirmationKey)) throw new Error("This purchase is already being processed.");
+  activeConfirmations.add(confirmationKey);
   try {
     const checkout = prunePlayerShopCheckouts(state).find((candidate) => candidate.id === checkoutId && candidate.discordUserId === session.discordId);
     if (!checkout) throw new Error("This checkout expired. Select the item again.");
@@ -189,7 +191,7 @@ export function confirmPlayerShopCheckout(state: AppState, session: PortalSessio
     state.shopPendingCheckouts = (state.shopPendingCheckouts || []).filter((candidate) => candidate.id !== checkoutId);
     return presentOrder(order);
   } finally {
-    activeConfirmations.delete(checkoutId);
+    activeConfirmations.delete(confirmationKey);
   }
 }
 

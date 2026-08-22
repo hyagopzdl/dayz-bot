@@ -186,6 +186,6 @@ export async function runWithServerRuntimeLock<T>(serverId: string, work: () => 
 export function assertPrimaryRuntimeServer(serverId: string) {
   const primaryId = getPrimaryServerId();
   if (serverId !== primaryId) {
-    throw new Error(`Legacy FTP/Discord state access remains primary-only during Phase 12 runtime activation (${serverId}).`);
+    throw new Error(`Legacy FTP/Discord state access remains primary-only during Phase 13 portal context (${serverId}).`);
   }
 }

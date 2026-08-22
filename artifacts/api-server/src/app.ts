@@ -67,14 +67,14 @@ app.use((req, res, next) => {
 app.use(cookieParser());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-// Phase 8 keeps the public/admin surface pinned to the primary server while
-// ensuring every request executes inside an explicit server context. Future
-// onboarding can replace this resolver without changing route internals.
+// Phase 13 keeps the default/admin surface pinned to the primary server while
+// the Player Portal installs a nested, validated server context for its own
+// routes. This prevents admin FTP/map operations from following a player cookie.
 app.use((_req, _res, next) => {
   const serverId = getPrimaryServerId();
   runInServerRuntimeContext(serverId, next);
 });
-setServerRuntimeIsolationStatus({ httpContextNamespaced: true });
+setServerRuntimeIsolationStatus({ httpContextNamespaced: true, playerPortalContextNamespaced: true });
 app.use(
   "/app-assets",
   express.static("assets/player-portal", {

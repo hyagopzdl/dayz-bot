@@ -349,6 +349,34 @@ async function downloadText(filePath: string, serverId = getPrimaryServerId()): 
   if (!res.ok) throw new Error(`ADM download HTTP ${res.status}: ${await res.text()}`);
   return res.text();
 }
+export async function downloadNitradoTextFile(
+  filePath: string,
+  serverId = getActiveServerId(),
+): Promise<string> {
+  const normalized = normalizeNitradoFileServerPath(filePath);
+  const { path: directory, file } = splitRemoteFilePath(normalized);
+  const noFtpRoot = getNoFtpRootFromAdmBaseDir(serverId);
+  const candidates: string[] = [normalized];
+
+  for (const variant of withDayzMissionFolderVariants(directory)) {
+    candidates.push(`${variant}/${file}`);
+    if (noFtpRoot) candidates.push(`${noFtpRoot}/${variant}/${file}`);
+  }
+
+  const errors: string[] = [];
+  for (const candidate of uniqueStrings(candidates)) {
+    try {
+      const content = await downloadText(candidate, serverId);
+      if (content !== null) return content;
+      errors.push(`${candidate}: no download token`);
+    } catch (error) {
+      errors.push(`${candidate}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  throw new Error(`Nitrado text download failed for ${filePath}. Attempts: ${errors.join(" | ")}`);
+}
+
 
 function saveManifest(files: string[], manifestFile = MANIFEST_FILE) {
   const manifest: Manifest = { files, updatedAt: new Date().toISOString() };
@@ -903,6 +931,32 @@ async function getUploadToken(
   throw new Error(
     `Nitrado upload token failed for ${filePath}. Attempts: ${errors.join(" | ")}`,
   );
+}
+
+export async function uploadNitradoTextFile(
+  filePath: string,
+  content: string,
+  serverId = getActiveServerId(),
+) {
+  if (!process.env.NITRADO_TOKEN) {
+    throw new Error("NITRADO_TOKEN não definido");
+  }
+
+  const { url, token } = await getUploadToken(filePath, serverId);
+  const res = await trackedNitradoFetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/binary",
+      token,
+    },
+    body: content,
+  });
+
+  if (!res.ok) {
+    throw new Error(`Nitrado upload HTTP ${res.status}: ${await res.text()}`);
+  }
+
+  console.log(`✅ Nitrado text uploaded [${serverId}]: ${filePath} (${content.length} chars)`);
 }
 
 export async function uploadShopSpawnerFile(

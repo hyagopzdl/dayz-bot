@@ -130,6 +130,7 @@ export type ServerRuntimeIsolationStatus = {
   schedulerCentralized?: boolean;
   admStrategyNamespaced?: boolean;
   httpContextNamespaced?: boolean;
+  playerPortalContextNamespaced?: boolean;
   persistenceRuntimeNamespaced?: boolean;
   positionHistoryNamespaced?: boolean;
   admParserStorageNamespaced?: boolean;
@@ -443,7 +444,7 @@ export function getServerFoundationDiagnostics() {
   const managedServers = listManagedServers();
   const additionalServers = managedServers.filter((candidate) => !candidate.primary);
   return {
-    phase: 12,
+    phase: 13,
     mode: server.mode,
     currentServerId: server.id,
     currentServerName: server.name,
@@ -465,6 +466,7 @@ export function getServerFoundationDiagnostics() {
       integrationValidationMode: "on-demand",
       activationPreflightEnabled: true,
       activationEndpointEnabled: true,
+      playerPortalContextSwitchingEnabled: true,
       preflightMode: "on-demand",
       backgroundPollingAdded: false,
       backgroundRegistryWritesAdded: false,
@@ -511,6 +513,7 @@ export function getServerFoundationDiagnostics() {
       nitradoTokenNeverReturnedToBrowser: true,
       activationPreflightGate: true,
       activationEndpointAvailable: true,
+      playerPortalContextSwitching: true,
     },
     integrations: server.integrations,
   };

@@ -1,6 +1,7 @@
 import type { PortalSession } from "../auth/session";
+import type { PlayerPortalServerContext } from "../lib/playerPortalServerContext";
 
-const PLAYER_PORTAL_ASSET_VERSION = "20260809-killfeed-1";
+const PLAYER_PORTAL_ASSET_VERSION = "20260822-phase13-context-1";
 
 function escapeHtml(value: unknown) {
   return String(value ?? "")
@@ -11,25 +12,38 @@ function escapeHtml(value: unknown) {
     .replaceAll("'", "&#039;");
 }
 
-export function renderPlayerPortal(session: PortalSession, initialView: "dashboard" | "profile" | "public-profile" | "rankings" | "killfeed" | "accounts" | "clan" | "shop" | "purchases" = "dashboard", options: { shopEnabled?: boolean } = {}) {
+export function renderPlayerPortal(session: PortalSession, initialView: "dashboard" | "profile" | "public-profile" | "rankings" | "killfeed" | "accounts" | "clan" | "shop" | "purchases" = "dashboard", options: { shopEnabled?: boolean; serverContext?: PlayerPortalServerContext } = {}) {
   const shopEnabled = options.shopEnabled !== false;
   const displayName = session.globalName || session.username;
+  const selectedServer = options.serverContext?.selectedServer || { id: "pz-deathmatch", name: "PZ Deathmatch", primary: true, runtimeEnabled: true, onboardingStatus: "active" };
+  const portalServers = options.serverContext?.servers?.length ? options.serverContext.servers : [selectedServer];
   return `<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#070709">
-  <title>PZ Deathmatch · Player Portal</title>
+  <title>${escapeHtml(selectedServer.name)} · Player Portal</title>
   <link rel="stylesheet" href="/app-assets/player-portal.css?v=${PLAYER_PORTAL_ASSET_VERSION}">
 </head>
-<body data-view="${initialView}">
+<body data-view="${initialView}" data-server-id="${escapeHtml(selectedServer.id)}">
   <div class="app-shell">
     <aside class="sidebar" id="sidebar">
-      <a class="brand" href="/app" aria-label="PZ Deathmatch home">
+      <a class="brand" href="/app" aria-label="${escapeHtml(selectedServer.name)} home">
         <span class="brand-mark">PZ</span>
-        <span><strong>PZ Deathmatch</strong><small>Player portal</small></span>
+        <span><strong>${escapeHtml(selectedServer.name)}</strong><small>Player portal</small></span>
       </a>
+      <div class="server-switcher-card">
+        <label for="serverSwitcher">Current server</label>
+        <div class="server-switcher-control">
+          <span class="server-switcher-dot"></span>
+          <select id="serverSwitcher" aria-label="Current server">
+            ${portalServers.map((server) => `<option value="${escapeHtml(server.id)}" ${server.id === selectedServer.id ? "selected" : ""}>${escapeHtml(server.name)}</option>`).join("")}
+          </select>
+          <span class="server-switcher-chevron">⌄</span>
+        </div>
+        <small>Running · stats, wallet and shop are isolated</small>
+      </div>
       <nav class="nav" aria-label="Player portal navigation">
         <a class="nav-item ${initialView === "dashboard" ? "active" : ""}" href="/app" data-route="dashboard"><span class="nav-icon">⌂</span>Dashboard</a>
         <a class="nav-item ${initialView === "profile" ? "active" : ""}" href="/app/profile" data-route="profile"><span class="nav-icon">○</span>Profile</a>
@@ -42,14 +56,14 @@ ${shopEnabled ? `<a class="nav-item ${initialView === "shop" ? "active" : ""}" h
         <a class="nav-item disabled" href="#" aria-disabled="true"><span class="nav-icon">◎</span>Economy<span class="soon">Soon</span></a>
       </nav>
       <div class="sidebar-footer">
-        <div class="server-status"><span class="status-dot"></span><div><strong>Server online</strong><small>Live connection</small></div></div>
+        <div class="server-status"><span class="status-dot"></span><div><strong>${escapeHtml(selectedServer.name)}</strong><small>Runtime online</small></div></div>
         <button class="sign-out" id="logoutButton" type="button">Sign out</button>
       </div>
     </aside>
 
     <main class="main-content">
       <header class="mobile-header">
-        <a class="brand compact" href="/app"><span class="brand-mark">PZ</span><strong>PZ</strong></a>
+        <a class="brand compact" href="/app"><span class="brand-mark">PZ</span><strong>${escapeHtml(selectedServer.name)}</strong></a>
         <button class="menu-button" id="menuButton" type="button" aria-label="Open menu">☰</button>
       </header>
 
@@ -67,7 +81,7 @@ ${shopEnabled ? `<a class="nav-item ${initialView === "shop" ? "active" : ""}" h
         </header>
 
         <div class="link-notice hidden" id="linkNotice">
-          <div><strong>Connect your DayZ account</strong><span>Use <code>/link</code> on Discord to sync your gamertag, stats and coins.</span></div>
+          <div><strong>Connect your DayZ account</strong><span>Open <strong>Accounts</strong> to connect your DayZ identity for this server.</span></div>
           <span class="notice-badge">Action needed</span>
         </div>
 

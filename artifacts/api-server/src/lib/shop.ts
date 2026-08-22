@@ -1,6 +1,6 @@
 import type { AppState, ShopOrder, ShopSavedLocation } from "./state";
 import { getNitradoGameserverStatus } from "./nitradoDownloader";
-import { downloadTextFile, uploadTextFile } from "./nitradoFtp";
+import { downloadServerTextFile, uploadServerTextFile } from "./serverFileTransport";
 import {
   injectShopEventSpawnsXml,
   injectShopEventsXml,
@@ -9,6 +9,7 @@ import {
   SHOP_BOT_START,
 } from "./shopXml";
 import { systems } from "./systems";
+import { getServerRuntimeContext } from "./serverRuntime";
 
 import {
   findShopItem,
@@ -128,8 +129,8 @@ function validateInjectedShopXml(options: {
 
 async function verifyUploadedShopBlocks(expectedOrders: ShopOrder[], eventNames: string[]) {
   const [uploadedEventsXml, uploadedEventSpawnsXml] = await Promise.all([
-    downloadTextFile(SHOP_EVENTS_PATH),
-    downloadTextFile(SHOP_EVENT_SPAWNS_PATH),
+    downloadServerTextFile(SHOP_EVENTS_PATH),
+    downloadServerTextFile(SHOP_EVENT_SPAWNS_PATH),
   ]);
 
   validateInjectedShopXml({
@@ -143,8 +144,8 @@ async function verifyUploadedShopBlocks(expectedOrders: ShopOrder[], eventNames:
 
 async function verifyShopBlocksRemoved() {
   const [uploadedEventsXml, uploadedEventSpawnsXml] = await Promise.all([
-    downloadTextFile(SHOP_EVENTS_PATH),
-    downloadTextFile(SHOP_EVENT_SPAWNS_PATH),
+    downloadServerTextFile(SHOP_EVENTS_PATH),
+    downloadServerTextFile(SHOP_EVENT_SPAWNS_PATH),
   ]);
 
   if (hasShopBotBlock(uploadedEventsXml) || hasShopBotBlock(uploadedEventSpawnsXml)) {
@@ -518,8 +519,8 @@ async function backupShopXmlFiles(_eventsXml: string, _eventSpawnsXml: string) {
       .replace(/[-:]/g, "")
       .replace(/\.\d{3}Z$/, "Z");
 
-    await uploadTextFile(`${SHOP_EVENTS_PATH}.shop-backup-${stamp}`, _eventsXml);
-    await uploadTextFile(
+    await uploadServerTextFile(`${SHOP_EVENTS_PATH}.shop-backup-${stamp}`, _eventsXml);
+    await uploadServerTextFile(
       `${SHOP_EVENT_SPAWNS_PATH}.shop-backup-${stamp}`,
       _eventSpawnsXml,
     );
@@ -565,8 +566,8 @@ export async function deployPendingShopOrders(state: AppState) {
 
   console.log("🛒 SHOP DEPLOY downloading XML files");
   const [eventsXml, eventSpawnsXml] = await Promise.all([
-    downloadTextFile(SHOP_EVENTS_PATH),
-    downloadTextFile(SHOP_EVENT_SPAWNS_PATH),
+    downloadServerTextFile(SHOP_EVENTS_PATH),
+    downloadServerTextFile(SHOP_EVENT_SPAWNS_PATH),
   ]);
 
   await backupShopXmlFiles(eventsXml, eventSpawnsXml);
@@ -589,8 +590,8 @@ export async function deployPendingShopOrders(state: AppState) {
   console.log(
     `🛒 SHOP DEPLOY uploading XML files events=${injectedEvents.eventNames.length}`,
   );
-  await uploadTextFile(SHOP_EVENTS_PATH, injectedEvents.xml);
-  await uploadTextFile(SHOP_EVENT_SPAWNS_PATH, injectedEventSpawns);
+  await uploadServerTextFile(SHOP_EVENTS_PATH, injectedEvents.xml);
+  await uploadServerTextFile(SHOP_EVENT_SPAWNS_PATH, injectedEventSpawns);
 
   console.log("🛒 SHOP DEPLOY verifying uploaded XML files");
   await verifyUploadedShopBlocks(pendingOrders, injectedEvents.eventNames);
@@ -639,8 +640,8 @@ export async function deployPendingShopOrders(state: AppState) {
 
 async function removeShopXmlBlocks(options?: { requireExistingBlock?: boolean }) {
   const [eventsXml, eventSpawnsXml] = await Promise.all([
-    downloadTextFile(SHOP_EVENTS_PATH),
-    downloadTextFile(SHOP_EVENT_SPAWNS_PATH),
+    downloadServerTextFile(SHOP_EVENTS_PATH),
+    downloadServerTextFile(SHOP_EVENT_SPAWNS_PATH),
   ]);
 
   const eventsHasBlock = hasShopBotBlock(eventsXml);
@@ -654,8 +655,8 @@ async function removeShopXmlBlocks(options?: { requireExistingBlock?: boolean })
 
   await backupShopXmlFiles(eventsXml, eventSpawnsXml);
 
-  await uploadTextFile(SHOP_EVENTS_PATH, removeShopBotBlock(eventsXml));
-  await uploadTextFile(
+  await uploadServerTextFile(SHOP_EVENTS_PATH, removeShopBotBlock(eventsXml));
+  await uploadServerTextFile(
     SHOP_EVENT_SPAWNS_PATH,
     removeShopBotBlock(eventSpawnsXml),
   );
@@ -754,7 +755,7 @@ export async function pollShopResetStatusAndAutoClear(state: AppState) {
   let status: string | null = null;
 
   try {
-    const response = await getNitradoGameserverStatus();
+    const response = await getNitradoGameserverStatus(getServerRuntimeContext().serverId);
     status = response.status;
   } catch (err) {
     console.error("❌ shop auto-clear status poll failed:", err);

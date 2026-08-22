@@ -1,7 +1,9 @@
 import { downloadADM, setAdmDownloadMode } from "./nitradoDownloader";
 import { getLeaderboard } from "./parser";
-import { flushServerRuntimePendingStateAsync, getStateAsync } from "./state";
-import { normalizeServiceSettings } from "./serviceSettings";
+import { flushServerRuntimePendingStateAsync, getStateAsync, saveStateAsync } from "./state";
+import { isShopServiceEnabled, normalizeServiceSettings } from "./serviceSettings";
+import { autoDeployPendingShopOrdersIfNeeded } from "./shop";
+import { getPlaytimeRewardConfig, processPlaytimeRewards } from "./discord/modules/economy/rewards";
 import {
   getManagedServerById,
   getPrimaryServerId,
@@ -43,6 +45,7 @@ type ServerRuntimeCycleStatus = {
 
 const statuses = new Map<string, ServerRuntimeCycleStatus>();
 const requestedImmediateRuns = new Set<string>();
+const secondaryRewardLastTick = new Map<string, number>();
 let schedulerTimer: NodeJS.Timeout | null = null;
 
 function getStatus(serverId: string) {
@@ -103,6 +106,47 @@ export async function runManagedServerRuntimeCycle(
     try {
       console.log(`🔥 PARSER AUTOMÁTICO [${serverId}]`);
       await getLeaderboard();
+
+      // The PZ keeps its existing 30-second Discord shop monitor. Secondary
+      // runtimes reuse the centralized 5-minute coordinator instead of adding
+      // one monitor/timer per server. No Nitrado file I/O occurs unless a shop
+      // deploy window is due and that server actually has pending orders.
+      if (serverId !== getPrimaryServerId()) {
+        if (isShopServiceEnabled(state)) {
+          try {
+            const deployResult = await autoDeployPendingShopOrdersIfNeeded(state);
+            if (deployResult) {
+              await saveStateAsync(state, `phase13:shop-auto-deploy:${serverId}`);
+              console.log(`✅ SHOP_BOT auto-deploy [${serverId}]: deployed=${deployResult.deployed}`);
+            }
+          } catch (shopError) {
+            console.error(`❌ erro no auto-deploy da shop [${serverId}]:`, shopError);
+          }
+        }
+
+        // Secondary runtimes do not need a Discord rewards timer. Reuse the
+        // centralized runtime cadence and honor ECONOMY_PLAYTIME_TICK_MINUTES.
+        const rewardConfig = getPlaytimeRewardConfig();
+        if (rewardConfig.enabled) {
+          const now = Date.now();
+          const intervalMs = Math.max(1, rewardConfig.tickMinutes) * 60_000;
+          const lastTick = secondaryRewardLastTick.get(serverId) || 0;
+          if (now - lastTick >= intervalMs) {
+            secondaryRewardLastTick.set(serverId, now);
+            try {
+              const rewards = processPlaytimeRewards(state, rewardConfig);
+              if (rewards.changed) {
+                await saveStateAsync(state, `phase13:economy-rewards:${serverId}`);
+              }
+              if (rewards.processed > 0) {
+                console.log(`🪙 playtime rewards [${serverId}]`, rewards);
+              }
+            } catch (rewardError) {
+              console.error(`❌ erro nos rewards de economia [${serverId}]:`, rewardError);
+            }
+          }
+        }
+      }
     } catch (err) {
       parserOk = false;
       status.lastError = err instanceof Error ? err.message : String(err);
