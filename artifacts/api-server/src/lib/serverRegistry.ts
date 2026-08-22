@@ -19,6 +19,9 @@ export type ServerNamespacePersistenceStatus = {
   playerStatsTableReady: boolean;
   botStateCompositeKeyReady: boolean;
   playerStatsCompositeKeyReady: boolean;
+  botStatePrimaryKeyReady: boolean;
+  playerStatsPrimaryKeyReady: boolean;
+  primaryKeyCutoverComplete: boolean;
   scopedReadsEnabled: boolean;
   scopedReadFallbacks: number;
   lastScopedReadSource?: "server-scoped" | "legacy-fallback" | "legacy";
@@ -56,6 +59,9 @@ let namespacePersistenceStatus: ServerNamespacePersistenceStatus = {
   playerStatsTableReady: false,
   botStateCompositeKeyReady: false,
   playerStatsCompositeKeyReady: false,
+  botStatePrimaryKeyReady: false,
+  playerStatsPrimaryKeyReady: false,
+  primaryKeyCutoverComplete: false,
   scopedReadsEnabled: false,
   scopedReadFallbacks: 0,
   botStateTaggedRows: 0,
@@ -106,9 +112,9 @@ export function getPrimaryServerDescriptor(): ManagedServerDescriptor {
 }
 
 export function listManagedServers(): ManagedServerDescriptor[] {
-  // Phase 4 still exposes only the primary server operationally. Registry rows may
-  // exist, but additional servers remain blocked until persistence keys and
-  // routing are safely scoped in later phases.
+  // Phase 5 still exposes only the primary server operationally. Composite
+  // primary keys are being activated, but runtime/Nitrado/Discord routing is
+  // not isolated yet, so additional servers remain blocked.
   if (persistedServers.length) return persistedServers.map((server) => ({ ...server, integrations: { ...server.integrations } }));
   return [getPrimaryServerDescriptor()];
 }
@@ -168,7 +174,7 @@ export function getServerFoundationDiagnostics() {
   const registry = getServerRegistryPersistenceStatus();
   const namespace = getServerNamespacePersistenceStatus();
   return {
-    phase: 4,
+    phase: 5,
     mode: server.mode,
     currentServerId: server.id,
     currentServerName: server.name,
@@ -191,7 +197,8 @@ export function getServerFoundationDiagnostics() {
       operationalDatabaseWritesAdded: false,
       registryMetadataOnly: false,
       activeReadsStillLegacy: !namespace.scopedReadsEnabled,
-      activePrimaryKeysPreserved: true,
+      activePrimaryKeysPreserved: false,
+      compositePrimaryKeysActive: namespace.primaryKeyCutoverComplete,
       serverIdTaggingOnly: false,
       legacyFallbackAvailable: true,
       compositeUniqueKeysPrepared: namespace.botStateCompositeKeyReady && (!namespace.playerStatsTableReady || namespace.playerStatsCompositeKeyReady),

@@ -251,6 +251,8 @@ const sql = process.env.DATABASE_URL
 let serverRegistryReadyPromise: Promise<void> | null = null;
 let botStateScopedPersistenceReady = false;
 let playerStatsScopedPersistenceReady = false;
+let botStatePrimaryKeyReady = false;
+let playerStatsPrimaryKeyReady = false;
 let scopedReadFallbacks = 0;
 let lastScopedReadSource: "server-scoped" | "legacy-fallback" | "legacy" = "legacy";
 
@@ -270,7 +272,7 @@ async function ensurePrimaryServerRegistryMetadata() {
   serverRegistryReadyPromise = (async () => {
     const primary = getPrimaryServerDescriptor();
     try {
-      // Phase 4 keeps the registry metadata behavior unchanged. No bot_state ids,
+      // Phase 5 keeps the registry metadata behavior unchanged. No bot_state ids,
       // ADM cursors, granular stats, Discord routing or Nitrado routing are
       // renamed or moved in this deploy.
       await sql`
@@ -349,9 +351,9 @@ async function ensurePrimaryServerRegistryMetadata() {
         });
       }
 
-      // Phase 4 prepares a composite server namespace without dropping the proven
-      // legacy primary key. This makes scoped reads/writes possible for the
-      // current server while a second server remains blocked.
+      // Phase 5 promotes the prepared (server_id, id) namespace to the real
+      // primary key. The migration is transactional and only runs after every
+      // existing row has a server_id, so a failure leaves the old key intact.
       try {
         const tableCheck = await sql`SELECT to_regclass('public.bot_state') IS NOT NULL AS exists`;
         const botStateExists = Boolean((tableCheck as any[])[0]?.exists);
@@ -361,8 +363,6 @@ async function ensurePrimaryServerRegistryMetadata() {
           await sql`ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS server_id TEXT`;
           await sql`UPDATE bot_state SET server_id = ${primary.id} WHERE server_id IS NULL`;
           await sql`CREATE INDEX IF NOT EXISTS bot_state_server_id_idx ON bot_state (server_id)`;
-          await sql`CREATE UNIQUE INDEX IF NOT EXISTS bot_state_server_id_id_uidx ON bot_state (server_id, id)`;
-          botStateScopedPersistenceReady = true;
           const counts = await sql`
             SELECT
               COUNT(*) FILTER (WHERE server_id = ${primary.id})::int AS tagged_rows,
@@ -371,12 +371,48 @@ async function ensurePrimaryServerRegistryMetadata() {
           `;
           taggedRows = Number((counts as any[])[0]?.tagged_rows || 0);
           untaggedRows = Number((counts as any[])[0]?.untagged_rows || 0);
+
+          const pkRows = await sql`
+            SELECT array_agg(a.attname ORDER BY keycols.ordinality) AS columns
+            FROM pg_index i
+            JOIN pg_class t ON t.oid = i.indrelid
+            JOIN unnest(i.indkey) WITH ORDINALITY AS keycols(attnum, ordinality) ON TRUE
+            JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = keycols.attnum
+            WHERE t.relname = 'bot_state' AND i.indisprimary
+            GROUP BY i.indexrelid
+          `;
+          const pkColumns = Array.isArray((pkRows as any[])[0]?.columns)
+            ? (pkRows as any[])[0].columns.map((value: unknown) => String(value))
+            : [];
+
+          if (pkColumns.join(',') === 'server_id,id') {
+            botStatePrimaryKeyReady = true;
+          } else if (pkColumns.join(',') === 'id' && untaggedRows === 0) {
+            await sql`CREATE UNIQUE INDEX IF NOT EXISTS bot_state_server_id_id_uidx ON bot_state (server_id, id)`;
+            await sql.begin(async (tx: any) => {
+              await tx`ALTER TABLE bot_state ALTER COLUMN server_id SET NOT NULL`;
+              await tx`ALTER TABLE bot_state DROP CONSTRAINT bot_state_pkey`;
+              await tx`ALTER TABLE bot_state ADD CONSTRAINT bot_state_pkey PRIMARY KEY USING INDEX bot_state_server_id_id_uidx`;
+            });
+            botStatePrimaryKeyReady = true;
+          } else if (pkColumns.length === 0 && untaggedRows === 0) {
+            await sql.begin(async (tx: any) => {
+              await tx`ALTER TABLE bot_state ALTER COLUMN server_id SET NOT NULL`;
+              await tx`ALTER TABLE bot_state ADD CONSTRAINT bot_state_pkey PRIMARY KEY (server_id, id)`;
+            });
+            botStatePrimaryKeyReady = true;
+          } else {
+            throw new Error(`bot_state primary key is not safe to migrate: ${pkColumns.join(',') || 'none'}; untagged=${untaggedRows}`);
+          }
+          botStateScopedPersistenceReady = botStatePrimaryKeyReady;
         }
         setServerNamespacePersistenceStatus({
           enabled: true,
           initialized: true,
           botStateTableReady: botStateExists,
           botStateCompositeKeyReady: botStateExists && botStateScopedPersistenceReady,
+          botStatePrimaryKeyReady,
+          primaryKeyCutoverComplete: botStatePrimaryKeyReady && (!GRANULAR_PLAYER_STATS_ENABLED || playerStatsPrimaryKeyReady),
           scopedReadsEnabled: botStateExists && botStateScopedPersistenceReady,
           scopedReadFallbacks,
           lastScopedReadSource,
@@ -391,8 +427,8 @@ async function ensurePrimaryServerRegistryMetadata() {
           lastCheckedAt: new Date().toISOString(),
           lastError: namespaceErr instanceof Error ? namespaceErr.message : String(namespaceErr),
         });
-        // Namespace preparation is non-blocking in Phase 4. The production
-        // single-server persistence path remains valid even if tagging fails.
+        // Primary-key promotion is non-blocking in Phase 5. Because the DDL is
+        // transactional, failure keeps the Phase 4 single-server key/path valid.
         console.error("❌ erro preparando namespace multi-server:", namespaceErr);
       }
     } catch (err) {
@@ -1286,35 +1322,72 @@ async function ensureGranularPlayerStatsTable() {
   granularPlayerStatsTableReadyPromise = (async () => {
     await sql`
       CREATE TABLE IF NOT EXISTS player_stats_state (
-        player_key TEXT PRIMARY KEY,
+        server_id TEXT NOT NULL,
+        player_key TEXT NOT NULL,
         stats JSONB NOT NULL,
         current_streak INTEGER NOT NULL DEFAULT 0,
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        server_id TEXT
+        PRIMARY KEY (server_id, player_key)
       )
     `;
     await sql`ALTER TABLE player_stats_state ADD COLUMN IF NOT EXISTS server_id TEXT`;
     await sql`UPDATE player_stats_state SET server_id = ${getPrimaryServerId()} WHERE server_id IS NULL`;
     await sql`CREATE INDEX IF NOT EXISTS player_stats_state_updated_at_idx ON player_stats_state (updated_at)`;
     await sql`CREATE INDEX IF NOT EXISTS player_stats_state_server_id_idx ON player_stats_state (server_id)`;
-    await sql`CREATE UNIQUE INDEX IF NOT EXISTS player_stats_state_server_id_player_key_uidx ON player_stats_state (server_id, player_key)`;
-    playerStatsScopedPersistenceReady = true;
     const namespaceCounts = await sql`
       SELECT
         COUNT(*) FILTER (WHERE server_id = ${getPrimaryServerId()})::int AS tagged_rows,
         COUNT(*) FILTER (WHERE server_id IS NULL)::int AS untagged_rows
       FROM player_stats_state
     `;
+    const untaggedRows = Number((namespaceCounts as any[])[0]?.untagged_rows || 0);
+    const pkRows = await sql`
+      SELECT array_agg(a.attname ORDER BY keycols.ordinality) AS columns
+      FROM pg_index i
+      JOIN pg_class t ON t.oid = i.indrelid
+      JOIN unnest(i.indkey) WITH ORDINALITY AS keycols(attnum, ordinality) ON TRUE
+      JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = keycols.attnum
+      WHERE t.relname = 'player_stats_state' AND i.indisprimary
+      GROUP BY i.indexrelid
+    `;
+    const pkColumns = Array.isArray((pkRows as any[])[0]?.columns)
+      ? (pkRows as any[])[0].columns.map((value: unknown) => String(value))
+      : [];
+
+    if (pkColumns.join(',') === 'server_id,player_key') {
+      playerStatsPrimaryKeyReady = true;
+    } else if (pkColumns.join(',') === 'player_key' && untaggedRows === 0) {
+      await sql`CREATE UNIQUE INDEX IF NOT EXISTS player_stats_state_server_id_player_key_uidx ON player_stats_state (server_id, player_key)`;
+      await sql.begin(async (tx: any) => {
+        await tx`ALTER TABLE player_stats_state ALTER COLUMN server_id SET NOT NULL`;
+        await tx`ALTER TABLE player_stats_state DROP CONSTRAINT player_stats_state_pkey`;
+        await tx`ALTER TABLE player_stats_state ADD CONSTRAINT player_stats_state_pkey PRIMARY KEY USING INDEX player_stats_state_server_id_player_key_uidx`;
+      });
+      playerStatsPrimaryKeyReady = true;
+    } else if (pkColumns.length === 0 && untaggedRows === 0) {
+      await sql.begin(async (tx: any) => {
+        await tx`ALTER TABLE player_stats_state ALTER COLUMN server_id SET NOT NULL`;
+        await tx`ALTER TABLE player_stats_state ADD CONSTRAINT player_stats_state_pkey PRIMARY KEY (server_id, player_key)`;
+      });
+      playerStatsPrimaryKeyReady = true;
+    } else {
+      throw new Error(`player_stats_state primary key is not safe to migrate: ${pkColumns.join(',') || 'none'}; untagged=${untaggedRows}`);
+    }
+
+    playerStatsScopedPersistenceReady = playerStatsPrimaryKeyReady;
     setServerNamespacePersistenceStatus({
       enabled: true,
       initialized: true,
       playerStatsTableReady: true,
       playerStatsCompositeKeyReady: playerStatsScopedPersistenceReady,
+      playerStatsPrimaryKeyReady,
+      botStatePrimaryKeyReady,
+      primaryKeyCutoverComplete: botStatePrimaryKeyReady && playerStatsPrimaryKeyReady,
       scopedReadsEnabled: botStateScopedPersistenceReady,
       scopedReadFallbacks,
       lastScopedReadSource,
       playerStatsTaggedRows: Number((namespaceCounts as any[])[0]?.tagged_rows || 0),
-      playerStatsUntaggedRows: Number((namespaceCounts as any[])[0]?.untagged_rows || 0),
+      playerStatsUntaggedRows: untaggedRows,
       lastCheckedAt: new Date().toISOString(),
     });
   })().catch((err) => {
