@@ -357,9 +357,11 @@ function normalizeServerDiscordDraft(value: unknown, existing: ServerDiscordRunt
 }
 
 function deriveServerOnboardingStatus(descriptor: Pick<ManagedServerDescriptor, "integrations" | "runtime">) {
+  // Discord is an optional integration. A future server is considered
+  // configured once the DayZ/Nitrado routing metadata required by the core is
+  // complete; Discord can be linked later without blocking onboarding.
   return descriptor.integrations.nitradoServiceId
     && descriptor.runtime.nitradoBaseDir
-    && descriptor.integrations.discordGuildId
     ? "configured" as const
     : "draft" as const;
 }
@@ -368,16 +370,13 @@ function mapManagedServerRow(row: any, primary: ManagedServerDescriptor): Manage
   const id = String(row.id || "").trim();
   const isPrimary = id === primary.id;
   const runtimeConfig = row.runtime_config && typeof row.runtime_config === "object" ? row.runtime_config : {};
-  return {
+  const descriptor: ManagedServerDescriptor = {
     id,
     name: String(row.name || row.id || "Server"),
     enabled: row.enabled !== false,
     primary: isPrimary,
     runtimeEnabled: isPrimary ? true : Boolean(row.runtime_enabled),
-    onboardingStatus: isPrimary
-      ? "active"
-      : (String(row.onboarding_status || "draft") === "configured" ? "configured"
-        : String(row.onboarding_status || "draft") === "ready" ? "ready" : "draft"),
+    onboardingStatus: isPrimary ? "active" : "draft",
     mode: "single-server-compat",
     integrations: {
       nitradoServiceId: String(row.nitrado_service_id || "").trim() || undefined,
@@ -393,6 +392,14 @@ function mapManagedServerRow(row: any, primary: ManagedServerDescriptor): Manage
         : { ...(runtimeConfig?.discord || {}) },
     },
   };
+
+  if (!isPrimary) {
+    const storedStatus = String(row.onboarding_status || "draft").trim().toLowerCase();
+    descriptor.onboardingStatus = storedStatus === "ready"
+      ? "ready"
+      : deriveServerOnboardingStatus(descriptor);
+  }
+  return descriptor;
 }
 
 async function reloadManagedServerRegistryFromDb(primary = getPrimaryServerDescriptor()) {
