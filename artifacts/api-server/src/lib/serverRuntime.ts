@@ -1,4 +1,5 @@
 import path from "path";
+import { AsyncLocalStorage } from "async_hooks";
 import {
   getManagedServerById,
   getPrimaryServerDescriptor,
@@ -10,7 +11,11 @@ import {
 const LEGACY_LOG_DIR_NAME = "adm_logs";
 const LEGACY_MANIFEST_NAME = "adm_manifest.json";
 const runtimeLocks = new Set<string>();
+const executionContext = new AsyncLocalStorage<{ serverId: string }>();
 let lockSkips = 0;
+let contextRuns = 0;
+let contextFallbacks = 0;
+let lastContextServerId: string | undefined;
 
 function stableHash(value: string) {
   let hash = 2166136261;
@@ -44,6 +49,13 @@ export function getServerRuntimeContext(serverId?: string) {
     staggerOffsetMs,
     activeLocks: runtimeLocks.size,
     lockSkips,
+    executionContextNamespaced: true,
+    contextRuns,
+    contextFallbacks,
+    lastContextServerId,
+    stateCacheNamespaced: true,
+    schedulerCentralized: true,
+    admStrategyNamespaced: true,
     lastError: undefined,
   });
 
@@ -81,6 +93,33 @@ function getAdmStoragePaths(descriptor: ManagedServerDescriptor) {
   };
 }
 
+
+export function getActiveServerId() {
+  const active = executionContext.getStore()?.serverId;
+  if (active) return active;
+  contextFallbacks += 1;
+  return getPrimaryServerId();
+}
+
+export function runInServerRuntimeContext<T>(serverId: string, work: () => T): T {
+  const context = getServerRuntimeContext(serverId);
+  contextRuns += 1;
+  lastContextServerId = context.serverId;
+  setServerRuntimeIsolationStatus({
+    executionContextNamespaced: true,
+    contextRuns,
+    contextFallbacks,
+    lastContextServerId,
+  });
+  return executionContext.run({ serverId: context.serverId }, work);
+}
+
+export function getServerStateStoragePath(serverId = getActiveServerId()) {
+  const context = getServerRuntimeContext(serverId);
+  if (context.isPrimary) return path.resolve(process.cwd(), "state.json");
+  return path.resolve(process.cwd(), "state_servers", context.serverId, "state.json");
+}
+
 export async function runWithServerRuntimeLock<T>(serverId: string, work: () => Promise<T>): Promise<{ skipped: boolean; value?: T }> {
   const context = getServerRuntimeContext(serverId);
   if (runtimeLocks.has(context.serverId)) {
@@ -102,6 +141,6 @@ export async function runWithServerRuntimeLock<T>(serverId: string, work: () => 
 export function assertPrimaryRuntimeServer(serverId: string) {
   const primaryId = getPrimaryServerId();
   if (serverId !== primaryId) {
-    throw new Error(`Server ${serverId} is registered but runtime activation is still blocked until Phase 7.`);
+    throw new Error(`Server ${serverId} is registered but runtime activation is still blocked until Phase 8.`);
   }
 }

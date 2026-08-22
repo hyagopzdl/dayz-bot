@@ -8,7 +8,7 @@ import { initializeShopCatalog } from "./lib/shopCatalog";
 import { recordMainCycleCompleted, recordMainCycleSkippedOverlap, recordMainCycleStarted } from "./lib/runtimeMetrics";
 import { normalizeServiceSettings } from "./lib/serviceSettings";
 import { getPrimaryServerId } from "./lib/serverRegistry";
-import { getServerRuntimeContext, runWithServerRuntimeLock } from "./lib/serverRuntime";
+import { getServerRuntimeContext, runInServerRuntimeContext, runWithServerRuntimeLock } from "./lib/serverRuntime";
 
 function installStateFlushHooks() {
   let flushing = false;
@@ -40,7 +40,7 @@ installStateFlushHooks();
 
 let started = false;
 async function runCycle(serverId = getPrimaryServerId()) {
-  const locked = await runWithServerRuntimeLock(serverId, async () => {
+  const locked = await runWithServerRuntimeLock(serverId, async () => runInServerRuntimeContext(serverId, async () => {
   recordMainCycleStarted();
   const startedAt = new Date().toISOString();
   const cycleStarted = Date.now();
@@ -79,7 +79,7 @@ async function runCycle(serverId = getPrimaryServerId()) {
       parserOk,
     });
   }
-  });
+  }));
   if (locked.skipped) {
     recordMainCycleSkippedOverlap();
     console.log(`⏭️ ciclo ignorado para ${serverId}: execução anterior ainda rodando`);
@@ -99,8 +99,9 @@ function startServer(port: number) {
     logger.info({ port }, "Server listening");
 
     try {
-      const state = await getStateAsync();
-      const runtime = getServerRuntimeContext(getPrimaryServerId());
+      const primaryServerId = getPrimaryServerId();
+      const state = await runInServerRuntimeContext(primaryServerId, () => getStateAsync());
+      const runtime = getServerRuntimeContext(primaryServerId);
       console.log(`🧭 runtime isolado: ${runtime.server.name} (${runtime.serverId})`);
       const settings = normalizeServiceSettings(state.serviceSettings);
       setAdmDownloadMode(settings.admDownloadMode);

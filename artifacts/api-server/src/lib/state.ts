@@ -16,8 +16,9 @@ import {
   setServerNamespacePersistenceStatus,
   type ManagedServerDescriptor,
 } from "./serverRegistry";
+import { getActiveServerId, getServerStateStoragePath } from "./serverRuntime";
 
-const FILE = path.resolve(process.cwd(), "state.json");
+const LEGACY_FILE = path.resolve(process.cwd(), "state.json");
 const STATE_ID = "main";
 const DISCORD_RUNTIME_STATE_ID = "discord_runtime";
 
@@ -39,7 +40,20 @@ const STATE_COMPAT_SNAPSHOT_MS = Math.max(6 * 60 * 60_000, Number(process.env.ST
 const STATE_SCHEDULER_POLICY_VERSION = "v2-safe-2026-08-11";
 const GRANULAR_PLAYER_STATS_ENABLED = process.env.GRANULAR_PLAYER_STATS !== "false";
 
-let cachedState: AppState | null = null;
+const cachedStates = new Map<string, AppState>();
+
+function getCachedState(): AppState | null {
+  return cachedStates.get(getActiveServerId()) || null;
+}
+
+function setCachedState(state: AppState) {
+  cachedStates.set(getActiveServerId(), state);
+}
+
+function getLocalStateFile() {
+  const serverId = getActiveServerId();
+  return serverId === getPrimaryServerId() ? LEGACY_FILE : getServerStateStoragePath(serverId);
+}
 let lastPersistedHash = "";
 let lastPersistedJson = "";
 let pendingPersistJson = "";
@@ -1357,12 +1371,12 @@ async function ensureGranularPlayerStatsTable() {
       )
     `;
     await sql`ALTER TABLE player_stats_state ADD COLUMN IF NOT EXISTS server_id TEXT`;
-    await sql`UPDATE player_stats_state SET server_id = ${getPrimaryServerId()} WHERE server_id IS NULL`;
+    await sql`UPDATE player_stats_state SET server_id = ${getActiveServerId()} WHERE server_id IS NULL`;
     await sql`CREATE INDEX IF NOT EXISTS player_stats_state_updated_at_idx ON player_stats_state (updated_at)`;
     await sql`CREATE INDEX IF NOT EXISTS player_stats_state_server_id_idx ON player_stats_state (server_id)`;
     const namespaceCounts = await sql`
       SELECT
-        COUNT(*) FILTER (WHERE server_id = ${getPrimaryServerId()})::int AS tagged_rows,
+        COUNT(*) FILTER (WHERE server_id = ${getActiveServerId()})::int AS tagged_rows,
         COUNT(*) FILTER (WHERE server_id IS NULL)::int AS untagged_rows
       FROM player_stats_state
     `;
@@ -1602,7 +1616,7 @@ async function persistDomainBatchToNeon(
   const now = new Date().toISOString();
   const domainPayloadBytes = entries.reduce((total, [, entry]) => total + Buffer.byteLength(entry.serialized, "utf8"), 0);
   const playerPayload = playerEntries.map(([playerKey, entry]) => ({
-    server_id: getPrimaryServerId(),
+    server_id: getActiveServerId(),
     player_key: playerKey,
     stats: entry.stats,
     current_streak: entry.currentStreak,
@@ -1616,14 +1630,14 @@ async function persistDomainBatchToNeon(
         if (botStateScopedPersistenceReady) {
           await tx`
             INSERT INTO bot_state (id, data, updated_at, server_id)
-            VALUES (${STATE_DOMAIN_IDS[domain]}, ${tx.json(entry.payload)}, NOW(), ${getPrimaryServerId()})
+            VALUES (${STATE_DOMAIN_IDS[domain]}, ${tx.json(entry.payload)}, NOW(), ${getActiveServerId()})
             ON CONFLICT (server_id, id)
             DO UPDATE SET data = EXCLUDED.data, updated_at = NOW(), server_id = EXCLUDED.server_id
           `;
         } else {
           await tx`
             INSERT INTO bot_state (id, data, updated_at, server_id)
-            VALUES (${STATE_DOMAIN_IDS[domain]}, ${tx.json(entry.payload)}, NOW(), ${getPrimaryServerId()})
+            VALUES (${STATE_DOMAIN_IDS[domain]}, ${tx.json(entry.payload)}, NOW(), ${getActiveServerId()})
             ON CONFLICT (id)
             DO UPDATE SET data = EXCLUDED.data, updated_at = NOW(), server_id = EXCLUDED.server_id
           `;
@@ -1735,6 +1749,7 @@ async function persistDomainBatchToNeon(
 }
 
 async function maybeWriteCompatibilitySnapshot(force = false) {
+  const cachedState = getCachedState();
   if (!sql || !cachedState) return;
   const now = Date.now();
   if (!force && lastCompatibilitySnapshotAt > 0 && now - lastCompatibilitySnapshotAt < STATE_COMPAT_SNAPSHOT_MS) return;
@@ -1807,7 +1822,7 @@ async function flushPendingDomains(
         }
       }
 
-      if (forceCompatibilitySnapshot || (cachedState && Date.now() - lastCompatibilitySnapshotAt >= STATE_COMPAT_SNAPSHOT_MS)) {
+      if (forceCompatibilitySnapshot || (getCachedState() && Date.now() - lastCompatibilitySnapshotAt >= STATE_COMPAT_SNAPSHOT_MS)) {
         // Compatibility is only a rollback safety net. V2 domain rows remain
         // the source of truth and the snapshot is intentionally infrequent.
         await maybeWriteCompatibilitySnapshot(forceCompatibilitySnapshot);
@@ -1894,14 +1909,14 @@ async function persistDiscordRuntimeToNeon(serialized: string, hash: string) {
     if (botStateScopedPersistenceReady) {
       await sql`
         INSERT INTO bot_state (id, data, updated_at, server_id)
-        VALUES (${DISCORD_RUNTIME_STATE_ID}, ${sql.json(runtime)}, NOW(), ${getPrimaryServerId()})
+        VALUES (${DISCORD_RUNTIME_STATE_ID}, ${sql.json(runtime)}, NOW(), ${getActiveServerId()})
         ON CONFLICT (server_id, id)
         DO UPDATE SET data = EXCLUDED.data, updated_at = NOW(), server_id = EXCLUDED.server_id
       `;
     } else {
       await sql`
         INSERT INTO bot_state (id, data, updated_at, server_id)
-        VALUES (${DISCORD_RUNTIME_STATE_ID}, ${sql.json(runtime)}, NOW(), ${getPrimaryServerId()})
+        VALUES (${DISCORD_RUNTIME_STATE_ID}, ${sql.json(runtime)}, NOW(), ${getActiveServerId()})
         ON CONFLICT (id)
         DO UPDATE SET data = EXCLUDED.data, updated_at = NOW(), server_id = EXCLUDED.server_id
       `;
@@ -2002,7 +2017,7 @@ async function persistStateToNeon(serialized: string, hash: string, reasons: str
     if (botStateScopedPersistenceReady) {
       await sql`
         INSERT INTO bot_state (id, data, updated_at, server_id)
-        VALUES (${STATE_ID}, ${sql.json(parsed)}, NOW(), ${getPrimaryServerId()})
+        VALUES (${STATE_ID}, ${sql.json(parsed)}, NOW(), ${getActiveServerId()})
         ON CONFLICT (server_id, id)
         DO UPDATE SET
           data = EXCLUDED.data,
@@ -2012,7 +2027,7 @@ async function persistStateToNeon(serialized: string, hash: string, reasons: str
     } else {
       await sql`
         INSERT INTO bot_state (id, data, updated_at, server_id)
-        VALUES (${STATE_ID}, ${sql.json(parsed)}, NOW(), ${getPrimaryServerId()})
+        VALUES (${STATE_ID}, ${sql.json(parsed)}, NOW(), ${getActiveServerId()})
         ON CONFLICT (id)
         DO UPDATE SET
           data = EXCLUDED.data,
@@ -2118,39 +2133,43 @@ export async function flushStateAsync(forceCompatibilitySnapshot = false) {
 }
 
 function readLocalState(): AppState {
-  if (!fs.existsSync(FILE)) {
+  const file = getLocalStateFile();
+  if (!fs.existsSync(file)) {
     return defaultState();
   }
 
   try {
-    const data = JSON.parse(fs.readFileSync(FILE, "utf-8"));
+    const data = JSON.parse(fs.readFileSync(file, "utf-8"));
     return migrateLegacyState(data);
   } catch (err) {
-    console.error("❌ erro lendo state.json local:", err);
+    console.error("❌ erro lendo state local:", { serverId: getActiveServerId(), file, err });
     return defaultState();
   }
 }
 
 function writeLocalState(data: AppState) {
-  fs.writeFileSync(FILE, JSON.stringify(data, null, 2));
+  const file = getLocalStateFile();
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, JSON.stringify(data, null, 2));
 }
 
 export async function getStateAsync(): Promise<AppState> {
   await ensurePrimaryServerRegistryMetadata();
-  if (cachedState) {
-    return cachedState;
+  const existingCachedState = getCachedState();
+  if (existingCachedState) {
+    return existingCachedState;
   }
 
   if (!sql) {
     domainPersistenceMetrics.bootSource = "local-file";
-    cachedState = readLocalState();
-    lastPersistedJson = serializeState(cachedState);
+    setCachedState(readLocalState());
+    lastPersistedJson = serializeState(getCachedState()!);
     lastPersistedHash = hashState(lastPersistedJson);
-    lastCoreHash = hashCoreState(cachedState);
-    lastDiscordRuntimeHash = hashState(serializeDiscordRuntime(cachedState));
-    initializeDomainHashes(cachedState);
-    initializeGranularPlayerSignatures(cachedState);
-    return cachedState;
+    lastCoreHash = hashCoreState(getCachedState()!);
+    lastDiscordRuntimeHash = hashState(serializeDiscordRuntime(getCachedState()!));
+    initializeDomainHashes(getCachedState()!);
+    initializeGranularPlayerSignatures(getCachedState()!);
+    return getCachedState()!;
   }
 
   try {
@@ -2163,7 +2182,7 @@ export async function getStateAsync(): Promise<AppState> {
       rows = await sql`
         SELECT id, data, updated_at, server_id
         FROM bot_state
-        WHERE server_id = ${getPrimaryServerId()}
+        WHERE server_id = ${getActiveServerId()}
           AND id IN (${stateIds[0]}, ${stateIds[1]}, ${stateIds[2]}, ${stateIds[3]}, ${stateIds[4]}, ${stateIds[5]}, ${stateIds[6]})
       ` as any[];
       lastScopedReadSource = "server-scoped";
@@ -2201,18 +2220,18 @@ export async function getStateAsync(): Promise<AppState> {
       if (botStateScopedPersistenceReady) {
         await sql`
           INSERT INTO bot_state (id, data, updated_at, server_id)
-          VALUES (${STATE_ID}, ${sql.json(state)}, NOW(), ${getPrimaryServerId()})
+          VALUES (${STATE_ID}, ${sql.json(state)}, NOW(), ${getActiveServerId()})
           ON CONFLICT (server_id, id) DO NOTHING
         `;
       } else {
         await sql`
           INSERT INTO bot_state (id, data, updated_at, server_id)
-          VALUES (${STATE_ID}, ${sql.json(state)}, NOW(), ${getPrimaryServerId()})
+          VALUES (${STATE_ID}, ${sql.json(state)}, NOW(), ${getActiveServerId()})
           ON CONFLICT (id) DO NOTHING
         `;
       }
 
-      cachedState = state;
+      setCachedState(state);
       lastPersistedJson = serialized;
       lastPersistedHash = hash;
       lastCoreHash = hashCoreState(state);
@@ -2220,11 +2239,11 @@ export async function getStateAsync(): Promise<AppState> {
       initializeDomainHashes(state);
       initializeGranularPlayerSignatures(state);
       lastCompatibilitySnapshotAt = Date.now();
-      return cachedState;
+      return getCachedState()!;
     }
 
-    cachedState = migrateLegacyState(mainRow.data || {});
-    const mainPersistedHash = hashState(serializeState(cachedState));
+    setCachedState(migrateLegacyState(mainRow.data || {}));
+    const mainPersistedHash = hashState(serializeState(getCachedState()!));
     const mainUpdatedAt = mainRow.updated_at ? new Date(mainRow.updated_at).getTime() : 0;
     lastCompatibilitySnapshotAt = mainUpdatedAt || Date.now();
     domainPersistenceMetrics.mainUpdatedAtAtBoot = mainUpdatedAt ? new Date(mainUpdatedAt).toISOString() : undefined;
@@ -2241,7 +2260,7 @@ export async function getStateAsync(): Promise<AppState> {
         // A compatibility snapshot may be newer than a domain row. In that case
         // the snapshot already contains the fresher domain value and must win.
         if (row && domainUpdatedAt > mainUpdatedAt) {
-          applyStateDomain(cachedState, domain, row.data || {});
+          applyStateDomain(getCachedState()!, domain, row.data || {});
           domainRowsAppliedAtBoot += 1;
         }
       }
@@ -2252,7 +2271,7 @@ export async function getStateAsync(): Promise<AppState> {
         ? await sql`
             SELECT player_key, stats, current_streak, updated_at
             FROM player_stats_state
-            WHERE server_id = ${getPrimaryServerId()}
+            WHERE server_id = ${getActiveServerId()}
               AND updated_at > ${new Date(mainUpdatedAt || 0)}
           `
         : await sql`
@@ -2264,13 +2283,13 @@ export async function getStateAsync(): Promise<AppState> {
       for (const row of granularRows as any[]) {
         const playerKey = String(row.player_key || "");
         if (!playerKey || !row.stats || typeof row.stats !== "object") continue;
-        cachedState.players[playerKey] = {
+        getCachedState()!.players[playerKey] = {
           kills: Number(row.stats.kills || 0),
           deaths: Number(row.stats.deaths || 0),
         };
         const streak = Number(row.current_streak || 0);
-        if (streak > 0) cachedState.currentKillStreaks[playerKey] = streak;
-        else delete cachedState.currentKillStreaks[playerKey];
+        if (streak > 0) getCachedState()!.currentKillStreaks[playerKey] = streak;
+        else delete getCachedState()!.currentKillStreaks[playerKey];
         granularPlayerStatsMetrics.rowsAppliedAtBoot += 1;
         const rowAt = row.updated_at ? new Date(row.updated_at).getTime() : 0;
         if (rowAt > newestGranularAt) newestGranularAt = rowAt;
@@ -2286,9 +2305,9 @@ export async function getStateAsync(): Promise<AppState> {
 
     const runtimeUpdatedAt = runtimeRow?.updated_at ? new Date(runtimeRow.updated_at).getTime() : 0;
     if (runtimeRow && runtimeUpdatedAt >= mainUpdatedAt) {
-      applyDiscordRuntimeState(cachedState, normalizeDiscordRuntimeState(runtimeRow.data || defaultDiscordRuntimeState()));
+      applyDiscordRuntimeState(getCachedState()!, normalizeDiscordRuntimeState(runtimeRow.data || defaultDiscordRuntimeState()));
     }
-    const loadedStateJson = serializeState(cachedState);
+    const loadedStateJson = serializeState(getCachedState()!);
     recordNetworkTransfer({
       service: "neon",
       operation: "bot_state_read",
@@ -2300,22 +2319,22 @@ export async function getStateAsync(): Promise<AppState> {
     // Track the actual compatibility row, not the merged V2 view. Otherwise an
     // hourly compatibility snapshot could be incorrectly skipped after restart.
     lastPersistedHash = mainPersistedHash;
-    lastCoreHash = hashCoreState(cachedState);
-    lastDiscordRuntimeHash = hashState(serializeDiscordRuntime(cachedState));
-    initializeDomainHashes(cachedState);
-    initializeGranularPlayerSignatures(cachedState);
-    return cachedState;
+    lastCoreHash = hashCoreState(getCachedState()!);
+    lastDiscordRuntimeHash = hashState(serializeDiscordRuntime(getCachedState()!));
+    initializeDomainHashes(getCachedState()!);
+    initializeGranularPlayerSignatures(getCachedState()!);
+    return getCachedState()!;
   } catch (err) {
     console.error("❌ erro lendo state no Neon, usando state.json local:", err);
     domainPersistenceMetrics.bootSource = "local-fallback";
-    cachedState = readLocalState();
-    lastPersistedJson = serializeState(cachedState);
+    setCachedState(readLocalState());
+    lastPersistedJson = serializeState(getCachedState()!);
     lastPersistedHash = hashState(lastPersistedJson);
-    lastCoreHash = hashCoreState(cachedState);
-    lastDiscordRuntimeHash = hashState(serializeDiscordRuntime(cachedState));
-    initializeDomainHashes(cachedState);
-    initializeGranularPlayerSignatures(cachedState);
-    return cachedState;
+    lastCoreHash = hashCoreState(getCachedState()!);
+    lastDiscordRuntimeHash = hashState(serializeDiscordRuntime(getCachedState()!));
+    initializeDomainHashes(getCachedState()!);
+    initializeGranularPlayerSignatures(getCachedState()!);
+    return getCachedState()!;
   }
 }
 
@@ -2698,13 +2717,14 @@ export async function saveDiscordRuntimeStateOnlyAsync(data: AppState, reason?: 
 
 async function persistDiscordRuntimeOnly(data: AppState, runtimeReason: string) {
   const runtime = normalizeDiscordRuntimeState(data);
+  const cachedState = getCachedState();
   if (cachedState) applyDiscordRuntimeState(cachedState, runtime);
-  else cachedState = data;
-  writeLocalState(cachedState);
+  else setCachedState(data);
+  writeLocalState(getCachedState()!);
 
   if (!sql) {
     // Local-only environments keep the established single-file behavior.
-    await saveStateAsync(cachedState, runtimeReason);
+    await saveStateAsync(getCachedState()!, runtimeReason);
     return;
   }
 
@@ -2791,7 +2811,7 @@ export async function saveStateAsync(data: AppState, reason?: string) {
     lastFileName: data.lastFileName,
   };
 
-  cachedState = safeData;
+  setCachedState(safeData);
   lastCoreHash = hashCoreState(safeData);
 
   // If a runtime-only write was waiting while a full/core save became necessary,
@@ -2811,7 +2831,7 @@ export async function saveStateAsync(data: AppState, reason?: string) {
     lastPersistedJson = serialized;
     lastPersistedHash = hash;
     initializeDomainHashes(safeData);
-    logStateDebug("💾 STATE SALVO EM", { file: FILE });
+    logStateDebug("💾 STATE SALVO EM", { file: getLocalStateFile(), serverId: getActiveServerId() });
     return;
   }
 
@@ -2854,18 +2874,19 @@ export async function saveStateAsync(data: AppState, reason?: string) {
 }
 
 export function getState(): AppState {
+  const cachedState = getCachedState();
   if (cachedState) return cachedState;
-  cachedState = readLocalState();
-  lastPersistedJson = serializeState(cachedState);
+  setCachedState(readLocalState());
+  lastPersistedJson = serializeState(getCachedState()!);
   lastPersistedHash = hashState(lastPersistedJson);
-  lastCoreHash = hashCoreState(cachedState);
-  lastDiscordRuntimeHash = hashState(serializeDiscordRuntime(cachedState));
-  initializeDomainHashes(cachedState);
-  return cachedState;
+  lastCoreHash = hashCoreState(getCachedState()!);
+  lastDiscordRuntimeHash = hashState(serializeDiscordRuntime(getCachedState()!));
+  initializeDomainHashes(getCachedState()!);
+  return getCachedState()!;
 }
 
 export function saveState(data: AppState) {
-  cachedState = data;
+  setCachedState(data);
   const serialized = serializeState(data);
   lastPersistedJson = serialized;
   lastPersistedHash = hashState(serialized);
@@ -2873,5 +2894,5 @@ export function saveState(data: AppState) {
   lastDiscordRuntimeHash = hashState(serializeDiscordRuntime(data));
   initializeDomainHashes(data);
   writeLocalState(data);
-  logStateDebug("💾 STATE SALVO LOCALMENTE", { file: FILE });
+  logStateDebug("💾 STATE SALVO LOCALMENTE", { file: getLocalStateFile(), serverId: getActiveServerId() });
 }

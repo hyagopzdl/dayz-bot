@@ -82,6 +82,13 @@ export type ServerRuntimeIsolationStatus = {
   lockSkips: number;
   lastLockServerId?: string;
   lastError?: string;
+  executionContextNamespaced?: boolean;
+  stateCacheNamespaced?: boolean;
+  schedulerCentralized?: boolean;
+  admStrategyNamespaced?: boolean;
+  contextRuns?: number;
+  contextFallbacks?: number;
+  lastContextServerId?: string;
 };
 
 const FALLBACK_SERVER_ID = "pz-deathmatch";
@@ -265,7 +272,7 @@ export function getServerFoundationDiagnostics() {
   const registry = getServerRegistryPersistenceStatus();
   const namespace = getServerNamespacePersistenceStatus();
   return {
-    phase: 6,
+    phase: 7,
     mode: server.mode,
     currentServerId: server.id,
     currentServerName: server.name,
@@ -274,7 +281,7 @@ export function getServerFoundationDiagnostics() {
     registryPersisted: registry.initialized && registry.tableReady && registry.primarySeeded,
     persistenceNamespaced: namespace.scopedReadsEnabled && namespace.botStateCompositeKeyReady,
     persistenceTaggedWithServerId: namespace.initialized && namespace.botStateTableReady && namespace.botStateUntaggedRows === 0 && (!namespace.playerStatsTableReady || namespace.playerStatsUntaggedRows === 0),
-    parserNamespaced: runtimeIsolationStatus.processingLockNamespaced,
+    parserNamespaced: runtimeIsolationStatus.processingLockNamespaced && Boolean(runtimeIsolationStatus.executionContextNamespaced),
     discordRoutingNamespaced: runtimeIsolationStatus.discordRoutingNamespaced,
     nitradoRoutingNamespaced: runtimeIsolationStatus.nitradoRoutingNamespaced,
     currentDataPathChanged: namespace.scopedReadsEnabled && namespace.botStateCompositeKeyReady,
@@ -294,6 +301,10 @@ export function getServerFoundationDiagnostics() {
       serverIdTaggingOnly: false,
       legacyFallbackAvailable: true,
       compositeUniqueKeysPrepared: namespace.botStateCompositeKeyReady && (!namespace.playerStatsTableReady || namespace.playerStatsCompositeKeyReady),
+      perServerExecutionContext: Boolean(runtimeIsolationStatus.executionContextNamespaced),
+      perServerStateCache: Boolean(runtimeIsolationStatus.stateCacheNamespaced),
+      centralizedScheduler: Boolean(runtimeIsolationStatus.schedulerCentralized),
+      perServerAdmStrategy: Boolean(runtimeIsolationStatus.admStrategyNamespaced),
     },
     integrations: server.integrations,
   };
