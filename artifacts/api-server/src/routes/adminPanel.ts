@@ -7623,7 +7623,14 @@ router.get("/api/overview", async (req, res) => {
   try {
     const state = await getStateAsync();
     const overview = await buildOverviewPayload(state as AdminState);
-    res.json({ ...overview, server: getPrimaryServerDescriptor() });
+    const serverDescriptor = getPrimaryServerDescriptor();
+    res.json({
+      ...overview,
+      server: {
+        ...overview.server,
+        ...serverDescriptor,
+      },
+    });
   } catch (err) {
     res.status(500).json({ error: String(err) });
   }
