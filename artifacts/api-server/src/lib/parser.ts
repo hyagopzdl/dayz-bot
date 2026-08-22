@@ -1123,13 +1123,18 @@ export async function getLeaderboard() {
     }
   }
 
-  try {
-    const monitorBefore = getShopResetMonitorPersistenceKey(state);
-    const clearResult = await tryAutoClearShopAfterAdmReset(state, orderedFiles);
-    const monitorChanged = getShopResetMonitorPersistenceKey(state) !== monitorBefore;
-    changed = Boolean(clearResult) || monitorChanged || changed;
-  } catch (err) {
-    console.error("❌ erro no auto-clear da shop após reset ADM:", err);
+  // Phase 12 activates secondary ADM/parser runtimes only. Legacy shop XML/FTP
+  // operations are still primary-guarded and must never be reached from a
+  // secondary parser until the Phase 13 commerce context is explicitly scoped.
+  if (getServerRuntimeContext().isPrimary) {
+    try {
+      const monitorBefore = getShopResetMonitorPersistenceKey(state);
+      const clearResult = await tryAutoClearShopAfterAdmReset(state, orderedFiles);
+      const monitorChanged = getShopResetMonitorPersistenceKey(state) !== monitorBefore;
+      changed = Boolean(clearResult) || monitorChanged || changed;
+    } catch (err) {
+      console.error("❌ erro no auto-clear da shop após reset ADM:", err);
+    }
   }
 
   cleanupOnlinePlayers(state);

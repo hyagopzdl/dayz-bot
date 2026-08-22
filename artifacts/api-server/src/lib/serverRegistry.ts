@@ -1,6 +1,15 @@
 export type ServerFoundationMode = "single-server-compat";
 export type ServerOnboardingStatus = "active" | "draft" | "configured" | "ready";
 
+export type ServerRuntimeActivation = {
+  source: "phase12-admin";
+  everActivated: true;
+  firstActivatedAt: string;
+  lastEnabledAt: string;
+  lastDisabledAt?: string;
+  activationCount: number;
+};
+
 export type ServerDiscordRuntimeConfig = {
   globalChannelId?: string;
   dailyChannelId?: string;
@@ -45,6 +54,7 @@ export type ServerRuntimeConfig = {
   nitradoBaseDir?: string;
   nitradoValidation?: ServerNitradoValidation;
   activationPreflight?: ServerActivationPreflight;
+  activation?: ServerRuntimeActivation;
   discord: ServerDiscordRuntimeConfig;
 };
 
@@ -255,6 +265,20 @@ export function getManagedServerActivationConfigSignature(server: Pick<ManagedSe
   return `phase11-${(hash >>> 0).toString(16).padStart(8, "0")}`;
 }
 
+export function hasMatchingManagedServerNitradoValidation(server: Pick<ManagedServerDescriptor, "integrations" | "runtime">) {
+  const serviceId = String(server.integrations.nitradoServiceId || "").trim();
+  const baseDir = String(server.runtime.nitradoBaseDir || "").trim();
+  const validation = server.runtime.nitradoValidation;
+  return Boolean(
+    serviceId
+    && baseDir
+    && validation
+    && validation.serviceId === serviceId
+    && validation.baseDir === baseDir
+    && validation.validatedAt
+  );
+}
+
 export function hasMatchingActivationPreflight(server: Pick<ManagedServerDescriptor, "integrations" | "runtime">) {
   const preflight = server.runtime.activationPreflight;
   return Boolean(
@@ -265,12 +289,51 @@ export function hasMatchingActivationPreflight(server: Pick<ManagedServerDescrip
   );
 }
 
+
+export function hasManagedServerRuntimeActivation(server: Pick<ManagedServerDescriptor, "runtime">) {
+  const activation = server.runtime.activation;
+  return Boolean(
+    activation
+    && activation.source === "phase12-admin"
+    && activation.everActivated === true
+    && activation.firstActivatedAt
+    && activation.lastEnabledAt
+    && Number(activation.activationCount || 0) >= 1
+  );
+}
+
+
+export function isServerNamespaceRuntimeSafe() {
+  const namespace = getServerNamespacePersistenceStatus();
+  return Boolean(
+    namespace.initialized
+    && namespace.scopedReadsEnabled
+    && namespace.botStatePrimaryKeyReady
+    && (!namespace.playerStatsTableReady || namespace.playerStatsPrimaryKeyReady)
+    && namespace.botStateUntaggedRows === 0
+    && (!namespace.playerStatsTableReady || namespace.playerStatsUntaggedRows === 0)
+    && namespace.scopedReadFallbacks === 0
+  );
+}
+
 export function canExecuteManagedServerRuntime(serverId: unknown) {
   const normalized = normalizeServerId(serverId);
-  // Phase 11 still keeps execution restricted to the production primary.
-  // Preflight and integration validation are on-demand control-plane actions;
-  // they never authorize parser, ADM, Discord loops or schedulers to start.
-  return normalized === getPrimaryServerId();
+  if (normalized === getPrimaryServerId()) return true;
+  const server = getManagedServerById(normalized);
+  return Boolean(
+    server
+    && server.enabled
+    && server.runtimeEnabled
+    && server.onboardingStatus === "ready"
+    && hasMatchingManagedServerNitradoValidation(server)
+    && hasMatchingActivationPreflight(server)
+    && hasManagedServerRuntimeActivation(server)
+    && isServerNamespaceRuntimeSafe()
+  );
+}
+
+export function listExecutableManagedServers() {
+  return listManagedServers().filter((server) => canExecuteManagedServerRuntime(server.id));
 }
 
 export function getPrimaryServerId() {
@@ -297,7 +360,7 @@ export function getPrimaryServerDescriptor(): ManagedServerDescriptor {
 export function listManagedServers(): ManagedServerDescriptor[] {
   // Phase 11 allows additional servers to exist as draft/configured/ready registry rows,
   // while runtime execution remains explicitly primary-only.
-  if (persistedServers.length) return persistedServers.map((server) => ({ ...server, integrations: { ...server.integrations }, runtime: { ...server.runtime, nitradoValidation: server.runtime.nitradoValidation ? { ...server.runtime.nitradoValidation } : undefined, activationPreflight: server.runtime.activationPreflight ? { ...server.runtime.activationPreflight, namespaceRows: { ...server.runtime.activationPreflight.namespaceRows } } : undefined, discord: { ...server.runtime.discord } } }));
+  if (persistedServers.length) return persistedServers.map((server) => ({ ...server, integrations: { ...server.integrations }, runtime: { ...server.runtime, nitradoValidation: server.runtime.nitradoValidation ? { ...server.runtime.nitradoValidation } : undefined, activationPreflight: server.runtime.activationPreflight ? { ...server.runtime.activationPreflight, namespaceRows: { ...server.runtime.activationPreflight.namespaceRows } } : undefined, activation: server.runtime.activation ? { ...server.runtime.activation } : undefined, discord: { ...server.runtime.discord } } }));
   return [getPrimaryServerDescriptor()];
 }
 
@@ -318,6 +381,7 @@ export function setPersistedManagedServers(servers: ManagedServerDescriptor[]) {
       nitradoBaseDir: String(server.runtime?.nitradoBaseDir || "").trim() || undefined,
       nitradoValidation: server.runtime?.nitradoValidation ? { ...server.runtime.nitradoValidation } : undefined,
       activationPreflight: server.runtime?.activationPreflight ? { ...server.runtime.activationPreflight, namespaceRows: { ...server.runtime.activationPreflight.namespaceRows } } : undefined,
+      activation: server.runtime?.activation ? { ...server.runtime.activation } : undefined,
       discord: { ...(server.runtime?.discord || {}) },
     },
   }));
@@ -379,12 +443,12 @@ export function getServerFoundationDiagnostics() {
   const managedServers = listManagedServers();
   const additionalServers = managedServers.filter((candidate) => !candidate.primary);
   return {
-    phase: 11,
+    phase: 12,
     mode: server.mode,
     currentServerId: server.id,
     currentServerName: server.name,
     managedServers: managedServers.length,
-    additionalServersEnabled: false,
+    additionalServersEnabled: true,
     onboarding: {
       registryWritesEnabled: Boolean(registry.enabled && registry.tableReady),
       canCreateDrafts: Boolean(registry.enabled && registry.tableReady),
@@ -393,14 +457,14 @@ export function getServerFoundationDiagnostics() {
       configuredServers: additionalServers.filter((candidate) => candidate.onboardingStatus === "configured").length,
       readyServers: additionalServers.filter((candidate) => candidate.onboardingStatus === "ready").length,
       runtimeEnabledServers: managedServers.filter((candidate) => candidate.runtimeEnabled).length,
-      activationPolicy: "primary-only",
+      activationPolicy: "ready-opt-in",
       secretsStoredInRegistry: false,
       nitradoDiscoveryEnabled: true,
       nitradoCredentialSource: process.env.NITRADO_TOKEN ? "environment" : "missing",
       discordDiscoveryEnabled: true,
       integrationValidationMode: "on-demand",
       activationPreflightEnabled: true,
-      activationEndpointEnabled: false,
+      activationEndpointEnabled: true,
       preflightMode: "on-demand",
       backgroundPollingAdded: false,
       backgroundRegistryWritesAdded: false,
@@ -420,7 +484,7 @@ export function getServerFoundationDiagnostics() {
       legacyAdmCursorsPreserved: true,
       legacyDiscordGuildPreserved: true,
       legacyNitradoServicePreserved: true,
-      operationalDatabaseWritesAdded: false,
+      operationalDatabaseWritesAdded: additionalServers.some((candidate) => canExecuteManagedServerRuntime(candidate.id)),
       registryMetadataOnly: false,
       activeReadsStillLegacy: !namespace.scopedReadsEnabled,
       activePrimaryKeysPreserved: false,
@@ -438,7 +502,7 @@ export function getServerFoundationDiagnostics() {
       perServerAdmParserStorage: Boolean(runtimeIsolationStatus.admParserStorageNamespaced),
       activationReadiness: Boolean(runtimeIsolationStatus.activationReadiness),
       draftRegistrationAvailable: Boolean(registry.enabled && registry.tableReady),
-      additionalRuntimeActivationBlocked: true,
+      additionalRuntimeActivationBlocked: false,
       nonPrimaryConfigInheritanceBlocked: true,
       secretsStoredInRegistry: false,
       onDemandRegistryWritesOnly: true,
@@ -446,7 +510,7 @@ export function getServerFoundationDiagnostics() {
       onDemandIntegrationDiscoveryOnly: true,
       nitradoTokenNeverReturnedToBrowser: true,
       activationPreflightGate: true,
-      activationEndpointAvailable: false,
+      activationEndpointAvailable: true,
     },
     integrations: server.integrations,
   };

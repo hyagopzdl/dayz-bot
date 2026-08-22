@@ -21,16 +21,51 @@ export type AdmDownloadMode = "legacy" | "shadow" | "optimized";
 
 type AdmServerStrategyState = {
   mode: AdmDownloadMode;
+  cycles: number;
   optimizedAuditCursor: number;
   previousFileTracker: { file?: string; stableSince?: number };
 };
 
 const admServerStrategies = new Map<string, AdmServerStrategyState>();
 
+type AdmPerServerMetric = {
+  startedAt: string;
+  cycles: number;
+  candidatesSeen: number;
+  downloads: number;
+  bytesDownloaded: number;
+  downloadFailures: number;
+  optimizedSkips: number;
+  optimizedSavedBytes: number;
+  lastCycleAt?: string;
+  lastCycleDurationMs: number;
+};
+
+const admPerServerMetrics = new Map<string, AdmPerServerMetric>();
+
+function getAdmPerServerMetric(serverId: string): AdmPerServerMetric {
+  let metric = admPerServerMetrics.get(serverId);
+  if (!metric) {
+    metric = {
+      startedAt: new Date().toISOString(),
+      cycles: 0,
+      candidatesSeen: 0,
+      downloads: 0,
+      bytesDownloaded: 0,
+      downloadFailures: 0,
+      optimizedSkips: 0,
+      optimizedSavedBytes: 0,
+      lastCycleDurationMs: 0,
+    };
+    admPerServerMetrics.set(serverId, metric);
+  }
+  return metric;
+}
+
 function getAdmServerStrategy(serverId = getPrimaryServerId()): AdmServerStrategyState {
   let state = admServerStrategies.get(serverId);
   if (!state) {
-    state = { mode: "shadow", optimizedAuditCursor: 0, previousFileTracker: {} };
+    state = { mode: "shadow", cycles: 0, optimizedAuditCursor: 0, previousFileTracker: {} };
     admServerStrategies.set(serverId, state);
   }
   return state;
@@ -156,6 +191,15 @@ export function getAdmDownloadMetrics() {
         : 0,
       recentDecisions: [...admDownloadMetrics.shadow.recentDecisions],
     },
+    servers: [...admPerServerMetrics.entries()].map(([serverId, metric]) => {
+      const serverUptimeHours = Math.max(1 / 60, (Date.now() - new Date(metric.startedAt).getTime()) / 3_600_000);
+      return {
+        serverId,
+        ...metric,
+        averageBytesPerCycle: metric.cycles ? Math.round(metric.bytesDownloaded / metric.cycles) : 0,
+        projected30DayBytes: Math.round((metric.bytesDownloaded / serverUptimeHours) * 24 * 30),
+      };
+    }),
     files: Object.entries(admDownloadMetrics.files)
       .map(([file, value]) => ({ file, ...value }))
       .sort((a, b) => b.bytes - a.bytes)
@@ -375,14 +419,18 @@ function triggerAutomaticFallback(reason: string, serverId = getPrimaryServerId(
 export async function downloadADM(serverId = getPrimaryServerId()) {
   const runtime = getServerRuntimeContext(serverId);
   const strategy = getAdmServerStrategy(serverId);
+  const serverMetric = getAdmPerServerMetric(serverId);
   const logDir = runtime.storage.logDir;
   const manifestFile = runtime.storage.manifestFile;
   const serviceId = getNitradoServiceId(serverId);
   const baseDir = runtime.nitrado.baseDir || LEGACY_BASE_DIR;
   if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true });
   const cycleStarted = Date.now();
+  strategy.cycles += 1;
+  serverMetric.cycles += 1;
+  serverMetric.lastCycleAt = new Date().toISOString();
   admDownloadMetrics.cycles += 1;
-  admDownloadMetrics.lastCycleAt = new Date().toISOString();
+  admDownloadMetrics.lastCycleAt = serverMetric.lastCycleAt;
   admDownloadMetrics.lastDownloadedCount = 0;
   admDownloadMetrics.lastDownloadedBytes = 0;
   admDownloadMetrics.strategy.mode = strategy.mode;
@@ -409,12 +457,14 @@ export async function downloadADM(serverId = getPrimaryServerId()) {
     .slice(0, MAX_CANDIDATES);
 
   admDownloadMetrics.candidatesSeen += admFiles.length;
+  serverMetric.candidatesSeen += admFiles.length;
   admDownloadMetrics.lastCandidateCount = admFiles.length;
 
   if (!admFiles.length) {
     console.log("⚠️ nenhum .ADM encontrado");
     saveManifest([], manifestFile);
     admDownloadMetrics.lastCycleDurationMs = Date.now() - cycleStarted;
+    serverMetric.lastCycleDurationMs = admDownloadMetrics.lastCycleDurationMs;
     admDownloadMetrics.maxCycleDurationMs = Math.max(admDownloadMetrics.maxCycleDurationMs, admDownloadMetrics.lastCycleDurationMs);
     return;
   }
@@ -436,7 +486,7 @@ export async function downloadADM(serverId = getPrimaryServerId()) {
 
   for (const candidate of candidateDecisions) {
     const { file, index, localFile, baseDecision, optimizedDecision } = candidate;
-    const shouldAudit = strategy.mode === "optimized" && index === auditIndex && admDownloadMetrics.cycles % AUDIT_INTERVAL_CYCLES === 0;
+    const shouldAudit = strategy.mode === "optimized" && index === auditIndex && strategy.cycles % AUDIT_INTERVAL_CYCLES === 0;
     const optimizedSkip = strategy.mode === "optimized" && !shouldAudit && optimizedDecision.decision === "skip";
 
     if (optimizedSkip) {
@@ -446,6 +496,8 @@ export async function downloadADM(serverId = getPrimaryServerId()) {
       metric.optimizedSavedBytes += saved;
       admDownloadMetrics.strategy.optimizedSkips += 1;
       admDownloadMetrics.strategy.optimizedSavedBytes += saved;
+      serverMetric.optimizedSkips += 1;
+      serverMetric.optimizedSavedBytes += saved;
       if (index === PREVIOUS_FILE_INDEX) admDownloadMetrics.strategy.previousStableSkips += 1;
       availableLocalFiles.push(localFile);
       addRecentShadowDecision({
@@ -528,6 +580,8 @@ export async function downloadADM(serverId = getPrimaryServerId()) {
       metric.lastDownloadedAt = new Date().toISOString();
       admDownloadMetrics.fileDownloads += 1;
       admDownloadMetrics.bytesDownloaded += bytes;
+      serverMetric.downloads += 1;
+      serverMetric.bytesDownloaded += bytes;
       admDownloadMetrics.lastDownloadedCount += 1;
       admDownloadMetrics.lastDownloadedBytes += bytes;
       if (strategy.mode === "optimized") admDownloadMetrics.strategy.optimizedDownloads += 1;
@@ -536,17 +590,19 @@ export async function downloadADM(serverId = getPrimaryServerId()) {
       const metric = getAdmFileMetric(file.path);
       metric.failures += 1;
       admDownloadMetrics.downloadFailures += 1;
+      serverMetric.downloadFailures += 1;
       console.error(`❌ erro baixando ${file.path}:`, err);
       if (fs.existsSync(localFile)) availableLocalFiles.push(localFile);
     }
   }
 
-  if (strategy.mode === "optimized" && skippableIndexes.length && admDownloadMetrics.cycles % AUDIT_INTERVAL_CYCLES === 0) {
+  if (strategy.mode === "optimized" && skippableIndexes.length && strategy.cycles % AUDIT_INTERVAL_CYCLES === 0) {
     strategy.optimizedAuditCursor = (strategy.optimizedAuditCursor + 1) % skippableIndexes.length;
   }
 
   saveManifest(availableLocalFiles, manifestFile);
   admDownloadMetrics.lastCycleDurationMs = Date.now() - cycleStarted;
+  serverMetric.lastCycleDurationMs = admDownloadMetrics.lastCycleDurationMs;
   admDownloadMetrics.maxCycleDurationMs = Math.max(admDownloadMetrics.maxCycleDurationMs, admDownloadMetrics.lastCycleDurationMs);
   console.log(`📦 ${availableLocalFiles.length} arquivos ADM disponíveis`);
 }

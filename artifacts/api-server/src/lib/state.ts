@@ -14,7 +14,10 @@ import {
   getPrimaryServerId,
   getManagedServerActivationConfigSignature,
   getServerRegistryPersistenceStatus,
+  getServerNamespacePersistenceStatus,
   hasMatchingActivationPreflight,
+  hasMatchingManagedServerNitradoValidation,
+  hasManagedServerRuntimeActivation,
   normalizeManagedServerName,
   setPersistedManagedServers,
   setServerRegistryPersistenceStatus,
@@ -24,8 +27,9 @@ import {
   type ServerActivationPreflight,
   type ServerDiscordRuntimeConfig,
   type ServerNitradoValidation,
+  type ServerRuntimeActivation,
 } from "./serverRegistry";
-import { getActiveServerId, getServerStateStoragePath, runInServerRuntimeContext } from "./serverRuntime";
+import { getActiveServerId, getServerStateStoragePath, runInServerMaintenanceContext, runInServerRuntimeContext } from "./serverRuntime";
 
 const LEGACY_FILE = path.resolve(process.cwd(), "state.json");
 const STATE_ID = "main";
@@ -379,26 +383,12 @@ function normalizeServerDiscordDraft(value: unknown, existing: ServerDiscordRunt
   return next;
 }
 
-function hasMatchingNitradoValidation(descriptor: Pick<ManagedServerDescriptor, "integrations" | "runtime">) {
-  const serviceId = String(descriptor.integrations.nitradoServiceId || "").trim();
-  const baseDir = String(descriptor.runtime.nitradoBaseDir || "").trim();
-  const validation = descriptor.runtime.nitradoValidation;
-  return Boolean(
-    serviceId
-    && baseDir
-    && validation
-    && validation.serviceId === serviceId
-    && validation.baseDir === baseDir
-    && validation.validatedAt
-  );
-}
-
 function deriveServerOnboardingStatus(descriptor: Pick<ManagedServerDescriptor, "integrations" | "runtime">) {
   // Discord remains optional. Phase 11 promotes a future server to Ready only
   // after an explicit activation preflight passes against the exact saved
   // integration configuration. Nitrado validation alone remains Configured.
-  if (hasMatchingNitradoValidation(descriptor) && hasMatchingActivationPreflight(descriptor)) return "ready" as const;
-  return hasMatchingNitradoValidation(descriptor) ? "configured" as const : "draft" as const;
+  if (hasMatchingManagedServerNitradoValidation(descriptor) && hasMatchingActivationPreflight(descriptor)) return "ready" as const;
+  return hasMatchingManagedServerNitradoValidation(descriptor) ? "configured" as const : "draft" as const;
 }
 
 function mapManagedServerRow(row: any, primary: ManagedServerDescriptor): ManagedServerDescriptor {
@@ -451,6 +441,19 @@ function mapManagedServerRow(row: any, primary: ManagedServerDescriptor): Manage
             warningCount: Number(runtimeConfig.activationPreflight.warningCount || 0),
           }
         : undefined,
+      activation: !isPrimary
+        && runtimeConfig?.activation
+        && typeof runtimeConfig.activation === "object"
+        && runtimeConfig.activation.everActivated === true
+        ? {
+            source: "phase12-admin",
+            everActivated: true,
+            firstActivatedAt: String(runtimeConfig.activation.firstActivatedAt || "").trim(),
+            lastEnabledAt: String(runtimeConfig.activation.lastEnabledAt || "").trim(),
+            lastDisabledAt: String(runtimeConfig.activation.lastDisabledAt || "").trim() || undefined,
+            activationCount: Math.max(1, Number(runtimeConfig.activation.activationCount || 1)),
+          }
+        : undefined,
       discord: isPrimary
         ? { ...(primary.runtime.discord || {}), ...(runtimeConfig?.discord || {}) }
         : { ...(runtimeConfig?.discord || {}) },
@@ -460,7 +463,7 @@ function mapManagedServerRow(row: any, primary: ManagedServerDescriptor): Manage
   if (!isPrimary) {
     const storedStatus = String(row.onboarding_status || "draft").trim().toLowerCase();
     descriptor.onboardingStatus = storedStatus === "ready"
-      && hasMatchingNitradoValidation(descriptor)
+      && hasMatchingManagedServerNitradoValidation(descriptor)
       && hasMatchingActivationPreflight(descriptor)
       ? "ready"
       : deriveServerOnboardingStatus(descriptor);
@@ -568,16 +571,28 @@ async function ensurePrimaryServerRegistryMetadata() {
         RETURNING id
       `;
 
-      // Fail closed: registry rows for future servers may be edited, but none
-      // may become executable before the activation phase even if a stale/manual DB value
-      // was set before this deploy. This UPDATE is a no-op in the normal case.
-      await sql`
-        UPDATE managed_servers
-        SET runtime_enabled = FALSE, updated_at = NOW()
-        WHERE id <> ${primary.id} AND runtime_enabled IS DISTINCT FROM FALSE
-      `;
-
-      const descriptors = await reloadManagedServerRegistryFromDb(primary);
+      // Phase 12 preserves explicitly activated runtimes across deploys, but still
+      // fails closed on stale/manual runtime_enabled values that do not have a
+      // matching Nitrado validation + Phase 11 preflight for the saved config.
+      let descriptors = await reloadManagedServerRegistryFromDb(primary);
+      const invalidRuntimeIds = descriptors
+        .filter((server) => !server.primary && server.runtimeEnabled)
+        .filter((server) => !(
+          server.enabled
+          && server.onboardingStatus === "ready"
+          && hasMatchingManagedServerNitradoValidation(server)
+          && hasMatchingActivationPreflight(server)
+          && hasManagedServerRuntimeActivation(server)
+        ))
+        .map((server) => server.id);
+      for (const invalidRuntimeId of invalidRuntimeIds) {
+        await sql`
+          UPDATE managed_servers
+          SET runtime_enabled = FALSE, updated_at = NOW()
+          WHERE id = ${invalidRuntimeId} AND id <> ${primary.id}
+        `;
+      }
+      if (invalidRuntimeIds.length) descriptors = await reloadManagedServerRegistryFromDb(primary);
 
       const persistedPrimary = descriptors.find((server) => server.id === primary.id) || descriptors.find((server) => server.primary);
       setServerRegistryPersistenceStatus({
@@ -1674,6 +1689,7 @@ export async function updateManagedServerDraft(serverId: string, input: ManagedS
   const currentServers = await reloadManagedServerRegistryFromDb();
   const current = currentServers.find((server) => server.id === id);
   if (!current) throw new Error(`Servidor ${id} nao encontrado.`);
+  if (current.runtimeEnabled) throw new Error("Desative o runtime antes de alterar a configuracao deste servidor.");
 
   const nextNitradoServiceId = input?.nitradoServiceId === undefined
     ? current.integrations.nitradoServiceId
@@ -1701,6 +1717,7 @@ export async function updateManagedServerDraft(serverId: string, input: ManagedS
         ? { ...current.runtime.nitradoValidation }
         : undefined,
       activationPreflight: undefined,
+      activation: current.runtime.activation ? { ...current.runtime.activation } : undefined,
       discord: normalizeServerDiscordDraft(input?.discord, current.runtime.discord),
     },
   };
@@ -1761,6 +1778,7 @@ export async function markManagedServerNitradoValidated(
   const currentServers = await reloadManagedServerRegistryFromDb();
   const current = currentServers.find((server) => server.id === id);
   if (!current) throw new Error(`Servidor ${id} nao encontrado.`);
+  if (current.runtimeEnabled) throw new Error("Desative o runtime antes de revalidar a integracao Nitrado.");
   if (currentServers.some((server) => server.id !== id && server.integrations.nitradoServiceId === serviceId)) {
     throw new Error("Este Nitrado Service ID ja esta vinculado a outro servidor.");
   }
@@ -1783,6 +1801,7 @@ export async function markManagedServerNitradoValidated(
       nitradoBaseDir: baseDir,
       nitradoValidation,
       activationPreflight: undefined,
+      activation: current.runtime.activation ? { ...current.runtime.activation } : undefined,
       discord: { ...(current.runtime.discord || {}) },
     },
   };
@@ -1845,7 +1864,7 @@ export async function markManagedServerActivationPreflightReady(
   const currentServers = await reloadManagedServerRegistryFromDb();
   const current = currentServers.find((server) => server.id === id);
   if (!current) throw new Error(`Servidor ${id} nao encontrado.`);
-  if (!hasMatchingNitradoValidation(current)) throw new Error("Valide o Nitrado antes de executar o activation preflight.");
+  if (!hasMatchingManagedServerNitradoValidation(current)) throw new Error("Valide o Nitrado antes de executar o activation preflight.");
   if (!preflight?.passed || preflight.version !== "phase11-v1") throw new Error("O activation preflight nao foi aprovado.");
 
   const expectedSignature = getManagedServerActivationConfigSignature(current);
@@ -1863,6 +1882,7 @@ export async function markManagedServerActivationPreflightReady(
     runtime: {
       ...current.runtime,
       activationPreflight: { ...preflight, namespaceRows: { ...preflight.namespaceRows } },
+      activation: current.runtime.activation ? { ...current.runtime.activation } : undefined,
       discord: { ...(current.runtime.discord || {}) },
     },
   };
@@ -1887,6 +1907,84 @@ export async function markManagedServerActivationPreflightReady(
     ok: true,
   });
   return servers.find((server) => server.id === id) || next;
+}
+
+export async function setManagedServerRuntimeEnabled(serverId: string, enabled: boolean) {
+  await ensurePrimaryServerRegistryMetadata();
+  if (!sql || !getServerRegistryPersistenceStatus().tableReady) {
+    throw new Error("Server registry is unavailable. DATABASE_URL and managed_servers must be ready.");
+  }
+
+  const id = buildManagedServerId(serverId);
+  if (!id || id === getPrimaryServerId()) throw new Error("O runtime do servidor primario nao pode ser alterado por este controle.");
+  const currentServers = await reloadManagedServerRegistryFromDb();
+  const current = currentServers.find((server) => server.id === id);
+  if (!current) throw new Error(`Servidor ${id} nao encontrado.`);
+
+  if (enabled) {
+    const namespace = getServerNamespacePersistenceStatus();
+    const namespaceReady = namespace.initialized
+      && namespace.scopedReadsEnabled
+      && namespace.botStatePrimaryKeyReady
+      && (!namespace.playerStatsTableReady || namespace.playerStatsPrimaryKeyReady)
+      && namespace.botStateUntaggedRows === 0
+      && (!namespace.playerStatsTableReady || namespace.playerStatsUntaggedRows === 0)
+      && namespace.scopedReadFallbacks === 0;
+    if (!namespaceReady) throw new Error("Ativacao bloqueada: o namespace persistente nao esta no estado server-scoped esperado.");
+    if (!current.enabled) throw new Error("O servidor esta desabilitado no registry.");
+    if (current.onboardingStatus !== "ready") throw new Error("Execute e aprove o activation preflight antes de ativar o runtime.");
+    if (!hasMatchingManagedServerNitradoValidation(current)) throw new Error("A validacao Nitrado nao corresponde mais a configuracao salva.");
+    if (!hasMatchingActivationPreflight(current)) throw new Error("O activation preflight nao corresponde mais a configuracao salva.");
+
+    if (!current.runtime.activation?.everActivated) {
+      const namespaceRows = await inspectManagedServerNamespaceRows(id);
+      if (namespaceRows.botState || namespaceRows.playerStats || namespaceRows.positionHistory) {
+        throw new Error(`Primeira ativacao bloqueada: o namespace ${id} deixou de estar vazio (${namespaceRows.botState}/${namespaceRows.playerStats}/${namespaceRows.positionHistory}). Execute o preflight e investigue antes de continuar.`);
+      }
+    }
+  }
+
+  const now = new Date().toISOString();
+  const previousActivation = current.runtime.activation;
+  const activation: ServerRuntimeActivation | undefined = enabled || previousActivation
+    ? {
+        source: "phase12-admin",
+        everActivated: true,
+        firstActivatedAt: previousActivation?.firstActivatedAt || now,
+        lastEnabledAt: enabled ? now : (previousActivation?.lastEnabledAt || now),
+        ...(enabled ? {} : { lastDisabledAt: now }),
+        activationCount: enabled
+          ? Math.max(0, Number(previousActivation?.activationCount || 0)) + (current.runtimeEnabled ? 0 : 1)
+          : Math.max(1, Number(previousActivation?.activationCount || 1)),
+      }
+    : undefined;
+
+  const nextRuntime = {
+    ...current.runtime,
+    activation,
+    discord: { ...(current.runtime.discord || {}) },
+  };
+
+  await sql`
+    UPDATE managed_servers
+    SET runtime_enabled = ${enabled},
+        onboarding_status = 'ready',
+        runtime_config = ${JSON.stringify(nextRuntime)}::jsonb,
+        updated_at = NOW()
+    WHERE id = ${id} AND id <> ${getPrimaryServerId()}
+  `;
+
+  const servers = await reloadManagedServerRegistryFromDb();
+  const next = servers.find((server) => server.id === id);
+  if (!next) throw new Error(`Servidor ${id} nao encontrado apos atualizar o runtime.`);
+  recordNetworkTransfer({
+    service: "neon-server-registry",
+    operation: enabled ? "activate_server_runtime" : "deactivate_server_runtime",
+    direction: "outbound",
+    bytes: Buffer.byteLength(JSON.stringify({ serverId: id, runtimeEnabled: enabled, activation }), "utf8"),
+    ok: true,
+  });
+  return next;
 }
 
 async function ensureGranularPlayerStatsTable() {
@@ -2381,7 +2479,7 @@ function scheduleDomainFlush() {
   const delay = Math.max(1000, nextDueAt - Date.now());
   const serverId = getActiveServerId();
   getPersistenceRuntime().domainFlushTimer = setTimeout(() => {
-    runInServerRuntimeContext(serverId, () => {
+    runInServerMaintenanceContext(serverId, () => {
       getPersistenceRuntime().domainFlushTimer = null;
       Promise.all([flushPendingDomains(false, undefined, false, "background:timer"), flushPendingDiscordRuntime()]).catch((err) => {
         console.error("❌ erro no flush V2 em background:", err);
@@ -2512,7 +2610,7 @@ function scheduleDiscordRuntimePersist() {
   const delay = STATE_PERSISTENCE_V2_ENABLED ? nextAlignedBackgroundDelay() : STATE_SAVE_DEBOUNCE_MS;
   const serverId = getActiveServerId();
   getPersistenceRuntime().discordRuntimeSaveTimer = setTimeout(() => {
-    runInServerRuntimeContext(serverId, () => {
+    runInServerMaintenanceContext(serverId, () => {
       getPersistenceRuntime().discordRuntimeSaveTimer = null;
       Promise.all([flushPendingDiscordRuntime(), flushPendingDomains()]).catch((err) => console.error("❌ erro no flush do discord_runtime:", err));
     });
@@ -2657,7 +2755,7 @@ function scheduleNeonPersist() {
 
   const serverId = getActiveServerId();
   getPersistenceRuntime().saveTimer = setTimeout(() => {
-    runInServerRuntimeContext(serverId, () => {
+    runInServerMaintenanceContext(serverId, () => {
       getPersistenceRuntime().saveTimer = null;
       flushPendingState().catch((err) => {
         console.error("❌ erro no flush agendado do state:", err);
@@ -2670,6 +2768,20 @@ export async function flushStateAsync(forceCompatibilitySnapshot = false) {
   if (STATE_PERSISTENCE_V2_ENABLED) {
     await Promise.all([
       flushPendingDomains(forceCompatibilitySnapshot, undefined, forceCompatibilitySnapshot, forceCompatibilitySnapshot ? "forced:compat" : "forced:flush-state"),
+      flushPendingDiscordRuntime(),
+      flushPlayerPositionHistoryBatch(),
+    ]);
+    return;
+  }
+  await Promise.all([flushPendingState(), flushPendingDiscordRuntime(), flushPlayerPositionHistoryBatch()]);
+}
+
+// Runtime stop/shutdown must not lose coalesced server-scoped changes, but it
+// also must not turn a normal stop into a large compatibility snapshot write.
+export async function flushServerRuntimePendingStateAsync() {
+  if (STATE_PERSISTENCE_V2_ENABLED) {
+    await Promise.all([
+      flushPendingDomains(false, undefined, true, "forced:runtime-stop"),
       flushPendingDiscordRuntime(),
       flushPlayerPositionHistoryBatch(),
     ]);
@@ -2732,7 +2844,9 @@ export async function getStateAsync(): Promise<AppState> {
           AND id IN (${stateIds[0]}, ${stateIds[1]}, ${stateIds[2]}, ${stateIds[3]}, ${stateIds[4]}, ${stateIds[5]}, ${stateIds[6]})
       ` as any[];
       lastScopedReadSource = "server-scoped";
-      if (!rows.some((row: any) => row.id === STATE_ID)) {
+      if (!rows.some((row: any) => row.id === STATE_ID) && getActiveServerId() === getPrimaryServerId()) {
+        // Legacy fallback exists only for the production primary. A fresh
+        // secondary namespace must NEVER read another server's rows.
         scopedReadFallbacks += 1;
         lastScopedReadSource = "legacy-fallback";
         rows = await sql`
@@ -2760,6 +2874,11 @@ export async function getStateAsync(): Promise<AppState> {
     if (!mainRow) {
       domainPersistenceMetrics.bootSource = "fresh-main";
       const state = defaultState();
+      if (getActiveServerId() !== getPrimaryServerId()) {
+        // New runtimes start directly in the proven optimized ADM strategy so
+        // they do not retransmit every historical candidate every 5 minutes.
+        state.serviceSettings = normalizeServiceSettings({ ...state.serviceSettings, admDownloadMode: "optimized" });
+      }
       const serialized = serializeState(state);
       const hash = hashState(serialized);
 
@@ -3141,7 +3260,7 @@ export async function queuePlayerPositionHistoryObservations(observations: Playe
     const delay = Math.max(1000, PLAYER_POSITION_FLUSH_INTERVAL_MS - remainder);
     const serverId = getActiveServerId();
     getPlayerPositionRuntime().flushTimer = setTimeout(() => {
-      runInServerRuntimeContext(serverId, () => {
+      runInServerMaintenanceContext(serverId, () => {
         getPlayerPositionRuntime().flushTimer = null;
         flushPlayerPositionHistoryBatch().catch((err) => console.error("❌ erro no flush alinhado do histórico de posições:", err));
       });

@@ -42,8 +42,8 @@ export type ServerActivationPreflightResult = {
   warningCount: number;
   failureCount: number;
   checks: ServerActivationPreflightCheck[];
-  runtimeActivationBlocked: true;
-  activationEndpointAvailable: false;
+  runtimeActivationBlocked: boolean;
+  activationEndpointAvailable: boolean;
   server?: ManagedServerDescriptor;
 };
 
@@ -153,7 +153,7 @@ export async function runManagedServerActivationPreflight(serverIdInput: string)
 
   if (!server || server.id === primaryId || server.primary) {
     pushCheck(checks, "registry", "Server registry", "fail", server
-      ? "O servidor primario nao usa o activation preflight da Fase 11."
+      ? "O servidor primario nao usa o activation preflight de servidores adicionais."
       : `Servidor ${serverId || "desconhecido"} nao encontrado.`);
     return {
       serverId,
@@ -163,8 +163,8 @@ export async function runManagedServerActivationPreflight(serverIdInput: string)
       warningCount: 0,
       failureCount: 1,
       checks,
-      runtimeActivationBlocked: true,
-      activationEndpointAvailable: false,
+      runtimeActivationBlocked: false,
+      activationEndpointAvailable: true,
     };
   }
 
@@ -174,11 +174,11 @@ export async function runManagedServerActivationPreflight(serverIdInput: string)
 
   const runtimeGateSafe = !server.runtimeEnabled
     && !canExecuteManagedServerRuntime(server.id)
-    && foundation.additionalServersEnabled === false
-    && Number(foundation.onboarding?.runtimeEnabledServers || 0) === 1;
+    && foundation.additionalServersEnabled === true
+    && foundation.onboarding?.activationEndpointEnabled === true;
   pushCheck(checks, "runtime-gate", "Runtime gate", runtimeGateSafe ? "pass" : "fail", runtimeGateSafe
-    ? "O servidor continua metadata-only; apenas o primary pode executar."
-    : "A barreira primary-only nao esta no estado esperado. Nao prossiga com ativacao.", {
+    ? "O servidor alvo continua parado; a Fase 12 permite ativacao somente depois deste gate."
+    : "O servidor alvo ja esta executando ou o activation gate da Fase 12 nao esta disponivel. Desative antes de revalidar.", {
       runtimeEnabled: server.runtimeEnabled,
       runtimeRows: Number(foundation.onboarding?.runtimeEnabledServers || 0),
       additionalServersEnabled: foundation.additionalServersEnabled,
@@ -292,10 +292,14 @@ export async function runManagedServerActivationPreflight(serverIdInput: string)
   let namespaceRows = { botState: 0, playerStats: 0, positionHistory: 0 };
   try {
     namespaceRows = await inspectManagedServerNamespaceRows(server.id);
+    const firstActivation = !server.runtime.activation?.everActivated;
     const namespaceClean = namespaceRows.botState === 0 && namespaceRows.playerStats === 0 && namespaceRows.positionHistory === 0;
-    pushCheck(checks, "namespace-clean", "Database namespace", namespaceClean ? "pass" : "fail", namespaceClean
-      ? "Nenhum state/stats/position-history existe ainda para este Server ID."
-      : "Ja existem rows persistidas para este Server ID. Revise antes de qualquer ativacao.", namespaceRows);
+    const namespaceSafe = firstActivation ? namespaceClean : true;
+    pushCheck(checks, "namespace-clean", "Database namespace", namespaceSafe ? "pass" : "fail", namespaceSafe
+      ? (firstActivation
+        ? "Nenhum state/stats/position-history existe ainda para este Server ID."
+        : "O servidor ja foi ativado anteriormente; as rows existentes pertencem ao proprio namespace e podem ser reutilizadas na reativacao.")
+      : "Ja existem rows persistidas para este Server ID antes da primeira ativacao. Revise antes de continuar.", namespaceRows);
   } catch (error) {
     pushCheck(checks, "namespace-clean", "Database namespace", "fail", error instanceof Error ? error.message : String(error));
   }
@@ -341,7 +345,7 @@ export async function runManagedServerActivationPreflight(serverIdInput: string)
       warningCount,
     };
     readyServer = await markManagedServerActivationPreflightReady(server.id, preflight);
-    pushCheck(checks, "ready-gate", "Activation gate", "pass", "Preflight aprovado. O servidor foi marcado como Ready, mas runtime_enabled continua false e nao existe endpoint de ativacao na Fase 11.");
+    pushCheck(checks, "ready-gate", "Activation gate", "pass", "Preflight aprovado. O servidor esta Ready e pode ser ativado manualmente na Fase 12; runtime_enabled continua false ate essa acao explicita.");
   } else {
     pushCheck(checks, "ready-gate", "Activation gate", "fail", "Preflight reprovado. O servidor permanece Draft/Configured e nenhum runtime foi iniciado.");
   }
@@ -354,8 +358,8 @@ export async function runManagedServerActivationPreflight(serverIdInput: string)
     warningCount,
     failureCount,
     checks,
-    runtimeActivationBlocked: true,
-    activationEndpointAvailable: false,
+    runtimeActivationBlocked: false,
+    activationEndpointAvailable: true,
     ...(readyServer ? { server: readyServer } : {}),
   };
 }

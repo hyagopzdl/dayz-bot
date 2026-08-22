@@ -1,14 +1,18 @@
 import app from "./app";
 import { logger } from "./lib/logger";
-import { downloadADM, setAdmDownloadMode } from "./lib/nitradoDownloader";
-import { getLeaderboard } from "./lib/parser";
+import { setAdmDownloadMode } from "./lib/nitradoDownloader";
 import { startDiscordBot } from "./lib/discordBot";
-import { flushStateAsync, getStateAsync } from "./lib/state";
+import { getStateAsync } from "./lib/state";
 import { initializeShopCatalog } from "./lib/shopCatalog";
-import { recordMainCycleCompleted, recordMainCycleSkippedOverlap, recordMainCycleStarted } from "./lib/runtimeMetrics";
 import { normalizeServiceSettings } from "./lib/serviceSettings";
 import { getPrimaryServerId } from "./lib/serverRegistry";
-import { getServerRuntimeContext, runInServerRuntimeContext, runWithServerRuntimeLock } from "./lib/serverRuntime";
+import { getServerRuntimeContext, runInServerRuntimeContext } from "./lib/serverRuntime";
+import {
+  flushExecutableManagedServerStates,
+  runManagedServerRuntimeBatch,
+  runManagedServerRuntimeCycle,
+  startManagedServerRuntimeScheduler,
+} from "./lib/serverRuntimeCoordinator";
 
 function installStateFlushHooks() {
   let flushing = false;
@@ -19,8 +23,7 @@ function installStateFlushHooks() {
 
     try {
       console.log(`💾 flush final do state antes de ${signal}`);
-      const primaryServerId = getPrimaryServerId();
-      await runInServerRuntimeContext(primaryServerId, () => flushStateAsync());
+      await flushExecutableManagedServerStates();
     } catch (err) {
       console.error("❌ erro no flush final do state:", err);
     } finally {
@@ -40,52 +43,6 @@ function installStateFlushHooks() {
 installStateFlushHooks();
 
 let started = false;
-async function runCycle(serverId = getPrimaryServerId()) {
-  const locked = await runWithServerRuntimeLock(serverId, async () => runInServerRuntimeContext(serverId, async () => {
-  recordMainCycleStarted();
-  const startedAt = new Date().toISOString();
-  const cycleStarted = Date.now();
-  let downloadDurationMs = 0;
-  let parserDurationMs = 0;
-  let downloadOk = true;
-  let parserOk = true;
-  console.log("🔁 LOOP PRINCIPAL");
-
-  const downloadStarted = Date.now();
-  try {
-    await downloadADM(serverId);
-  } catch (err) {
-    downloadOk = false;
-    console.error("❌ erro download:", err);
-  } finally {
-    downloadDurationMs = Date.now() - downloadStarted;
-  }
-
-  const parserStarted = Date.now();
-  try {
-    console.log("🔥 PARSER AUTOMÁTICO");
-    await getLeaderboard();
-  } catch (err) {
-    parserOk = false;
-    console.error("❌ erro parser:", err);
-  } finally {
-    parserDurationMs = Date.now() - parserStarted;
-    recordMainCycleCompleted({
-      startedAt,
-      finishedAt: new Date().toISOString(),
-      durationMs: Date.now() - cycleStarted,
-      downloadDurationMs,
-      parserDurationMs,
-      downloadOk,
-      parserOk,
-    });
-  }
-  }));
-  if (locked.skipped) {
-    recordMainCycleSkippedOverlap();
-    console.log(`⏭️ ciclo ignorado para ${serverId}: execução anterior ainda rodando`);
-  }
-}
 
 function startServer(port: number) {
   if (started) return;
@@ -98,9 +55,9 @@ function startServer(port: number) {
     console.log(`🚀 Running on http://${HOST}:${port}`);
 
     logger.info({ port }, "Server listening");
+    const primaryServerId = getPrimaryServerId();
 
     try {
-      const primaryServerId = getPrimaryServerId();
       const state = await runInServerRuntimeContext(primaryServerId, () => getStateAsync());
       const runtime = getServerRuntimeContext(primaryServerId);
       console.log(`🧭 runtime isolado: ${runtime.server.name} (${runtime.serverId})`);
@@ -119,24 +76,24 @@ function startServer(port: number) {
       console.error("❌ shop catalog unavailable:", err);
     }
 
-    await runCycle();
+    // Keep the production PZ startup path first. A newly activated secondary
+    // may need a larger one-time ADM download and must never delay PZ Discord.
+    await runManagedServerRuntimeCycle(primaryServerId, "startup");
+    startManagedServerRuntimeScheduler();
 
     try {
       console.log("🚀 iniciando bot do Discord...");
-      startDiscordBot(getPrimaryServerId());
+      startDiscordBot(primaryServerId);
     } catch (err) {
       console.error("❌ erro ao iniciar Discord:", err);
     }
-  });
 
-  setInterval(
-    () => {
-      runCycle().catch((err) => {
-        console.error("❌ erro fatal no ciclo:", err);
-      });
-    },
-    5 * 60 * 1000,
-  );
+    // Resume already-activated secondary runtimes without blocking the primary
+    // startup. They still run sequentially under the same centralized coordinator.
+    runManagedServerRuntimeBatch("startup", { includePrimary: false }).catch((err) => {
+      console.error("❌ erro iniciando runtimes secundarios:", err);
+    });
+  });
 
   server.on("error", (err: any) => {
     if (err.code === "EADDRINUSE") {

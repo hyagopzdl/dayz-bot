@@ -38,9 +38,8 @@ export function getServerRuntimeContext(serverId?: string) {
     initialized: true,
     contextServerId: descriptor.id,
     nitradoRoutingNamespaced: Boolean(descriptor.integrations.nitradoServiceId && descriptor.runtime.nitradoBaseDir),
-    discordRoutingNamespaced: Boolean(
-      descriptor.integrations.discordGuildId
-      && descriptor.runtime.discord.globalChannelId
+    discordRoutingNamespaced: !descriptor.integrations.discordGuildId || Boolean(
+      descriptor.runtime.discord.globalChannelId
       && descriptor.runtime.discord.dailyChannelId
       && descriptor.runtime.discord.weeklyChannelId
       && descriptor.runtime.discord.onlineCategoryId
@@ -126,10 +125,10 @@ export function getActiveServerId() {
   return getPrimaryServerId();
 }
 
-export function runInServerRuntimeContext<T>(serverId: string, work: () => T): T {
+function runInKnownServerContext<T>(serverId: string, work: () => T, requireExecutable: boolean): T {
   const context = getServerRuntimeContext(serverId);
-  if (!canExecuteManagedServerRuntime(context.serverId)) {
-    throw new Error(`Server ${context.serverId} is registered for onboarding only. Runtime execution remains blocked in Phase 11.`);
+  if (requireExecutable && !canExecuteManagedServerRuntime(context.serverId)) {
+    throw new Error(`Server ${context.serverId} runtime is disabled or has not passed the activation gate.`);
   }
   contextRuns += 1;
   lastContextServerId = context.serverId;
@@ -142,16 +141,31 @@ export function runInServerRuntimeContext<T>(serverId: string, work: () => T): T
   return executionContext.run({ serverId: context.serverId }, work);
 }
 
+export function runInServerRuntimeContext<T>(serverId: string, work: () => T): T {
+  return runInKnownServerContext(serverId, work, true);
+}
+
+// Persistence timers may still need to finish a scoped flush immediately after
+// a runtime is disabled. This context never authorizes ADM/Nitrado execution; it
+// only provides the server namespace to maintenance work that was already queued.
+export function runInServerMaintenanceContext<T>(serverId: string, work: () => T): T {
+  return runInKnownServerContext(serverId, work, false);
+}
+
 export function getServerStateStoragePath(serverId = getActiveServerId()) {
   const context = getServerRuntimeContext(serverId);
   if (context.isPrimary) return path.resolve(process.cwd(), "state.json");
   return path.resolve(process.cwd(), "state_servers", context.serverId, "state.json");
 }
 
+export function isServerRuntimeLocked(serverId: string) {
+  return runtimeLocks.has(String(serverId || "").trim());
+}
+
 export async function runWithServerRuntimeLock<T>(serverId: string, work: () => Promise<T>): Promise<{ skipped: boolean; value?: T }> {
   const context = getServerRuntimeContext(serverId);
   if (!canExecuteManagedServerRuntime(context.serverId)) {
-    throw new Error(`Server ${context.serverId} is registered for onboarding only. Processing locks cannot activate it in Phase 11.`);
+    throw new Error(`Server ${context.serverId} runtime is disabled or has not passed the activation gate.`);
   }
   if (runtimeLocks.has(context.serverId)) {
     lockSkips += 1;
@@ -172,6 +186,6 @@ export async function runWithServerRuntimeLock<T>(serverId: string, work: () => 
 export function assertPrimaryRuntimeServer(serverId: string) {
   const primaryId = getPrimaryServerId();
   if (serverId !== primaryId) {
-    throw new Error(`Server ${serverId} is registered but runtime activation is still blocked during Phase 11 preflight.`);
+    throw new Error(`Legacy FTP/Discord state access remains primary-only during Phase 12 runtime activation (${serverId}).`);
   }
 }
