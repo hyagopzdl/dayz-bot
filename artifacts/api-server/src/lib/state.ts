@@ -342,6 +342,25 @@ function optionalServerText(value: unknown, maxLength = 255) {
   return String(value || "").trim().slice(0, maxLength) || undefined;
 }
 
+function parseManagedServerRuntimeConfig(value: unknown): Record<string, any> {
+  if (value && typeof value === "object" && !Array.isArray(value)) return value as Record<string, any>;
+  if (typeof value !== "string" || !value.trim()) return {};
+
+  // JSONB is normally returned as an object, but keep the registry resilient to
+  // drivers/adapters that surface it as text (or as a JSON-encoded JSON string).
+  // Losing this object would make a persisted Nitrado validation look like a Draft
+  // even though the validation write itself succeeded.
+  try {
+    let parsed: unknown = JSON.parse(value);
+    if (typeof parsed === "string") parsed = JSON.parse(parsed);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? parsed as Record<string, any>
+      : {};
+  } catch {
+    return {};
+  }
+}
+
 function normalizeServerDiscordDraft(value: unknown, existing: ServerDiscordRuntimeConfig = {}): ServerDiscordRuntimeConfig {
   const source = value && typeof value === "object" ? value as Record<string, unknown> : {};
   const next: ServerDiscordRuntimeConfig = { ...existing };
@@ -385,7 +404,7 @@ function deriveServerOnboardingStatus(descriptor: Pick<ManagedServerDescriptor, 
 function mapManagedServerRow(row: any, primary: ManagedServerDescriptor): ManagedServerDescriptor {
   const id = String(row.id || "").trim();
   const isPrimary = id === primary.id;
-  const runtimeConfig = row.runtime_config && typeof row.runtime_config === "object" ? row.runtime_config : {};
+  const runtimeConfig = parseManagedServerRuntimeConfig(row.runtime_config);
   const descriptor: ManagedServerDescriptor = {
     id,
     name: String(row.name || row.id || "Server"),

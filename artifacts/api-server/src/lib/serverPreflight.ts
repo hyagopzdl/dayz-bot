@@ -21,6 +21,7 @@ import {
 import {
   inspectManagedServerNamespaceRows,
   markManagedServerActivationPreflightReady,
+  markManagedServerNitradoValidated,
 } from "./state";
 
 export type ServerActivationPreflightCheckStatus = "pass" | "warning" | "fail" | "skipped";
@@ -148,7 +149,7 @@ export async function runManagedServerActivationPreflight(serverIdInput: string)
   const checkedAt = new Date().toISOString();
   const checks: ServerActivationPreflightCheck[] = [];
   const primaryId = getPrimaryServerId();
-  const server = getManagedServerById(serverId);
+  let server = getManagedServerById(serverId);
 
   if (!server || server.id === primaryId || server.primary) {
     pushCheck(checks, "registry", "Server registry", "fail", server
@@ -198,10 +199,20 @@ export async function runManagedServerActivationPreflight(serverIdInput: string)
     ? "PKs, scoped persistence, caches, parser storage e scheduler permanecem preparados para isolamento por servidor."
     : "A fundacao multi-server perdeu uma ou mais garantias obrigatorias.");
 
-  const serviceId = text(server.integrations.nitradoServiceId);
-  const baseDir = text(server.runtime.nitradoBaseDir);
-  const validation = server.runtime.nitradoValidation;
-  const nitradoMetadataValid = Boolean(
+  const targetServerId = server.id;
+  const configuredDiscordGuildId = text(server.integrations.discordGuildId);
+  let serviceId = text(server.integrations.nitradoServiceId);
+  let baseDir = text(server.runtime.nitradoBaseDir);
+  const duplicateService = serviceId
+    ? allServers.find((candidate: ManagedServerDescriptor) => candidate.id !== targetServerId && text(candidate.integrations.nitradoServiceId) === serviceId)
+    : undefined;
+  const duplicateGuild = configuredDiscordGuildId
+    ? allServers.find((candidate: ManagedServerDescriptor) => candidate.id !== targetServerId && text(candidate.integrations.discordGuildId) === configuredDiscordGuildId)
+    : undefined;
+  const uniqueRouting = !duplicateService && !duplicateGuild;
+
+  let validation = server.runtime.nitradoValidation;
+  let nitradoMetadataValid = Boolean(
     serviceId
     && baseDir
     && validation
@@ -209,17 +220,44 @@ export async function runManagedServerActivationPreflight(serverIdInput: string)
     && validation.baseDir === baseDir
     && validation.validatedAt
   );
-  pushCheck(checks, "nitrado-metadata", "Nitrado configuration", nitradoMetadataValid ? "pass" : "fail", nitradoMetadataValid
-    ? `Service ${serviceId} possui validacao salva para o base dir atual.`
-    : "Valide Service ID + base dir na etapa Nitrado antes do preflight.");
+  let prefetchedNitradoValidation: Awaited<ReturnType<typeof validateNitradoServiceSetup>> | undefined;
+  let validationRecovered = false;
+  let validationRecoveryError = "";
 
-  const duplicateService = serviceId
-    ? allServers.find((candidate: ManagedServerDescriptor) => candidate.id !== server.id && text(candidate.integrations.nitradoServiceId) === serviceId)
-    : undefined;
-  const duplicateGuild = text(server.integrations.discordGuildId)
-    ? allServers.find((candidate: ManagedServerDescriptor) => candidate.id !== server.id && text(candidate.integrations.discordGuildId) === text(server.integrations.discordGuildId))
-    : undefined;
-  const uniqueRouting = !duplicateService && !duplicateGuild;
+  // Phase 11 hotfix: a successful Phase 10 validation can be persisted while an
+  // adapter/frontend still surfaces only the Configured metadata. Reconcile that
+  // state fail-closed by revalidating the exact Service ID + base dir on demand.
+  // This does not start a runtime or download an ADM file.
+  if (!nitradoMetadataValid && serviceId && baseDir && uniqueRouting) {
+    try {
+      prefetchedNitradoValidation = await validateNitradoServiceSetup(server.id, serviceId, baseDir);
+      server = await markManagedServerNitradoValidated(server.id, {
+        serviceId: prefetchedNitradoValidation.serviceId,
+        baseDir: prefetchedNitradoValidation.baseDir,
+      });
+      serviceId = text(server.integrations.nitradoServiceId);
+      baseDir = text(server.runtime.nitradoBaseDir);
+      validation = server.runtime.nitradoValidation;
+      nitradoMetadataValid = Boolean(
+        serviceId
+        && baseDir
+        && validation
+        && validation.serviceId === serviceId
+        && validation.baseDir === baseDir
+        && validation.validatedAt
+      );
+      validationRecovered = nitradoMetadataValid;
+    } catch (error) {
+      validationRecoveryError = error instanceof Error ? error.message : String(error);
+    }
+  }
+
+  pushCheck(checks, "nitrado-metadata", "Nitrado configuration", nitradoMetadataValid ? "pass" : "fail", nitradoMetadataValid
+    ? (validationRecovered
+      ? `Service ${serviceId} foi revalidado e a marcacao persistida foi reconciliada para o base dir atual.`
+      : `Service ${serviceId} possui validacao salva para o base dir atual.`)
+    : (validationRecoveryError || "Valide Service ID + base dir na etapa Nitrado antes do preflight."));
+
   pushCheck(checks, "routing-uniqueness", "Integration ownership", uniqueRouting ? "pass" : "fail", uniqueRouting
     ? "Nitrado Service ID e Discord Guild ID nao colidem com outro servidor cadastrado."
     : `Existe uma integracao reutilizada por outro servidor${duplicateService ? ` (Nitrado: ${duplicateService.name})` : ""}${duplicateGuild ? ` (Discord: ${duplicateGuild.name})` : ""}.`);
@@ -264,7 +302,7 @@ export async function runManagedServerActivationPreflight(serverIdInput: string)
 
   if (nitradoMetadataValid && uniqueRouting && !samePrimaryBaseDir) {
     try {
-      const remote = await validateNitradoServiceSetup(server.id, serviceId, baseDir);
+      const remote = prefetchedNitradoValidation || await validateNitradoServiceSetup(server.id, serviceId, baseDir);
       const sameRouting = remote.serviceId === serviceId && remote.baseDir === baseDir;
       pushCheck(checks, "nitrado-live", "Nitrado live check", sameRouting ? "pass" : "fail", sameRouting
         ? `Service acessivel e file_server respondeu para o base dir salvo${remote.admFilesFound ? ` (${remote.admFilesFound} ADM encontrado(s))` : ""}.`

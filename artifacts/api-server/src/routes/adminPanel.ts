@@ -6906,13 +6906,20 @@ function renderAdminPanelHtml(token: string) {
       const serviceId = String(server?.integrations?.nitradoServiceId || '');
       const baseDir = String(server?.runtime?.nitradoBaseDir || '');
       const validation = server?.runtime?.nitradoValidation;
-      const nitradoValidated = Boolean(serviceId && baseDir && validation && validation.serviceId === serviceId && validation.baseDir === baseDir && validation.validatedAt);
+      const nitradoValidationPersisted = Boolean(serviceId && baseDir && validation && validation.serviceId === serviceId && validation.baseDir === baseDir && validation.validatedAt);
+      const onboardingStatus = String(server?.onboardingStatus || 'draft');
+      const statusConfirmsConfigured = onboardingStatus === 'configured' || onboardingStatus === 'ready';
+      // The backend is the source of truth. If the registry already says Configured
+      // but an older/stale payload missed the nested validation object, keep the UI
+      // usable; Phase 11 preflight will revalidate and repair that exact routing.
+      const nitradoConfigured = nitradoValidationPersisted || Boolean(serviceId && baseDir && statusConfirmsConfigured);
       const preflight = server?.runtime?.activationPreflight;
-      const preflightReady = Boolean(String(server?.onboardingStatus || '') === 'ready' && preflight?.passed && preflight?.checkedAt);
+      const preflightReady = Boolean(onboardingStatus === 'ready' && preflight?.passed && preflight?.checkedAt);
       return {
-        nitradoConfigured: nitradoValidated,
+        nitradoConfigured,
+        nitradoValidationPersisted,
         nitradoMetadataPresent: Boolean(serviceId && baseDir),
-        nitradoValidatedAt: nitradoValidated ? validation.validatedAt : null,
+        nitradoValidatedAt: nitradoValidationPersisted ? validation.validatedAt : null,
         discordConfigured: Boolean(server?.integrations?.discordGuildId),
         preflightReady,
         preflightCheckedAt: preflightReady ? preflight.checkedAt : null,
@@ -7008,9 +7015,11 @@ function renderAdminPanelHtml(token: string) {
         els.managedServerPreflightRun.textContent = integration.preflightReady ? 'Executar preflight novamente' : 'Executar preflight';
       }
       if (els.managedServerPreflightIntro) {
-        els.managedServerPreflightIntro.innerHTML = integration.nitradoConfigured
+        els.managedServerPreflightIntro.innerHTML = integration.nitradoValidationPersisted
           ? '<strong>Pronto para verificar.</strong><br>Serão feitas somente leituras/validações sob demanda. Nenhum ADM será baixado e nenhum runtime será iniciado.'
-          : '<strong>Nitrado ainda não validado.</strong><br>Conclua a etapa Nitrado antes de executar o activation preflight.';
+          : (integration.nitradoMetadataPresent
+            ? '<strong>Nitrado configurado.</strong><br>A marca de validação precisa ser reconciliada. O próprio preflight revalidará Service ID + base dir antes de continuar, sem iniciar runtime nem baixar ADM.'
+            : '<strong>Nitrado ainda não configurado.</strong><br>Conclua a etapa Nitrado antes de executar o activation preflight.');
       }
       if (els.managedServerPreflightSummary) {
         if (result) {
@@ -7063,9 +7072,11 @@ function renderAdminPanelHtml(token: string) {
           : '<strong>Conexão Nitrado indisponível</strong><br>NITRADO_TOKEN não está configurado no ambiente do serviço.';
       }
       if (els.managedServerNitradoValidationMeta) {
-        els.managedServerNitradoValidationMeta.textContent = configured
+        els.managedServerNitradoValidationMeta.textContent = integration.nitradoValidationPersisted
           ? 'Validado em ' + new Date(integration.nitradoValidatedAt).toLocaleString('pt-BR') + '. Alterar Service ID ou base dir exige validar novamente.'
-          : 'Configured só é liberado depois de uma validação manual bem-sucedida do Service ID + base dir.';
+          : (configured
+            ? 'Servidor marcado como Configured. O preflight fará uma revalidação segura para reconciliar a marca persistida antes de liberar Ready.'
+            : 'Configured só é liberado depois de uma validação manual bem-sucedida do Service ID + base dir.');
       }
       if (els.managedServerOverviewNitrado) {
         els.managedServerOverviewNitrado.innerHTML = '<span>Nitrado</span><strong>' + (configured ? 'Validated' : (integration.nitradoMetadataPresent ? 'Needs validation' : 'Não configurado')) + '</strong><p>' + (configured ? 'Service ID e base dir validados sob demanda.' : 'Obrigatório para completar o core setup.') + '</p>';
@@ -7259,9 +7270,8 @@ function renderAdminPanelHtml(token: string) {
       }
 
       const integrationBeforeRun = managedServerIntegrationState(selectedBeforeRun);
-      const onboardingStatus = String(selectedBeforeRun.onboardingStatus || 'draft');
-      if (!integrationBeforeRun.nitradoConfigured && onboardingStatus !== 'configured' && onboardingStatus !== 'ready') {
-        showToast('Valide o Nitrado antes de executar o preflight.');
+      if (!integrationBeforeRun.nitradoMetadataPresent) {
+        showToast('Configure Service ID + base dir do Nitrado antes de executar o preflight.');
         switchManagedServerSetupTab('nitrado');
         return;
       }
