@@ -46,6 +46,7 @@ export async function startDiscordBot(serverId = getPrimaryServerId()) {
       streakRankingChannel: channels.streakRankingChannel,
       getState: stateAccess.getState,
       saveState: stateAccess.saveState,
+      saveRuntimeState: stateAccess.saveRuntimeState,
     });
 
     registerMemberFeed(client, serverId);

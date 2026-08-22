@@ -1,4 +1,4 @@
-import { getStateAsync, saveStateAsync } from "../state";
+import { getStateAsync, saveDiscordRuntimeStateOnlyAsync, saveDiscordStateAsync } from "../state";
 import { ensureBotState } from "./state";
 import { getPrimaryServerId } from "../serverRegistry";
 import { assertPrimaryRuntimeServer } from "../serverRuntime";
@@ -23,9 +23,17 @@ export function createDiscordStateAccess(serverId = getPrimaryServerId()) {
   }
 
   async function saveState(state: any) {
-    await saveStateAsync(ensureBotState(state));
+    await saveDiscordStateAsync(ensureBotState(state));
     console.log("💾 state salvo pelo Discord");
   }
 
-  return { getState, saveState };
+  async function saveRuntimeState(state: any) {
+    await saveDiscordRuntimeStateOnlyAsync(
+      ensureBotState(state),
+      `discord:feeds-runtime:${serverId}`,
+    );
+    console.log("💾 runtime do Discord salvo", { serverId });
+  }
+
+  return { getState, saveState, saveRuntimeState };
 }
