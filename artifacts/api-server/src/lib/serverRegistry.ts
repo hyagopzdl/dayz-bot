@@ -24,9 +24,27 @@ export type ServerNitradoValidation = {
   source: "phase10-on-demand";
 };
 
+export type ServerActivationPreflight = {
+  version: "phase11-v1";
+  source: "phase11-on-demand";
+  checkedAt: string;
+  passed: true;
+  configurationSignature: string;
+  serviceId: string;
+  baseDir: string;
+  discordGuildId?: string;
+  namespaceRows: {
+    botState: number;
+    playerStats: number;
+    positionHistory: number;
+  };
+  warningCount: number;
+};
+
 export type ServerRuntimeConfig = {
   nitradoBaseDir?: string;
   nitradoValidation?: ServerNitradoValidation;
+  activationPreflight?: ServerActivationPreflight;
   discord: ServerDiscordRuntimeConfig;
 };
 
@@ -207,10 +225,50 @@ function normalizeServerOnboardingStatus(value: unknown): ServerOnboardingStatus
   return "draft";
 }
 
+export function getManagedServerActivationConfigSignature(server: Pick<ManagedServerDescriptor, "integrations" | "runtime">) {
+  const payload = {
+    nitradoServiceId: String(server.integrations.nitradoServiceId || "").trim(),
+    nitradoBaseDir: String(server.runtime.nitradoBaseDir || "").trim(),
+    discordGuildId: String(server.integrations.discordGuildId || "").trim(),
+    discord: {
+      globalChannelId: String(server.runtime.discord?.globalChannelId || "").trim(),
+      dailyChannelId: String(server.runtime.discord?.dailyChannelId || "").trim(),
+      weeklyChannelId: String(server.runtime.discord?.weeklyChannelId || "").trim(),
+      onlineListChannelId: String(server.runtime.discord?.onlineListChannelId || "").trim(),
+      killfeedChannelId: String(server.runtime.discord?.killfeedChannelId || "").trim(),
+      killStreakChannelId: String(server.runtime.discord?.killStreakChannelId || "").trim(),
+      longShotChannelId: String(server.runtime.discord?.longShotChannelId || "").trim(),
+      longShotRankingChannelId: String(server.runtime.discord?.longShotRankingChannelId || "").trim(),
+      streakRankingChannelId: String(server.runtime.discord?.streakRankingChannelId || "").trim(),
+      onlineCategoryId: String(server.runtime.discord?.onlineCategoryId || "").trim(),
+      matchCategoryId: String(server.runtime.discord?.matchCategoryId || "").trim(),
+      memberFeedChannelId: String(server.runtime.discord?.memberFeedChannelId || "").trim(),
+      memberFeedEnabled: server.runtime.discord?.memberFeedEnabled !== false,
+    },
+  };
+  const serialized = JSON.stringify(payload);
+  let hash = 2166136261;
+  for (let index = 0; index < serialized.length; index += 1) {
+    hash ^= serialized.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return `phase11-${(hash >>> 0).toString(16).padStart(8, "0")}`;
+}
+
+export function hasMatchingActivationPreflight(server: Pick<ManagedServerDescriptor, "integrations" | "runtime">) {
+  const preflight = server.runtime.activationPreflight;
+  return Boolean(
+    preflight
+    && preflight.passed === true
+    && preflight.version === "phase11-v1"
+    && preflight.configurationSignature === getManagedServerActivationConfigSignature(server)
+  );
+}
+
 export function canExecuteManagedServerRuntime(serverId: unknown) {
   const normalized = normalizeServerId(serverId);
-  // Phase 10 still keeps execution restricted to the production primary.
-  // Integration discovery and validation are on-demand control-plane actions;
+  // Phase 11 still keeps execution restricted to the production primary.
+  // Preflight and integration validation are on-demand control-plane actions;
   // they never authorize parser, ADM, Discord loops or schedulers to start.
   return normalized === getPrimaryServerId();
 }
@@ -237,9 +295,9 @@ export function getPrimaryServerDescriptor(): ManagedServerDescriptor {
 }
 
 export function listManagedServers(): ManagedServerDescriptor[] {
-  // Phase 10 allows additional servers to exist as draft/configured registry rows,
+  // Phase 11 allows additional servers to exist as draft/configured/ready registry rows,
   // while runtime execution remains explicitly primary-only.
-  if (persistedServers.length) return persistedServers.map((server) => ({ ...server, integrations: { ...server.integrations }, runtime: { ...server.runtime, nitradoValidation: server.runtime.nitradoValidation ? { ...server.runtime.nitradoValidation } : undefined, discord: { ...server.runtime.discord } } }));
+  if (persistedServers.length) return persistedServers.map((server) => ({ ...server, integrations: { ...server.integrations }, runtime: { ...server.runtime, nitradoValidation: server.runtime.nitradoValidation ? { ...server.runtime.nitradoValidation } : undefined, activationPreflight: server.runtime.activationPreflight ? { ...server.runtime.activationPreflight, namespaceRows: { ...server.runtime.activationPreflight.namespaceRows } } : undefined, discord: { ...server.runtime.discord } } }));
   return [getPrimaryServerDescriptor()];
 }
 
@@ -259,6 +317,7 @@ export function setPersistedManagedServers(servers: ManagedServerDescriptor[]) {
     runtime: {
       nitradoBaseDir: String(server.runtime?.nitradoBaseDir || "").trim() || undefined,
       nitradoValidation: server.runtime?.nitradoValidation ? { ...server.runtime.nitradoValidation } : undefined,
+      activationPreflight: server.runtime?.activationPreflight ? { ...server.runtime.activationPreflight, namespaceRows: { ...server.runtime.activationPreflight.namespaceRows } } : undefined,
       discord: { ...(server.runtime?.discord || {}) },
     },
   }));
@@ -320,7 +379,7 @@ export function getServerFoundationDiagnostics() {
   const managedServers = listManagedServers();
   const additionalServers = managedServers.filter((candidate) => !candidate.primary);
   return {
-    phase: 10,
+    phase: 11,
     mode: server.mode,
     currentServerId: server.id,
     currentServerName: server.name,
@@ -340,6 +399,9 @@ export function getServerFoundationDiagnostics() {
       nitradoCredentialSource: process.env.NITRADO_TOKEN ? "environment" : "missing",
       discordDiscoveryEnabled: true,
       integrationValidationMode: "on-demand",
+      activationPreflightEnabled: true,
+      activationEndpointEnabled: false,
+      preflightMode: "on-demand",
       backgroundPollingAdded: false,
       backgroundRegistryWritesAdded: false,
     },
@@ -383,6 +445,8 @@ export function getServerFoundationDiagnostics() {
       backgroundRegistryPollingAdded: false,
       onDemandIntegrationDiscoveryOnly: true,
       nitradoTokenNeverReturnedToBrowser: true,
+      activationPreflightGate: true,
+      activationEndpointAvailable: false,
     },
     integrations: server.integrations,
   };

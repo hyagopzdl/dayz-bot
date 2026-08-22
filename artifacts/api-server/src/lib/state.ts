@@ -12,13 +12,16 @@ import {
   buildManagedServerId,
   getPrimaryServerDescriptor,
   getPrimaryServerId,
+  getManagedServerActivationConfigSignature,
   getServerRegistryPersistenceStatus,
+  hasMatchingActivationPreflight,
   normalizeManagedServerName,
   setPersistedManagedServers,
   setServerRegistryPersistenceStatus,
   setServerNamespacePersistenceStatus,
   setServerRuntimeIsolationStatus,
   type ManagedServerDescriptor,
+  type ServerActivationPreflight,
   type ServerDiscordRuntimeConfig,
   type ServerNitradoValidation,
 } from "./serverRegistry";
@@ -327,7 +330,7 @@ function assertNoServerSecrets(value: unknown, pathName = "server") {
   if (!value || typeof value !== "object") return;
   for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
     if (SERVER_SECRET_KEY_PATTERN.test(key)) {
-      throw new Error(`Phase 10 does not persist secrets in managed_servers (${pathName}.${key}). Nitrado credentials stay server-side and are never accepted by this registry form.`);
+      throw new Error(`Server onboarding does not persist secrets in managed_servers (${pathName}.${key}). Nitrado credentials stay server-side and are never accepted by this registry form.`);
     }
     if (child && typeof child === "object" && !Array.isArray(child)) {
       assertNoServerSecrets(child, `${pathName}.${key}`);
@@ -372,9 +375,10 @@ function hasMatchingNitradoValidation(descriptor: Pick<ManagedServerDescriptor, 
 }
 
 function deriveServerOnboardingStatus(descriptor: Pick<ManagedServerDescriptor, "integrations" | "runtime">) {
-  // Discord remains optional. Phase 10 only promotes a future server to
-  // Configured after its Nitrado service/base directory pair was validated
-  // on demand by the backend. Merely typing IDs no longer unlocks the state.
+  // Discord remains optional. Phase 11 promotes a future server to Ready only
+  // after an explicit activation preflight passes against the exact saved
+  // integration configuration. Nitrado validation alone remains Configured.
+  if (hasMatchingNitradoValidation(descriptor) && hasMatchingActivationPreflight(descriptor)) return "ready" as const;
   return hasMatchingNitradoValidation(descriptor) ? "configured" as const : "draft" as const;
 }
 
@@ -407,6 +411,27 @@ function mapManagedServerRow(row: any, primary: ManagedServerDescriptor): Manage
             source: "phase10-on-demand",
           }
         : undefined,
+      activationPreflight: !isPrimary
+        && runtimeConfig?.activationPreflight
+        && typeof runtimeConfig.activationPreflight === "object"
+        && runtimeConfig.activationPreflight.passed === true
+        ? {
+            version: "phase11-v1",
+            source: "phase11-on-demand",
+            checkedAt: String(runtimeConfig.activationPreflight.checkedAt || "").trim(),
+            passed: true,
+            configurationSignature: String(runtimeConfig.activationPreflight.configurationSignature || "").trim(),
+            serviceId: String(runtimeConfig.activationPreflight.serviceId || "").trim(),
+            baseDir: String(runtimeConfig.activationPreflight.baseDir || "").trim(),
+            discordGuildId: String(runtimeConfig.activationPreflight.discordGuildId || "").trim() || undefined,
+            namespaceRows: {
+              botState: Number(runtimeConfig.activationPreflight.namespaceRows?.botState || 0),
+              playerStats: Number(runtimeConfig.activationPreflight.namespaceRows?.playerStats || 0),
+              positionHistory: Number(runtimeConfig.activationPreflight.namespaceRows?.positionHistory || 0),
+            },
+            warningCount: Number(runtimeConfig.activationPreflight.warningCount || 0),
+          }
+        : undefined,
       discord: isPrimary
         ? { ...(primary.runtime.discord || {}), ...(runtimeConfig?.discord || {}) }
         : { ...(runtimeConfig?.discord || {}) },
@@ -415,7 +440,9 @@ function mapManagedServerRow(row: any, primary: ManagedServerDescriptor): Manage
 
   if (!isPrimary) {
     const storedStatus = String(row.onboarding_status || "draft").trim().toLowerCase();
-    descriptor.onboardingStatus = storedStatus === "ready" && hasMatchingNitradoValidation(descriptor)
+    descriptor.onboardingStatus = storedStatus === "ready"
+      && hasMatchingNitradoValidation(descriptor)
+      && hasMatchingActivationPreflight(descriptor)
       ? "ready"
       : deriveServerOnboardingStatus(descriptor);
   }
@@ -523,7 +550,7 @@ async function ensurePrimaryServerRegistryMetadata() {
       `;
 
       // Fail closed: registry rows for future servers may be edited, but none
-      // may become executable during Phase 10 even if a stale/manual DB value
+      // may become executable before the activation phase even if a stale/manual DB value
       // was set before this deploy. This UPDATE is a no-op in the normal case.
       await sql`
         UPDATE managed_servers
@@ -1624,7 +1651,7 @@ export async function updateManagedServerDraft(serverId: string, input: ManagedS
   }
 
   const id = buildManagedServerId(serverId);
-  if (!id || id === getPrimaryServerId()) throw new Error("O servidor primario nao pode ser alterado pelo onboarding da Fase 10.");
+  if (!id || id === getPrimaryServerId()) throw new Error("O servidor primario nao pode ser alterado pelo onboarding da Fase 11.");
   const currentServers = await reloadManagedServerRegistryFromDb();
   const current = currentServers.find((server) => server.id === id);
   if (!current) throw new Error(`Servidor ${id} nao encontrado.`);
@@ -1654,6 +1681,7 @@ export async function updateManagedServerDraft(serverId: string, input: ManagedS
       nitradoValidation: nitradoRoutingUnchanged && current.runtime.nitradoValidation
         ? { ...current.runtime.nitradoValidation }
         : undefined,
+      activationPreflight: undefined,
       discord: normalizeServerDiscordDraft(input?.discord, current.runtime.discord),
     },
   };
@@ -1704,7 +1732,7 @@ export async function markManagedServerNitradoValidated(
 
   const id = buildManagedServerId(serverId);
   if (!id || id === getPrimaryServerId()) {
-    throw new Error("O servidor primario nao usa o fluxo de validacao da Fase 10.");
+    throw new Error("O servidor primario nao usa o fluxo de validacao da Fase 11.");
   }
 
   const serviceId = optionalServerText(validation?.serviceId, 64);
@@ -1735,6 +1763,7 @@ export async function markManagedServerNitradoValidated(
       ...current.runtime,
       nitradoBaseDir: baseDir,
       nitradoValidation,
+      activationPreflight: undefined,
       discord: { ...(current.runtime.discord || {}) },
     },
   };
@@ -1758,6 +1787,84 @@ export async function markManagedServerNitradoValidated(
     operation: "validate_server_nitrado",
     direction: "outbound",
     bytes: Buffer.byteLength(JSON.stringify({ serverId: id, serviceId, baseDir, validatedAt: nitradoValidation.validatedAt }), "utf8"),
+    ok: true,
+  });
+  return servers.find((server) => server.id === id) || next;
+}
+
+export async function inspectManagedServerNamespaceRows(serverId: string) {
+  await ensurePrimaryServerRegistryMetadata();
+  if (!sql) throw new Error("DATABASE_URL nao esta disponivel para o preflight.");
+  const id = buildManagedServerId(serverId);
+  if (!id || id === getPrimaryServerId()) throw new Error("O preflight de namespace aceita somente servidores adicionais.");
+
+  const rows = await sql`
+    SELECT
+      (SELECT COUNT(*)::int FROM bot_state WHERE server_id = ${id}) AS bot_state_rows,
+      (SELECT COUNT(*)::int FROM player_stats_state WHERE server_id = ${id}) AS player_stats_rows,
+      (SELECT COUNT(*)::int FROM player_position_history WHERE server_id = ${id}) AS position_history_rows
+  `;
+  const row = (rows as any[])[0] || {};
+  return {
+    botState: Number(row.bot_state_rows || 0),
+    playerStats: Number(row.player_stats_rows || 0),
+    positionHistory: Number(row.position_history_rows || 0),
+  };
+}
+
+export async function markManagedServerActivationPreflightReady(
+  serverId: string,
+  preflight: ServerActivationPreflight,
+) {
+  await ensurePrimaryServerRegistryMetadata();
+  if (!sql || !getServerRegistryPersistenceStatus().tableReady) {
+    throw new Error("Server registry is unavailable. DATABASE_URL and managed_servers must be ready.");
+  }
+
+  const id = buildManagedServerId(serverId);
+  if (!id || id === getPrimaryServerId()) throw new Error("O servidor primario nao usa o activation preflight da Fase 11.");
+  const currentServers = await reloadManagedServerRegistryFromDb();
+  const current = currentServers.find((server) => server.id === id);
+  if (!current) throw new Error(`Servidor ${id} nao encontrado.`);
+  if (!hasMatchingNitradoValidation(current)) throw new Error("Valide o Nitrado antes de executar o activation preflight.");
+  if (!preflight?.passed || preflight.version !== "phase11-v1") throw new Error("O activation preflight nao foi aprovado.");
+
+  const expectedSignature = getManagedServerActivationConfigSignature(current);
+  if (preflight.configurationSignature !== expectedSignature) {
+    throw new Error("A configuracao do servidor mudou durante o preflight. Execute novamente.");
+  }
+
+  const next: ManagedServerDescriptor = {
+    ...current,
+    enabled: true,
+    primary: false,
+    runtimeEnabled: false,
+    onboardingStatus: "ready",
+    integrations: { ...current.integrations },
+    runtime: {
+      ...current.runtime,
+      activationPreflight: { ...preflight, namespaceRows: { ...preflight.namespaceRows } },
+      discord: { ...(current.runtime.discord || {}) },
+    },
+  };
+
+  await sql`
+    UPDATE managed_servers
+    SET enabled = TRUE,
+        primary_server = FALSE,
+        runtime_enabled = FALSE,
+        onboarding_status = 'ready',
+        runtime_config = ${JSON.stringify(next.runtime)}::jsonb,
+        updated_at = NOW()
+    WHERE id = ${id} AND id <> ${getPrimaryServerId()}
+  `;
+
+  const servers = await reloadManagedServerRegistryFromDb();
+  recordNetworkTransfer({
+    service: "neon-server-registry",
+    operation: "mark_server_preflight_ready",
+    direction: "outbound",
+    bytes: Buffer.byteLength(JSON.stringify(preflight), "utf8"),
     ok: true,
   });
   return servers.find((server) => server.id === id) || next;

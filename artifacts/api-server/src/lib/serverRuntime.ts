@@ -102,6 +102,23 @@ function getAdmStoragePaths(descriptor: ManagedServerDescriptor) {
 }
 
 
+export function getServerStoragePlan(serverId: string) {
+  const targetId = String(serverId || "").trim();
+  const descriptor = getManagedServerById(targetId) || (targetId === getPrimaryServerId() ? getPrimaryServerDescriptor() : undefined);
+  if (!descriptor) throw new Error(`Unknown managed server: ${targetId}`);
+  const storage = getAdmStoragePaths(descriptor);
+  const isPrimary = descriptor.id === getPrimaryServerId();
+  return {
+    serverId: descriptor.id,
+    isPrimary,
+    admLogDir: storage.logDir,
+    admManifestFile: storage.manifestFile,
+    stateFile: isPrimary
+      ? path.resolve(process.cwd(), "state.json")
+      : path.resolve(process.cwd(), "state_servers", descriptor.id, "state.json"),
+  };
+}
+
 export function getActiveServerId() {
   const active = executionContext.getStore()?.serverId;
   if (active) return active;
@@ -112,7 +129,7 @@ export function getActiveServerId() {
 export function runInServerRuntimeContext<T>(serverId: string, work: () => T): T {
   const context = getServerRuntimeContext(serverId);
   if (!canExecuteManagedServerRuntime(context.serverId)) {
-    throw new Error(`Server ${context.serverId} is registered for onboarding only. Runtime execution remains blocked in Phase 10.`);
+    throw new Error(`Server ${context.serverId} is registered for onboarding only. Runtime execution remains blocked in Phase 11.`);
   }
   contextRuns += 1;
   lastContextServerId = context.serverId;
@@ -134,7 +151,7 @@ export function getServerStateStoragePath(serverId = getActiveServerId()) {
 export async function runWithServerRuntimeLock<T>(serverId: string, work: () => Promise<T>): Promise<{ skipped: boolean; value?: T }> {
   const context = getServerRuntimeContext(serverId);
   if (!canExecuteManagedServerRuntime(context.serverId)) {
-    throw new Error(`Server ${context.serverId} is registered for onboarding only. Processing locks cannot activate it in Phase 10.`);
+    throw new Error(`Server ${context.serverId} is registered for onboarding only. Processing locks cannot activate it in Phase 11.`);
   }
   if (runtimeLocks.has(context.serverId)) {
     lockSkips += 1;
@@ -155,6 +172,6 @@ export async function runWithServerRuntimeLock<T>(serverId: string, work: () => 
 export function assertPrimaryRuntimeServer(serverId: string) {
   const primaryId = getPrimaryServerId();
   if (serverId !== primaryId) {
-    throw new Error(`Server ${serverId} is registered but runtime activation is still blocked during Phase 10 onboarding.`);
+    throw new Error(`Server ${serverId} is registered but runtime activation is still blocked during Phase 11 preflight.`);
   }
 }
