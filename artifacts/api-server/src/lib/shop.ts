@@ -10,7 +10,16 @@ import {
 } from "./shopXml";
 import { systems } from "./systems";
 import { getServerRuntimeContext } from "./serverRuntime";
-import { getPrimaryServerId, getServerScopedSettings } from "./serverRegistry";
+import {
+  getManagedServerById,
+  getPrimaryServerId,
+  getServerScopedSettings,
+  hasManagedServerRuntimeActivation,
+  hasMatchingActivationPreflight,
+  hasMatchingManagedServerNitradoValidation,
+  isManagedServerRuntimePaused,
+} from "./serverRegistry";
+import { getOrganizationIntegrationStatus } from "./organizationIntegrations";
 
 import {
   findShopItem,
@@ -41,8 +50,70 @@ function normalizeRelativePath(value: string) {
     .replace(/\/+$/g, "");
 }
 
+export type ShopDeliveryReadiness = {
+  ready: boolean;
+  serverId: string;
+  transport: "legacy-ftp" | "nitrado-file-server";
+  missionDir?: string;
+  reason?: string;
+};
+
+function getExplicitMissionDir(serverId: string) {
+  if (serverId === getPrimaryServerId()) {
+    return normalizeRelativePath(getServerScopedSettings(serverId).dayzMissionDir);
+  }
+  const server = getManagedServerById(serverId);
+  return normalizeRelativePath(String(server?.runtime.settings?.dayzMissionDir || ""));
+}
+
+export function getShopDeliveryReadiness(serverId = getServerRuntimeContext().serverId): ShopDeliveryReadiness {
+  const runtime = getServerRuntimeContext(serverId);
+  const missionDir = getExplicitMissionDir(runtime.serverId);
+  if (runtime.isPrimary) {
+    return missionDir
+      ? { ready: true, serverId: runtime.serverId, transport: "legacy-ftp", missionDir }
+      : { ready: false, serverId: runtime.serverId, transport: "legacy-ftp", reason: "Shop delivery is blocked because the primary mission path is missing." };
+  }
+
+  const server = getManagedServerById(runtime.serverId);
+  if (!server) return { ready: false, serverId: runtime.serverId, transport: "nitrado-file-server", reason: "Shop delivery is blocked because this managed server is unavailable." };
+  if (!server.runtimeEnabled || !hasManagedServerRuntimeActivation(server)) {
+    return { ready: false, serverId: server.id, transport: "nitrado-file-server", reason: "Shop delivery is blocked until this server runtime is activated." };
+  }
+  if (isManagedServerRuntimePaused(server)) {
+    return { ready: false, serverId: server.id, transport: "nitrado-file-server", reason: "Shop delivery is blocked while this server runtime is paused." };
+  }
+  if (!hasMatchingManagedServerNitradoValidation(server) || !hasMatchingActivationPreflight(server)) {
+    return { ready: false, serverId: server.id, transport: "nitrado-file-server", reason: "Shop delivery is blocked until Nitrado routing passes validation and activation preflight." };
+  }
+  if (!String(server.integrations.nitradoServiceId || "").trim() || !String(server.runtime.nitradoBaseDir || "").trim()) {
+    return { ready: false, serverId: server.id, transport: "nitrado-file-server", reason: "Shop delivery is blocked because this server has no explicit Nitrado Service ID/base dir." };
+  }
+  if (!missionDir) {
+    return { ready: false, serverId: server.id, transport: "nitrado-file-server", reason: "Shop delivery is blocked until a mission path is explicitly saved for this server." };
+  }
+  const restartTimes = String(server.runtime.settings?.shopRestartTimes || "").trim();
+  const restartTimezone = String(server.runtime.settings?.shopRestartTimezone || "").trim();
+  const deliveryConfiguredAt = String(server.runtime.settings?.shopDeliveryConfiguredAt || "").trim();
+  if (!deliveryConfiguredAt) {
+    return { ready: false, serverId: server.id, transport: "nitrado-file-server", reason: "Shop delivery is blocked until mission path/restart settings are explicitly saved for this server." };
+  }
+  if (!restartTimes || !restartTimezone) {
+    return { ready: false, serverId: server.id, transport: "nitrado-file-server", reason: "Shop delivery is blocked until restart times and timezone are explicitly saved for this server." };
+  }
+  if (!getOrganizationIntegrationStatus(server.organizationId).configured) {
+    return { ready: false, serverId: server.id, transport: "nitrado-file-server", reason: "Shop delivery is blocked because this organization has no usable Nitrado credential." };
+  }
+
+  return { ready: true, serverId: server.id, transport: "nitrado-file-server", missionDir };
+}
+
 export function getShopFilePaths(serverId = getServerRuntimeContext().serverId) {
-  const missionDir = normalizeRelativePath(getServerScopedSettings(serverId).dayzMissionDir);
+  const readiness = getShopDeliveryReadiness(serverId);
+  if (!readiness.ready || !readiness.missionDir) {
+    throw new Error(readiness.reason || "Shop delivery routing is not ready for this server.");
+  }
+  const missionDir = readiness.missionDir;
   return {
     missionDir,
     eventsPath: `${missionDir}/db/events.xml`,
@@ -71,7 +142,11 @@ function validateOrdersReadyForXml(orders: ShopOrder[]) {
     throw new Error("SHOP DEPLOY ABORTED: no pending orders to inject.");
   }
 
+  const activeServerId = getServerRuntimeContext().serverId;
   for (const order of orders) {
+    if (order.serverId && order.serverId !== activeServerId) {
+      throw new Error(`SHOP DEPLOY ABORTED: order ${order.id || "unknown"} belongs to ${order.serverId}, not ${activeServerId}.`);
+    }
     const itemClass = String(order.itemClass || "").trim();
 
     if (!itemClass) {
@@ -283,7 +358,7 @@ export function getShopResetMonitorPersistenceKey(state: Pick<AppState, "shopRes
 }
 
 export type ShopRuntimeStatus = {
-  state: "READY" | "FROZEN" | "WAITING_RESET" | "WAITING_CLEAR";
+  state: "READY" | "BLOCKED" | "FROZEN" | "WAITING_RESET" | "WAITING_CLEAR";
   canAcceptPurchase: boolean;
   reason: string;
   nextRestartLabel?: string;
@@ -398,6 +473,15 @@ export function parseShopCoordinates(input: string, fallbackY = 0) {
 export function getShopRuntimeStatus(state: AppState): ShopRuntimeStatus {
   ensureShopState(state);
 
+  const delivery = getShopDeliveryReadiness();
+  if (!delivery.ready) {
+    return {
+      state: "BLOCKED",
+      canAcceptPurchase: false,
+      reason: delivery.reason || "Shop delivery routing is not ready for this server.",
+    };
+  }
+
   const included = getIncludedShopOrders(state);
   if (included.length) {
     const monitor = state.shopResetMonitor;
@@ -477,6 +561,7 @@ export function createShopOrder(options: {
 
   const order: ShopOrder = {
     id: `shop_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    serverId: getServerRuntimeContext().serverId,
     discordUserId: options.discordUserId,
     itemClass: item.className,
     itemName: item.name,
@@ -537,6 +622,11 @@ async function backupShopXmlFiles(_eventsXml: string, _eventSpawnsXml: string) {
 
 export async function deployPendingShopOrders(state: AppState) {
   ensureShopState(state);
+
+  const delivery = getShopDeliveryReadiness();
+  if (!delivery.ready) {
+    throw new Error(delivery.reason || "SHOP DEPLOY BLOCKED: server-scoped delivery routing is not ready.");
+  }
 
   if (!systems.shop) {
     console.log("⏸️ shop deploy ignorado: SYSTEM_SHOP=false");

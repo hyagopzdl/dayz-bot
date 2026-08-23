@@ -41,6 +41,12 @@ function assertOnboardingServer(serverId: string) {
   return server;
 }
 
+function assertManagedServer(serverId: string) {
+  const server = getManagedServerById(serverId) || (serverId === getPrimaryServerId() ? getPrimaryServerDescriptor() : undefined);
+  if (!server) throw new Error(`Servidor ${serverId} nao encontrado.`);
+  return server;
+}
+
 function requireNitradoToken(serverId: string) {
   const server = getManagedServerById(serverId) || (serverId === getPrimaryServerId() ? getPrimaryServerDescriptor() : undefined);
   if (!server) throw new Error(`Servidor ${serverId} nao encontrado.`);
@@ -318,7 +324,7 @@ export async function validateNitradoServiceSetup(serverId: string, serviceIdInp
 }
 
 export async function listDiscordGuildOptions(serverId: string, requesterDiscordId?: string) {
-  const server = assertOnboardingServer(serverId);
+  const server = assertManagedServer(serverId);
   const client = getDiscordClient();
   if (!client.isReady()) {
     return { ready: false, guilds: [] as DiscordGuildOption[], message: "Discord bot ainda nao esta conectado." };
@@ -353,7 +359,7 @@ export async function listDiscordGuildOptions(serverId: string, requesterDiscord
 }
 
 export async function listDiscordGuildChannels(serverId: string, guildIdInput: unknown, requesterDiscordId?: string) {
-  const server = assertOnboardingServer(serverId);
+  const server = assertManagedServer(serverId);
   const guildId = String(guildIdInput || "").trim();
   if (!guildId) throw new Error("Selecione um servidor Discord.");
   const client = getDiscordClient();

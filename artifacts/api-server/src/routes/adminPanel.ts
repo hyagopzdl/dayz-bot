@@ -66,6 +66,7 @@ import {
   type PlayerLink,
   type Wallet,
   updateManagedServerDraft,
+  updateManagedServerDiscordChannels,
   updateManagedServerScopedSettings,
   markManagedServerNitradoValidated,
   setManagedServerRuntimeEnabled,
@@ -9036,6 +9037,41 @@ router.get("/api/servers/:serverId/discord/guilds/:guildId/channels", async (req
   if (!requireServerAdmin(req, res, req.params.serverId, "manage")) return;
   try {
     res.json(await listDiscordGuildChannels(String(req.params.serverId || ""), req.params.guildId, req.portalSession?.discordId));
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(/nao encontrado/i.test(message) ? 404 : 400).send(message);
+  }
+});
+
+router.put("/api/servers/:serverId/discord/channels", async (req, res) => {
+  if (!requireServerAdmin(req, res, req.params.serverId, "manage")) return;
+  try {
+    const serverId = String(req.params.serverId || "");
+    const server = listManagedServers().find((candidate) => candidate.id === serverId);
+    if (!server) throw new Error("Servidor nao encontrado.");
+    const guildId = String(server.integrations.discordGuildId || "").trim();
+    if (!guildId) throw new Error("Conecte o Discord deste servidor antes de configurar canais.");
+    const discovered = await listDiscordGuildChannels(serverId, guildId, req.portalSession?.discordId);
+    const channelTypes = new Map(discovered.channels.map((channel) => [channel.id, channel.type] as const));
+    const source = req.body && typeof req.body === "object" ? req.body as Record<string, unknown> : {};
+    const textFields = ["globalChannelId", "killfeedChannelId", "onlineListChannelId", "memberFeedChannelId"] as const;
+    const categoryFields = ["onlineCategoryId"] as const;
+    const discord: Record<string, unknown> = {};
+    for (const key of textFields) {
+      if (!(key in source)) continue;
+      const value = String(source[key] || "").trim();
+      if (value && channelTypes.get(value) !== "text") throw new Error(`Canal invalido para ${key}. Selecione um canal de texto desta guild.`);
+      discord[key] = value || undefined;
+    }
+    for (const key of categoryFields) {
+      if (!(key in source)) continue;
+      const value = String(source[key] || "").trim();
+      if (value && channelTypes.get(value) !== "category") throw new Error(`Categoria invalida para ${key}. Selecione uma categoria desta guild.`);
+      discord[key] = value || undefined;
+    }
+    if ("memberFeedEnabled" in source) discord.memberFeedEnabled = source.memberFeedEnabled !== false;
+    const updated = await updateManagedServerDiscordChannels(serverId, discord);
+    res.json({ server: updated, guild: discovered.guild, channels: discovered.channels });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     res.status(/nao encontrado/i.test(message) ? 404 : 400).send(message);

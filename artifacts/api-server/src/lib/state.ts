@@ -573,7 +573,12 @@ function mapManagedServerRow(row: any, primary: ManagedServerDescriptor): Manage
         : undefined,
       settings: normalizeServerScopedSettingsDraft(
         runtimeConfig?.settings,
-        isPrimary ? primary.runtime.settings || {} : {},
+        {
+          ...(isPrimary ? primary.runtime.settings || {} : {}),
+          ...(String(runtimeConfig?.settings?.shopDeliveryConfiguredAt || "").trim()
+            ? { shopDeliveryConfiguredAt: String(runtimeConfig.settings.shopDeliveryConfiguredAt).trim() }
+            : {}),
+        },
       ),
       discord: isPrimary
         ? { ...(primary.runtime.discord || {}), ...(runtimeConfig?.discord || {}) }
@@ -1209,6 +1214,7 @@ export type ShopSavedLocation = {
 
 export type ShopPendingCheckout = {
   id: string;
+  serverId?: string;
   discordUserId: string;
   itemId: string;
   itemClass: string;
@@ -1226,6 +1232,7 @@ export type ShopPendingCheckout = {
 
 export type ShopOrder = {
   id: string;
+  serverId?: string;
   discordUserId: string;
   itemClass: string;
   itemName?: string;
@@ -1326,6 +1333,7 @@ export type EconomyTransactionType =
 
 export type EconomyTransaction = {
   id: string;
+  serverId?: string;
   discordId: string;
   gamertag: string;
   type: EconomyTransactionType;
@@ -1938,7 +1946,9 @@ export async function createManagedServerDraft(input: ManagedServerDraftInput) {
   if (!id) throw new Error("Informe um nome ou Server ID valido.");
   if (id === getPrimaryServerId()) throw new Error("O Server ID do PZ Deathmatch e reservado e nao pode ser reutilizado.");
 
-  const discord = normalizeServerDiscordDraft(input?.discord);
+  if (input?.discordGuildId !== undefined || input?.discord !== undefined) {
+    throw new Error("Discord nao aceita Guild ID/Channel IDs manuais. Crie o servidor primeiro e use Connect Discord.");
+  }
   const requestedOrganizationId = buildOrganizationId(input?.organizationId || getDefaultOrganizationId()) || getDefaultOrganizationId();
   if (!getManagedOrganizationById(requestedOrganizationId)) throw new Error("Organization ID invalido ou nao encontrado.");
 
@@ -1953,16 +1963,12 @@ export async function createManagedServerDraft(input: ManagedServerDraftInput) {
     mode: "single-server-compat",
     integrations: {
       nitradoServiceId: optionalServerText(input?.nitradoServiceId, 64),
-      discordGuildId: optionalServerText(input?.discordGuildId, 64),
+      discordGuildId: undefined,
     },
     runtime: {
       nitradoBaseDir: optionalServerText(input?.nitradoBaseDir, 512),
-      settings: normalizeServerScopedSettingsDraft(input?.settings, {
-        shopRestartTimes: "00:00,04:00,08:00,12:00,16:00,20:00",
-        shopRestartTimezone: "America/Sao_Paulo",
-        dayzMissionDir: "dayzps_missions/dayzOffline.chernarusplus",
-      }),
-      discord,
+      settings: normalizeServerScopedSettingsDraft(input?.settings, {}),
+      discord: {},
     },
   };
   descriptor.onboardingStatus = deriveServerOnboardingStatus(descriptor);
@@ -2013,6 +2019,9 @@ export async function updateManagedServerDraft(serverId: string, input: ManagedS
   const current = currentServers.find((server) => server.id === id);
   if (!current) throw new Error(`Servidor ${id} nao encontrado.`);
   if (current.runtimeEnabled) throw new Error("Desative o runtime antes de alterar a configuracao deste servidor.");
+  if (input?.discordGuildId !== undefined || input?.discord !== undefined) {
+    throw new Error("Discord nao aceita Guild ID/Channel IDs manuais. Use Connect Discord e a configuracao guiada de canais.");
+  }
 
   const nextNitradoServiceId = input?.nitradoServiceId === undefined
     ? current.integrations.nitradoServiceId
@@ -2032,7 +2041,7 @@ export async function updateManagedServerDraft(serverId: string, input: ManagedS
     onboardingStatus: "draft",
     integrations: {
       nitradoServiceId: nextNitradoServiceId,
-      discordGuildId: input?.discordGuildId === undefined ? current.integrations.discordGuildId : optionalServerText(input.discordGuildId, 64),
+      discordGuildId: current.integrations.discordGuildId,
     },
     runtime: {
       nitradoBaseDir: nextNitradoBaseDir,
@@ -2043,7 +2052,7 @@ export async function updateManagedServerDraft(serverId: string, input: ManagedS
       activation: current.runtime.activation ? { ...current.runtime.activation } : undefined,
       operations: current.runtime.operations ? { ...current.runtime.operations, paused: false } : undefined,
       settings: normalizeServerScopedSettingsDraft(input?.settings, current.runtime.settings || {}),
-      discord: normalizeServerDiscordDraft(input?.discord, current.runtime.discord),
+      discord: { ...(current.runtime.discord || {}) },
     },
   };
   next.onboardingStatus = deriveServerOnboardingStatus(next);
@@ -2127,6 +2136,31 @@ export async function bindManagedServerDiscordGuild(serverIdInput: unknown, guil
   return servers.find((server) => server.id === id);
 }
 
+export async function updateManagedServerDiscordChannels(serverIdInput: unknown, discordInput: unknown) {
+  await ensurePrimaryServerRegistryMetadata();
+  if (!sql || !getServerRegistryPersistenceStatus().tableReady) throw new Error("Server registry is unavailable.");
+  const id = buildManagedServerId(serverIdInput);
+  if (!id) throw new Error("Server ID invalido.");
+  const currentServers = await reloadManagedServerRegistryFromDb();
+  const current = currentServers.find((server) => server.id === id);
+  if (!current) throw new Error(`Servidor ${id} nao encontrado.`);
+  if (!current.integrations.discordGuildId) throw new Error("Conecte o Discord deste servidor antes de configurar canais.");
+
+  const discord = normalizeServerDiscordDraft(discordInput, current.runtime.discord || {});
+  const runtime = { ...current.runtime, discord };
+  await sql`
+    UPDATE managed_servers
+    SET runtime_config = ${JSON.stringify(runtime)}::jsonb, updated_at = NOW()
+    WHERE id = ${id}
+  `;
+  const servers = await reloadManagedServerRegistryFromDb();
+  recordNetworkTransfer({
+    service: "neon-server-registry", operation: "update_server_discord_channels", direction: "outbound",
+    bytes: Buffer.byteLength(JSON.stringify({ serverId: id, discord }), "utf8"), ok: true,
+  });
+  return servers.find((server) => server.id === id);
+}
+
 export async function updateManagedServerScopedSettings(serverIdInput: unknown, settingsInput: unknown) {
   await ensurePrimaryServerRegistryMetadata();
   if (!sql || !getServerRegistryPersistenceStatus().tableReady) throw new Error("Server registry is unavailable.");
@@ -2147,6 +2181,7 @@ export async function updateManagedServerScopedSettings(serverIdInput: unknown, 
   const missionDir = String(settings.dayzMissionDir || "").replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
   if (!missionDir || missionDir.includes("..")) throw new Error("Mission dir invalido.");
   settings.dayzMissionDir = missionDir;
+  settings.shopDeliveryConfiguredAt = new Date().toISOString();
   const runtime = { ...current.runtime, settings };
   await sql`
     UPDATE managed_servers

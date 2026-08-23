@@ -125,6 +125,7 @@ export function createPlayerShopCheckout(options: {
   prunePlayerShopCheckouts(state);
   const checkout: ShopPendingCheckout = {
     id: `checkout_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    serverId: getActiveServerId(),
     discordUserId: options.session.discordId,
     itemId: item.id,
     itemClass: item.className,
@@ -147,6 +148,7 @@ export function createPlayerShopCheckout(options: {
 export function getPlayerShopCheckout(state: AppState, session: PortalSession, checkoutId: string) {
   const checkout = prunePlayerShopCheckouts(state).find((candidate) => candidate.id === checkoutId && candidate.discordUserId === session.discordId);
   if (!checkout) throw new Error("This checkout expired. Select the item again.");
+  if (checkout.serverId && checkout.serverId !== getActiveServerId()) throw new Error("This checkout belongs to another DayZ server.");
   const link = getPlayerLinkByDiscordId(state, session.discordId);
   if (!link) throw new Error("Player account is not linked.");
   const wallet = getOrCreateWalletForLink(state, link).wallet;
@@ -172,6 +174,7 @@ export function confirmPlayerShopCheckout(state: AppState, session: PortalSessio
   try {
     const checkout = prunePlayerShopCheckouts(state).find((candidate) => candidate.id === checkoutId && candidate.discordUserId === session.discordId);
     if (!checkout) throw new Error("This checkout expired. Select the item again.");
+    if (checkout.serverId && checkout.serverId !== getActiveServerId()) throw new Error("This checkout belongs to another DayZ server.");
     const link = getPlayerLinkByDiscordId(state, session.discordId);
     if (!link) throw new Error("Player account is not linked.");
     assertShopCanAcceptPurchase(state);
@@ -213,6 +216,7 @@ function statusCopy(status: ShopOrder["status"]) {
 export function presentOrder(order: ShopOrder) {
   return {
     id: order.id,
+    serverId: order.serverId || getActiveServerId(),
     itemName: order.itemName || order.itemClass,
     price: Number(order.price || 0),
     location: { name: order.locationName || null, x: order.x, z: order.z },

@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import type { AppState, EconomyTransaction, EconomyTransactionType, PlayerLink, Wallet } from "./state";
+import { getActiveServerId } from "./serverRuntime";
 
 const TRANSACTION_HISTORY_LIMIT = Number(process.env.ECONOMY_TRANSACTION_HISTORY_LIMIT || 1000);
 
@@ -64,6 +65,7 @@ export function recordEconomyTransaction(params: {
 
   const transaction: EconomyTransaction = {
     id: crypto.randomUUID(),
+    serverId: getActiveServerId(),
     discordId: params.discordId,
     gamertag: params.gamertag,
     type: params.type,

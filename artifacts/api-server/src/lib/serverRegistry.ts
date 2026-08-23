@@ -64,6 +64,7 @@ export type ServerScopedSettings = {
   shopRestartTimes?: string;
   shopRestartTimezone?: string;
   dayzMissionDir?: string;
+  shopDeliveryConfiguredAt?: string;
 };
 
 export type ServerRuntimeConfig = {
@@ -267,6 +268,7 @@ export function getServerScopedSettings(serverId = getPrimaryServerId()): Requir
     shopRestartTimes: String(settings.shopRestartTimes || "00:00,04:00,08:00,12:00,16:00,20:00").trim(),
     shopRestartTimezone: String(settings.shopRestartTimezone || "America/Sao_Paulo").trim(),
     dayzMissionDir: String(settings.dayzMissionDir || "dayzps_missions/dayzOffline.chernarusplus").trim(),
+    shopDeliveryConfiguredAt: String(settings.shopDeliveryConfiguredAt || (server?.primary ? "legacy-primary" : "")).trim(),
   };
 }
 

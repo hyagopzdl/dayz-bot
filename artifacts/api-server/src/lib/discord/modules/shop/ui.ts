@@ -356,6 +356,7 @@ export function createPendingShopCheckout(options: {
   const now = new Date();
   const checkout = {
     id: `checkout_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    serverId: getActiveServerId(),
     discordUserId: options.discordUserId,
     itemId: item.id,
     itemClass: item.className,
@@ -384,7 +385,9 @@ export function findPendingShopCheckout(state: any, checkoutId: string, discordU
   return (
     checkouts.find(
       (checkout: any) =>
-        checkout.id === checkoutId && checkout.discordUserId === discordUserId,
+        checkout.id === checkoutId
+        && checkout.discordUserId === discordUserId
+        && (!checkout.serverId || checkout.serverId === getActiveServerId()),
     ) || null
   );
 }
