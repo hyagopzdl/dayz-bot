@@ -2826,6 +2826,21 @@ function renderAdminPanelHtml(token: string) {
       gap: 10px;
       align-items: center;
     }
+    .sidebar-footer-user { min-width: 0; flex: 1 1 auto; }
+    .logout-form { margin: 0 0 0 auto; flex: 0 0 auto; }
+    .logout-button {
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--text-2);
+      border-radius: 8px;
+      min-height: 32px;
+      padding: 6px 10px;
+      font: inherit;
+      font-weight: 650;
+      cursor: pointer;
+      transition: background .18s ease, color .18s ease, border-color .18s ease;
+    }
+    .logout-button:hover { background: rgba(255,255,255,.055); color: var(--text); border-color: var(--border-strong); }
     .avatar {
       width: 36px;
       height: 36px;
@@ -4358,7 +4373,7 @@ function renderAdminPanelHtml(token: string) {
         <button data-view="player-map"><svg class="nav-icon"><use href="#icon-users"></use></svg><span>Player Map</span></button>
         <button data-view="settings"><svg class="nav-icon"><use href="#icon-database"></use></svg><span>Settings</span></button>
       </nav>
-      <div class="sidebar-footer"><div class="avatar">A</div><div><b>Admin</b><div class="member-meta">Painel seguro</div></div></div>
+      <div class="sidebar-footer"><div class="avatar">A</div><div class="sidebar-footer-user"><b>Admin</b><div class="member-meta">Painel seguro</div></div><form class="logout-form" method="post" action="/admin-panel/auth/logout"><button class="logout-button" type="submit">Sair</button></form></div>
     </aside>
     <div id="mobileNavBackdrop" class="mobile-nav-backdrop" aria-hidden="true"></div>
     <section class="main">

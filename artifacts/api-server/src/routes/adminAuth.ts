@@ -6,6 +6,12 @@ import { createManagedOrganization, createManagedServerDraft, markManagedServerN
 import { validateNitradoServiceSetup } from "../lib/serverIntegrations";
 
 const router = Router();
+const LEGACY_PANEL_COOKIE = "admin_panel_token";
+
+function clearLegacyPanelCookie(res: any) {
+  res.clearCookie(LEGACY_PANEL_COOKIE, { path: "/admin-panel", sameSite: "lax" });
+  res.clearCookie(LEGACY_PANEL_COOKIE, { path: "/", sameSite: "lax" });
+}
 
 function esc(value: unknown) { const entities: Record<string, string> = { "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "\'": "&#39;" }; return String(value ?? "").replace(/[&<>\"']/g, (char) => entities[char] || char); }
 
@@ -29,11 +35,12 @@ router.post("/auth/login", async (req, res) => {
   try {
     const user = await authenticateAdminUser(req.body?.username, req.body?.password);
     if (!user) { res.status(401).type("html").send(loginPage("Usuário ou senha inválidos.")); return; }
+    clearLegacyPanelCookie(res);
     setAdminSessionCookie(req, res, createAdminSession({ adminUserId: user.id, username: user.username, serverId: user.serverId }));
     res.redirect(user.serverId ? "/admin-panel" : "/admin-panel/setup");
   } catch (error) { res.status(503).type("html").send(loginPage(error instanceof Error ? error.message : String(error))); }
 });
-router.post("/auth/logout", (req, res) => { clearAdminSessionCookie(req, res); res.redirect("/admin-panel/login"); });
+router.post("/auth/logout", (req, res) => { clearAdminSessionCookie(req, res); clearLegacyPanelCookie(res); res.redirect("/admin-panel/login"); });
 router.get("/setup", async (req, res) => {
   if (!req.adminSession) { res.redirect("/admin-panel/login"); return; }
   const fresh = await getAdminUserById(req.adminSession.adminUserId);
