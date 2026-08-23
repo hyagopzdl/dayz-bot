@@ -20,6 +20,8 @@ import { assertAdmin } from "./permissions";
 
 const SECONDARY_ADMIN_SHOP_COMMANDS = new Set(["shop-queue", "shop-deploy", "shop-clear", "shop-catalog"]);
 
+const secondaryInteractionClients = new WeakSet<object>();
+
 async function replyUnavailable(interaction: any) {
   const payload = { content: "This DayZ server runtime is currently unavailable. Try again after the administrator resumes it.", ephemeral: true };
   if (interaction.isAutocomplete?.()) {
@@ -151,6 +153,11 @@ async function handleSecondaryInteraction(interaction: any, serverId: string) {
 }
 
 export function registerSecondaryManagedServerInteractions(client: Client) {
+  // startDiscordBot can be called through compatibility paths more than once.
+  // Never attach duplicate listeners to the same Discord client.
+  if (secondaryInteractionClients.has(client as object)) return;
+  secondaryInteractionClients.add(client as object);
+
   client.on("interactionCreate", async (interaction: any) => {
     const guildId = String(interaction.guildId || "").trim();
     if (!guildId) return;
@@ -167,6 +174,12 @@ export function registerSecondaryManagedServerInteractions(client: Client) {
       }
 
       if (!serverId) {
+        if (interaction.isChatInputCommand?.()) {
+          console.warn("⚠️ secondary Discord command received from unbound guild", {
+            guildId,
+            command: interaction.commandName,
+          });
+        }
         if (interaction.isAutocomplete?.()) {
           await interaction.respond([]).catch(() => undefined);
         } else if (interaction.isChatInputCommand?.()) {
@@ -179,6 +192,14 @@ export function registerSecondaryManagedServerInteractions(client: Client) {
       }
 
       if (serverId === getPrimaryServerId()) return;
+
+      if (interaction.isChatInputCommand?.()) {
+        console.log("➡️ secondary Discord command routed", {
+          guildId,
+          serverId,
+          command: interaction.commandName,
+        });
+      }
 
       // /link and /unlink are onboarding-safe identity operations. Route them
       // immediately in the guild-resolved server context so they acknowledge

@@ -9,7 +9,7 @@ import { startShopStatusMonitor } from "./discord/shopStatusMonitor";
 import { startEconomyRewardsLoop } from "./discord/modules/economy/rewardsLoop";
 import { registerMemberFeed } from "./discord/modules/memberFeed";
 import { applyServiceSettingsToCommandSettings } from "./serviceSettings";
-import { canExecuteManagedServerRuntime, getPrimaryServerId, listExecutableManagedServers } from "./serverRegistry";
+import { canExecuteManagedServerRuntime, getPrimaryServerId, listManagedServers } from "./serverRegistry";
 import { getServerRuntimeContext } from "./serverRuntime";
 
 const client = createDiscordClient();
@@ -40,7 +40,7 @@ export async function syncDiscordCommandsForManagedServer(serverId: string) {
 }
 
 async function syncSecondaryManagedServerCommands() {
-  const servers = listExecutableManagedServers().filter((server) => !server.primary && server.integrations.discordGuildId);
+  const servers = listManagedServers().filter((server) => !server.primary && server.enabled && server.integrations.discordGuildId);
   for (const server of servers) {
     try {
       await syncDiscordCommandsForManagedServer(server.id);
@@ -59,6 +59,16 @@ export async function startDiscordBot(serverId = getPrimaryServerId()) {
 
   client.once("ready", async () => {
     console.log(`🤖 Discord conectado para ${runtime.server.name} (${serverId})`);
+
+    // Register the secondary interaction router before any primary feed/channel
+    // initialization. A failure while resolving the primary runtime must never
+    // leave another connected guild with slash commands but no handler.
+    registerSecondaryManagedServerInteractions(client);
+
+    // Slash commands are an integration/onboarding concern, not a gameplay
+    // runtime-readiness concern. Any enabled managed server with a bound guild
+    // must receive its command surface after every bot restart.
+    await syncSecondaryManagedServerCommands();
 
     const channels = await resolveDiscordChannels(client, serverId);
     const stateAccess = createDiscordStateAccess(serverId);
@@ -82,8 +92,6 @@ export async function startDiscordBot(serverId = getPrimaryServerId()) {
     });
 
     registerMemberFeed(client, serverId);
-
-    registerSecondaryManagedServerInteractions(client);
 
     registerInteractionHandlers({
       client,
@@ -112,7 +120,6 @@ export async function startDiscordBot(serverId = getPrimaryServerId()) {
     });
 
     await syncDiscordCommandsForManagedServer(serverId);
-    await syncSecondaryManagedServerCommands();
     await feeds.updateLeaderboard();
 
     startShopStatusMonitor(stateAccess);

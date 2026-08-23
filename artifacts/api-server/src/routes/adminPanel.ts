@@ -8698,7 +8698,7 @@ router.patch("/api/service-settings", async (req, res) => {
     const effectiveCommandSettings = applyServiceSettingsToCommandSettings(state.discordCommandSettings, next);
     const client = getDiscordClient();
     if (client.isReady()) {
-      await registerDiscordCommands(client, effectiveCommandSettings);
+      await registerDiscordCommands(client, effectiveCommandSettings, getActiveServerId(), getActiveServerId() === getPrimaryServerId() ? "full" : "core");
     }
 
     res.json({
@@ -8763,7 +8763,7 @@ router.patch("/api/discord-commands/:commandName", async (req, res) => {
     }
 
     const effectiveCommandSettings = applyServiceSettingsToCommandSettings(state.discordCommandSettings, state.serviceSettings);
-    await registerDiscordCommands(client, effectiveCommandSettings);
+    await registerDiscordCommands(client, effectiveCommandSettings, getActiveServerId(), getActiveServerId() === getPrimaryServerId() ? "full" : "core");
     res.json({ commands: listDiscordCommandDescriptors(effectiveCommandSettings) });
   } catch (err) {
     res.status(500).json({ error: String(err) });
