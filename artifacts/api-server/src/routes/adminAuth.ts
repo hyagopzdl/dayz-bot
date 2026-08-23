@@ -78,11 +78,32 @@ router.post("/setup/server", async (req, res) => {
     const requestedId = buildManagedServerId(name);
     if (!name || !serviceId || !token || !requestedId) throw new Error("Preencha nome, Service ID e token da Nitrado.");
     const organizationId = `org-${buildManagedServerId(req.adminSession.username)}`;
-    try { await createManagedOrganization({ id: organizationId, name: `${name} Workspace` }); } catch (error) { if (!/ja existe/i.test(String((error as Error)?.message || error))) throw error; }
+    const organization = await createManagedOrganization({ id: organizationId, name: `${name} Workspace` });
+    if (!organization || organization.id !== organizationId) throw new Error("Não foi possível confirmar a organization do servidor.");
     await saveOrganizationNitradoCredential(organizationId, token, { source: "admin-onboarding" });
+
     let server = getManagedServerById(requestedId);
-    if (!server) server = await createManagedServerDraft({ id: requestedId, name, organizationId, nitradoServiceId: serviceId, nitradoBaseDir: String(req.body?.baseDir || "").trim() || undefined });
+    if (!server) {
+      try {
+        server = await createManagedServerDraft({
+          id: requestedId,
+          name,
+          organizationId,
+          nitradoServiceId: serviceId,
+          nitradoBaseDir: String(req.body?.baseDir || "").trim() || undefined,
+        });
+      } catch (error) {
+        // createManagedServerDraft reloads the persisted registry before checking
+        // conflicts. This makes retries safe after a partially completed setup.
+        const persisted = getManagedServerById(requestedId);
+        if (!persisted) throw error;
+        server = persisted;
+      }
+    }
     if (!server || server.organizationId !== organizationId) throw new Error("Este Server ID já pertence a outro workspace.");
+    if (server.integrations.nitradoServiceId && server.integrations.nitradoServiceId !== serviceId) {
+      throw new Error("Este servidor já está vinculado a outro Nitrado Service ID.");
+    }
     const validation = await validateNitradoServiceSetup(server.id, serviceId, req.body?.baseDir);
     await markManagedServerNitradoValidated(server.id, validation);
     const updated = await assignAdminUserServer(req.adminSession.adminUserId, server.id);

@@ -2501,13 +2501,14 @@ export async function createManagedOrganization(input: { id?: unknown; name?: un
   const name = normalizeOrganizationName(input?.name);
   const id = buildOrganizationId(input?.id || name);
   if (!id) throw new Error("Informe um Organization ID valido.");
-  const inserted = await sql`
+  await sql`
     INSERT INTO organizations (id, name, active, created_at, updated_at)
     VALUES (${id}, ${name}, TRUE, NOW(), NOW())
-    ON CONFLICT (id) DO NOTHING
-    RETURNING id
+    ON CONFLICT (id) DO UPDATE
+    SET name = EXCLUDED.name,
+        active = TRUE,
+        updated_at = NOW()
   `;
-  if (!(inserted as any[]).length) throw new Error(`Organization ID ${id} ja existe.`);
   await reloadOrganizationRegistryFromDb();
   recordNetworkTransfer({ service: "neon-organization-registry", operation: "create_organization", direction: "outbound", bytes: Buffer.byteLength(JSON.stringify({ id, name }), "utf8"), ok: true });
   return getManagedOrganizationById(id);
