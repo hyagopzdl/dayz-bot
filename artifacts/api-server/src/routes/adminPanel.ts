@@ -70,6 +70,9 @@ import {
   setManagedServerRuntimeEnabled,
   setManagedServerRuntimePaused,
   flushServerRuntimePendingStateAsync,
+  createManagedOrganization,
+  upsertOrganizationMembership,
+  removeOrganizationMembership,
 } from "../lib/state";
 import { getDiscordClient } from "../lib/discordBot";
 import { listDiscordCommandDescriptors, normalizeDiscordCommandSettings } from "../lib/discord/commandSettings";
@@ -80,7 +83,7 @@ import { downloadTextFile, uploadTextFile } from "../lib/nitradoFtp";
 import { getAdmDownloadMetrics, setAdmDownloadMode } from "../lib/nitradoDownloader";
 import { getRuntimePerformanceMetrics } from "../lib/runtimeMetrics";
 import { getNetworkMetrics } from "../lib/networkMetrics";
-import { getPrimaryServerDescriptor, getPrimaryServerId, getServerFoundationDiagnostics, listManagedServers } from "../lib/serverRegistry";
+import { getManagedServerById, getPrimaryServerDescriptor, getPrimaryServerId, getServerFoundationDiagnostics, listManagedServers } from "../lib/serverRegistry";
 import { getActiveServerId, isServerRuntimeLocked, runInServerMaintenanceContext, runInServerRuntimeContext, runWithServerMaintenanceLock } from "../lib/serverRuntime";
 import {
   discoverNitradoServices,
@@ -96,6 +99,17 @@ import {
   requestManagedServerRuntimeCycle,
   resetManagedServerRuntimeCircuit,
 } from "../lib/serverRuntimeCoordinator";
+import {
+  buildOrganizationId,
+  canOrganizationRole,
+  getDefaultOrganizationId,
+  getManagedOrganizationById,
+  getOrganizationFoundationDiagnostics,
+  getUserOrganizationMembership,
+  listManagedOrganizations,
+  listOrganizationMemberships,
+  listUserOrganizationMemberships,
+} from "../lib/organizationRegistry";
 
 const router = Router();
 startMapEventScheduler();
@@ -1314,17 +1328,68 @@ function getTokenFromRequest(req: Request) {
   );
 }
 
-function requireAdmin(req: Request, res: Response) {
-  const configuredToken = getConfiguredToken();
-  if (!configuredToken) return true;
+type OrganizationCapability = "view" | "moderate" | "manage" | "own";
 
-  const receivedToken = getTokenFromRequest(req);
-  if (receivedToken !== configuredToken) {
-    res.status(401).json({ error: "Unauthorized" });
+function hasPlatformBootstrapAccess(req: Request) {
+  const configuredToken = getConfiguredToken();
+  return Boolean(configuredToken && getTokenFromRequest(req) === configuredToken);
+}
+
+function requireOrganizationAccess(
+  req: Request,
+  res: Response,
+  organizationIdInput: unknown,
+  capability: OrganizationCapability = "view",
+) {
+  // The legacy admin token is intentionally retained as a platform-bootstrap
+  // escape hatch during the SaaS migration. Tenant users never receive it.
+  if (hasPlatformBootstrapAccess(req)) return true;
+
+  const organizationId = buildOrganizationId(organizationIdInput);
+  if (!req.portalSession) {
+    res.status(401).json({ error: "AUTH_REQUIRED" });
     return false;
   }
-
+  const membership = getUserOrganizationMembership(req.portalSession.discordId, organizationId);
+  if (!membership || !canOrganizationRole(membership.role, capability)) {
+    res.status(403).json({ error: "ORGANIZATION_FORBIDDEN" });
+    return false;
+  }
   return true;
+}
+
+function requireAdmin(req: Request, res: Response, capability?: OrganizationCapability) {
+  const resolvedCapability: OrganizationCapability = capability
+    || (req.method === "GET" || req.method === "HEAD" ? "view" : "manage");
+  return requireOrganizationAccess(req, res, getPrimaryServerDescriptor().organizationId, resolvedCapability);
+}
+
+function requireServerAdmin(req: Request, res: Response, serverIdInput: unknown, capability: OrganizationCapability = "view") {
+  const serverId = String(serverIdInput || "").trim();
+  const server = getManagedServerById(serverId);
+  if (!server) {
+    res.status(404).json({ error: "SERVER_NOT_FOUND" });
+    return false;
+  }
+  return requireOrganizationAccess(req, res, server.organizationId, capability);
+}
+
+function requirePlatformBootstrap(req: Request, res: Response) {
+  if (hasPlatformBootstrapAccess(req)) return true;
+  res.status(403).json({ error: "PLATFORM_BOOTSTRAP_REQUIRED" });
+  return false;
+}
+
+function authorizedServersForRequest(req: Request, organizationIdInput?: unknown) {
+  if (hasPlatformBootstrapAccess(req)) return listManagedServers();
+  const discordId = req.portalSession?.discordId;
+  if (!discordId) return [];
+  const requestedOrganizationId = organizationIdInput ? buildOrganizationId(organizationIdInput) : undefined;
+  const organizationIds = new Set(listUserOrganizationMemberships(discordId).map((membership) => membership.organizationId));
+  return listManagedServers().filter((server) =>
+    organizationIds.has(server.organizationId)
+    && (!requestedOrganizationId || server.organizationId === requestedOrganizationId),
+  );
 }
 
 function setPanelCookie(req: Request, res: Response) {
@@ -4590,9 +4655,23 @@ function renderAdminPanelHtml(token: string) {
               <div class="card">
                 <div class="section-title">
                   <div><h2>Server onboarding</h2><div class="member-meta">Valide integrações e execute um preflight completo antes da ativação manual de qualquer servidor adicional.</div></div>
-                  <span class="chip online">Phase 14 · operational hardening</span>
+                  <span class="chip online">Phase 15 · SaaS foundation</span>
                 </div>
-                <div class="server-onboarding-notice">A Fase 12 permite ativar manualmente somente servidores <strong>Ready</strong>. O scheduler continua único e centralizado; cada runtime usa seu próprio lock, ADM cache, parser context e state namespace. Você pode desligar apenas o servidor adicional sem afetar o PZ.</div>
+                <div class="server-onboarding-notice">A Fase 15 adiciona ownership por organização e RBAC sem alterar os runtimes. PZ Deathmatch e PZ Survival permanecem no mesmo workspace inicial, com state, ADM, economia e operação isolados por servidor.</div>
+              </div>
+
+              <div class="card" style="margin-top:16px">
+                <div class="section-title">
+                  <div><h2>SaaS workspace</h2><div class="member-meta">Ownership e autorização da organização que contém os servidores atuais.</div></div>
+                  <button id="organizationRefresh" class="ghost-btn" type="button">Atualizar</button>
+                </div>
+                <div id="organizationSummary" class="command-settings-summary" style="margin-top:12px"><span class="chip">Carregando...</span></div>
+                <div class="form-grid" style="margin-top:14px">
+                  <label>Discord User ID<input id="organizationMemberDiscordId" maxlength="32" placeholder="123456789..." autocomplete="off" /></label>
+                  <label>Role<select id="organizationMemberRole"><option value="viewer">Viewer</option><option value="moderator">Moderator</option><option value="admin">Admin</option><option value="owner">Owner</option></select></label>
+                </div>
+                <div class="server-onboarding-actions"><button id="organizationMemberSave" class="ghost-btn" type="button">Adicionar / atualizar membro</button></div>
+                <div id="organizationMembers" class="settings-list" style="margin-top:12px"><div class="skeleton"></div></div>
               </div>
 
               <div class="server-onboarding-grid">
@@ -4952,7 +5031,7 @@ function renderAdminPanelHtml(token: string) {
   <script>
     const adminToken = ${tokenJson};
     if (adminToken) document.cookie = "${TOKEN_COOKIE}=" + encodeURIComponent(adminToken) + "; path=/admin-panel; SameSite=Lax";
-    const state = { view: "general", cursor: 0, hasMore: true, loadingMembers: false, memberForceRefresh: false, search: "", filter: "", modal: null, catalogModal: null, selectedDiscordId: null, catalog: null, catalogSearch: "", catalogCategory: "", catalogMode: "categories", catalogDrag: null, catalogJustDragged: false, shopQueue: null, shopTransactions: null, shopHistorySearch: "", shopQueueModeBefore: "categories", itemsCursor: 0, itemsHasMore: true, itemsLoading: false, itemsSearch: "", itemsFilter: "all", dayzItems: [], itemsStats: null, itemModal: null, mapEventPresets: [], selectedMapEventPresetId: "locked_container_red_military", mapEventRewardStorageItem: null, mapEventLootItems: [], scheduledMapEvents: [], mapEventBuilderOpen: false, settingsTab: "server", managedServers: null, managedServersLoading: false, selectedManagedServerId: null, managedServerSetupTab: "overview", managedServerIntegrationSetup: null, managedServerNitradoServices: [], managedServerDiscordGuilds: [], managedServerDiscordChannels: [], managedServerPreflightResult: null, serviceSettings: null, serviceSettingsLoading: false, discordCommands: null, discordCommandsLoading: false, lockedContainerSetup: null, spawnZonesTab: "rotation", spawnZones: null, selectedSpawnZoneId: null, highlightedSpawnPointId: null, spawnZoneMapZoom: 1, spawnZoneMapDragging: false, spawnZoneEditingNameId: null, playerMap: null, playerMapZoom: 1, playerMapSearch: "" };
+    const state = { view: "general", cursor: 0, hasMore: true, loadingMembers: false, memberForceRefresh: false, search: "", filter: "", modal: null, catalogModal: null, selectedDiscordId: null, catalog: null, catalogSearch: "", catalogCategory: "", catalogMode: "categories", catalogDrag: null, catalogJustDragged: false, shopQueue: null, shopTransactions: null, shopHistorySearch: "", shopQueueModeBefore: "categories", itemsCursor: 0, itemsHasMore: true, itemsLoading: false, itemsSearch: "", itemsFilter: "all", dayzItems: [], itemsStats: null, itemModal: null, mapEventPresets: [], selectedMapEventPresetId: "locked_container_red_military", mapEventRewardStorageItem: null, mapEventLootItems: [], scheduledMapEvents: [], mapEventBuilderOpen: false, settingsTab: "server", managedServers: null, managedServersLoading: false, selectedManagedServerId: null, managedServerSetupTab: "overview", managedServerIntegrationSetup: null, managedServerNitradoServices: [], managedServerDiscordGuilds: [], managedServerDiscordChannels: [], managedServerPreflightResult: null, organization: null, serviceSettings: null, serviceSettingsLoading: false, discordCommands: null, discordCommandsLoading: false, lockedContainerSetup: null, spawnZonesTab: "rotation", spawnZones: null, selectedSpawnZoneId: null, highlightedSpawnPointId: null, spawnZoneMapZoom: 1, spawnZoneMapDragging: false, spawnZoneEditingNameId: null, playerMap: null, playerMapZoom: 1, playerMapSearch: "" };
     const els = {
       pageTitle: document.getElementById("pageTitle"), serverName: document.getElementById("serverName"),
       mapEventPresetGrid: document.getElementById("mapEventPresetGrid"), mapEventSelectedPreset: document.getElementById("mapEventSelectedPreset"), mapEventName: document.getElementById("mapEventName"), mapEventCoordinates: document.getElementById("mapEventCoordinates"), mapEventX: document.getElementById("mapEventX"), mapEventZ: document.getElementById("mapEventZ"), mapEventAngle: document.getElementById("mapEventAngle"), mapEventQuantity: document.getElementById("mapEventQuantity"), mapEventLifetime: document.getElementById("mapEventLifetime"), mapEventSafeRadius: document.getElementById("mapEventSafeRadius"), mapEventDistanceRadius: document.getElementById("mapEventDistanceRadius"), mapEventCleanupRadius: document.getElementById("mapEventCleanupRadius"), mapEventLootMode: document.getElementById("mapEventLootMode"), mapEventRewardStorage: document.getElementById("mapEventRewardStorage"), mapEventRewardStorageSearch: document.getElementById("mapEventRewardStorageSearch"), mapEventRewardStorageSelected: document.getElementById("mapEventRewardStorageSelected"), mapEventRewardStorageAutocomplete: document.getElementById("mapEventRewardStorageAutocomplete"), mapEventRewardStorageWrap: document.getElementById("mapEventRewardStorageWrap"), mapEventGuaranteedItemSearch: document.getElementById("mapEventGuaranteedItemSearch"), mapEventGuaranteedItemAutocomplete: document.getElementById("mapEventGuaranteedItemAutocomplete"), mapEventGuaranteedItemsList: document.getElementById("mapEventGuaranteedItemsList"), mapEventGuaranteedItemsWrap: document.getElementById("mapEventGuaranteedItemsWrap"), mapEventMapViewport: document.getElementById("mapEventMapViewport"), mapEventMapInner: document.getElementById("mapEventMapInner"), mapEventMapImage: document.getElementById("mapEventMapImage"), mapEventMapPin: document.getElementById("mapEventMapPin"), mapEventMapZoomIn: document.getElementById("mapEventMapZoomIn"), mapEventMapZoomOut: document.getElementById("mapEventMapZoomOut"), mapEventMapZoomLabel: document.getElementById("mapEventMapZoomLabel"), mapEventStatus: document.getElementById("mapEventStatus"), mapEventBuilder: document.getElementById("mapEventBuilder"), mapEventsNewToggle: document.getElementById("mapEventsNewToggle"), mapEventsBuilderClose: document.getElementById("mapEventsBuilderClose"), mapEventsSchedule: document.getElementById("mapEventsSchedule"), mapEventScheduleFields: document.getElementById("mapEventScheduleFields"), mapEventDate: document.getElementById("mapEventDate"), mapEventTime: document.getElementById("mapEventTime"), mapEventCustomTimeWrap: document.getElementById("mapEventCustomTimeWrap"), mapEventCustomTime: document.getElementById("mapEventCustomTime"), mapEventRecurrence: document.getElementById("mapEventRecurrence"), mapEventsScheduledList: document.getElementById("mapEventsScheduledList"), mapEventsScheduledEmpty: document.getElementById("mapEventsScheduledEmpty"), mapEventsScheduledCount: document.getElementById("mapEventsScheduledCount"), mapEventsRecurringCount: document.getElementById("mapEventsRecurringCount"), mapEventsNextRun: document.getElementById("mapEventsNextRun"), mapEventsScheduleRuntime: document.getElementById("mapEventsScheduleRuntime"),
@@ -4967,6 +5046,7 @@ function renderAdminPanelHtml(token: string) {
       itemModalBackdrop: document.getElementById("itemModalBackdrop"), itemModalTitle: document.getElementById("itemModalTitle"), itemModalSubtitle: document.getElementById("itemModalSubtitle"), itemModalPreviewImage: document.getElementById("itemModalPreviewImage"), itemModalPreviewName: document.getElementById("itemModalPreviewName"), itemModalPreviewClass: document.getElementById("itemModalPreviewClass"), itemModalPopularName: document.getElementById("itemModalPopularName"), itemModalImageUrl: document.getElementById("itemModalImageUrl"), itemModalSpawnEventName: document.getElementById("itemModalSpawnEventName"), itemModalEnabled: document.getElementById("itemModalEnabled"),
       spawnZonesCurrentZone: document.getElementById("spawnZonesCurrentZone"), spawnZonesNextZone: document.getElementById("spawnZonesNextZone"), spawnZonesEnabledCount: document.getElementById("spawnZonesEnabledCount"), spawnZonesVoteHistory: document.getElementById("spawnZonesVoteHistory"), spawnZonesActivePoll: document.getElementById("spawnZonesActivePoll"), spawnZonesNextSelect: document.getElementById("spawnZonesNextSelect"), spawnZonesSetNext: document.getElementById("spawnZonesSetNext"), spawnZonesApplyNext: document.getElementById("spawnZonesApplyNext"), spawnZonesApplyServer: document.getElementById("spawnZonesApplyServer"), spawnZonesCreatePoll: document.getElementById("spawnZonesCreatePoll"), spawnZonesRefreshPoll: document.getElementById("spawnZonesRefreshPoll"), spawnZonesFinalizePoll: document.getElementById("spawnZonesFinalizePoll"), spawnZonesRunAutomation: document.getElementById("spawnZonesRunAutomation"), spawnZonesAutomationStatus: document.getElementById("spawnZonesAutomationStatus"), spawnZonesWelcomeMessage: document.getElementById("spawnZonesWelcomeMessage"), spawnZonesWelcomeStatus: document.getElementById("spawnZonesWelcomeStatus"),
       spawnZonesMapTitle: document.getElementById("spawnZonesMapTitle"), spawnZonesMapHint: document.getElementById("spawnZonesMapHint"), spawnZonesAutosaveStatus: document.getElementById("spawnZonesAutosaveStatus"), spawnZonesMapViewport: document.getElementById("spawnZonesMapViewport"), spawnZonesMapInner: document.getElementById("spawnZonesMapInner"), spawnZonesMarkers: document.getElementById("spawnZonesMarkers"), spawnZonesMapTiles: document.getElementById("spawnZonesMapTiles"), spawnZonesMapZoomIn: document.getElementById("spawnZonesMapZoomIn"), spawnZonesMapZoomOut: document.getElementById("spawnZonesMapZoomOut"), spawnZonesMapZoomLabel: document.getElementById("spawnZonesMapZoomLabel"), spawnZonesCursor: document.getElementById("spawnZonesCursor"), spawnZoneCreate: document.getElementById("spawnZoneCreate"), spawnZoneImport: document.getElementById("spawnZoneImport"), spawnZoneImportFile: document.getElementById("spawnZoneImportFile"), spawnZoneList: document.getElementById("spawnZoneList"), spawnZonesPollChannel: document.getElementById("spawnZonesPollChannel"), spawnZonesPollCategory: document.getElementById("spawnZonesPollCategory"), spawnZonesPollQuestion: document.getElementById("spawnZonesPollQuestion"), spawnZonesPollOpenDay: document.getElementById("spawnZonesPollOpenDay"), spawnZonesPollOpenTime: document.getElementById("spawnZonesPollOpenTime"), spawnZonesPollCloseDay: document.getElementById("spawnZonesPollCloseDay"), spawnZonesPollCloseTime: document.getElementById("spawnZonesPollCloseTime"), spawnZonesPollTimezone: document.getElementById("spawnZonesPollTimezone"), spawnZonesMinVotes: document.getElementById("spawnZonesMinVotes"), spawnZonesTiePolicy: document.getElementById("spawnZonesTiePolicy"), spawnZonesAutoCreatePoll: document.getElementById("spawnZonesAutoCreatePoll"), spawnZonesRecurringPollAfterFinish: document.getElementById("spawnZonesRecurringPollAfterFinish"), spawnZonesAutoApplyWinner: document.getElementById("spawnZonesAutoApplyWinner"), spawnZonesApplyOnNextRestart: document.getElementById("spawnZonesApplyOnNextRestart"), spawnZonesSpawnFilePath: document.getElementById("spawnZonesSpawnFilePath"), spawnZonesServerName: document.getElementById("spawnZonesServerName"), spawnZonesSettingsStatus: document.getElementById("spawnZonesSettingsStatus"), spawnZonesTiePolicyHelp: document.getElementById("spawnZonesTiePolicyHelp"), spawnZonesApplyOnNextRestartRow: document.getElementById("spawnZonesApplyOnNextRestartRow"),
+      organizationSummary: document.getElementById("organizationSummary"), organizationMembers: document.getElementById("organizationMembers"), organizationRefresh: document.getElementById("organizationRefresh"), organizationMemberDiscordId: document.getElementById("organizationMemberDiscordId"), organizationMemberRole: document.getElementById("organizationMemberRole"), organizationMemberSave: document.getElementById("organizationMemberSave"),
       managedServersSummary: document.getElementById("managedServersSummary"), managedServersList: document.getElementById("managedServersList"), managedServersRefresh: document.getElementById("managedServersRefresh"), managedServerCreateNew: document.getElementById("managedServerCreateNew"), managedServerCreatePanel: document.getElementById("managedServerCreatePanel"), managedServerSetupPanel: document.getElementById("managedServerSetupPanel"), managedServerFormTitle: document.getElementById("managedServerFormTitle"), managedServerFormStatus: document.getElementById("managedServerFormStatus"), managedServerSetupId: document.getElementById("managedServerSetupId"), managedServerSetupProgressText: document.getElementById("managedServerSetupProgressText"), managedServerSetupProgressBar: document.getElementById("managedServerSetupProgressBar"), managedServerOverviewNitrado: document.getElementById("managedServerOverviewNitrado"), managedServerOverviewDiscord: document.getElementById("managedServerOverviewDiscord"), managedServerOverviewPreflight: document.getElementById("managedServerOverviewPreflight"), managedServerOverviewRuntime: document.getElementById("managedServerOverviewRuntime"), managedServerNitradoState: document.getElementById("managedServerNitradoState"), managedServerDiscordState: document.getElementById("managedServerDiscordState"), managedServerPreflightState: document.getElementById("managedServerPreflightState"), managedServerPreflightIntro: document.getElementById("managedServerPreflightIntro"), managedServerPreflightRun: document.getElementById("managedServerPreflightRun"), managedServerRuntimeToggle: document.getElementById("managedServerRuntimeToggle"), managedServerRuntimePauseToggle: document.getElementById("managedServerRuntimePauseToggle"), managedServerRuntimeRetry: document.getElementById("managedServerRuntimeRetry"), managedServerRuntimeActivationMeta: document.getElementById("managedServerRuntimeActivationMeta"), managedServerRuntimeHealthMeta: document.getElementById("managedServerRuntimeHealthMeta"), managedServerPreflightSummary: document.getElementById("managedServerPreflightSummary"), managedServerPreflightChecks: document.getElementById("managedServerPreflightChecks"), managedServerName: document.getElementById("managedServerName"), managedServerId: document.getElementById("managedServerId"), managedServerNitradoConnection: document.getElementById("managedServerNitradoConnection"), managedServerNitradoDiscover: document.getElementById("managedServerNitradoDiscover"), managedServerNitradoServiceSelect: document.getElementById("managedServerNitradoServiceSelect"), managedServerNitradoServiceId: document.getElementById("managedServerNitradoServiceId"), managedServerNitradoBaseDir: document.getElementById("managedServerNitradoBaseDir"), managedServerNitradoValidationMeta: document.getElementById("managedServerNitradoValidationMeta"), managedServerDiscordConnection: document.getElementById("managedServerDiscordConnection"), managedServerDiscordDiscover: document.getElementById("managedServerDiscordDiscover"), managedServerDiscordGuildSelect: document.getElementById("managedServerDiscordGuildSelect"), managedServerDiscordGuildId: document.getElementById("managedServerDiscordGuildId"), managedServerDiscordGlobal: document.getElementById("managedServerDiscordGlobal"), managedServerDiscordDaily: document.getElementById("managedServerDiscordDaily"), managedServerDiscordWeekly: document.getElementById("managedServerDiscordWeekly"), managedServerDiscordOnlineCategory: document.getElementById("managedServerDiscordOnlineCategory"), managedServerSave: document.getElementById("managedServerSave"), managedServerNitradoSave: document.getElementById("managedServerNitradoSave"), managedServerDiscordSave: document.getElementById("managedServerDiscordSave"), managedServerCancel: document.getElementById("managedServerCancel"),
       playerMapUpdatedAt: document.getElementById("playerMapUpdatedAt"), playerMapSummary: document.getElementById("playerMapSummary"), playerMapRefresh: document.getElementById("playerMapRefresh"), playerMapZoomOut: document.getElementById("playerMapZoomOut"), playerMapZoomIn: document.getElementById("playerMapZoomIn"), playerMapZoomLabel: document.getElementById("playerMapZoomLabel"), playerMapViewport: document.getElementById("playerMapViewport"), playerMapInner: document.getElementById("playerMapInner"), playerMapMarkers: document.getElementById("playerMapMarkers"), playerMapSearch: document.getElementById("playerMapSearch"), playerMapList: document.getElementById("playerMapList"), playerMapVisibleCount: document.getElementById("playerMapVisibleCount")
     };
@@ -6738,7 +6818,7 @@ function renderAdminPanelHtml(token: string) {
             '<td>' + (failureCount ? '<span class="chip" style="color:#ff7b7b">' + failureCount.toLocaleString() + '</span>' : '<span class="chip online">0</span>') + '<br><span class="member-meta">consecutive ' + Number(runtimeMetrics.consecutiveFailures || 0).toLocaleString() + ' · skipped ' + Number(runtimeMetrics.circuitSkips || 0).toLocaleString() + '</span>' + (runtimeMetrics.lastError ? '<br><span class="member-meta">' + escapeHtml(runtimeMetrics.lastError) + '</span>' : '') + '</td>' +
           '</tr>';
         }).join('') : '<tr><td colspan="9" class="member-meta">Per-server runtime diagnostics become available after the server registry is loaded.</td></tr>';
-        metrics.innerHTML = '<div class="settings-card" style="margin-bottom:16px"><div class="settings-card-head"><div><h3>Runtime diagnostics by server</h3><p>Phase 14 adds operational health, manual pause/resume and a secondary-only circuit breaker without creating new pollers.</p></div></div>' +
+        metrics.innerHTML = '<div class="settings-card" style="margin-bottom:16px"><div class="settings-card-head"><div><h3>Runtime diagnostics by server</h3><p>Phase 15 keeps the Phase 14 operational guards and adds organization ownership/RBAC without creating new pollers.</p></div></div>' +
           '<div class="table-wrap"><table><thead><tr><th>Server</th><th>Runtime</th><th>Boot source</th><th>V2 flushes / rows</th><th>Player stats rows</th><th>Position rows</th><th>ADM cycles / downloads</th><th>Main cycles</th><th>Failures</th></tr></thead><tbody>' + serverObservabilityRows + '</tbody></table></div>' +
           '<div class="member-meta" style="margin-top:10px">The detailed persistence sections below are scoped to <strong>' + escapeHtml(state.serverFoundation?.currentServerName || 'the primary server') + '</strong>. Network & Render bandwidth remains process-wide by design.</div></div>' +
         '<div class="overview-grid" style="grid-template-columns:repeat(6,minmax(0,1fr))">' +
@@ -6781,10 +6861,10 @@ function renderAdminPanelHtml(token: string) {
             ['stats','processing','social','commerce','config'].map((key) => { const d = domainRows[key] || {}; return '<tr><td><code>' + escapeHtml(key) + '</code></td><td>' + formatBytes(Number(d.currentBytes || 0)) + '</td><td>' + Number(d.changes || 0).toLocaleString() + '</td><td>' + Number(d.writes || 0).toLocaleString() + '</td><td>' + formatBytes(Number(d.bytesWritten || 0)) + '</td></tr>'; }).join('') +
           '</tbody></table></div>' +
         '</div>' +
-        '<div class="settings-card" style="margin-top:16px"><div class="settings-card-head"><div><h3>Multi-server foundation</h3><p>Phase 14 hardens multi-server operations with per-runtime health, persistent manual pause/resume and a secondary-only circuit breaker while preserving the centralized scheduler.</p></div></div>' +
-        '<div class="diag-grid"><div><span>Phase</span><strong>' + Number(state.serverFoundation?.phase || 1).toLocaleString() + '</strong></div><div><span>Mode</span><strong>' + escapeHtml(String(state.serverFoundation?.mode || 'single-server-compat')) + '</strong></div><div><span>Current server</span><strong>' + escapeHtml(String(state.serverFoundation?.currentServerName || 'PZ Deathmatch')) + '</strong></div><div><span>Server ID</span><strong>' + escapeHtml(String(state.serverFoundation?.currentServerId || 'pz-deathmatch')) + '</strong></div><div><span>Registry persisted</span><strong>' + (state.serverFoundation?.registryPersisted ? 'Yes' : 'No') + '</strong></div><div><span>Rows tagged</span><strong>' + (state.serverFoundation?.persistenceTaggedWithServerId ? 'Yes' : 'No') + '</strong></div><div><span>bot_state PK</span><strong>' + (state.serverFoundation?.namespace?.botStatePrimaryKeyReady ? 'server + id' : 'Legacy') + '</strong></div><div><span>Player stats PK</span><strong>' + (state.serverFoundation?.namespace?.playerStatsPrimaryKeyReady ? 'server + player' : 'Legacy') + '</strong></div><div><span>Scoped reads</span><strong>' + (state.serverFoundation?.persistenceNamespaced ? 'Enabled' : 'Fallback') + '</strong></div><div><span>Nitrado routing</span><strong>' + (state.serverFoundation?.runtimeIsolation?.nitradoRoutingNamespaced ? 'Server-scoped' : 'Legacy') + '</strong></div><div><span>Discord routing</span><strong>' + (state.serverFoundation?.runtimeIsolation?.discordRoutingNamespaced ? 'Server-scoped' : 'Legacy') + '</strong></div><div><span>Processing lock</span><strong>' + (state.serverFoundation?.runtimeIsolation?.processingLockNamespaced ? 'Per server' : 'Global') + '</strong></div><div><span>ADM storage</span><strong>' + (state.serverFoundation?.runtimeIsolation?.primaryLegacyAdmStoragePreserved ? 'Primary preserved' : 'Namespaced') + '</strong></div><div><span>Execution context</span><strong>' + (state.serverFoundation?.runtimeIsolation?.executionContextNamespaced ? 'Per server' : 'Legacy') + '</strong></div><div><span>State cache</span><strong>' + (state.serverFoundation?.runtimeIsolation?.stateCacheNamespaced ? 'Per server' : 'Legacy') + '</strong></div><div><span>ADM strategy</span><strong>' + (state.serverFoundation?.runtimeIsolation?.admStrategyNamespaced ? 'Per server' : 'Global') + '</strong></div><div><span>ADM parser storage</span><strong>' + (state.serverFoundation?.runtimeIsolation?.admParserStorageNamespaced ? 'Per server' : 'Legacy') + '</strong></div><div><span>Persistence runtime</span><strong>' + (state.serverFoundation?.runtimeIsolation?.persistenceRuntimeNamespaced ? 'Per server' : 'Global') + '</strong></div><div><span>Position history</span><strong>' + (state.serverFoundation?.runtimeIsolation?.positionHistoryNamespaced ? 'Server-scoped' : 'Global') + '</strong></div><div><span>HTTP context</span><strong>' + (state.serverFoundation?.runtimeIsolation?.httpContextNamespaced ? 'Explicit primary' : 'Fallback') + '</strong></div><div><span>Player portal context</span><strong>' + (state.serverFoundation?.runtimeIsolation?.playerPortalContextNamespaced ? 'Per server' : 'Primary only') + '</strong></div><div><span>FTP safety</span><strong>' + (state.serverFoundation?.runtimeIsolation?.ftpPrimaryGuarded ? 'Primary guarded' : 'Global credentials') + '</strong></div><div><span>Discord loop guards</span><strong>' + (state.serverFoundation?.runtimeIsolation?.discordLoopGuardsNamespaced ? 'Per server' : 'Global') + '</strong></div><div><span>Scheduler</span><strong>' + (state.serverFoundation?.runtimeIsolation?.schedulerCentralized ? 'Centralized' : 'Unknown') + '</strong></div><div><span>Activation readiness</span><strong>' + (state.serverFoundation?.runtimeIsolation?.activationReadiness ? 'Prepared' : 'Pending') + '</strong></div><div><span>Context runs</span><strong>' + Number(state.serverFoundation?.runtimeIsolation?.contextRuns || 0).toLocaleString() + '</strong></div><div><span>Context fallbacks</span><strong>' + Number(state.serverFoundation?.runtimeIsolation?.contextFallbacks || 0).toLocaleString() + '</strong></div><div><span>Managed servers</span><strong>' + Number(state.serverFoundation?.managedServers || 1).toLocaleString() + '</strong></div><div><span>Server onboarding</span><strong>' + (state.serverFoundation?.onboarding?.canCreateDrafts ? 'Drafts enabled' : 'Unavailable') + '</strong></div><div><span>Draft servers</span><strong>' + Number(state.serverFoundation?.onboarding?.draftServers || 0).toLocaleString() + '</strong></div><div><span>Configured servers</span><strong>' + Number(state.serverFoundation?.onboarding?.configuredServers || 0).toLocaleString() + '</strong></div><div><span>Ready servers</span><strong>' + Number(state.serverFoundation?.onboarding?.readyServers || 0).toLocaleString() + '</strong></div><div><span>Preflight gate</span><strong>' + (state.serverFoundation?.onboarding?.activationPreflightEnabled ? 'On-demand' : 'Unavailable') + '</strong></div><div><span>Activation endpoint</span><strong>' + (state.serverFoundation?.onboarding?.activationEndpointEnabled ? 'Enabled' : 'None') + '</strong></div><div><span>Runtime policy</span><strong>' + escapeHtml(String(state.serverFoundation?.onboarding?.activationPolicy || 'primary-only')) + '</strong></div><div><span>Secrets in registry</span><strong>' + (state.serverFoundation?.onboarding?.secretsStoredInRegistry ? 'Yes' : 'No') + '</strong></div><div><span>Integration setup</span><strong>' + escapeHtml(String(state.serverFoundation?.onboarding?.integrationValidationMode || 'on-demand')) + '</strong></div><div><span>Nitrado credential</span><strong>' + escapeHtml(String(state.serverFoundation?.onboarding?.nitradoCredentialSource || 'missing')) + '</strong></div><div><span>Integration polling</span><strong>' + (state.serverFoundation?.onboarding?.backgroundPollingAdded ? 'Added' : 'None') + '</strong></div><div><span>Additional servers</span><strong>' + (state.serverFoundation?.additionalServersEnabled ? 'Enabled' : 'Blocked') + '</strong></div><div><span>Active runtimes</span><strong>' + Number(state.runtimeCoordinator?.activeRuntimes || state.serverFoundation?.onboarding?.runtimeEnabledServers || 1).toLocaleString() + '</strong></div><div><span>Operational health</span><strong>' + (state.serverFoundation?.onboarding?.operationalHardeningEnabled ? 'Per server' : 'Legacy') + '</strong></div><div><span>Circuit breaker</span><strong>' + escapeHtml(String(state.serverFoundation?.onboarding?.circuitBreakerMode || 'off')) + '</strong></div></div>' +
+        '<div class="settings-card" style="margin-top:16px"><div class="settings-card-head"><div><h3>Multi-server foundation</h3><p>Phase 15 wraps the existing multi-server runtime in organization ownership and RBAC while preserving per-runtime health, pause/resume, circuit breaker and the centralized scheduler.</p></div></div>' +
+        '<div class="diag-grid"><div><span>Phase</span><strong>' + Number(state.serverFoundation?.phase || 1).toLocaleString() + '</strong></div><div><span>Mode</span><strong>' + escapeHtml(String(state.serverFoundation?.mode || 'single-server-compat')) + '</strong></div><div><span>Current server</span><strong>' + escapeHtml(String(state.serverFoundation?.currentServerName || 'PZ Deathmatch')) + '</strong></div><div><span>Server ID</span><strong>' + escapeHtml(String(state.serverFoundation?.currentServerId || 'pz-deathmatch')) + '</strong></div><div><span>Registry persisted</span><strong>' + (state.serverFoundation?.registryPersisted ? 'Yes' : 'No') + '</strong></div><div><span>Rows tagged</span><strong>' + (state.serverFoundation?.persistenceTaggedWithServerId ? 'Yes' : 'No') + '</strong></div><div><span>bot_state PK</span><strong>' + (state.serverFoundation?.namespace?.botStatePrimaryKeyReady ? 'server + id' : 'Legacy') + '</strong></div><div><span>Player stats PK</span><strong>' + (state.serverFoundation?.namespace?.playerStatsPrimaryKeyReady ? 'server + player' : 'Legacy') + '</strong></div><div><span>Scoped reads</span><strong>' + (state.serverFoundation?.persistenceNamespaced ? 'Enabled' : 'Fallback') + '</strong></div><div><span>Nitrado routing</span><strong>' + (state.serverFoundation?.runtimeIsolation?.nitradoRoutingNamespaced ? 'Server-scoped' : 'Legacy') + '</strong></div><div><span>Discord routing</span><strong>' + (state.serverFoundation?.runtimeIsolation?.discordRoutingNamespaced ? 'Server-scoped' : 'Legacy') + '</strong></div><div><span>Processing lock</span><strong>' + (state.serverFoundation?.runtimeIsolation?.processingLockNamespaced ? 'Per server' : 'Global') + '</strong></div><div><span>ADM storage</span><strong>' + (state.serverFoundation?.runtimeIsolation?.primaryLegacyAdmStoragePreserved ? 'Primary preserved' : 'Namespaced') + '</strong></div><div><span>Execution context</span><strong>' + (state.serverFoundation?.runtimeIsolation?.executionContextNamespaced ? 'Per server' : 'Legacy') + '</strong></div><div><span>State cache</span><strong>' + (state.serverFoundation?.runtimeIsolation?.stateCacheNamespaced ? 'Per server' : 'Legacy') + '</strong></div><div><span>ADM strategy</span><strong>' + (state.serverFoundation?.runtimeIsolation?.admStrategyNamespaced ? 'Per server' : 'Global') + '</strong></div><div><span>ADM parser storage</span><strong>' + (state.serverFoundation?.runtimeIsolation?.admParserStorageNamespaced ? 'Per server' : 'Legacy') + '</strong></div><div><span>Persistence runtime</span><strong>' + (state.serverFoundation?.runtimeIsolation?.persistenceRuntimeNamespaced ? 'Per server' : 'Global') + '</strong></div><div><span>Position history</span><strong>' + (state.serverFoundation?.runtimeIsolation?.positionHistoryNamespaced ? 'Server-scoped' : 'Global') + '</strong></div><div><span>HTTP context</span><strong>' + (state.serverFoundation?.runtimeIsolation?.httpContextNamespaced ? 'Explicit primary' : 'Fallback') + '</strong></div><div><span>Player portal context</span><strong>' + (state.serverFoundation?.runtimeIsolation?.playerPortalContextNamespaced ? 'Per server' : 'Primary only') + '</strong></div><div><span>FTP safety</span><strong>' + (state.serverFoundation?.runtimeIsolation?.ftpPrimaryGuarded ? 'Primary guarded' : 'Global credentials') + '</strong></div><div><span>Discord loop guards</span><strong>' + (state.serverFoundation?.runtimeIsolation?.discordLoopGuardsNamespaced ? 'Per server' : 'Global') + '</strong></div><div><span>Scheduler</span><strong>' + (state.serverFoundation?.runtimeIsolation?.schedulerCentralized ? 'Centralized' : 'Unknown') + '</strong></div><div><span>Activation readiness</span><strong>' + (state.serverFoundation?.runtimeIsolation?.activationReadiness ? 'Prepared' : 'Pending') + '</strong></div><div><span>Context runs</span><strong>' + Number(state.serverFoundation?.runtimeIsolation?.contextRuns || 0).toLocaleString() + '</strong></div><div><span>Context fallbacks</span><strong>' + Number(state.serverFoundation?.runtimeIsolation?.contextFallbacks || 0).toLocaleString() + '</strong></div><div><span>Managed servers</span><strong>' + Number(state.serverFoundation?.managedServers || 1).toLocaleString() + '</strong></div><div><span>Server onboarding</span><strong>' + (state.serverFoundation?.onboarding?.canCreateDrafts ? 'Drafts enabled' : 'Unavailable') + '</strong></div><div><span>Draft servers</span><strong>' + Number(state.serverFoundation?.onboarding?.draftServers || 0).toLocaleString() + '</strong></div><div><span>Configured servers</span><strong>' + Number(state.serverFoundation?.onboarding?.configuredServers || 0).toLocaleString() + '</strong></div><div><span>Ready servers</span><strong>' + Number(state.serverFoundation?.onboarding?.readyServers || 0).toLocaleString() + '</strong></div><div><span>Preflight gate</span><strong>' + (state.serverFoundation?.onboarding?.activationPreflightEnabled ? 'On-demand' : 'Unavailable') + '</strong></div><div><span>Activation endpoint</span><strong>' + (state.serverFoundation?.onboarding?.activationEndpointEnabled ? 'Enabled' : 'None') + '</strong></div><div><span>Runtime policy</span><strong>' + escapeHtml(String(state.serverFoundation?.onboarding?.activationPolicy || 'primary-only')) + '</strong></div><div><span>Secrets in registry</span><strong>' + (state.serverFoundation?.onboarding?.secretsStoredInRegistry ? 'Yes' : 'No') + '</strong></div><div><span>Integration setup</span><strong>' + escapeHtml(String(state.serverFoundation?.onboarding?.integrationValidationMode || 'on-demand')) + '</strong></div><div><span>Nitrado credential</span><strong>' + escapeHtml(String(state.serverFoundation?.onboarding?.nitradoCredentialSource || 'missing')) + '</strong></div><div><span>Integration polling</span><strong>' + (state.serverFoundation?.onboarding?.backgroundPollingAdded ? 'Added' : 'None') + '</strong></div><div><span>Additional servers</span><strong>' + (state.serverFoundation?.additionalServersEnabled ? 'Enabled' : 'Blocked') + '</strong></div><div><span>Active runtimes</span><strong>' + Number(state.runtimeCoordinator?.activeRuntimes || state.serverFoundation?.onboarding?.runtimeEnabledServers || 1).toLocaleString() + '</strong></div><div><span>Operational health</span><strong>' + (state.serverFoundation?.onboarding?.operationalHardeningEnabled ? 'Per server' : 'Legacy') + '</strong></div><div><span>Circuit breaker</span><strong>' + escapeHtml(String(state.serverFoundation?.onboarding?.circuitBreakerMode || 'off')) + '</strong></div><div><span>Organizations</span><strong>' + Number(state.serverFoundation?.tenancy?.organizations || 0).toLocaleString() + '</strong></div><div><span>Memberships</span><strong>' + Number(state.serverFoundation?.tenancy?.memberships || 0).toLocaleString() + '</strong></div><div><span>Server ownership</span><strong>' + (state.serverFoundation?.tenancy?.ownershipColumnReady && Number(state.serverFoundation?.tenancy?.serversWithoutOrganization || 0) === 0 ? 'Required' : 'Pending') + '</strong></div><div><span>Tenant auth</span><strong>' + escapeHtml(String(state.serverFoundation?.tenancy?.authorizationModel || 'legacy')) + '</strong></div></div>' +
         '<div class="member-meta" style="margin-top:10px">Registry table: ' + (state.serverFoundation?.registry?.tableReady ? 'ready' : 'not ready') + ' · Primary seeded: ' + (state.serverFoundation?.registry?.primarySeeded ? 'yes' : 'no') + ' · bot_state tagged/untagged: ' + Number(state.serverFoundation?.namespace?.botStateTaggedRows || 0).toLocaleString() + '/' + Number(state.serverFoundation?.namespace?.botStateUntaggedRows || 0).toLocaleString() + ' · player stats tagged/untagged: ' + Number(state.serverFoundation?.namespace?.playerStatsTaggedRows || 0).toLocaleString() + '/' + Number(state.serverFoundation?.namespace?.playerStatsUntaggedRows || 0).toLocaleString() + ' · PK cutover: ' + (state.serverFoundation?.namespace?.primaryKeyCutoverComplete ? 'complete' : 'pending') + ' · Scoped read source: ' + escapeHtml(String(state.serverFoundation?.namespace?.lastScopedReadSource || 'legacy')) + ' · Fallbacks: ' + Number(state.serverFoundation?.namespace?.scopedReadFallbacks || 0).toLocaleString() + ' · Registry drafts/configured: ' + Number(state.serverFoundation?.registry?.draftRows || 0).toLocaleString() + '/' + Number(state.serverFoundation?.registry?.configuredRows || 0).toLocaleString() + ' · Runtime rows: ' + Number(state.serverFoundation?.registry?.runtimeEnabledRows || 0).toLocaleString() + ' · Portal resolutions/switches: ' + Number(state.playerPortalContext?.contextResolutions || 0).toLocaleString() + '/' + Number(state.playerPortalContext?.contextSwitches || 0).toLocaleString() + ' · Invalid portal selections: ' + Number(state.playerPortalContext?.invalidSelections || 0).toLocaleString() + (state.serverFoundation?.namespace?.lastError ? ' · Namespace error: ' + escapeHtml(String(state.serverFoundation.namespace.lastError)) : '') + '</div>' +
-        '<div class="settings-note" style="margin-top:12px">Safety: Phase 14 never auto-pauses the PZ. Only secondary runtimes can open a circuit after 3 consecutive failed cycles; the same centralized scheduler performs a probe after 15 minutes. Manual pause is persisted per server and does not delete state.</div></div>' +
+        '<div class="settings-note" style="margin-top:12px">Safety: Phase 15 does not move or rewrite gameplay data. Existing servers are backfilled into one organization; tenant users are authorized by organization membership + role, while the legacy admin token remains only as a platform-bootstrap escape hatch during the SaaS migration.</div></div>' +
         '<div class="settings-card" style="margin-top:16px"><div class="settings-card-head"><div><h3>Granular player stats</h3><p>Global K/D and current streaks are upserted only for players that changed, instead of retransmitting the full historical player map.</p></div></div>' +
           '<div class="overview-grid" style="grid-template-columns:repeat(8,minmax(0,1fr))">' +
             '<div class="stat-card"><span>Status</span><strong>' + (granularPlayers.enabled === false ? 'Fallback' : 'Active') + '</strong></div>' +
@@ -7278,6 +7358,58 @@ function renderAdminPanelHtml(token: string) {
       renderManagedServerDiscordChannels(server);
       renderManagedServerPreflight(server);
     }
+    function renderOrganization() {
+      if (!state.organization) return;
+      const payload = state.organization;
+      const organization = payload.organization || {};
+      const diagnostics = payload.diagnostics || {};
+      const members = Array.isArray(payload.members) ? payload.members : [];
+      const servers = Array.isArray(payload.servers) ? payload.servers : [];
+      if (els.organizationSummary) {
+        els.organizationSummary.innerHTML =
+          '<span class="chip online">Organization ' + escapeHtml(organization.name || organization.id || 'Workspace') + '</span>' +
+          '<span class="chip">ID ' + escapeHtml(organization.id || '—') + '</span>' +
+          '<span class="chip">' + formatNumber(servers.length) + ' server(s)</span>' +
+          '<span class="chip">' + formatNumber(members.length) + ' member(s)</span>' +
+          '<span class="chip ' + (Number(diagnostics.serversWithoutOrganization || 0) === 0 ? 'online' : 'pending') + '">Unowned ' + formatNumber(diagnostics.serversWithoutOrganization || 0) + '</span>';
+      }
+      if (els.organizationMembers) {
+        els.organizationMembers.innerHTML = members.length
+          ? members.map((member) => '<div class="settings-row"><div><strong>' + escapeHtml(member.discordId) + '</strong><div class="member-meta">Organization member · Discord ID</div></div><div class="server-onboarding-actions"><span class="chip">' + escapeHtml(member.role || 'viewer') + '</span><button class="ghost-btn" type="button" data-org-remove="' + escapeHtml(member.discordId) + '">Remover</button></div></div>').join('')
+          : '<div class="settings-empty-note">Nenhum membership persistido ainda. Os IDs de <code>DISCORD_ADMIN_USER_IDS</code> são seedados como owner no primeiro boot da Fase 15; o token legado continua apenas como bootstrap da plataforma.</div>';
+      }
+    }
+    async function loadOrganization() {
+      try {
+        const response = await apiFetch('/admin-panel/api/organization');
+        if (!response.ok) { showToast(await response.text()); return; }
+        state.organization = await response.json();
+        renderOrganization();
+      } catch (error) { showToast(error instanceof Error ? error.message : String(error)); }
+    }
+
+    async function saveOrganizationMember() {
+      const discordId = String(els.organizationMemberDiscordId?.value || '').trim();
+      const role = String(els.organizationMemberRole?.value || 'viewer');
+      if (!discordId) { showToast('Informe o Discord User ID.'); return; }
+      if (els.organizationMemberSave) els.organizationMemberSave.disabled = true;
+      try {
+        const response = await apiFetch('/admin-panel/api/organization/members', { method:'POST', body:JSON.stringify({ discordId, role }) });
+        if (!response.ok) { showToast(await response.text()); return; }
+        await loadOrganization();
+        if (els.organizationMemberDiscordId) els.organizationMemberDiscordId.value = '';
+        showToast('Membership atualizado.');
+      } catch (error) { showToast(error instanceof Error ? error.message : String(error)); }
+      finally { if (els.organizationMemberSave) els.organizationMemberSave.disabled = false; }
+    }
+    async function removeOrganizationMember(discordId) {
+      if (!discordId || !window.confirm('Remover este membro da organização?')) return;
+      const response = await apiFetch('/admin-panel/api/organization/members/' + encodeURIComponent(discordId), { method:'DELETE' });
+      if (!response.ok) { showToast(await response.text()); return; }
+      await loadOrganization();
+      showToast('Membership removido.');
+    }
+
     async function loadManagedServers() {
       if (state.managedServersLoading) return;
       state.managedServersLoading = true;
@@ -7638,7 +7770,7 @@ function renderAdminPanelHtml(token: string) {
         const panel = document.getElementById('settingsPanel' + key.charAt(0).toUpperCase() + key.slice(1));
         if (panel) panel.classList.toggle('active', key === tab);
       });
-      if (tab === 'servers' && !state.managedServers) loadManagedServers();
+      if (tab === 'servers') { if (!state.managedServers) loadManagedServers(); if (!state.organization) loadOrganization(); }
       if (tab === 'server' && !state.serviceSettings) loadServiceSettings();
       if (tab === 'events') renderLockedContainerCards();
       if (tab === 'discord' && !state.discordCommands) loadDiscordCommands();
@@ -8062,6 +8194,9 @@ function renderAdminPanelHtml(token: string) {
       if (button) toggleDiscordCommand(button.getAttribute('data-command-toggle') || '', button);
     });
     els.managedServersRefresh?.addEventListener("click", () => loadManagedServers());
+    els.organizationRefresh?.addEventListener("click", () => loadOrganization());
+    els.organizationMemberSave?.addEventListener("click", () => saveOrganizationMember());
+    els.organizationMembers?.addEventListener("click", (event) => { const button = event.target.closest('[data-org-remove]'); if (button) removeOrganizationMember(button.getAttribute('data-org-remove')); });
     els.managedServerCreateNew?.addEventListener("click", () => resetManagedServerForm());
     els.managedServerSave?.addEventListener("click", () => saveManagedServerForm('create'));
     els.managedServerNitradoDiscover?.addEventListener("click", () => discoverManagedServerNitradoServices());
@@ -8264,6 +8399,19 @@ function renderAdminPanelHtml(token: string) {
 </html>`;
 }
 
+// Phase 15 closes legacy admin API gaps centrally. Server/organization routes
+// have their own ownership-aware guards below; every other admin API is pinned
+// to the primary organization and derives read/write capability from HTTP method.
+router.use("/api", (req, res, next) => {
+  const scopedPath = String(req.path || "").replace(/^\/api(?=\/|$)/, "");
+  if (scopedPath === "/servers" || scopedPath.startsWith("/servers/") || scopedPath === "/organizations" || scopedPath.startsWith("/organizations/")) {
+    next();
+    return;
+  }
+  if (!requireAdmin(req, res)) return;
+  next();
+});
+
 router.get("/", (req, res) => {
   if (!requireAdmin(req, res)) return;
   setPanelCookie(req, res);
@@ -8389,13 +8537,109 @@ router.patch("/api/discord-commands/:commandName", async (req, res) => {
   }
 });
 
+router.get("/api/organization", async (req, res) => {
+  const organizationId = getPrimaryServerDescriptor().organizationId;
+  if (!requireOrganizationAccess(req, res, organizationId, "view")) return;
+  const organization = getManagedOrganizationById(organizationId);
+  res.json({
+    organization,
+    membership: req.portalSession ? getUserOrganizationMembership(req.portalSession.discordId, organizationId) || null : null,
+    members: listOrganizationMemberships(organizationId),
+    servers: listManagedServers().filter((server) => server.organizationId === organizationId),
+    diagnostics: getOrganizationFoundationDiagnostics(),
+    platformBootstrap: hasPlatformBootstrapAccess(req),
+  });
+});
+
+router.post("/api/organization/members", async (req, res) => {
+  const organizationId = getPrimaryServerDescriptor().organizationId;
+  if (!requireOrganizationAccess(req, res, organizationId, "own")) return;
+  try {
+    const membership = await upsertOrganizationMembership(organizationId, req.body?.discordId, req.body?.role);
+    res.json({ membership, members: listOrganizationMemberships(organizationId) });
+  } catch (err) {
+    res.status(400).send(err instanceof Error ? err.message : String(err));
+  }
+});
+
+router.delete("/api/organization/members/:discordId", async (req, res) => {
+  const organizationId = getPrimaryServerDescriptor().organizationId;
+  if (!requireOrganizationAccess(req, res, organizationId, "own")) return;
+  try {
+    await removeOrganizationMembership(organizationId, req.params.discordId);
+    res.json({ members: listOrganizationMemberships(organizationId) });
+  } catch (err) {
+    res.status(400).send(err instanceof Error ? err.message : String(err));
+  }
+});
+
+router.get("/api/organizations", async (req, res) => {
+  if (hasPlatformBootstrapAccess(req)) {
+    res.json({ organizations: listManagedOrganizations(), diagnostics: getOrganizationFoundationDiagnostics() });
+    return;
+  }
+  if (!req.portalSession) { res.status(401).json({ error: "AUTH_REQUIRED" }); return; }
+  const allowedIds = new Set(listUserOrganizationMemberships(req.portalSession.discordId).map((membership) => membership.organizationId));
+  res.json({
+    organizations: listManagedOrganizations().filter((organization) => allowedIds.has(organization.id)),
+    diagnostics: getOrganizationFoundationDiagnostics(),
+  });
+});
+
+router.post("/api/organizations", async (req, res) => {
+  if (!requirePlatformBootstrap(req, res)) return;
+  try {
+    const organization = await createManagedOrganization(req.body || {});
+    res.status(201).json({ organization, organizations: listManagedOrganizations() });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(/ja existe/i.test(message) ? 409 : 400).send(message);
+  }
+});
+
+router.get("/api/organizations/:organizationId", async (req, res) => {
+  const organizationId = buildOrganizationId(req.params.organizationId);
+  if (!requireOrganizationAccess(req, res, organizationId, "view")) return;
+  const organization = getManagedOrganizationById(organizationId);
+  if (!organization) { res.status(404).json({ error: "ORGANIZATION_NOT_FOUND" }); return; }
+  res.json({
+    organization,
+    membership: req.portalSession ? getUserOrganizationMembership(req.portalSession.discordId, organizationId) || null : null,
+    members: listOrganizationMemberships(organizationId),
+    servers: listManagedServers().filter((server) => server.organizationId === organizationId),
+  });
+});
+
+router.post("/api/organizations/:organizationId/members", async (req, res) => {
+  const organizationId = buildOrganizationId(req.params.organizationId);
+  if (!requireOrganizationAccess(req, res, organizationId, "own")) return;
+  try {
+    const membership = await upsertOrganizationMembership(organizationId, req.body?.discordId, req.body?.role);
+    res.json({ membership, members: listOrganizationMemberships(organizationId) });
+  } catch (err) {
+    res.status(400).send(err instanceof Error ? err.message : String(err));
+  }
+});
+
+router.delete("/api/organizations/:organizationId/members/:discordId", async (req, res) => {
+  const organizationId = buildOrganizationId(req.params.organizationId);
+  if (!requireOrganizationAccess(req, res, organizationId, "own")) return;
+  try {
+    await removeOrganizationMembership(organizationId, req.params.discordId);
+    res.json({ members: listOrganizationMemberships(organizationId) });
+  } catch (err) {
+    res.status(400).send(err instanceof Error ? err.message : String(err));
+  }
+});
+
 router.get("/api/servers", async (req, res) => {
-  if (!requireAdmin(req, res)) return;
+  if (!requireAdmin(req, res, "view")) return;
   const foundation = getServerFoundationDiagnostics();
+  const primaryServer = getPrimaryServerDescriptor();
   res.json({
     mode: "single-server-compat",
-    currentServer: getPrimaryServerDescriptor(),
-    servers: listManagedServers(),
+    currentServer: primaryServer,
+    servers: authorizedServersForRequest(req, primaryServer.organizationId),
     canCreateServer: Boolean(foundation.onboarding?.canCreateDrafts),
     runtimeActivationBlocked: false,
     activationEndpointAvailable: true,
@@ -8408,12 +8652,15 @@ router.get("/api/servers", async (req, res) => {
 });
 
 router.post("/api/servers", async (req, res) => {
-  if (!requireAdmin(req, res)) return;
+  if (!requireAdmin(req, res, "manage")) return;
   try {
-    const server = await createManagedServerDraft(req.body || {});
+    const organizationId = hasPlatformBootstrapAccess(req)
+      ? (buildOrganizationId(req.body?.organizationId) || getDefaultOrganizationId())
+      : getPrimaryServerDescriptor().organizationId;
+    const server = await createManagedServerDraft({ ...(req.body || {}), organizationId });
     res.status(201).json({
       server,
-      servers: listManagedServers(),
+      servers: authorizedServersForRequest(req),
       runtimeActivationBlocked: false,
       foundation: getServerFoundationDiagnostics(),
     });
@@ -8424,12 +8671,12 @@ router.post("/api/servers", async (req, res) => {
 });
 
 router.patch("/api/servers/:serverId", async (req, res) => {
-  if (!requireAdmin(req, res)) return;
+  if (!requireServerAdmin(req, res, req.params.serverId, "manage")) return;
   try {
     const server = await updateManagedServerDraft(String(req.params.serverId || ""), req.body || {});
     res.json({
       server,
-      servers: listManagedServers(),
+      servers: authorizedServersForRequest(req),
       runtimeActivationBlocked: false,
       foundation: getServerFoundationDiagnostics(),
     });
@@ -8440,7 +8687,7 @@ router.patch("/api/servers/:serverId", async (req, res) => {
 });
 
 router.get("/api/servers/:serverId/nitrado/services", async (req, res) => {
-  if (!requireAdmin(req, res)) return;
+  if (!requireServerAdmin(req, res, req.params.serverId, "manage")) return;
   try {
     const result = await discoverNitradoServices(String(req.params.serverId || ""));
     res.json({ ...result, backgroundPolling: false });
@@ -8451,7 +8698,7 @@ router.get("/api/servers/:serverId/nitrado/services", async (req, res) => {
 });
 
 router.post("/api/servers/:serverId/nitrado/validate", async (req, res) => {
-  if (!requireAdmin(req, res)) return;
+  if (!requireServerAdmin(req, res, req.params.serverId, "manage")) return;
   try {
     const serverId = String(req.params.serverId || "");
     const validation = await validateNitradoServiceSetup(serverId, req.body?.serviceId, req.body?.baseDir);
@@ -8462,7 +8709,7 @@ router.post("/api/servers/:serverId/nitrado/validate", async (req, res) => {
     res.json({
       server,
       validation,
-      servers: listManagedServers(),
+      servers: authorizedServersForRequest(req),
       runtimeActivationBlocked: false,
       foundation: getServerFoundationDiagnostics(),
     });
@@ -8473,7 +8720,7 @@ router.post("/api/servers/:serverId/nitrado/validate", async (req, res) => {
 });
 
 router.get("/api/servers/:serverId/discord/options", async (req, res) => {
-  if (!requireAdmin(req, res)) return;
+  if (!requireServerAdmin(req, res, req.params.serverId, "manage")) return;
   try {
     res.json(listDiscordGuildOptions(String(req.params.serverId || "")));
   } catch (err) {
@@ -8483,7 +8730,7 @@ router.get("/api/servers/:serverId/discord/options", async (req, res) => {
 });
 
 router.get("/api/servers/:serverId/discord/guilds/:guildId/channels", async (req, res) => {
-  if (!requireAdmin(req, res)) return;
+  if (!requireServerAdmin(req, res, req.params.serverId, "manage")) return;
   try {
     res.json(await listDiscordGuildChannels(String(req.params.serverId || ""), req.params.guildId));
   } catch (err) {
@@ -8493,12 +8740,12 @@ router.get("/api/servers/:serverId/discord/guilds/:guildId/channels", async (req
 });
 
 router.post("/api/servers/:serverId/preflight", async (req, res) => {
-  if (!requireAdmin(req, res)) return;
+  if (!requireServerAdmin(req, res, req.params.serverId, "manage")) return;
   try {
     const result = await runManagedServerActivationPreflight(String(req.params.serverId || ""));
     res.json({
       ...result,
-      servers: listManagedServers(),
+      servers: authorizedServersForRequest(req),
       foundation: getServerFoundationDiagnostics(),
     });
   } catch (err) {
@@ -8508,7 +8755,7 @@ router.post("/api/servers/:serverId/preflight", async (req, res) => {
 });
 
 router.post("/api/servers/:serverId/runtime/activate", async (req, res) => {
-  if (!requireAdmin(req, res)) return;
+  if (!requireServerAdmin(req, res, req.params.serverId, "manage")) return;
   try {
     const serverId = String(req.params.serverId || "");
     const current = listManagedServers().find((candidate) => candidate.id === serverId && !candidate.primary);
@@ -8541,7 +8788,7 @@ router.post("/api/servers/:serverId/runtime/activate", async (req, res) => {
     const cycleRequested = requestManagedServerRuntimeCycle(server.id, "activation", { forceCircuitProbe: true });
     res.json({
       server,
-      servers: listManagedServers(),
+      servers: authorizedServersForRequest(req),
       cycleRequested,
       runtimeActivationBlocked: false,
       foundation: getServerFoundationDiagnostics(),
@@ -8554,7 +8801,7 @@ router.post("/api/servers/:serverId/runtime/activate", async (req, res) => {
 });
 
 router.post("/api/servers/:serverId/runtime/deactivate", async (req, res) => {
-  if (!requireAdmin(req, res)) return;
+  if (!requireServerAdmin(req, res, req.params.serverId, "manage")) return;
   try {
     const serverId = String(req.params.serverId || "");
     const current = listManagedServers().find((server) => server.id === serverId && !server.primary);
@@ -8576,7 +8823,7 @@ router.post("/api/servers/:serverId/runtime/deactivate", async (req, res) => {
     resetManagedServerRuntimeCircuit(serverId);
     res.json({
       server,
-      servers: listManagedServers(),
+      servers: authorizedServersForRequest(req),
       runtimeActivationBlocked: false,
       foundation: getServerFoundationDiagnostics(),
       runtimeCoordinator: getManagedServerRuntimeCoordinatorDiagnostics(),
@@ -8588,7 +8835,7 @@ router.post("/api/servers/:serverId/runtime/deactivate", async (req, res) => {
 });
 
 router.get("/api/servers/:serverId/runtime/health", async (req, res) => {
-  if (!requireAdmin(req, res)) return;
+  if (!requireServerAdmin(req, res, req.params.serverId, "view")) return;
   const serverId = String(req.params.serverId || "");
   const diagnostics = getManagedServerRuntimeCoordinatorDiagnostics();
   const server = diagnostics.servers.find((candidate: any) => candidate.serverId === serverId);
@@ -8605,7 +8852,7 @@ router.get("/api/servers/:serverId/runtime/health", async (req, res) => {
 });
 
 router.post("/api/servers/:serverId/runtime/pause", async (req, res) => {
-  if (!requireAdmin(req, res)) return;
+  if (!requireServerAdmin(req, res, req.params.serverId, "manage")) return;
   try {
     const serverId = String(req.params.serverId || "");
     const current = listManagedServers().find((server) => server.id === serverId && !server.primary);
@@ -8632,7 +8879,7 @@ router.post("/api/servers/:serverId/runtime/pause", async (req, res) => {
     const server = transition.value;
     res.json({
       server,
-      servers: listManagedServers(),
+      servers: authorizedServersForRequest(req),
       foundation: getServerFoundationDiagnostics(),
       runtimeCoordinator: getManagedServerRuntimeCoordinatorDiagnostics(),
     });
@@ -8643,7 +8890,7 @@ router.post("/api/servers/:serverId/runtime/pause", async (req, res) => {
 });
 
 router.post("/api/servers/:serverId/runtime/resume", async (req, res) => {
-  if (!requireAdmin(req, res)) return;
+  if (!requireServerAdmin(req, res, req.params.serverId, "manage")) return;
   try {
     const serverId = String(req.params.serverId || "");
     const current = listManagedServers().find((server) => server.id === serverId && !server.primary);
@@ -8668,7 +8915,7 @@ router.post("/api/servers/:serverId/runtime/resume", async (req, res) => {
     const cycleRequested = requestManagedServerRuntimeCycle(serverId, "manual", { forceCircuitProbe: true });
     res.json({
       server,
-      servers: listManagedServers(),
+      servers: authorizedServersForRequest(req),
       cycleRequested,
       foundation: getServerFoundationDiagnostics(),
       runtimeCoordinator: getManagedServerRuntimeCoordinatorDiagnostics(),
@@ -8680,7 +8927,7 @@ router.post("/api/servers/:serverId/runtime/resume", async (req, res) => {
 });
 
 router.post("/api/servers/:serverId/runtime/retry", async (req, res) => {
-  if (!requireAdmin(req, res)) return;
+  if (!requireServerAdmin(req, res, req.params.serverId, "manage")) return;
   try {
     const serverId = String(req.params.serverId || "");
     const current = listManagedServers().find((server) => server.id === serverId && !server.primary);
@@ -8707,7 +8954,7 @@ router.post("/api/servers/:serverId/runtime/retry", async (req, res) => {
     }
     res.json({
       cycleRequested,
-      servers: listManagedServers(),
+      servers: authorizedServersForRequest(req),
       foundation: getServerFoundationDiagnostics(),
       runtimeCoordinator: getManagedServerRuntimeCoordinatorDiagnostics(),
     });

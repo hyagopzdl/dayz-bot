@@ -31,6 +31,18 @@ import {
   type ServerRuntimeOperations,
 } from "./serverRegistry";
 import { getActiveServerId, getServerStateStoragePath, runInServerMaintenanceContext, runInServerRuntimeContext } from "./serverRuntime";
+import {
+  buildOrganizationId,
+  getDefaultOrganizationDescriptor,
+  getDefaultOrganizationId,
+  getManagedOrganizationById,
+  normalizeOrganizationName,
+  normalizeOrganizationRole,
+  setOrganizationRegistryPersistenceStatus,
+  setPersistedOrganizations,
+  type ManagedOrganization,
+  type OrganizationMembership,
+} from "./organizationRegistry";
 
 const LEGACY_FILE = path.resolve(process.cwd(), "state.json");
 const STATE_ID = "main";
@@ -389,6 +401,7 @@ let lastScopedReadSource: "server-scoped" | "legacy-fallback" | "legacy" = "lega
 type ManagedServerDraftInput = {
   id?: unknown;
   name?: unknown;
+  organizationId?: unknown;
   nitradoServiceId?: unknown;
   nitradoBaseDir?: unknown;
   discordGuildId?: unknown;
@@ -465,6 +478,7 @@ function mapManagedServerRow(row: any, primary: ManagedServerDescriptor): Manage
   const descriptor: ManagedServerDescriptor = {
     id,
     name: String(row.name || row.id || "Server"),
+    organizationId: buildOrganizationId(row.organization_id || (isPrimary ? getDefaultOrganizationId() : "")) || getDefaultOrganizationId(),
     enabled: row.enabled !== false,
     primary: isPrimary,
     runtimeEnabled: isPrimary ? true : Boolean(row.runtime_enabled),
@@ -552,7 +566,7 @@ function mapManagedServerRow(row: any, primary: ManagedServerDescriptor): Manage
 async function reloadManagedServerRegistryFromDb(primary = getPrimaryServerDescriptor()) {
   if (!sql) return [primary];
   const rows = await sql`
-    SELECT id, name, enabled, primary_server, runtime_enabled, onboarding_status,
+    SELECT id, name, organization_id, enabled, primary_server, runtime_enabled, onboarding_status,
            mode, nitrado_service_id, discord_guild_id, runtime_config
     FROM managed_servers
     ORDER BY primary_server DESC, created_at ASC, id ASC
@@ -571,8 +585,48 @@ async function reloadManagedServerRegistryFromDb(primary = getPrimaryServerDescr
   return next;
 }
 
+async function reloadOrganizationRegistryFromDb() {
+  if (!sql) {
+    setPersistedOrganizations([getDefaultOrganizationDescriptor()], []);
+    return;
+  }
+  const organizationRows = await sql`
+    SELECT id, name, active, created_at, updated_at
+    FROM organizations
+    ORDER BY created_at ASC, id ASC
+  `;
+  const membershipRows = await sql`
+    SELECT organization_id, discord_id, role, created_at, updated_at
+    FROM organization_members
+    ORDER BY organization_id ASC, created_at ASC, discord_id ASC
+  `;
+  const nextOrganizations: ManagedOrganization[] = (organizationRows as any[]).map((row) => ({
+    id: buildOrganizationId(row.id),
+    name: normalizeOrganizationName(row.name),
+    active: row.active !== false,
+    createdAt: row.created_at ? new Date(row.created_at).toISOString() : undefined,
+    updatedAt: row.updated_at ? new Date(row.updated_at).toISOString() : undefined,
+  }));
+  const nextMemberships: OrganizationMembership[] = (membershipRows as any[]).map((row) => ({
+    organizationId: buildOrganizationId(row.organization_id),
+    discordId: String(row.discord_id || "").trim(),
+    role: normalizeOrganizationRole(row.role),
+    createdAt: row.created_at ? new Date(row.created_at).toISOString() : undefined,
+    updatedAt: row.updated_at ? new Date(row.updated_at).toISOString() : undefined,
+  }));
+  setPersistedOrganizations(nextOrganizations, nextMemberships);
+  setOrganizationRegistryPersistenceStatus({
+    organizationsLoaded: nextOrganizations.length,
+    membershipsLoaded: nextMemberships.length,
+    lastLoadedAt: new Date().toISOString(),
+    lastError: undefined,
+  });
+}
+
 async function ensurePrimaryServerRegistryMetadata() {
   if (!sql) {
+    setOrganizationRegistryPersistenceStatus({ enabled: false, initialized: true });
+    setPersistedOrganizations([getDefaultOrganizationDescriptor()], []);
     setServerRegistryPersistenceStatus({
       enabled: false,
       initialized: true,
@@ -586,7 +640,43 @@ async function ensurePrimaryServerRegistryMetadata() {
 
   serverRegistryReadyPromise = (async () => {
     const primary = getPrimaryServerDescriptor();
+    const defaultOrganization = getDefaultOrganizationDescriptor();
     try {
+      // Phase 15 adds ownership around the existing server-scoped runtime. It does
+      // not rename state rows, ADM paths, parser cursors or runtime identifiers.
+      await sql`
+        CREATE TABLE IF NOT EXISTS organizations (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          active BOOLEAN NOT NULL DEFAULT TRUE,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `;
+      await sql`
+        CREATE TABLE IF NOT EXISTS organization_members (
+          organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+          discord_id TEXT NOT NULL,
+          role TEXT NOT NULL DEFAULT 'viewer' CHECK (role IN ('owner','admin','moderator','viewer')),
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          PRIMARY KEY (organization_id, discord_id)
+        )
+      `;
+      await sql`CREATE INDEX IF NOT EXISTS organization_members_discord_id_idx ON organization_members (discord_id)`;
+      await sql`
+        INSERT INTO organizations (id, name, active, created_at, updated_at)
+        VALUES (${defaultOrganization.id}, ${defaultOrganization.name}, TRUE, NOW(), NOW())
+        ON CONFLICT (id) DO NOTHING
+        RETURNING id
+      `;
+      setOrganizationRegistryPersistenceStatus({
+        enabled: true,
+        organizationsTableReady: true,
+        membershipsTableReady: true,
+        defaultOrganizationSeeded: true,
+      });
+
       // Phase 5 keeps the registry metadata behavior unchanged. No bot_state ids,
       // ADM cursors, granular stats, Discord routing or Nitrado routing are
       // renamed or moved in this deploy.
@@ -594,6 +684,7 @@ async function ensurePrimaryServerRegistryMetadata() {
         CREATE TABLE IF NOT EXISTS managed_servers (
           id TEXT PRIMARY KEY,
           name TEXT NOT NULL,
+          organization_id TEXT,
           enabled BOOLEAN NOT NULL DEFAULT TRUE,
           primary_server BOOLEAN NOT NULL DEFAULT FALSE,
           runtime_enabled BOOLEAN NOT NULL DEFAULT FALSE,
@@ -609,16 +700,36 @@ async function ensurePrimaryServerRegistryMetadata() {
       await sql`ALTER TABLE managed_servers ADD COLUMN IF NOT EXISTS runtime_config JSONB`;
       await sql`ALTER TABLE managed_servers ADD COLUMN IF NOT EXISTS runtime_enabled BOOLEAN NOT NULL DEFAULT FALSE`;
       await sql`ALTER TABLE managed_servers ADD COLUMN IF NOT EXISTS onboarding_status TEXT NOT NULL DEFAULT 'draft'`;
+      await sql`ALTER TABLE managed_servers ADD COLUMN IF NOT EXISTS organization_id TEXT`;
+      const ownershipBackfill = await sql`
+        UPDATE managed_servers
+        SET organization_id = ${defaultOrganization.id}, updated_at = NOW()
+        WHERE organization_id IS NULL OR BTRIM(organization_id) = ''
+        RETURNING id
+      `;
+      await sql`ALTER TABLE managed_servers ALTER COLUMN organization_id SET NOT NULL`;
+      await sql`CREATE INDEX IF NOT EXISTS managed_servers_organization_id_idx ON managed_servers (organization_id)`;
+      const ownershipCounts = await sql`
+        SELECT COUNT(*)::int AS missing
+        FROM managed_servers
+        WHERE organization_id IS NULL OR BTRIM(organization_id) = ''
+      `;
+      const missingOwnership = Number((ownershipCounts as any[])[0]?.missing || 0);
+      setOrganizationRegistryPersistenceStatus({
+        serverOwnershipColumnReady: missingOwnership === 0,
+        serversBackfilled: (ownershipBackfill as any[]).length,
+        serversWithoutOrganization: missingOwnership,
+      });
       setServerRegistryPersistenceStatus({ tableReady: true });
 
       // Never overwrite an existing registry row from environment variables.
       // This avoids a deploy unexpectedly remapping the production server.
       const inserted = await sql`
         INSERT INTO managed_servers (
-          id, name, enabled, primary_server, runtime_enabled, onboarding_status, mode, nitrado_service_id, discord_guild_id, runtime_config, created_at, updated_at
+          id, name, organization_id, enabled, primary_server, runtime_enabled, onboarding_status, mode, nitrado_service_id, discord_guild_id, runtime_config, created_at, updated_at
         )
         VALUES (
-          ${primary.id}, ${primary.name}, TRUE, TRUE, TRUE, 'active', ${primary.mode},
+          ${primary.id}, ${primary.name}, ${defaultOrganization.id}, TRUE, TRUE, TRUE, 'active', ${primary.mode},
           ${primary.integrations.nitradoServiceId || null}, ${primary.integrations.discordGuildId || null}, ${JSON.stringify(primary.runtime)}::jsonb, NOW(), NOW()
         )
         ON CONFLICT (id) DO NOTHING
@@ -628,6 +739,7 @@ async function ensurePrimaryServerRegistryMetadata() {
       const runtimeBackfill = await sql`
         UPDATE managed_servers
         SET
+          organization_id = COALESCE(NULLIF(BTRIM(organization_id), ''), ${defaultOrganization.id}),
           nitrado_service_id = COALESCE(nitrado_service_id, ${primary.integrations.nitradoServiceId || null}),
           discord_guild_id = COALESCE(discord_guild_id, ${primary.integrations.discordGuildId || null}),
           runtime_config = CASE
@@ -639,7 +751,9 @@ async function ensurePrimaryServerRegistryMetadata() {
           updated_at = NOW()
         WHERE id = ${primary.id}
           AND (
-            nitrado_service_id IS NULL
+            organization_id IS NULL
+            OR BTRIM(organization_id) = ''
+            OR nitrado_service_id IS NULL
             OR discord_guild_id IS NULL
             OR runtime_config IS NULL
             OR runtime_config = '{}'::jsonb
@@ -648,6 +762,39 @@ async function ensurePrimaryServerRegistryMetadata() {
           )
         RETURNING id
       `;
+
+      const bootstrapAdminIds = Array.from(new Set(
+        String(process.env.DISCORD_ADMIN_USER_IDS || "")
+          .split(",")
+          .map((value) => value.trim())
+          .filter(Boolean),
+      ));
+      let seededOwnerMemberships = 0;
+      const existingMembershipCountRows = await sql`
+        SELECT COUNT(*)::int AS count
+        FROM organization_members
+        WHERE organization_id = ${defaultOrganization.id}
+      `;
+      const existingMembershipCount = Number((existingMembershipCountRows as any[])[0]?.count || 0);
+      // Environment admins are a one-time bootstrap only. Once the organization
+      // has persisted memberships, later removals/demotions must not be silently
+      // reversed by a Render restart or deploy.
+      if (existingMembershipCount === 0) {
+        for (const discordId of bootstrapAdminIds) {
+          const insertedMembership = await sql`
+            INSERT INTO organization_members (organization_id, discord_id, role, created_at, updated_at)
+            VALUES (${defaultOrganization.id}, ${discordId}, 'owner', NOW(), NOW())
+            ON CONFLICT (organization_id, discord_id) DO NOTHING
+            RETURNING discord_id
+          `;
+          seededOwnerMemberships += (insertedMembership as any[]).length;
+        }
+      }
+      await reloadOrganizationRegistryFromDb();
+      setOrganizationRegistryPersistenceStatus({
+        initialized: true,
+        seededOwnerMemberships,
+      });
 
       // Phase 12 preserves explicitly activated runtimes across deploys, but still
       // fails closed on stale/manual runtime_enabled values that do not have a
@@ -785,9 +932,11 @@ async function ensurePrimaryServerRegistryMetadata() {
         console.error("❌ erro preparando namespace multi-server:", namespaceErr);
       }
     } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setOrganizationRegistryPersistenceStatus({ initialized: true, lastError: message });
       setServerRegistryPersistenceStatus({
         initialized: true,
-        lastError: err instanceof Error ? err.message : String(err),
+        lastError: message,
       });
       // Registry metadata must never block the current production state path.
       console.error("❌ erro inicializando metadata multi-server:", err);
@@ -1708,9 +1857,13 @@ export async function createManagedServerDraft(input: ManagedServerDraftInput) {
   if (id === getPrimaryServerId()) throw new Error("O Server ID do PZ Deathmatch e reservado e nao pode ser reutilizado.");
 
   const discord = normalizeServerDiscordDraft(input?.discord);
+  const requestedOrganizationId = buildOrganizationId(input?.organizationId || getDefaultOrganizationId()) || getDefaultOrganizationId();
+  if (!getManagedOrganizationById(requestedOrganizationId)) throw new Error("Organization ID invalido ou nao encontrado.");
+
   const descriptor: ManagedServerDescriptor = {
     id,
     name,
+    organizationId: requestedOrganizationId,
     enabled: true,
     primary: false,
     runtimeEnabled: false,
@@ -1737,10 +1890,10 @@ export async function createManagedServerDraft(input: ManagedServerDraftInput) {
 
   const inserted = await sql`
     INSERT INTO managed_servers (
-      id, name, enabled, primary_server, runtime_enabled, onboarding_status,
+      id, name, organization_id, enabled, primary_server, runtime_enabled, onboarding_status,
       mode, nitrado_service_id, discord_guild_id, runtime_config, created_at, updated_at
     ) VALUES (
-      ${descriptor.id}, ${descriptor.name}, TRUE, FALSE, FALSE, ${descriptor.onboardingStatus},
+      ${descriptor.id}, ${descriptor.name}, ${descriptor.organizationId}, TRUE, FALSE, FALSE, ${descriptor.onboardingStatus},
       ${descriptor.mode}, ${descriptor.integrations.nitradoServiceId || null}, ${descriptor.integrations.discordGuildId || null},
       ${JSON.stringify(descriptor.runtime)}::jsonb, NOW(), NOW()
     )
@@ -2138,6 +2291,78 @@ export async function setManagedServerRuntimePaused(serverId: string, paused: bo
     ok: true,
   });
   return next;
+}
+
+export async function createManagedOrganization(input: { id?: unknown; name?: unknown }) {
+  await ensurePrimaryServerRegistryMetadata();
+  if (!sql) throw new Error("Organization registry is unavailable.");
+  const name = normalizeOrganizationName(input?.name);
+  const id = buildOrganizationId(input?.id || name);
+  if (!id) throw new Error("Informe um Organization ID valido.");
+  const inserted = await sql`
+    INSERT INTO organizations (id, name, active, created_at, updated_at)
+    VALUES (${id}, ${name}, TRUE, NOW(), NOW())
+    ON CONFLICT (id) DO NOTHING
+    RETURNING id
+  `;
+  if (!(inserted as any[]).length) throw new Error(`Organization ID ${id} ja existe.`);
+  await reloadOrganizationRegistryFromDb();
+  recordNetworkTransfer({ service: "neon-organization-registry", operation: "create_organization", direction: "outbound", bytes: Buffer.byteLength(JSON.stringify({ id, name }), "utf8"), ok: true });
+  return getManagedOrganizationById(id);
+}
+
+export async function upsertOrganizationMembership(organizationIdInput: unknown, discordIdInput: unknown, roleInput: unknown) {
+  await ensurePrimaryServerRegistryMetadata();
+  if (!sql) throw new Error("Organization registry is unavailable.");
+  const organizationId = buildOrganizationId(organizationIdInput);
+  const discordId = String(discordIdInput || "").trim();
+  const role = normalizeOrganizationRole(roleInput);
+  if (!organizationId || !getManagedOrganizationById(organizationId)) throw new Error("Organization nao encontrada.");
+  if (!/^\d{5,32}$/.test(discordId)) throw new Error("Discord ID invalido.");
+  await sql.begin(async (tx: any) => {
+    const owners = await tx`
+      SELECT discord_id FROM organization_members
+      WHERE organization_id = ${organizationId} AND role = 'owner'
+      FOR UPDATE
+    `;
+    if (!(owners as any[]).length && role !== "owner") {
+      throw new Error("O primeiro membro da organizacao precisa ser owner.");
+    }
+    const targetIsOnlyOwner = role !== "owner"
+      && (owners as any[]).length === 1
+      && String((owners as any[])[0]?.discord_id || "") === discordId;
+    if (targetIsOnlyOwner) throw new Error("Nao e permitido rebaixar o ultimo owner da organizacao.");
+    await tx`
+      INSERT INTO organization_members (organization_id, discord_id, role, created_at, updated_at)
+      VALUES (${organizationId}, ${discordId}, ${role}, NOW(), NOW())
+      ON CONFLICT (organization_id, discord_id) DO UPDATE
+      SET role = EXCLUDED.role, updated_at = NOW()
+    `;
+  });
+  await reloadOrganizationRegistryFromDb();
+  recordNetworkTransfer({ service: "neon-organization-registry", operation: "upsert_membership", direction: "outbound", bytes: Buffer.byteLength(JSON.stringify({ organizationId, discordId, role }), "utf8"), ok: true });
+  return { organizationId, discordId, role } as OrganizationMembership;
+}
+
+export async function removeOrganizationMembership(organizationIdInput: unknown, discordIdInput: unknown) {
+  await ensurePrimaryServerRegistryMetadata();
+  if (!sql) throw new Error("Organization registry is unavailable.");
+  const organizationId = buildOrganizationId(organizationIdInput);
+  const discordId = String(discordIdInput || "").trim();
+  if (!organizationId || !discordId) throw new Error("Organization e Discord ID sao obrigatorios.");
+  await sql.begin(async (tx: any) => {
+    const owners = await tx`
+      SELECT discord_id FROM organization_members
+      WHERE organization_id = ${organizationId} AND role = 'owner'
+      FOR UPDATE
+    `;
+    if ((owners as any[]).length <= 1 && String((owners as any[])[0]?.discord_id || "") === discordId) {
+      throw new Error("Nao e permitido remover o ultimo owner da organizacao.");
+    }
+    await tx`DELETE FROM organization_members WHERE organization_id = ${organizationId} AND discord_id = ${discordId}`;
+  });
+  await reloadOrganizationRegistryFromDb();
+  recordNetworkTransfer({ service: "neon-organization-registry", operation: "remove_membership", direction: "outbound", bytes: Buffer.byteLength(JSON.stringify({ organizationId, discordId }), "utf8"), ok: true });
 }
 
 async function ensureGranularPlayerStatsTable() {

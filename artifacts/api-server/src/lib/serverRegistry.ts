@@ -1,3 +1,4 @@
+import { getDefaultOrganizationId, getOrganizationFoundationDiagnostics } from "./organizationRegistry";
 export type ServerFoundationMode = "single-server-compat";
 export type ServerOnboardingStatus = "active" | "draft" | "configured" | "ready";
 
@@ -70,6 +71,7 @@ export type ServerRuntimeConfig = {
 export type ManagedServerDescriptor = {
   id: string;
   name: string;
+  organizationId: string;
   enabled: boolean;
   primary: boolean;
   runtimeEnabled: boolean;
@@ -359,6 +361,7 @@ export function getPrimaryServerDescriptor(): ManagedServerDescriptor {
   return {
     id: getPrimaryServerId(),
     name: normalizeManagedServerName(process.env.SERVER_DISPLAY_NAME || process.env.SERVER_NAME || FALLBACK_SERVER_NAME),
+    organizationId: getDefaultOrganizationId(),
     enabled: true,
     primary: true,
     runtimeEnabled: true,
@@ -383,6 +386,7 @@ export function setPersistedManagedServers(servers: ManagedServerDescriptor[]) {
   persistedServers = servers.map((server) => ({
     id: normalizeServerId(server.id),
     name: normalizeManagedServerName(server.name),
+    organizationId: String(server.organizationId || getDefaultOrganizationId()).trim() || getDefaultOrganizationId(),
     enabled: server.enabled !== false,
     primary: Boolean(server.primary),
     runtimeEnabled: Boolean(server.primary ? true : server.runtimeEnabled),
@@ -459,7 +463,7 @@ export function getServerFoundationDiagnostics() {
   const managedServers = listManagedServers();
   const additionalServers = managedServers.filter((candidate) => !candidate.primary);
   return {
-    phase: 14,
+    phase: 15,
     mode: server.mode,
     currentServerId: server.id,
     currentServerName: server.name,
@@ -483,6 +487,8 @@ export function getServerFoundationDiagnostics() {
       activationEndpointEnabled: true,
       playerPortalContextSwitchingEnabled: true,
       operationalHardeningEnabled: true,
+      multiTenantFoundationEnabled: true,
+      organizationAuthorizationEnabled: true,
       manualPauseAvailable: true,
       circuitBreakerMode: "secondary-only-in-memory",
       circuitBreakerFailureThreshold: 3,
@@ -538,7 +544,10 @@ export function getServerFoundationDiagnostics() {
       manualRuntimePause: true,
       secondaryCircuitBreaker: true,
       primaryCircuitBreakerDisabled: true,
+      organizationOwnershipRequired: true,
+      organizationRbacPrepared: true,
     },
+    tenancy: getOrganizationFoundationDiagnostics(),
     integrations: server.integrations,
   };
 }

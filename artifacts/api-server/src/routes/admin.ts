@@ -67,9 +67,12 @@ function getAdminTokenFromRequest(req: { query: any; headers: any }) {
 }
 
 function requireAdmin(req: any, res: any) {
-  const configuredToken = process.env.SHOP_ADMIN_TOKEN;
+  const configuredToken = process.env.SHOP_ADMIN_TOKEN || process.env.ADMIN_PANEL_TOKEN;
 
-  if (!configuredToken) return true;
+  if (!configuredToken) {
+    res.status(503).send("Legacy admin surface is disabled until an admin token is configured.");
+    return false;
+  }
 
   const receivedToken = getAdminTokenFromRequest(req);
 

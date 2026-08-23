@@ -33,7 +33,7 @@ import { getStateAsync, saveStateAsync, type AppState } from "../lib/state";
 import { isShopServiceEnabled } from "../lib/serviceSettings";
 import { requirePortalAuth } from "../middlewares/portalAuth";
 import { renderPlayerPortal } from "./playerPortalView";
-import { getPrimaryServerDescriptor, getPrimaryServerId } from "../lib/serverRegistry";
+import { getManagedServerById, getPrimaryServerDescriptor, getPrimaryServerId } from "../lib/serverRegistry";
 import { getActiveServerId, runInServerRuntimeContext } from "../lib/serverRuntime";
 import {
   getPlayerPortalServerContext,
@@ -57,6 +57,10 @@ async function getPrimaryIdentityImportOptions(state: AppState, session: PortalS
   const selectedServerId = getActiveServerId();
   const primaryServerId = getPrimaryServerId();
   if (selectedServerId === primaryServerId) return null;
+
+  const selectedServer = getManagedServerById(selectedServerId);
+  const primaryServer = getPrimaryServerDescriptor();
+  if (!selectedServer || selectedServer.organizationId !== primaryServer.organizationId) return null;
 
   const primaryState = await runInServerRuntimeContext(primaryServerId, () => getStateAsync());
   const primaryLink = getPlayerLinkByDiscordId(primaryState, session.discordId);

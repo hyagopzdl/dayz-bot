@@ -1,5 +1,6 @@
 import type { NextFunction, Request, Response } from "express";
 import {
+  getPrimaryServerDescriptor,
   getPrimaryServerId,
   listExecutableManagedServers,
   setServerRuntimeIsolationStatus,
@@ -43,7 +44,14 @@ function requestedServerId(req: Request) {
 }
 
 export function listPlayerPortalServers() {
-  return listExecutableManagedServers().map(publicServer);
+  // Phase 15 keeps a public/player portal inside one organization boundary.
+  // Future customer organizations must never become discoverable just because
+  // their runtimes share the same ADM process. Phase 16 can add an explicit
+  // organization entrypoint without weakening this default isolation.
+  const primaryOrganizationId = getPrimaryServerDescriptor().organizationId;
+  return listExecutableManagedServers()
+    .filter((server) => server.organizationId === primaryOrganizationId)
+    .map(publicServer);
 }
 
 export function resolvePlayerPortalServerContext(req: Request): PlayerPortalServerContext {
@@ -123,6 +131,7 @@ export function getPlayerPortalContextDiagnostics() {
     contextResolutions,
     contextSwitches,
     invalidSelections,
-    policy: "active-runtime-only",
+    policy: "active-runtime-same-organization-only",
+    organizationId: getPrimaryServerDescriptor().organizationId,
   };
 }
