@@ -21,6 +21,7 @@ import {
   recordMainCycleStarted,
 } from "./runtimeMetrics";
 import { runManagedServerActivationPreflight } from "./serverPreflight";
+import { hydrateKnownServerPlayers, scheduleTenantCommerceMirror } from "./tenantCommerceStore";
 import { setManagedServerRuntimeEnabled } from "./state";
 import {
   runInServerMaintenanceContext,
@@ -157,6 +158,8 @@ export async function runManagedServerRuntimeCycle(
     // Loading the server-scoped state first initializes a brand-new namespace
     // without touching the primary and gives each runtime its own ADM strategy.
     const state = await getStateAsync();
+    await hydrateKnownServerPlayers(serverId).catch((err) => console.error(`❌ known players hydrate failed [${serverId}]`, err));
+    scheduleTenantCommerceMirror(state, serverId);
     const settings = normalizeServiceSettings(state.serviceSettings);
     setAdmDownloadMode(settings.admDownloadMode, serverId);
 
@@ -175,6 +178,7 @@ export async function runManagedServerRuntimeCycle(
     try {
       console.log(`🔥 PARSER AUTOMÁTICO [${serverId}]`);
       await getLeaderboard();
+      scheduleTenantCommerceMirror(state, serverId);
 
       // Feed refresh piggybacks on the centralized ADM cycle. This keeps
       // rankings/online/killfeed isolated per server without one timer per tenant.

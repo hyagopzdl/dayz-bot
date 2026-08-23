@@ -2,6 +2,7 @@ import fs from "fs";
 import path from "path";
 import crypto from "crypto";
 import postgres from "postgres";
+import { hydrateKnownServerPlayers, scheduleTenantCommerceMirror } from "./tenantCommerceStore";
 import type { ShopCatalog } from "./shopCatalog";
 import type { DayzItemDefinition } from "./dayzItemDatabase";
 import type { Locale } from "./i18n";
@@ -3736,6 +3737,7 @@ export async function getStateAsync(): Promise<AppState> {
       }
 
       domainPersistenceMetrics.bootSource = recoveredPrimary ? "persistence-v2" : "fresh-main";
+      await hydrateKnownServerPlayers(getActiveServerId()).catch((err) => console.error(`❌ known players hydrate failed [${getActiveServerId()}]`, err));
       const serialized = serializeState(state);
       const hash = hashState(serialized);
 
@@ -3835,6 +3837,7 @@ export async function getStateAsync(): Promise<AppState> {
     if (primaryStatsRecovered) {
       await persistRecoveredPrimarySnapshot(getCachedState()!, mainRow);
     }
+    await hydrateKnownServerPlayers(getActiveServerId()).catch((err) => console.error(`❌ known players hydrate failed [${getActiveServerId()}]`, err));
     const loadedStateJson = serializeState(getCachedState()!);
     recordNetworkTransfer({
       service: "neon",
@@ -4380,6 +4383,7 @@ export async function saveStateAsync(data: AppState, reason?: string) {
   const hash = hashState(serialized);
 
   writeLocalState(safeData);
+  scheduleTenantCommerceMirror(safeData, getActiveServerId());
 
   if (!sql) {
     getPersistenceRuntime().lastPersistedJson = serialized;

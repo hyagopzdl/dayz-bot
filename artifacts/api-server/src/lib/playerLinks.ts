@@ -1,5 +1,6 @@
 import type { AppState, PlayerLink } from "./state";
 import { DEFAULT_LOCALE, normalizeLocale, type Locale } from "./i18n";
+import { getPersistedKnownGamertags } from "./tenantCommerceStore";
 
 export function normalizeGamertag(gamertag: string): string {
   return gamertag.trim().replace(/\s+/g, " ").toLowerCase();
@@ -120,6 +121,11 @@ function getKnownGamertagNames(state: AppState): string[] {
   // onlinePlayers is already scoped to the active server context, so accepting it
   // here does not leak identities between tenants.
   for (const playerName of Object.keys(state.onlinePlayers || {})) {
+    const normalized = normalizeGamertag(playerName);
+    if (normalized && !namesByNormalized.has(normalized)) namesByNormalized.set(normalized, playerName);
+  }
+
+  for (const playerName of getPersistedKnownGamertags()) {
     const normalized = normalizeGamertag(playerName);
     if (normalized && !namesByNormalized.has(normalized)) namesByNormalized.set(normalized, playerName);
   }
