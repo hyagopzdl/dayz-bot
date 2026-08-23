@@ -14,6 +14,7 @@ import {
   resolveServerIdFromDiscordGuildId,
 } from "../serverRegistry";
 import { runInServerRuntimeContext } from "../serverRuntime";
+import { refreshManagedServerRegistryFromDb } from "../state";
 import { deferEphemeral } from "./responses";
 import { assertAdmin } from "./permissions";
 
@@ -30,13 +31,50 @@ async function replyUnavailable(interaction: any) {
   }
 }
 
+function isLinkInteraction(interaction: any) {
+  if (interaction.isAutocomplete?.()) return interaction.commandName === "link";
+  if (interaction.isChatInputCommand?.()) return interaction.commandName === "link" || interaction.commandName === "unlink";
+  const customId = String(interaction.customId || "");
+  return customId.startsWith("link-language:") || customId.startsWith("link-confirm:");
+}
+
+async function handleSecondaryLinkInteraction(interaction: any, serverId: string) {
+  const stateAccess = createDiscordStateAccess(serverId);
+  const ctx = { getState: stateAccess.getState, saveState: stateAccess.saveState };
+
+  // Identity linking must be available as soon as the Discord guild is bound to
+  // this managed server. Do not make /link wait for the full runtime activation
+  // gate or for command-settings state to load before Discord is acknowledged.
+  if (await handleLinkAutocomplete(interaction, ctx)) return true;
+  if (await handleLinkComponentInteraction(interaction, ctx)) return true;
+
+  if (interaction.isChatInputCommand?.() && (interaction.commandName === "link" || interaction.commandName === "unlink")) {
+    // Acknowledge Discord first. The previous secondary flow loaded the full
+    // server state before handleLinkCommand() could defer the interaction,
+    // which is why /link could sit on an endless loading state.
+    if (!interaction.deferred && !interaction.replied) {
+      await interaction.deferReply({ ephemeral: true });
+    }
+
+    // Preserve the per-server command toggle, but evaluate it after the
+    // interaction has already been acknowledged.
+    const state = await stateAccess.getState();
+    if (!isDiscordCommandEnabled(state.discordCommandSettings, interaction.commandName)) {
+      await interaction.editReply({ content: DISABLED_COMMAND_MESSAGE });
+      return true;
+    }
+
+    if (await handleLinkCommand(interaction, ctx)) return true;
+  }
+
+  return false;
+}
+
 async function handleSecondaryInteraction(interaction: any, serverId: string) {
   const stateAccess = createDiscordStateAccess(serverId);
   const ctx = { getState: stateAccess.getState, saveState: stateAccess.saveState };
 
-  if (await handleLinkAutocomplete(interaction, ctx)) return;
   if (await handleEconomyAdminAutocomplete(interaction, ctx)) return;
-  if (await handleLinkComponentInteraction(interaction, ctx)) return;
 
   if (interaction.isChatInputCommand?.()) {
     const state = await stateAccess.getState();
@@ -117,10 +155,39 @@ export function registerSecondaryManagedServerInteractions(client: Client) {
     const guildId = String(interaction.guildId || "").trim();
     if (!guildId) return;
 
-    const serverId = resolveServerIdFromDiscordGuildId(guildId);
-    if (!serverId || serverId === getPrimaryServerId()) return;
+    let serverId = resolveServerIdFromDiscordGuildId(guildId);
 
     try {
+      // Discord can be connected after the bot process has already started. If
+      // the in-memory registry has not observed that binding yet, refresh it
+      // once from Neon before deciding that this guild is unknown.
+      if (!serverId) {
+        await refreshManagedServerRegistryFromDb();
+        serverId = resolveServerIdFromDiscordGuildId(guildId);
+      }
+
+      if (!serverId) {
+        if (interaction.isAutocomplete?.()) {
+          await interaction.respond([]).catch(() => undefined);
+        } else if (interaction.isChatInputCommand?.()) {
+          await interaction.reply({
+            content: "This Discord server is not linked to an ADM DayZ server yet.",
+            ephemeral: true,
+          }).catch(() => undefined);
+        }
+        return;
+      }
+
+      if (serverId === getPrimaryServerId()) return;
+
+      // /link and /unlink are onboarding-safe identity operations. Route them
+      // immediately in the guild-resolved server context so they acknowledge
+      // Discord before any full runtime readiness checks or settings reads.
+      if (isLinkInteraction(interaction)) {
+        await runInServerRuntimeContext(serverId, () => handleSecondaryLinkInteraction(interaction, serverId!));
+        return;
+      }
+
       if (!canExecuteManagedServerRuntime(serverId)) {
         await replyUnavailable(interaction);
         return;
@@ -130,9 +197,9 @@ export function registerSecondaryManagedServerInteractions(client: Client) {
       // creation and XML deploy included) inside the resolved server context.
       // This is stronger than wrapping only getState/saveState and prevents any
       // helper that calls getActiveServerId() from falling back to the PZ.
-      await runInServerRuntimeContext(serverId, () => handleSecondaryInteraction(interaction, serverId));
+      await runInServerRuntimeContext(serverId, () => handleSecondaryInteraction(interaction, serverId!));
     } catch (error) {
-      console.error(`❌ secondary Discord interaction failed [${serverId}]:`, error);
+      console.error(`❌ secondary Discord interaction failed [${serverId || "unresolved"}]:`, error);
       if (interaction.isAutocomplete?.()) {
         await interaction.respond([]).catch(() => undefined);
         return;
