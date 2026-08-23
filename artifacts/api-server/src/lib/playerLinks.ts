@@ -107,15 +107,32 @@ export function unlinkPlayer(state: AppState, discordId: string): PlayerLink | n
   return link;
 }
 
+function getKnownGamertagNames(state: AppState): string[] {
+  const namesByNormalized = new Map<string, string>();
+
+  // Historical combat stats are the long-lived source of known players.
+  for (const playerName of Object.keys(state.players || {})) {
+    const normalized = normalizeGamertag(playerName);
+    if (normalized && !namesByNormalized.has(normalized)) namesByNormalized.set(normalized, playerName);
+  }
+
+  // A newly seen player may be online before ever recording a kill/death.
+  // onlinePlayers is already scoped to the active server context, so accepting it
+  // here does not leak identities between tenants.
+  for (const playerName of Object.keys(state.onlinePlayers || {})) {
+    const normalized = normalizeGamertag(playerName);
+    if (normalized && !namesByNormalized.has(normalized)) namesByNormalized.set(normalized, playerName);
+  }
+
+  return [...namesByNormalized.values()];
+}
+
 export function findKnownGamertag(state: AppState, gamertag: string): string | null {
   const normalized = normalizeGamertag(gamertag);
   if (!normalized) return null;
 
-  const players = state.players || {};
-  for (const playerName of Object.keys(players)) {
-    if (normalizeGamertag(playerName) === normalized) {
-      return playerName;
-    }
+  for (const playerName of getKnownGamertagNames(state)) {
+    if (normalizeGamertag(playerName) === normalized) return playerName;
   }
 
   return null;
@@ -123,7 +140,7 @@ export function findKnownGamertag(state: AppState, gamertag: string): string | n
 
 export function searchKnownGamertags(state: AppState, query: string, limit = 25): string[] {
   const normalizedQuery = normalizeGamertag(query);
-  const players = Object.keys(state.players || {});
+  const players = getKnownGamertagNames(state);
 
   const exact: string[] = [];
   const startsWith: string[] = [];
