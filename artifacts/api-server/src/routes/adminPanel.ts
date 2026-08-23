@@ -124,6 +124,16 @@ import {
 import { getShopCatalogDiagnostics, cloneShopCatalog } from "../lib/shopCatalog";
 
 const router = Router();
+
+// Every authenticated admin request must execute inside the server bound to
+// that admin account. This prevents implicit getActiveServerId() fallbacks from
+// reading/writing the primary server when admin2 is managing a secondary.
+router.use((req, _res, next) => {
+  const serverId = String(req.adminSession?.serverId || "").trim();
+  if (!serverId || !getManagedServerById(serverId)) return next();
+  return runInServerRuntimeContext(serverId, () => next());
+});
+
 startMapEventScheduler();
 const TOKEN_COOKIE = "admin_panel_token";
 const DEFAULT_PAGE_SIZE = 20;
@@ -581,7 +591,7 @@ async function createDiscordSpawnZonePollUnlocked(rotation: MapRotationPayload, 
     recurring: Boolean(optionsOverride.recurring),
     options: options.map((zone, index) => ({ zoneId: zone.id, name: zone.name, answerId: index + 1, votes: 0 })),
     totalVotes: 0,
-    rawUrl: `https://discord.com/channels/${getPrimaryServerDescriptor().integrations.discordGuildId || "@me"}/${channelId}/${messageId}`,
+    rawUrl: `https://discord.com/channels/${getManagedServerById(getActiveServerId())?.integrations.discordGuildId || "@me"}/${channelId}/${messageId}`,
   } satisfies MapRotationActivePollPayload;
 }
 
@@ -1701,32 +1711,35 @@ async function fetchDiscordMembersViaRest(
 }
 
 const DISCORD_MEMBERS_CACHE_TTL_MS = 60_000;
-let discordMembersCache: DiscordMembersCache = {
-  expiresAt: 0,
-  members: [],
-  error: null,
-};
+const discordMembersCacheByServer = new Map<string, DiscordMembersCache>();
+
+function emptyDiscordMembersCache(): DiscordMembersCache {
+  return { expiresAt: 0, members: [], error: null };
+}
 
 async function fetchDiscordMemberSnapshots(
   forceRefresh = false,
 ): Promise<DiscordMembersCache> {
   const now = Date.now();
-  if (!forceRefresh && discordMembersCache.expiresAt > now)
-    return discordMembersCache;
+  const serverId = getActiveServerId();
+  const previousCache = discordMembersCacheByServer.get(serverId) || emptyDiscordMembersCache();
+  if (!forceRefresh && previousCache.expiresAt > now) return previousCache;
 
   try {
     const client = getDiscordClient();
     if (!client.isReady()) throw new Error("Discord client is not ready yet.");
 
-    const configuredGuildId =
-      getPrimaryServerDescriptor().integrations.discordGuildId || "";
-    const guild = configuredGuildId
-      ? await client.guilds.fetch(configuredGuildId)
-      : client.guilds.cache.first();
+    const server = getManagedServerById(serverId);
+    if (!server) throw new Error(`Managed server not found for Discord member lookup: ${serverId}`);
+    const configuredGuildId = String(server.integrations.discordGuildId || "").trim();
+    if (!configuredGuildId) {
+      throw new Error(`Discord is not connected for server ${serverId}.`);
+    }
+    const guild = await client.guilds.fetch(configuredGuildId);
 
-    if (!guild)
+    if (!guild || guild.id !== configuredGuildId)
       throw new Error(
-        "Discord guild not found for the current managed server.",
+        `Discord guild not found for managed server ${serverId}.`,
       );
 
     let members: DiscordMemberSnapshot[] = [];
@@ -1770,20 +1783,20 @@ async function fetchDiscordMemberSnapshots(
       throw new Error(fetchError || "Discord member list returned empty.");
     }
 
-    discordMembersCache = {
+    discordMembersCacheByServer.set(serverId, {
       expiresAt: now + DISCORD_MEMBERS_CACHE_TTL_MS,
       members,
       error: fetchError,
-    };
+    });
   } catch (err) {
-    discordMembersCache = {
+    discordMembersCacheByServer.set(serverId, {
       expiresAt: now + Math.min(DISCORD_MEMBERS_CACHE_TTL_MS, 15_000),
-      members: discordMembersCache.members,
+      members: previousCache.members,
       error: err instanceof Error ? err.message : String(err),
-    };
+    });
   }
 
-  return discordMembersCache;
+  return discordMembersCacheByServer.get(serverId) || previousCache;
 }
 
 function fallbackDiscordMembersFromLinks(
@@ -9395,7 +9408,8 @@ router.post("/api/servers/:serverId/runtime/retry", async (req, res) => {
 
 router.get("/api/servers/current", async (req, res) => {
   if (!requireAdmin(req, res)) return;
-  res.json({ server: getPrimaryServerDescriptor(), foundation: foundationForRequest(req) });
+  const server = getManagedServerById(getActiveServerId()) || getPrimaryServerDescriptor();
+  res.json({ server, foundation: foundationForRequest(req) });
 });
 
 router.get("/api/overview", async (req, res) => {
@@ -9404,7 +9418,7 @@ router.get("/api/overview", async (req, res) => {
   try {
     const state = await getStateAsync();
     const overview = await buildOverviewPayload(state as AdminState);
-    const serverDescriptor = getPrimaryServerDescriptor();
+    const serverDescriptor = getManagedServerById(getActiveServerId()) || getPrimaryServerDescriptor();
     res.json({
       ...overview,
       server: {

@@ -112,51 +112,81 @@ async function countServerCatalogItems(serverId: string) {
   return Number((rows as any[])[0]?.count || 0);
 }
 
+async function catalogsAreExactClone(sourceServerId: string, targetServerId: string) {
+  const db = requireSql();
+  const rows = await db`
+    SELECT
+      NOT EXISTS (
+        (SELECT id, label, emoji, description, enabled, sort_order
+         FROM server_shop_catalog_categories WHERE server_id = ${sourceServerId}
+         EXCEPT
+         SELECT id, label, emoji, description, enabled, sort_order
+         FROM server_shop_catalog_categories WHERE server_id = ${targetServerId})
+        UNION ALL
+        (SELECT id, label, emoji, description, enabled, sort_order
+         FROM server_shop_catalog_categories WHERE server_id = ${targetServerId}
+         EXCEPT
+         SELECT id, label, emoji, description, enabled, sort_order
+         FROM server_shop_catalog_categories WHERE server_id = ${sourceServerId})
+      )
+      AND NOT EXISTS (
+        (SELECT id, name, class_name, popular_name, category, price, description, image_url, enabled, max_per_restart, sort_order
+         FROM server_shop_catalog_items WHERE server_id = ${sourceServerId}
+         EXCEPT
+         SELECT id, name, class_name, popular_name, category, price, description, image_url, enabled, max_per_restart, sort_order
+         FROM server_shop_catalog_items WHERE server_id = ${targetServerId})
+        UNION ALL
+        (SELECT id, name, class_name, popular_name, category, price, description, image_url, enabled, max_per_restart, sort_order
+         FROM server_shop_catalog_items WHERE server_id = ${targetServerId}
+         EXCEPT
+         SELECT id, name, class_name, popular_name, category, price, description, image_url, enabled, max_per_restart, sort_order
+         FROM server_shop_catalog_items WHERE server_id = ${sourceServerId})
+      ) AS exact_clone
+  `;
+  return rows[0]?.exact_clone === true;
+}
+
+async function cleanupLegacySecondaryAutoClone(serverId: string) {
+  const primaryServerId = getPrimaryServerId();
+  if (serverId === primaryServerId) return false;
+  const db = requireSql();
+  const targetCount = await countServerCatalogItems(serverId);
+  if (!targetCount) return false;
+  const primaryCount = await countServerCatalogItems(primaryServerId);
+  if (!primaryCount || targetCount !== primaryCount) return false;
+  if (!(await catalogsAreExactClone(primaryServerId, serverId))) return false;
+
+  // Phase 16 previously auto-cloned the primary catalog into same-org secondary
+  // servers. Remove only an exact, untouched clone; any customized secondary
+  // catalog is preserved.
+  await db.begin(async (tx) => {
+    await tx`DELETE FROM server_shop_catalog_items WHERE server_id = ${serverId}`;
+    await tx`DELETE FROM server_shop_catalog_categories WHERE server_id = ${serverId}`;
+  });
+  cachedCatalogs.delete(serverId);
+  return true;
+}
+
 async function seedServerCatalogIfNeeded(serverId: string) {
   const db = requireSql();
   await ensureShopCatalogSchema();
-  if (await countServerCatalogItems(serverId)) return;
 
   const primaryServerId = getPrimaryServerId();
-  if (serverId === primaryServerId) {
-    await db.begin(async (tx) => {
-      await tx`
-        INSERT INTO server_shop_catalog_categories (
-          server_id, id, label, emoji, description, enabled, sort_order, created_at, updated_at
-        )
-        SELECT ${serverId}, id, label, emoji, description, enabled, sort_order, created_at, updated_at
-        FROM shop_catalog_categories
-        ON CONFLICT (server_id, id) DO NOTHING
-      `;
-      await tx`
-        INSERT INTO server_shop_catalog_items (
-          server_id, id, name, class_name, popular_name, category, price, description, image_url,
-          enabled, max_per_restart, sort_order, created_at, updated_at
-        )
-        SELECT ${serverId}, id, name, class_name, popular_name, category, price, description, image_url,
-               enabled, max_per_restart, sort_order, created_at, updated_at
-        FROM shop_catalog_items
-        ON CONFLICT (server_id, id) DO NOTHING
-      `;
-    });
+  if (serverId !== primaryServerId) {
+    await cleanupLegacySecondaryAutoClone(serverId);
+    // New secondary servers intentionally start with an empty catalog. Copying
+    // another server's products/prices requires the explicit clone action.
     return;
   }
 
-  const targetServer = getManagedServerById(serverId);
-  const primaryServer = getManagedServerById(primaryServerId);
-  // Never seed a new customer catalog from another tenant. Existing secondary
-  // servers in the same organization keep the convenient one-time clone.
-  if (!targetServer || !primaryServer || targetServer.organizationId !== primaryServer.organizationId) return;
-
-  await seedServerCatalogIfNeeded(primaryServerId);
+  if (await countServerCatalogItems(serverId)) return;
   await db.begin(async (tx) => {
     await tx`
       INSERT INTO server_shop_catalog_categories (
         server_id, id, label, emoji, description, enabled, sort_order, created_at, updated_at
       )
-      SELECT ${serverId}, id, label, emoji, description, enabled, sort_order, NOW(), NOW()
-      FROM server_shop_catalog_categories
-      WHERE server_id = ${primaryServerId}
+      SELECT ${serverId}, id, label, emoji, description, enabled, sort_order, created_at, updated_at
+      FROM shop_catalog_categories
       ON CONFLICT (server_id, id) DO NOTHING
     `;
     await tx`
@@ -165,9 +195,8 @@ async function seedServerCatalogIfNeeded(serverId: string) {
         enabled, max_per_restart, sort_order, created_at, updated_at
       )
       SELECT ${serverId}, id, name, class_name, popular_name, category, price, description, image_url,
-             enabled, max_per_restart, sort_order, NOW(), NOW()
-      FROM server_shop_catalog_items
-      WHERE server_id = ${primaryServerId}
+             enabled, max_per_restart, sort_order, created_at, updated_at
+      FROM shop_catalog_items
       ON CONFLICT (server_id, id) DO NOTHING
     `;
   });
