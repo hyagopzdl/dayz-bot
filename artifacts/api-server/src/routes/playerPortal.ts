@@ -38,7 +38,7 @@ import { renderSaasOnboarding } from "./saasOnboardingView";
 import { getManagedServerById, getPrimaryServerDescriptor, getPrimaryServerId } from "../lib/serverRegistry";
 import { isSaasSelfServiceEnabled } from "../lib/organizationRegistry";
 import { isOrganizationSecretEncryptionConfigured } from "../lib/organizationIntegrations";
-import { getActiveServerId, runInServerRuntimeContext } from "../lib/serverRuntime";
+import { getActiveServerId, runInServerDataContext } from "../lib/serverRuntime";
 import {
   getPlayerPortalServerContext,
   playerPortalServerContextMiddleware,
@@ -66,7 +66,7 @@ async function getPrimaryIdentityImportOptions(state: AppState, session: PortalS
   const primaryServer = getPrimaryServerDescriptor();
   if (!selectedServer || selectedServer.organizationId !== primaryServer.organizationId) return null;
 
-  const primaryState = await runInServerRuntimeContext(primaryServerId, () => getStateAsync());
+  const primaryState = await runInServerDataContext(primaryServerId, () => getStateAsync());
   const primaryLink = getPlayerLinkByDiscordId(primaryState, session.discordId);
   if (!primaryLink) return null;
 

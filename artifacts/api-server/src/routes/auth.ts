@@ -13,6 +13,8 @@ import { bindManagedServerDiscordGuild, getStateAsync } from "../lib/state";
 import { byteLengthOfBody, recordNetworkTransfer } from "../lib/networkMetrics";
 import { canOrganizationRole, getUserOrganizationMembership } from "../lib/organizationRegistry";
 import { getManagedServerById } from "../lib/serverRegistry";
+import { runInServerDataContext } from "../lib/serverRuntime";
+import { getAdminServerAccess } from "../lib/adminUsers";
 import { getDiscordClient, syncDiscordCommandsForManagedServer } from "../lib/discordBot";
 
 const router = Router();
@@ -81,12 +83,14 @@ function canManageDiscordGuild(guild: { owner?: boolean; permissions?: string })
   }
 }
 
-function assertServerManageAccess(req: Request, serverId: string) {
+async function assertServerManageAccess(req: Request, serverId: string) {
   const server = getManagedServerById(serverId);
   if (!server) throw new Error("SERVER_NOT_FOUND");
 
   if (req.adminSession) {
     if (!req.adminSession.serverId || req.adminSession.serverId !== server.id) throw new Error("SERVER_FORBIDDEN");
+    const access = await getAdminServerAccess(req.adminSession.adminUserId, server.id);
+    if (!access || access.organizationId !== server.organizationId) throw new Error("SERVER_FORBIDDEN");
     return { session: req.portalSession || null, adminSession: req.adminSession, server };
   }
 
@@ -138,10 +142,10 @@ router.get("/discord", (req, res) => {
   }
 });
 
-router.get("/discord/connect", (req, res) => {
+router.get("/discord/connect", async (req, res) => {
   try {
     const serverId = String(req.query.serverId || "").trim();
-    const { session, adminSession, server } = assertServerManageAccess(req, serverId);
+    const { session, adminSession, server } = await assertServerManageAccess(req, serverId);
     const { clientId, redirectUri } = discordConfig(req);
     const returnTo = adminSession ? "/admin-panel/setup" : `/saas?server=${encodeURIComponent(server.id)}`;
     const { state } = createOAuthState(req, res, returnTo, {
@@ -224,7 +228,7 @@ router.get("/discord/callback", async (req, res) => {
         throw new Error("Discord installer identity does not match the signed-in ADM owner/admin.");
       }
 
-      const { server, adminSession } = assertServerManageAccess(req, serverId);
+      const { server, adminSession } = await assertServerManageAccess(req, serverId);
       const callbackGuildId = typeof req.query.guild_id === "string" ? req.query.guild_id : "";
       const guildId = String(token.guild?.id || callbackGuildId || "").trim();
       if (!guildId) throw new Error("Discord did not return the guild selected during bot authorization.");
@@ -286,10 +290,14 @@ router.get("/me", async (req, res) => {
     res.status(401).json({ authenticated: false });
     return;
   }
-  const state = await getStateAsync();
-  const link = getPlayerLinkByDiscordId(state, session.discordId);
+  const requestedServerId = String(req.query.serverId || req.headers["x-adm-server-id"] || "").trim();
+  const server = requestedServerId ? getManagedServerById(requestedServerId) : undefined;
+  const link = server
+    ? await runInServerDataContext(server.id, async () => getPlayerLinkByDiscordId(await getStateAsync(), session.discordId))
+    : undefined;
   res.json({
     authenticated: true,
+    serverId: server?.id || null,
     user: {
       discordId: session.discordId,
       username: session.username,

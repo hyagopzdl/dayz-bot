@@ -1,12 +1,12 @@
 import { getStateAsync, saveDiscordRuntimeStateOnlyAsync, saveDiscordStateAsync } from "../state";
 import { ensureBotState } from "./state";
 import { getManagedServerById, getPrimaryServerId } from "../serverRegistry";
-import { runInServerRuntimeContext } from "../serverRuntime";
+import { runInServerDataContext } from "../serverRuntime";
 
 export function createDiscordStateAccess(serverId = getPrimaryServerId()) {
   if (!getManagedServerById(serverId)) throw new Error(`Discord runtime server not found: ${serverId}`);
   async function getState() {
-    const state = ensureBotState(await runInServerRuntimeContext(serverId, () => getStateAsync()));
+    const state = ensureBotState(await runInServerDataContext(serverId, () => getStateAsync()));
 
     console.log("📊 Discord lendo state:", {
       global: Object.keys(state.players || {}).length,
@@ -23,12 +23,12 @@ export function createDiscordStateAccess(serverId = getPrimaryServerId()) {
   }
 
   async function saveState(state: any) {
-    await runInServerRuntimeContext(serverId, () => saveDiscordStateAsync(ensureBotState(state)));
+    await runInServerDataContext(serverId, () => saveDiscordStateAsync(ensureBotState(state)));
     console.log("💾 state salvo pelo Discord");
   }
 
   async function saveRuntimeState(state: any) {
-    await runInServerRuntimeContext(serverId, () => saveDiscordRuntimeStateOnlyAsync(
+    await runInServerDataContext(serverId, () => saveDiscordRuntimeStateOnlyAsync(
       ensureBotState(state),
       `discord:feeds-runtime:${serverId}`,
     ));

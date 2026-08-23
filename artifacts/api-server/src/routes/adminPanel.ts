@@ -89,7 +89,7 @@ import { getAdmDownloadMetrics, setAdmDownloadMode } from "../lib/nitradoDownloa
 import { getRuntimePerformanceMetrics } from "../lib/runtimeMetrics";
 import { getNetworkMetrics } from "../lib/networkMetrics";
 import { getManagedServerById, getPrimaryServerDescriptor, getPrimaryServerId, getServerFoundationDiagnostics, listManagedServers } from "../lib/serverRegistry";
-import { getActiveServerId, isServerRuntimeLocked, runInServerMaintenanceContext, runInServerRuntimeContext, runWithServerMaintenanceLock } from "../lib/serverRuntime";
+import { getActiveServerId, isServerRuntimeLocked, runInServerDataContext, runInServerMaintenanceContext, runInServerRuntimeContext, runWithServerMaintenanceLock } from "../lib/serverRuntime";
 import {
   discoverNitradoServices,
   getIntegrationOnboardingStatus,
@@ -123,16 +123,30 @@ import {
   getOrganizationIntegrationsDiagnostics,
 } from "../lib/organizationIntegrations";
 import { getShopCatalogDiagnostics, cloneShopCatalog } from "../lib/shopCatalog";
+import { getAdminServerAccess } from "../lib/adminUsers";
 
 const router = Router();
 
 // Every authenticated admin request must execute inside the server bound to
 // that admin account. This prevents implicit getActiveServerId() fallbacks from
 // reading/writing the primary server when admin2 is managing a secondary.
-router.use((req, _res, next) => {
-  const serverId = String(req.adminSession?.serverId || "").trim();
-  if (!serverId || !getManagedServerById(serverId)) return next();
-  return runInServerRuntimeContext(serverId, () => next());
+router.use(async (req, res, next) => {
+  const adminSession = req.adminSession;
+  const serverId = String(adminSession?.serverId || "").trim();
+  if (!adminSession || !serverId) return next();
+  const server = getManagedServerById(serverId);
+  if (!server) return next();
+  try {
+    const access = await getAdminServerAccess(adminSession.adminUserId, serverId);
+    if (!access || access.organizationId !== server.organizationId) {
+      res.status(403).json({ error: "ADMIN_SERVER_FORBIDDEN", serverId });
+      return;
+    }
+    (req as any).adminServerAccess = access;
+    return runInServerDataContext(serverId, () => next());
+  } catch (error) {
+    next(error);
+  }
 });
 
 startMapEventScheduler();
@@ -1371,12 +1385,17 @@ function requireOrganizationAccess(
   const organizationId = buildOrganizationId(organizationIdInput);
   if (req.adminSession) {
     const bound = req.adminSession.serverId ? getManagedServerById(req.adminSession.serverId) : undefined;
-    if (!bound) {
+    const access = (req as any).adminServerAccess as { organizationId?: string; role?: any } | undefined;
+    if (!bound || !access) {
       res.status(403).json({ error: "ADMIN_SERVER_SETUP_REQUIRED" });
       return false;
     }
-    if (bound.organizationId !== organizationId) {
+    if (bound.organizationId !== organizationId || access.organizationId !== organizationId) {
       res.status(403).json({ error: "ORGANIZATION_FORBIDDEN" });
+      return false;
+    }
+    if (!canOrganizationRole(access.role, capability)) {
+      res.status(403).json({ error: "ADMIN_CAPABILITY_FORBIDDEN", capability });
       return false;
     }
     return true;
@@ -1395,8 +1414,16 @@ function requireOrganizationAccess(
 
 function requireAdmin(req: Request, res: Response, capability?: OrganizationCapability) {
   if (req.adminSession) {
-    if (!req.adminSession.serverId || !getManagedServerById(req.adminSession.serverId)) {
+    const server = req.adminSession.serverId ? getManagedServerById(req.adminSession.serverId) : undefined;
+    const access = (req as any).adminServerAccess as { organizationId?: string; role?: any } | undefined;
+    if (!server || !access || access.organizationId !== server.organizationId) {
       res.status(403).json({ error: "ADMIN_SERVER_SETUP_REQUIRED" });
+      return false;
+    }
+    const requiredCapability: OrganizationCapability = capability
+      || (req.method === "GET" || req.method === "HEAD" ? "view" : "manage");
+    if (!canOrganizationRole(access.role, requiredCapability)) {
+      res.status(403).json({ error: "ADMIN_CAPABILITY_FORBIDDEN", capability: requiredCapability });
       return false;
     }
     return true;
@@ -9024,7 +9051,7 @@ router.get("/api/servers/:serverId/catalog", async (req, res) => {
   if (!requireServerAdmin(req, res, req.params.serverId, "view")) return;
   try {
     const serverId = String(req.params.serverId || "");
-    const catalog = await runInServerRuntimeContext(serverId, async () => {
+    const catalog = await runInServerDataContext(serverId, async () => {
       await ensureShopCatalogLoaded();
       return getShopCatalog();
     });
@@ -9048,7 +9075,7 @@ router.post("/api/servers/:serverId/catalog/clone", async (req, res) => {
       res.status(403).json({ error: "CROSS_ORGANIZATION_CATALOG_CLONE_FORBIDDEN" });
       return;
     }
-    const result = await runInServerRuntimeContext(target.id, () => cloneShopCatalog(source.id, target.id));
+    const result = await runInServerDataContext(target.id, () => cloneShopCatalog(source.id, target.id));
     res.json({ ...result, isolation: catalogIsolationForRequest(req, target.id) });
   } catch (err) {
     res.status(400).send(err instanceof Error ? err.message : String(err));
@@ -9059,7 +9086,7 @@ router.post("/api/servers/:serverId/catalog/categories", async (req, res) => {
   if (!requireServerAdmin(req, res, req.params.serverId, "manage")) return;
   try {
     const serverId = String(req.params.serverId || "");
-    const catalog = await runInServerRuntimeContext(serverId, async () => {
+    const catalog = await runInServerDataContext(serverId, async () => {
       await ensureShopCatalogLoaded();
       await upsertShopCatalogCategoryItem(req.body || {});
       return getShopCatalog();
@@ -9072,7 +9099,7 @@ router.post("/api/servers/:serverId/catalog/items", async (req, res) => {
   if (!requireServerAdmin(req, res, req.params.serverId, "manage")) return;
   try {
     const serverId = String(req.params.serverId || "");
-    const catalog = await runInServerRuntimeContext(serverId, async () => {
+    const catalog = await runInServerDataContext(serverId, async () => {
       await ensureShopCatalogLoaded();
       await upsertShopCatalogItem(req.body || {});
       return getShopCatalog();
@@ -9085,7 +9112,7 @@ router.delete("/api/servers/:serverId/catalog/items/:itemId", async (req, res) =
   if (!requireServerAdmin(req, res, req.params.serverId, "manage")) return;
   try {
     const serverId = String(req.params.serverId || "");
-    const catalog = await runInServerRuntimeContext(serverId, async () => {
+    const catalog = await runInServerDataContext(serverId, async () => {
       await ensureShopCatalogLoaded();
       await deleteShopCatalogItem(req.params.itemId);
       return getShopCatalog();
@@ -9151,7 +9178,7 @@ router.post("/api/servers/:serverId/economy/coins", async (req, res) => {
   if (!requireServerAdmin(req, res, req.params.serverId, "manage")) return;
   try {
     const serverId = String(req.params.serverId || "");
-    const result = await runInServerRuntimeContext(serverId, async () => {
+    const result = await runInServerDataContext(serverId, async () => {
       const state = await getStateAsync();
       const gamertag = String(req.body?.gamertag || "").trim();
       const link = getPlayerLinkByGamertag(state, gamertag);

@@ -3,10 +3,11 @@ import {
   getPrimaryServerDescriptor,
   getPrimaryServerId,
   listExecutableManagedServers,
+  listManagedServers,
   setServerRuntimeIsolationStatus,
   type ManagedServerDescriptor,
 } from "./serverRegistry";
-import { runInServerRuntimeContext } from "./serverRuntime";
+import { runInServerDataContext } from "./serverRuntime";
 
 const PLAYER_SERVER_COOKIE = "adm_player_server";
 const PLAYER_SERVER_COOKIE_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
@@ -47,22 +48,26 @@ export function listPlayerPortalServers(organizationId = getPrimaryServerDescrip
   // Phase 16 keeps discovery tenant-scoped. A player enters another tenant only
   // through an explicit server entrypoint (?server=<id>); once inside, the
   // switcher lists only active servers owned by that same organization.
-  return listExecutableManagedServers()
-    .filter((server) => server.organizationId === organizationId)
+  return listManagedServers()
+    .filter((server) => server.enabled && server.organizationId === organizationId)
     .map(publicServer);
 }
 
 export function resolvePlayerPortalServerContext(req: Request): PlayerPortalServerContext {
-  const executable = listExecutableManagedServers();
+  const available = listManagedServers().filter((server) => server.enabled);
   const primaryId = getPrimaryServerId();
   const requested = requestedServerId(req);
-  const requestedDescriptor = requested ? executable.find((server) => server.id === requested) : undefined;
+  const requestedDescriptor = requested ? available.find((server) => server.id === requested) : undefined;
+  if (requested && !requestedDescriptor) {
+    invalidSelections += 1;
+    throw new Error("PLAYER_PORTAL_SERVER_NOT_FOUND");
+  }
   const seed = requestedDescriptor
-    || executable.find((server) => server.id === primaryId)
-    || executable[0];
+    || available.find((server) => server.id === primaryId)
+    || available[0];
 
   if (!seed) {
-    throw new Error("No executable server is available for the Player Portal.");
+    throw new Error("No managed server is available for the Player Portal.");
   }
 
   const servers = listPlayerPortalServers(seed.organizationId);
@@ -71,9 +76,8 @@ export function resolvePlayerPortalServerContext(req: Request): PlayerPortalServ
     throw new Error("No executable server is available for this organization.");
   }
 
-  const fellBackToPrimary = Boolean(requested && !requestedDescriptor);
+  const fellBackToPrimary = false;
   contextResolutions += 1;
-  if (fellBackToPrimary) invalidSelections += 1;
 
   return {
     selectedServer: selected,
@@ -96,8 +100,8 @@ function setSelectedServerCookie(req: Request, res: Response, serverId: string) 
 export function setPlayerPortalServerSelection(req: Request, res: Response, serverIdInput: unknown) {
   const serverId = String(serverIdInput || "").trim();
   const currentContext = getPlayerPortalServerContext(res);
-  const currentDescriptor = listExecutableManagedServers().find((candidate) => candidate.id === currentContext.selectedServer.id);
-  const server = listExecutableManagedServers().find((candidate) => candidate.id === serverId);
+  const currentDescriptor = listManagedServers().find((candidate) => candidate.enabled && candidate.id === currentContext.selectedServer.id);
+  const server = listManagedServers().find((candidate) => candidate.enabled && candidate.id === serverId);
   if (!server || !currentDescriptor || server.organizationId !== currentDescriptor.organizationId) {
     throw new Error("This server is not available in the current organization portal.");
   }
@@ -127,7 +131,7 @@ export function playerPortalServerContextMiddleware(req: Request, res: Response,
   }
 
   setServerRuntimeIsolationStatus({ playerPortalContextNamespaced: true });
-  runInServerRuntimeContext(context.selectedServer.id, next);
+  runInServerDataContext(context.selectedServer.id, next);
 }
 
 export function getPlayerPortalContextDiagnostics() {
@@ -139,7 +143,7 @@ export function getPlayerPortalContextDiagnostics() {
     contextResolutions,
     contextSwitches,
     invalidSelections,
-    policy: "explicit-server-entrypoint+same-organization-switcher",
+    policy: "explicit-server-entrypoint+same-organization-switcher+invalid-server-fail-closed",
     organizationId: getPrimaryServerDescriptor().organizationId,
   };
 }

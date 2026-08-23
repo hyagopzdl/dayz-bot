@@ -12,7 +12,9 @@ import {
 const LEGACY_LOG_DIR_NAME = "adm_logs";
 const LEGACY_MANIFEST_NAME = "adm_manifest.json";
 const runtimeLocks = new Set<string>();
-const executionContext = new AsyncLocalStorage<{ serverId: string }>();
+type ServerContextPurpose = "data" | "runtime" | "maintenance";
+type ServerExecutionContext = { serverId: string; organizationId: string; purpose: ServerContextPurpose };
+const executionContext = new AsyncLocalStorage<ServerExecutionContext>();
 let lockSkips = 0;
 let contextRuns = 0;
 let contextFallbacks = 0;
@@ -123,7 +125,34 @@ export function getActiveServerId() {
   return getPrimaryServerId();
 }
 
-function runInKnownServerContext<T>(serverId: string, work: () => T, requireExecutable: boolean): T {
+// Tenant-facing code must use this accessor instead of getActiveServerId().
+// getActiveServerId() intentionally remains as a compatibility bridge for
+// legacy background jobs until Phase 17B, but web/Discord/data access must fail
+// closed when no explicit tenant context exists.
+export function requireActiveServerId() {
+  const active = executionContext.getStore()?.serverId;
+  if (!active) throw new Error("TENANT_CONTEXT_REQUIRED");
+  return active;
+}
+
+export function getActiveServerOrganizationId() {
+  const organizationId = executionContext.getStore()?.organizationId;
+  if (!organizationId) throw new Error("TENANT_CONTEXT_REQUIRED");
+  return organizationId;
+}
+
+export function getActiveServerContext() {
+  const context = executionContext.getStore();
+  if (!context) throw new Error("TENANT_CONTEXT_REQUIRED");
+  return { ...context };
+}
+
+function runInKnownServerContext<T>(
+  serverId: string,
+  work: () => T,
+  purpose: ServerContextPurpose,
+  requireExecutable: boolean,
+): T {
   const context = getServerRuntimeContext(serverId);
   if (requireExecutable && !canExecuteManagedServerRuntime(context.serverId)) {
     throw new Error(`Server ${context.serverId} runtime is disabled or has not passed the activation gate.`);
@@ -136,18 +165,41 @@ function runInKnownServerContext<T>(serverId: string, work: () => T, requireExec
     contextFallbacks,
     lastContextServerId,
   });
-  return executionContext.run({ serverId: context.serverId }, work);
+  return executionContext.run({
+    serverId: context.serverId,
+    organizationId: context.server.organizationId,
+    purpose,
+  }, work);
+}
+
+// Data context is deliberately independent from runtime activation. Opening a
+// tenant panel, linking a player, reading a wallet, or editing configuration must
+// not require ADM/Nitrado processing to be operational.
+export function runInServerDataContext<T>(serverId: string, work: () => T): T {
+  return runInKnownServerContext(serverId, work, "data", false);
 }
 
 export function runInServerRuntimeContext<T>(serverId: string, work: () => T): T {
-  return runInKnownServerContext(serverId, work, true);
+  return runInKnownServerContext(serverId, work, "runtime", true);
 }
 
 // Persistence timers may still need to finish a scoped flush immediately after
 // a runtime is disabled. This context never authorizes ADM/Nitrado execution; it
 // only provides the server namespace to maintenance work that was already queued.
 export function runInServerMaintenanceContext<T>(serverId: string, work: () => T): T {
-  return runInKnownServerContext(serverId, work, false);
+  return runInKnownServerContext(serverId, work, "maintenance", false);
+}
+
+export function getTenantContextDiagnostics() {
+  const active = executionContext.getStore();
+  return {
+    explicitDataContextAvailable: Boolean(active),
+    activeServerId: active?.serverId,
+    activeOrganizationId: active?.organizationId,
+    purpose: active?.purpose,
+    legacyPrimaryFallbacks: contextFallbacks,
+    policy: "tenant-facing-fail-closed;legacy-background-primary-compat",
+  };
 }
 
 export function getServerStateStoragePath(serverId = getActiveServerId()) {
