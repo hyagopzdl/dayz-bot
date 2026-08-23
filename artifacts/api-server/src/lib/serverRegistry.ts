@@ -105,7 +105,7 @@ export type ServerNamespacePersistenceStatus = {
   primaryKeyCutoverComplete: boolean;
   scopedReadsEnabled: boolean;
   scopedReadFallbacks: number;
-  lastScopedReadSource?: "server-scoped" | "legacy-fallback" | "legacy";
+  lastScopedReadSource?: "server-scoped" | "legacy-fallback" | "legacy" | "server-id-safe-fallback" | "primary-untagged-fallback";
   botStateTaggedRows: number;
   botStateUntaggedRows: number;
   playerStatsTaggedRows: number;
@@ -268,7 +268,7 @@ export function getServerScopedSettings(serverId = getPrimaryServerId()): Requir
     shopRestartTimes: String(settings.shopRestartTimes || "00:00,04:00,08:00,12:00,16:00,20:00").trim(),
     shopRestartTimezone: String(settings.shopRestartTimezone || "America/Sao_Paulo").trim(),
     dayzMissionDir: String(settings.dayzMissionDir || "dayzps_missions/dayzOffline.chernarusplus").trim(),
-    shopDeliveryConfiguredAt: String(settings.shopDeliveryConfiguredAt || (server?.primary ? "legacy-primary" : "")).trim(),
+    shopDeliveryConfiguredAt: String(settings.shopDeliveryConfiguredAt || "").trim(),
   };
 }
 

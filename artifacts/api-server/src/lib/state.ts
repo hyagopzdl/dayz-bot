@@ -402,7 +402,7 @@ let playerStatsScopedPersistenceReady = false;
 let botStatePrimaryKeyReady = false;
 let playerStatsPrimaryKeyReady = false;
 let scopedReadFallbacks = 0;
-let lastScopedReadSource: "server-scoped" | "legacy-fallback" | "legacy" = "legacy";
+let lastScopedReadSource: "server-scoped" | "legacy-fallback" | "legacy" | "server-id-safe-fallback" | "primary-untagged-fallback" = "legacy";
 
 type ManagedServerDraftInput = {
   id?: unknown;
@@ -2934,12 +2934,7 @@ async function persistDomainBatchToNeon(
             DO UPDATE SET data = EXCLUDED.data, updated_at = NOW(), server_id = EXCLUDED.server_id
           `;
         } else {
-          await tx`
-            INSERT INTO bot_state (id, data, updated_at, server_id)
-            VALUES (${STATE_DOMAIN_IDS[domain]}, ${tx.json(entry.payload)}, NOW(), ${getActiveServerId()})
-            ON CONFLICT (id)
-            DO UPDATE SET data = EXCLUDED.data, updated_at = NOW(), server_id = EXCLUDED.server_id
-          `;
+          throw new Error(`Refusing unscoped bot_state domain write for ${getActiveServerId()}`);
         }
       }
       if (playerPayload.length) {
@@ -2957,18 +2952,7 @@ async function persistDomainBatchToNeon(
               updated_at = NOW()
           `;
         } else {
-          await tx`
-            INSERT INTO player_stats_state (server_id, player_key, stats, current_streak, updated_at)
-            SELECT incoming.server_id, incoming.player_key, incoming.stats, incoming.current_streak, NOW()
-            FROM jsonb_to_recordset(${tx.json(playerPayload)}::jsonb)
-              AS incoming(server_id TEXT, player_key TEXT, stats JSONB, current_streak INTEGER)
-            ON CONFLICT (player_key)
-            DO UPDATE SET
-              server_id = EXCLUDED.server_id,
-              stats = EXCLUDED.stats,
-              current_streak = EXCLUDED.current_streak,
-              updated_at = NOW()
-          `;
+          throw new Error(`Refusing unscoped player_stats_state write for ${getActiveServerId()}`);
         }
       }
     });
@@ -3218,12 +3202,7 @@ async function persistDiscordRuntimeToNeon(serialized: string, hash: string) {
         DO UPDATE SET data = EXCLUDED.data, updated_at = NOW(), server_id = EXCLUDED.server_id
       `;
     } else {
-      await sql`
-        INSERT INTO bot_state (id, data, updated_at, server_id)
-        VALUES (${DISCORD_RUNTIME_STATE_ID}, ${sql.json(runtime)}, NOW(), ${getActiveServerId()})
-        ON CONFLICT (id)
-        DO UPDATE SET data = EXCLUDED.data, updated_at = NOW(), server_id = EXCLUDED.server_id
-      `;
+      throw new Error(`Refusing unscoped Discord runtime write for ${getActiveServerId()}`);
     }
     recordNetworkTransfer({
       service: "neon-runtime",
@@ -3295,6 +3274,29 @@ async function persistStateToNeon(serialized: string, hash: string, reasons: str
   }
 
   const parsed = JSON.parse(serialized) as AppState;
+
+  // Incident guard: never allow the production primary compatibility snapshot
+  // to collapse a large historical population. The old single-server runtime
+  // had this protection; multi-server/V2 must preserve it server-scoped.
+  if (getActiveServerId() === getPrimaryServerId()) {
+    try {
+      const existingRows = botStateScopedPersistenceReady
+        ? await sql`SELECT data FROM bot_state WHERE server_id = ${getPrimaryServerId()} AND id = ${STATE_ID} LIMIT 1`
+        : await sql`SELECT data FROM bot_state WHERE server_id = ${getPrimaryServerId()} AND id = ${STATE_ID} LIMIT 1`;
+      if (existingRows.length) {
+        const previousCount = Object.keys(((existingRows[0].data || {}) as Partial<AppState>).players || {}).length;
+        const incomingCount = Object.keys(parsed.players || {}).length;
+        if (previousCount >= 1000 && incomingCount < Math.floor(previousCount * 0.7) && process.env.ALLOW_DESTRUCTIVE_STATE_SAVE !== "true") {
+          throw new Error(`Destructive PZ Deathmatch state save blocked: players would shrink from ${previousCount} to ${incomingCount}`);
+        }
+      }
+    } catch (guardError) {
+      if (guardError instanceof Error && guardError.message.startsWith("Destructive PZ Deathmatch state save blocked:")) throw guardError;
+      console.error("❌ unable to verify Deathmatch shrink guard; refusing compatibility snapshot", guardError);
+      throw new Error("PZ Deathmatch compatibility snapshot blocked because the historical-size guard could not be verified");
+    }
+  }
+
   const now = new Date().toISOString();
   const payloadBytes = Buffer.byteLength(serialized, "utf8");
   const uniqueReasons = [...new Set(reasons.length ? reasons : ["unknown"])];
@@ -3333,15 +3335,7 @@ async function persistStateToNeon(serialized: string, hash: string, reasons: str
           server_id = EXCLUDED.server_id
       `;
     } else {
-      await sql`
-        INSERT INTO bot_state (id, data, updated_at, server_id)
-        VALUES (${STATE_ID}, ${sql.json(parsed)}, NOW(), ${getActiveServerId()})
-        ON CONFLICT (id)
-        DO UPDATE SET
-          data = EXCLUDED.data,
-          updated_at = NOW(),
-          server_id = EXCLUDED.server_id
-      `;
+      throw new Error(`Refusing unscoped compatibility snapshot write for ${getActiveServerId()}`);
     }
     // The serialized JSON dominates the outbound payload to Neon. This counter
     // intentionally measures application bytes, not PostgreSQL/TLS overhead.
@@ -3526,7 +3520,7 @@ async function loadAllGranularPlayerRowsForActiveServer() {
     : await sql`
         SELECT player_key, stats, current_streak, updated_at
         FROM player_stats_state
-        WHERE server_id = ${getPrimaryServerId()} OR server_id IS NULL
+        WHERE server_id = ${getActiveServerId()}
         ORDER BY player_key ASC
       ` as any[];
 }
@@ -3548,7 +3542,7 @@ async function readGranularPlayerSummaryForActiveServer(): Promise<PlayerTotalsS
           COALESCE(SUM(CASE WHEN COALESCE(stats->>'kills','') ~ '^[0-9]+$' THEN (stats->>'kills')::bigint ELSE 0 END), 0)::bigint AS kills,
           COALESCE(SUM(CASE WHEN COALESCE(stats->>'deaths','') ~ '^[0-9]+$' THEN (stats->>'deaths')::bigint ELSE 0 END), 0)::bigint AS deaths
         FROM player_stats_state
-        WHERE server_id = ${getPrimaryServerId()} OR server_id IS NULL
+        WHERE server_id = ${getActiveServerId()}
       `;
   const row = (rows as any[])[0] || {};
   return { players: Number(row.players || 0), kills: Number(row.kills || 0), deaths: Number(row.deaths || 0) };
@@ -3579,8 +3573,44 @@ async function persistRecoveredPrimarySnapshot(state: AppState, previousMainRow?
   });
 }
 
+async function refreshBotStateScopedReadCapability() {
+  if (!sql) return;
+  try {
+    const indexes = await sql`
+      SELECT array_agg(a.attname ORDER BY keycols.ordinality) AS columns
+      FROM pg_index i
+      JOIN pg_class t ON t.oid = i.indrelid
+      JOIN unnest(i.indkey) WITH ORDINALITY AS keycols(attnum, ordinality) ON TRUE
+      JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = keycols.attnum
+      WHERE t.relname = 'bot_state' AND i.indisunique
+      GROUP BY i.indexrelid
+    `;
+    const hasScopedUniqueKey = (indexes as any[]).some((row: any) => {
+      const columns = Array.isArray(row?.columns) ? row.columns.map((value: unknown) => String(value)) : [];
+      return columns.join(',') === 'server_id,id';
+    });
+    if (hasScopedUniqueKey) {
+      botStatePrimaryKeyReady = true;
+      botStateScopedPersistenceReady = true;
+      setServerNamespacePersistenceStatus({
+        botStateCompositeKeyReady: true,
+        botStatePrimaryKeyReady: true,
+        scopedReadsEnabled: true,
+        lastScopedReadSource,
+        lastCheckedAt: new Date().toISOString(),
+      });
+    }
+  } catch (error) {
+    console.error('❌ unable to independently verify bot_state scoped key:', error);
+  }
+}
+
 export async function getStateAsync(): Promise<AppState> {
   await ensurePrimaryServerRegistryMetadata();
+  // Registry onboarding can fail independently from gameplay persistence.
+  // Re-probe the already-existing bot_state unique key so a registry failure
+  // can never downgrade gameplay reads to an ambiguous cross-server scan.
+  await refreshBotStateScopedReadCapability();
   const existingCachedState = getCachedState();
   if (existingCachedState) {
     return existingCachedState;
@@ -3625,18 +3655,38 @@ export async function getStateAsync(): Promise<AppState> {
         ` as any[];
       }
     } else {
-      lastScopedReadSource = "legacy";
+      // Fail closed even when schema-readiness metadata is stale. The table may
+      // already contain one `main` per server, so an unscoped SELECT + find()
+      // is nondeterministic and can load another server's empty state.
+      lastScopedReadSource = "server-id-safe-fallback";
       rows = await sql`
         SELECT id, data, updated_at, server_id
         FROM bot_state
-        WHERE id IN (${stateIds[0]}, ${stateIds[1]}, ${stateIds[2]}, ${stateIds[3]}, ${stateIds[4]}, ${stateIds[5]}, ${stateIds[6]})
+        WHERE server_id = ${getActiveServerId()}
+          AND id IN (${stateIds[0]}, ${stateIds[1]}, ${stateIds[2]}, ${stateIds[3]}, ${stateIds[4]}, ${stateIds[5]}, ${stateIds[6]})
       ` as any[];
+      if (!rows.some((row: any) => row.id === STATE_ID) && getActiveServerId() === getPrimaryServerId()) {
+        // A truly legacy untagged row belongs only to the production primary.
+        // It is considered only when no explicit pz-deathmatch row exists.
+        scopedReadFallbacks += 1;
+        lastScopedReadSource = "primary-untagged-fallback";
+        rows = await sql`
+          SELECT id, data, updated_at, server_id
+          FROM bot_state
+          WHERE server_id IS NULL
+            AND id IN (${stateIds[0]}, ${stateIds[1]}, ${stateIds[2]}, ${stateIds[3]}, ${stateIds[4]}, ${stateIds[5]}, ${stateIds[6]})
+        ` as any[];
+      }
     }
     setServerNamespacePersistenceStatus({
       scopedReadsEnabled: botStateScopedPersistenceReady,
       scopedReadFallbacks,
       lastScopedReadSource,
     });
+    const foreignRows = rows.filter((row: any) => row.server_id != null && String(row.server_id) !== getActiveServerId());
+    if (foreignRows.length) {
+      throw new Error(`Cross-server bot_state read blocked for ${getActiveServerId()}: ${foreignRows.map((row: any) => `${row.id}@${row.server_id}`).join(', ')}`);
+    }
     const mainRow = rows.find((row: any) => row.id === STATE_ID);
     const runtimeRow = rows.find((row: any) => row.id === DISCORD_RUNTIME_STATE_ID);
 
@@ -3690,11 +3740,7 @@ export async function getStateAsync(): Promise<AppState> {
           ON CONFLICT (server_id, id) DO NOTHING
         `;
       } else {
-        await sql`
-          INSERT INTO bot_state (id, data, updated_at, server_id)
-          VALUES (${STATE_ID}, ${sql.json(state)}, NOW(), ${getActiveServerId()})
-          ON CONFLICT (id) DO NOTHING
-        `;
+        throw new Error(`Refusing to create unscoped main state for ${getActiveServerId()}`);
       }
 
       setCachedState(state);
@@ -3753,7 +3799,7 @@ export async function getStateAsync(): Promise<AppState> {
           : await sql`
               SELECT player_key, stats, current_streak, updated_at
               FROM player_stats_state
-              WHERE (server_id = ${getPrimaryServerId()} OR server_id IS NULL)
+              WHERE server_id = ${getActiveServerId()}
                 AND updated_at > ${new Date(mainUpdatedAt || 0)}
             ` as any[];
 
