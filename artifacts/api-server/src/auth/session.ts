@@ -123,6 +123,7 @@ export type OAuthStateMetadata = {
   mode?: "portal-login" | "discord-install";
   serverId?: string;
   requesterDiscordId?: string;
+  requesterAdminUserId?: string;
 };
 
 export function createOAuthState(

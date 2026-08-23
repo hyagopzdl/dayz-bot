@@ -66,7 +66,6 @@ import {
   type PlayerLink,
   type Wallet,
   updateManagedServerDraft,
-  updateManagedServerDiscordChannels,
   updateManagedServerScopedSettings,
   markManagedServerNitradoValidated,
   setManagedServerRuntimeEnabled,
@@ -1359,6 +1358,18 @@ function requireOrganizationAccess(
   if (hasPlatformBootstrapAccess(req)) return true;
 
   const organizationId = buildOrganizationId(organizationIdInput);
+  if (req.adminSession) {
+    const bound = req.adminSession.serverId ? getManagedServerById(req.adminSession.serverId) : undefined;
+    if (!bound) {
+      res.status(403).json({ error: "ADMIN_SERVER_SETUP_REQUIRED" });
+      return false;
+    }
+    if (bound.organizationId !== organizationId) {
+      res.status(403).json({ error: "ORGANIZATION_FORBIDDEN" });
+      return false;
+    }
+    return true;
+  }
   if (!req.portalSession) {
     res.status(401).json({ error: "AUTH_REQUIRED" });
     return false;
@@ -1372,6 +1383,13 @@ function requireOrganizationAccess(
 }
 
 function requireAdmin(req: Request, res: Response, capability?: OrganizationCapability) {
+  if (req.adminSession) {
+    if (!req.adminSession.serverId || !getManagedServerById(req.adminSession.serverId)) {
+      res.status(403).json({ error: "ADMIN_SERVER_SETUP_REQUIRED" });
+      return false;
+    }
+    return true;
+  }
   const resolvedCapability: OrganizationCapability = capability
     || (req.method === "GET" || req.method === "HEAD" ? "view" : "manage");
   return requireOrganizationAccess(req, res, getPrimaryServerDescriptor().organizationId, resolvedCapability);
@@ -1382,6 +1400,10 @@ function requireServerAdmin(req: Request, res: Response, serverIdInput: unknown,
   const server = getManagedServerById(serverId);
   if (!server) {
     res.status(404).json({ error: "SERVER_NOT_FOUND" });
+    return false;
+  }
+  if (req.adminSession && req.adminSession.serverId !== server.id) {
+    res.status(403).json({ error: "SERVER_FORBIDDEN" });
     return false;
   }
   return requireOrganizationAccess(req, res, server.organizationId, capability);
@@ -1395,6 +1417,12 @@ function requirePlatformBootstrap(req: Request, res: Response) {
 
 function authorizedServersForRequest(req: Request, organizationIdInput?: unknown) {
   if (hasPlatformBootstrapAccess(req)) return listManagedServers();
+  if (req.adminSession?.serverId) {
+    const server = getManagedServerById(req.adminSession.serverId);
+    if (!server) return [];
+    const requestedOrganizationId = organizationIdInput ? buildOrganizationId(organizationIdInput) : undefined;
+    return !requestedOrganizationId || requestedOrganizationId === server.organizationId ? [server] : [];
+  }
   const discordId = req.portalSession?.discordId;
   if (!discordId) return [];
   const requestedOrganizationId = organizationIdInput ? buildOrganizationId(organizationIdInput) : undefined;
@@ -1403,6 +1431,13 @@ function authorizedServersForRequest(req: Request, organizationIdInput?: unknown
     organizationIds.has(server.organizationId)
     && (!requestedOrganizationId || server.organizationId === requestedOrganizationId),
   );
+}
+
+function currentOrganizationIdForRequest(req: Request) {
+  if (req.adminSession?.serverId) {
+    return getManagedServerById(req.adminSession.serverId)?.organizationId || getPrimaryServerDescriptor().organizationId;
+  }
+  return getPrimaryServerDescriptor().organizationId;
 }
 
 function organizationDiagnosticsForRequest(req: Request) {
@@ -4797,7 +4832,7 @@ function renderAdminPanelHtml(token: string) {
               <div class="card" style="margin-top:16px">
                 <div class="section-title">
                   <div><h2>SaaS workspace</h2><div class="member-meta">Ownership e autorização da organização que contém os servidores atuais.</div></div>
-                  <div class="server-onboarding-actions"><a class="ghost-btn" href="/saas" style="text-decoration:none">Abrir onboarding SaaS</a><button id="organizationRefresh" class="ghost-btn" type="button">Atualizar</button></div>
+                  <div class="server-onboarding-actions"><a class="ghost-btn" href="/admin-panel/setup" style="text-decoration:none">Configurar servidor</a><button id="organizationRefresh" class="ghost-btn" type="button">Atualizar</button></div>
                 </div>
                 <div id="organizationSummary" class="command-settings-summary" style="margin-top:12px"><span class="chip">Carregando...</span></div>
                 <div class="form-grid" style="margin-top:14px">
@@ -8533,6 +8568,19 @@ function renderAdminPanelHtml(token: string) {
 </html>`;
 }
 
+// Database-backed ADM sessions are hard-bound to one managed server. Every
+// downstream admin handler inherits that server through AsyncLocalStorage, so
+// legacy admin APIs cannot silently fall back to the primary runtime.
+router.use((req, res, next) => {
+  const serverId = req.adminSession?.serverId;
+  if (!serverId) { next(); return; }
+  if (!getManagedServerById(serverId)) {
+    res.status(409).json({ error: "ADMIN_SERVER_NOT_FOUND", serverId });
+    return;
+  }
+  runInServerMaintenanceContext(serverId, () => next());
+});
+
 // Phase 16 keeps legacy admin API gaps closed centrally. Server/organization routes
 // have their own ownership-aware guards below; every other admin API is pinned
 // to the primary organization and derives read/write capability from HTTP method.
@@ -8547,6 +8595,14 @@ router.use("/api", (req, res, next) => {
 });
 
 router.get("/", (req, res) => {
+  if (!req.adminSession && !hasPlatformBootstrapAccess(req)) {
+    res.redirect("/admin-panel/login");
+    return;
+  }
+  if (req.adminSession && !req.adminSession.serverId) {
+    res.redirect("/admin-panel/setup");
+    return;
+  }
   if (!requireAdmin(req, res)) return;
   setPanelCookie(req, res);
   res.type("html").send(renderAdminPanelHtml(getTokenFromRequest(req)));
@@ -8672,7 +8728,7 @@ router.patch("/api/discord-commands/:commandName", async (req, res) => {
 });
 
 router.get("/api/organization", async (req, res) => {
-  const organizationId = getPrimaryServerDescriptor().organizationId;
+  const organizationId = currentOrganizationIdForRequest(req);
   if (!requireOrganizationAccess(req, res, organizationId, "view")) return;
   const organization = getManagedOrganizationById(organizationId);
   res.json({
@@ -8686,7 +8742,7 @@ router.get("/api/organization", async (req, res) => {
 });
 
 router.post("/api/organization/members", async (req, res) => {
-  const organizationId = getPrimaryServerDescriptor().organizationId;
+  const organizationId = currentOrganizationIdForRequest(req);
   if (!requireOrganizationAccess(req, res, organizationId, "own")) return;
   try {
     const membership = await upsertOrganizationMembership(organizationId, req.body?.discordId, req.body?.role);
@@ -8697,7 +8753,7 @@ router.post("/api/organization/members", async (req, res) => {
 });
 
 router.delete("/api/organization/members/:discordId", async (req, res) => {
-  const organizationId = getPrimaryServerDescriptor().organizationId;
+  const organizationId = currentOrganizationIdForRequest(req);
   if (!requireOrganizationAccess(req, res, organizationId, "own")) return;
   try {
     await removeOrganizationMembership(organizationId, req.params.discordId);
@@ -8710,6 +8766,11 @@ router.delete("/api/organization/members/:discordId", async (req, res) => {
 router.get("/api/organizations", async (req, res) => {
   if (hasPlatformBootstrapAccess(req)) {
     res.json({ organizations: listManagedOrganizations(), diagnostics: organizationDiagnosticsForRequest(req) });
+    return;
+  }
+  if (req.adminSession?.serverId) {
+    const organizationId = currentOrganizationIdForRequest(req);
+    res.json({ organizations: listManagedOrganizations().filter((organization) => organization.id === organizationId), diagnostics: organizationDiagnosticsForRequest(req) });
     return;
   }
   if (!req.portalSession) { res.status(401).json({ error: "AUTH_REQUIRED" }); return; }
@@ -8839,7 +8900,7 @@ router.delete("/api/organizations/:organizationId/members/:discordId", async (re
 });
 
 router.get("/api/servers", async (req, res) => {
-  if (!hasPlatformBootstrapAccess(req) && !req.portalSession) { res.status(401).json({ error: "AUTH_REQUIRED" }); return; }
+  if (!hasPlatformBootstrapAccess(req) && !req.portalSession && !req.adminSession) { res.status(401).json({ error: "AUTH_REQUIRED" }); return; }
   const servers = authorizedServersForRequest(req);
   const foundation = foundationForRequest(req, servers);
   const currentServer = servers.find((server) => server.primary) || servers[0] || null;
@@ -9037,41 +9098,6 @@ router.get("/api/servers/:serverId/discord/guilds/:guildId/channels", async (req
   if (!requireServerAdmin(req, res, req.params.serverId, "manage")) return;
   try {
     res.json(await listDiscordGuildChannels(String(req.params.serverId || ""), req.params.guildId, req.portalSession?.discordId));
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    res.status(/nao encontrado/i.test(message) ? 404 : 400).send(message);
-  }
-});
-
-router.put("/api/servers/:serverId/discord/channels", async (req, res) => {
-  if (!requireServerAdmin(req, res, req.params.serverId, "manage")) return;
-  try {
-    const serverId = String(req.params.serverId || "");
-    const server = listManagedServers().find((candidate) => candidate.id === serverId);
-    if (!server) throw new Error("Servidor nao encontrado.");
-    const guildId = String(server.integrations.discordGuildId || "").trim();
-    if (!guildId) throw new Error("Conecte o Discord deste servidor antes de configurar canais.");
-    const discovered = await listDiscordGuildChannels(serverId, guildId, req.portalSession?.discordId);
-    const channelTypes = new Map(discovered.channels.map((channel) => [channel.id, channel.type] as const));
-    const source = req.body && typeof req.body === "object" ? req.body as Record<string, unknown> : {};
-    const textFields = ["globalChannelId", "killfeedChannelId", "onlineListChannelId", "memberFeedChannelId"] as const;
-    const categoryFields = ["onlineCategoryId"] as const;
-    const discord: Record<string, unknown> = {};
-    for (const key of textFields) {
-      if (!(key in source)) continue;
-      const value = String(source[key] || "").trim();
-      if (value && channelTypes.get(value) !== "text") throw new Error(`Canal invalido para ${key}. Selecione um canal de texto desta guild.`);
-      discord[key] = value || undefined;
-    }
-    for (const key of categoryFields) {
-      if (!(key in source)) continue;
-      const value = String(source[key] || "").trim();
-      if (value && channelTypes.get(value) !== "category") throw new Error(`Categoria invalida para ${key}. Selecione uma categoria desta guild.`);
-      discord[key] = value || undefined;
-    }
-    if ("memberFeedEnabled" in source) discord.memberFeedEnabled = source.memberFeedEnabled !== false;
-    const updated = await updateManagedServerDiscordChannels(serverId, discord);
-    res.json({ server: updated, guild: discovered.guild, channels: discovered.channels });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     res.status(/nao encontrado/i.test(message) ? 404 : 400).send(message);

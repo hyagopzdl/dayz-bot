@@ -10,8 +10,8 @@ import { recordNetworkTransfer } from "./lib/networkMetrics";
 import authRoutes from "./routes/auth";
 import playerPortalRoutes from "./routes/playerPortal";
 import { attachPortalSession } from "./middlewares/portalAuth";
-import { getPrimaryServerId, setServerRuntimeIsolationStatus } from "./lib/serverRegistry";
-import { runInServerRuntimeContext } from "./lib/serverRuntime";
+import { attachAdminSession } from "./middlewares/adminAuth";
+import adminAuthRoutes from "./routes/adminAuth";
 
 const app: Express = express();
 
@@ -67,14 +67,6 @@ app.use((req, res, next) => {
 app.use(cookieParser());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-// Phase 13 keeps the default/admin surface pinned to the primary server while
-// the Player Portal installs a nested, validated server context for its own
-// routes. This prevents admin FTP/map operations from following a player cookie.
-app.use((_req, _res, next) => {
-  const serverId = getPrimaryServerId();
-  runInServerRuntimeContext(serverId, next);
-});
-setServerRuntimeIsolationStatus({ httpContextNamespaced: true, playerPortalContextNamespaced: true });
 app.use(
   "/app-assets",
   express.static("assets/player-portal", {
@@ -87,8 +79,9 @@ app.use(
   }),
 );
 
-// Portal authentication is available to all following routes.
+// Player and admin authentication are available to all following routes.
 app.use(attachPortalSession);
+app.use(attachAdminSession);
 
 // Keep the current root behavior so the existing Render URL remains compatible.
 app.get("/", (_req, res) => {
@@ -101,6 +94,7 @@ app.use(playerPortalRoutes);
 
 // 🔐 ADMIN PANEL
 app.use("/admin", adminRoutes);
+app.use("/admin-panel", adminAuthRoutes);
 app.use("/admin-panel", adminPanelRoutes);
 
 // API

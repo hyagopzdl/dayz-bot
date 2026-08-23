@@ -82,13 +82,19 @@ function canManageDiscordGuild(guild: { owner?: boolean; permissions?: string })
 }
 
 function assertServerManageAccess(req: Request, serverId: string) {
-  const session = req.portalSession;
-  if (!session) throw new Error("AUTH_REQUIRED");
   const server = getManagedServerById(serverId);
   if (!server) throw new Error("SERVER_NOT_FOUND");
+
+  if (req.adminSession) {
+    if (!req.adminSession.serverId || req.adminSession.serverId !== server.id) throw new Error("SERVER_FORBIDDEN");
+    return { session: req.portalSession || null, adminSession: req.adminSession, server };
+  }
+
+  const session = req.portalSession;
+  if (!session) throw new Error("AUTH_REQUIRED");
   const membership = getUserOrganizationMembership(session.discordId, server.organizationId);
   if (!membership || !canOrganizationRole(membership.role, "manage")) throw new Error("ORGANIZATION_FORBIDDEN");
-  return { session, server };
+  return { session, adminSession: null, server };
 }
 
 async function fetchInstallingUserGuilds(accessToken: string) {
@@ -135,13 +141,14 @@ router.get("/discord", (req, res) => {
 router.get("/discord/connect", (req, res) => {
   try {
     const serverId = String(req.query.serverId || "").trim();
-    const { session, server } = assertServerManageAccess(req, serverId);
+    const { session, adminSession, server } = assertServerManageAccess(req, serverId);
     const { clientId, redirectUri } = discordConfig(req);
-    const returnTo = `/saas?server=${encodeURIComponent(server.id)}`;
+    const returnTo = adminSession ? "/admin-panel/setup" : `/saas?server=${encodeURIComponent(server.id)}`;
     const { state } = createOAuthState(req, res, returnTo, {
       mode: "discord-install",
       serverId: server.id,
-      requesterDiscordId: session.discordId,
+      requesterDiscordId: session?.discordId,
+      requesterAdminUserId: adminSession?.adminUserId,
     });
 
     const url = new URL("https://discord.com/oauth2/authorize");
@@ -158,6 +165,7 @@ router.get("/discord/connect", (req, res) => {
     logger.error({ error }, "Discord install start failed");
     const message = error instanceof Error ? error.message : String(error);
     if (message === "AUTH_REQUIRED") { res.redirect("/login?returnTo=/saas"); return; }
+    if (message === "SERVER_FORBIDDEN") { res.status(403).send(message); return; }
     res.status(message === "ORGANIZATION_FORBIDDEN" ? 403 : 400).send(message);
   }
 });
@@ -206,11 +214,17 @@ router.get("/discord/callback", async (req, res) => {
     if (oauthState.metadata?.mode === "discord-install") {
       const serverId = String(oauthState.metadata.serverId || "").trim();
       const requesterDiscordId = String(oauthState.metadata.requesterDiscordId || "").trim();
-      if (!serverId || !requesterDiscordId || user.id !== requesterDiscordId || req.portalSession?.discordId !== requesterDiscordId) {
+      const requesterAdminUserId = String(oauthState.metadata.requesterAdminUserId || "").trim();
+      if (!serverId) throw new Error("Missing server context for Discord installation.");
+      if (requesterAdminUserId) {
+        if (!req.adminSession || req.adminSession.adminUserId !== requesterAdminUserId) {
+          throw new Error("ADM admin session does not match the Discord installation request.");
+        }
+      } else if (!requesterDiscordId || user.id !== requesterDiscordId || req.portalSession?.discordId !== requesterDiscordId) {
         throw new Error("Discord installer identity does not match the signed-in ADM owner/admin.");
       }
 
-      const { server } = assertServerManageAccess(req, serverId);
+      const { server, adminSession } = assertServerManageAccess(req, serverId);
       const callbackGuildId = typeof req.query.guild_id === "string" ? req.query.guild_id : "";
       const guildId = String(token.guild?.id || callbackGuildId || "").trim();
       if (!guildId) throw new Error("Discord did not return the guild selected during bot authorization.");
@@ -230,7 +244,7 @@ router.get("/discord/callback", async (req, res) => {
       await syncDiscordCommandsForManagedServer(server.id);
 
       logger.info({ serverId: server.id, guildId, guildName: botGuild.name, discordId: user.id }, "Discord guild connected to managed server");
-      res.redirect(`/saas?server=${encodeURIComponent(server.id)}&discord=connected`);
+      res.redirect(adminSession ? "/admin-panel/setup?discord=connected" : `/saas?server=${encodeURIComponent(server.id)}&discord=connected`);
       return;
     }
 
@@ -249,8 +263,12 @@ router.get("/discord/callback", async (req, res) => {
     logger.error({ error }, "Discord OAuth callback failed");
     if (oauthState.metadata?.mode === "discord-install") {
       const serverId = String(oauthState.metadata.serverId || "").trim();
-      const suffix = serverId ? `&server=${encodeURIComponent(serverId)}` : "";
-      res.redirect(`/saas?discord=error${suffix}`);
+      if (oauthState.metadata.requesterAdminUserId) {
+        res.redirect(`/admin-panel/setup?error=${encodeURIComponent(error instanceof Error ? error.message : String(error))}`);
+      } else {
+        const suffix = serverId ? `&server=${encodeURIComponent(serverId)}` : "";
+        res.redirect(`/saas?discord=error${suffix}`);
+      }
       return;
     }
     res.redirect("/login?error=discord_oauth_failed");
