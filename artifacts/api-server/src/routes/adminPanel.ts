@@ -8590,6 +8590,11 @@ router.use((req, res, next) => {
   const serverId = req.adminSession?.serverId;
   if (!serverId) { next(); return; }
   if (!getManagedServerById(serverId)) {
+    const acceptsHtml = String(req.headers.accept || "").includes("text/html");
+    if ((req.method === "GET" || req.method === "HEAD") && acceptsHtml) {
+      res.redirect("/admin-panel/setup");
+      return;
+    }
     res.status(409).json({ error: "ADMIN_SERVER_NOT_FOUND", serverId });
     return;
   }

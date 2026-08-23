@@ -30,21 +30,42 @@ function setupPage(username: string, serverId: string | null, error = "", connec
   return shell(`<main class="card"><div class="brand"><div class="mark">A</div>Advanced DayZ Management</div><div class="progress"><span class="on"></span><span class="on"></span></div><div class="step">Etapa 2 de 2</div><h1>Conecte seu Discord</h1><p>Adicione o bot à comunidade do seu servidor. O Discord será usado para a integração do servidor, não para o login do ADM.</p><div class="server"><strong>${esc(server?.name || serverId)}</strong><small>${esc(serverId)}</small></div>${connected || server?.integrations.discordGuildId ? `<div class="ok">Discord conectado com sucesso.</div><a class="button secondary" href="/admin-panel">Ir para o painel</a>` : `<a class="button secondary" href="/api/auth/discord/connect?serverId=${encodeURIComponent(serverId)}&admin=1">Conectar Discord</a>`}${error ? `<div class="error">${esc(error)}</div>` : ""}</main>`, "Conectar Discord · ADM");
 }
 
-router.get("/login", (req, res) => { if (req.adminSession) { res.redirect(req.adminSession.serverId ? "/admin-panel" : "/admin-panel/setup"); return; } res.type("html").send(loginPage(String(req.query.error || ""))); });
+router.get("/login", async (req, res) => {
+  if (req.adminSession) {
+    const serverId = req.adminSession.serverId;
+    if (serverId && getManagedServerById(serverId)) {
+      res.redirect("/admin-panel");
+      return;
+    }
+    if (serverId) {
+      await assignAdminUserServer(req.adminSession.adminUserId, null);
+      setAdminSessionCookie(req, res, createAdminSession({ adminUserId: req.adminSession.adminUserId, username: req.adminSession.username, serverId: null }));
+    }
+    res.redirect("/admin-panel/setup");
+    return;
+  }
+  res.type("html").send(loginPage(String(req.query.error || "")));
+});
 router.post("/auth/login", async (req, res) => {
   try {
     const user = await authenticateAdminUser(req.body?.username, req.body?.password);
     if (!user) { res.status(401).type("html").send(loginPage("Usuário ou senha inválidos.")); return; }
     clearLegacyPanelCookie(res);
-    setAdminSessionCookie(req, res, createAdminSession({ adminUserId: user.id, username: user.username, serverId: user.serverId }));
-    res.redirect(user.serverId ? "/admin-panel" : "/admin-panel/setup");
+    const resolvedServerId = user.serverId && getManagedServerById(user.serverId) ? user.serverId : null;
+    if (user.serverId && !resolvedServerId) await assignAdminUserServer(user.id, null);
+    setAdminSessionCookie(req, res, createAdminSession({ adminUserId: user.id, username: user.username, serverId: resolvedServerId }));
+    res.redirect(resolvedServerId ? "/admin-panel" : "/admin-panel/setup");
   } catch (error) { res.status(503).type("html").send(loginPage(error instanceof Error ? error.message : String(error))); }
 });
 router.post("/auth/logout", (req, res) => { clearAdminSessionCookie(req, res); clearLegacyPanelCookie(res); res.redirect("/admin-panel/login"); });
 router.get("/setup", async (req, res) => {
   if (!req.adminSession) { res.redirect("/admin-panel/login"); return; }
-  const fresh = await getAdminUserById(req.adminSession.adminUserId);
+  let fresh = await getAdminUserById(req.adminSession.adminUserId);
   if (!fresh) { clearAdminSessionCookie(req, res); res.redirect("/admin-panel/login"); return; }
+  if (fresh.serverId && !getManagedServerById(fresh.serverId)) {
+    fresh = await assignAdminUserServer(fresh.id, null);
+    if (!fresh) { clearAdminSessionCookie(req, res); res.redirect("/admin-panel/login"); return; }
+  }
   if (fresh.serverId !== req.adminSession.serverId) setAdminSessionCookie(req, res, createAdminSession({ adminUserId: fresh.id, username: fresh.username, serverId: fresh.serverId }));
   res.type("html").send(setupPage(fresh.username, fresh.serverId, String(req.query.error || ""), req.query.discord === "connected"));
 });
