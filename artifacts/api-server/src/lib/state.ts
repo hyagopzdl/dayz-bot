@@ -28,6 +28,7 @@ import {
   type ServerDiscordRuntimeConfig,
   type ServerNitradoValidation,
   type ServerRuntimeActivation,
+  type ServerRuntimeOperations,
 } from "./serverRegistry";
 import { getActiveServerId, getServerStateStoragePath, runInServerMaintenanceContext, runInServerRuntimeContext } from "./serverRuntime";
 
@@ -518,6 +519,17 @@ function mapManagedServerRow(row: any, primary: ManagedServerDescriptor): Manage
             lastEnabledAt: String(runtimeConfig.activation.lastEnabledAt || "").trim(),
             lastDisabledAt: String(runtimeConfig.activation.lastDisabledAt || "").trim() || undefined,
             activationCount: Math.max(1, Number(runtimeConfig.activation.activationCount || 1)),
+          }
+        : undefined,
+      operations: !isPrimary
+        && runtimeConfig?.operations
+        && typeof runtimeConfig.operations === "object"
+        ? {
+            paused: runtimeConfig.operations.paused === true,
+            pausedAt: String(runtimeConfig.operations.pausedAt || "").trim() || undefined,
+            resumedAt: String(runtimeConfig.operations.resumedAt || "").trim() || undefined,
+            pauseReason: String(runtimeConfig.operations.pauseReason || "").trim().slice(0, 240) || undefined,
+            source: runtimeConfig.operations.source === "phase14-admin" ? "phase14-admin" : undefined,
           }
         : undefined,
       discord: isPrimary
@@ -1789,6 +1801,7 @@ export async function updateManagedServerDraft(serverId: string, input: ManagedS
         : undefined,
       activationPreflight: undefined,
       activation: current.runtime.activation ? { ...current.runtime.activation } : undefined,
+      operations: current.runtime.operations ? { ...current.runtime.operations, paused: false } : undefined,
       discord: normalizeServerDiscordDraft(input?.discord, current.runtime.discord),
     },
   };
@@ -1873,6 +1886,7 @@ export async function markManagedServerNitradoValidated(
       nitradoValidation,
       activationPreflight: undefined,
       activation: current.runtime.activation ? { ...current.runtime.activation } : undefined,
+      operations: current.runtime.operations ? { ...current.runtime.operations, paused: false } : undefined,
       discord: { ...(current.runtime.discord || {}) },
     },
   };
@@ -1954,6 +1968,7 @@ export async function markManagedServerActivationPreflightReady(
       ...current.runtime,
       activationPreflight: { ...preflight, namespaceRows: { ...preflight.namespaceRows } },
       activation: current.runtime.activation ? { ...current.runtime.activation } : undefined,
+      operations: current.runtime.operations ? { ...current.runtime.operations, paused: false } : undefined,
       discord: { ...(current.runtime.discord || {}) },
     },
   };
@@ -2030,9 +2045,17 @@ export async function setManagedServerRuntimeEnabled(serverId: string, enabled: 
       }
     : undefined;
 
+  const previousOperations = current.runtime.operations;
   const nextRuntime = {
     ...current.runtime,
     activation,
+    operations: previousOperations
+      ? {
+          ...previousOperations,
+          paused: false,
+          ...(previousOperations.paused ? { resumedAt: now } : {}),
+        }
+      : undefined,
     discord: { ...(current.runtime.discord || {}) },
   };
 
@@ -2053,6 +2076,65 @@ export async function setManagedServerRuntimeEnabled(serverId: string, enabled: 
     operation: enabled ? "activate_server_runtime" : "deactivate_server_runtime",
     direction: "outbound",
     bytes: Buffer.byteLength(JSON.stringify({ serverId: id, runtimeEnabled: enabled, activation }), "utf8"),
+    ok: true,
+  });
+  return next;
+}
+
+export async function setManagedServerRuntimePaused(serverId: string, paused: boolean, reason?: string) {
+  await ensurePrimaryServerRegistryMetadata();
+  if (!sql || !getServerRegistryPersistenceStatus().tableReady) {
+    throw new Error("Server registry is unavailable. DATABASE_URL and managed_servers must be ready.");
+  }
+
+  const id = buildManagedServerId(serverId);
+  if (!id || id === getPrimaryServerId()) throw new Error("O runtime primario nao pode ser pausado por este controle.");
+  const currentServers = await reloadManagedServerRegistryFromDb();
+  const current = currentServers.find((server) => server.id === id);
+  if (!current) throw new Error(`Servidor ${id} nao encontrado.`);
+  if (!current.runtimeEnabled) throw new Error("Ative o runtime antes de usar pause/resume operacional.");
+  if (!hasManagedServerRuntimeActivation(current)) throw new Error("Este runtime ainda nao possui uma ativacao valida.");
+
+  const now = new Date().toISOString();
+  const previous: ServerRuntimeOperations = current.runtime.operations ? { ...current.runtime.operations } : {};
+  const operations: ServerRuntimeOperations = paused
+    ? {
+        ...previous,
+        paused: true,
+        pausedAt: now,
+        pauseReason: String(reason || "Pausa manual pelo admin").trim().slice(0, 240) || "Pausa manual pelo admin",
+        source: "phase14-admin",
+      }
+    : {
+        ...previous,
+        paused: false,
+        resumedAt: now,
+        source: "phase14-admin",
+      };
+
+  const nextRuntime = {
+    ...current.runtime,
+    operations,
+    discord: { ...(current.runtime.discord || {}) },
+  };
+
+  const updated = await sql`
+    UPDATE managed_servers
+    SET runtime_config = ${JSON.stringify(nextRuntime)}::jsonb,
+        updated_at = NOW()
+    WHERE id = ${id} AND id <> ${getPrimaryServerId()} AND runtime_enabled = TRUE
+    RETURNING id
+  `;
+  if (!(updated as any[]).length) throw new Error("O runtime mudou de estado durante o pause/resume. Atualize o painel e tente novamente.");
+
+  const servers = await reloadManagedServerRegistryFromDb();
+  const next = servers.find((server) => server.id === id);
+  if (!next) throw new Error(`Servidor ${id} nao encontrado apos atualizar pause/resume.`);
+  recordNetworkTransfer({
+    service: "neon-server-registry",
+    operation: paused ? "pause_server_runtime" : "resume_server_runtime",
+    direction: "outbound",
+    bytes: Buffer.byteLength(JSON.stringify({ serverId: id, paused, operations }), "utf8"),
     ok: true,
   });
   return next;

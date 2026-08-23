@@ -10,6 +10,14 @@ export type ServerRuntimeActivation = {
   activationCount: number;
 };
 
+export type ServerRuntimeOperations = {
+  paused?: boolean;
+  pausedAt?: string;
+  resumedAt?: string;
+  pauseReason?: string;
+  source?: "phase14-admin";
+};
+
 export type ServerDiscordRuntimeConfig = {
   globalChannelId?: string;
   dailyChannelId?: string;
@@ -55,6 +63,7 @@ export type ServerRuntimeConfig = {
   nitradoValidation?: ServerNitradoValidation;
   activationPreflight?: ServerActivationPreflight;
   activation?: ServerRuntimeActivation;
+  operations?: ServerRuntimeOperations;
   discord: ServerDiscordRuntimeConfig;
 };
 
@@ -291,6 +300,10 @@ export function hasMatchingActivationPreflight(server: Pick<ManagedServerDescrip
 }
 
 
+export function isManagedServerRuntimePaused(server: Pick<ManagedServerDescriptor, "runtime">) {
+  return server.runtime.operations?.paused === true;
+}
+
 export function hasManagedServerRuntimeActivation(server: Pick<ManagedServerDescriptor, "runtime">) {
   const activation = server.runtime.activation;
   return Boolean(
@@ -329,6 +342,7 @@ export function canExecuteManagedServerRuntime(serverId: unknown) {
     && hasMatchingManagedServerNitradoValidation(server)
     && hasMatchingActivationPreflight(server)
     && hasManagedServerRuntimeActivation(server)
+    && !isManagedServerRuntimePaused(server)
     && isServerNamespaceRuntimeSafe()
   );
 }
@@ -361,7 +375,7 @@ export function getPrimaryServerDescriptor(): ManagedServerDescriptor {
 export function listManagedServers(): ManagedServerDescriptor[] {
   // Phase 11 allows additional servers to exist as draft/configured/ready registry rows,
   // while runtime execution remains explicitly primary-only.
-  if (persistedServers.length) return persistedServers.map((server) => ({ ...server, integrations: { ...server.integrations }, runtime: { ...server.runtime, nitradoValidation: server.runtime.nitradoValidation ? { ...server.runtime.nitradoValidation } : undefined, activationPreflight: server.runtime.activationPreflight ? { ...server.runtime.activationPreflight, namespaceRows: { ...server.runtime.activationPreflight.namespaceRows } } : undefined, activation: server.runtime.activation ? { ...server.runtime.activation } : undefined, discord: { ...server.runtime.discord } } }));
+  if (persistedServers.length) return persistedServers.map((server) => ({ ...server, integrations: { ...server.integrations }, runtime: { ...server.runtime, nitradoValidation: server.runtime.nitradoValidation ? { ...server.runtime.nitradoValidation } : undefined, activationPreflight: server.runtime.activationPreflight ? { ...server.runtime.activationPreflight, namespaceRows: { ...server.runtime.activationPreflight.namespaceRows } } : undefined, activation: server.runtime.activation ? { ...server.runtime.activation } : undefined, operations: server.runtime.operations ? { ...server.runtime.operations } : undefined, discord: { ...server.runtime.discord } } }));
   return [getPrimaryServerDescriptor()];
 }
 
@@ -383,6 +397,7 @@ export function setPersistedManagedServers(servers: ManagedServerDescriptor[]) {
       nitradoValidation: server.runtime?.nitradoValidation ? { ...server.runtime.nitradoValidation } : undefined,
       activationPreflight: server.runtime?.activationPreflight ? { ...server.runtime.activationPreflight, namespaceRows: { ...server.runtime.activationPreflight.namespaceRows } } : undefined,
       activation: server.runtime?.activation ? { ...server.runtime.activation } : undefined,
+      operations: server.runtime?.operations ? { ...server.runtime.operations } : undefined,
       discord: { ...(server.runtime?.discord || {}) },
     },
   }));
@@ -444,7 +459,7 @@ export function getServerFoundationDiagnostics() {
   const managedServers = listManagedServers();
   const additionalServers = managedServers.filter((candidate) => !candidate.primary);
   return {
-    phase: 13,
+    phase: 14,
     mode: server.mode,
     currentServerId: server.id,
     currentServerName: server.name,
@@ -467,6 +482,11 @@ export function getServerFoundationDiagnostics() {
       activationPreflightEnabled: true,
       activationEndpointEnabled: true,
       playerPortalContextSwitchingEnabled: true,
+      operationalHardeningEnabled: true,
+      manualPauseAvailable: true,
+      circuitBreakerMode: "secondary-only-in-memory",
+      circuitBreakerFailureThreshold: 3,
+      circuitBreakerCooldownMinutes: 15,
       preflightMode: "on-demand",
       backgroundPollingAdded: false,
       backgroundRegistryWritesAdded: false,
@@ -514,6 +534,10 @@ export function getServerFoundationDiagnostics() {
       activationPreflightGate: true,
       activationEndpointAvailable: true,
       playerPortalContextSwitching: true,
+      perServerOperationalHealth: true,
+      manualRuntimePause: true,
+      secondaryCircuitBreaker: true,
+      primaryCircuitBreakerDisabled: true,
     },
     integrations: server.integrations,
   };

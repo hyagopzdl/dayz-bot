@@ -23,6 +23,9 @@ import {
 } from "./serverRuntime";
 
 const RUNTIME_CYCLE_INTERVAL_MS = 5 * 60 * 1000;
+const SECONDARY_CIRCUIT_FAILURE_THRESHOLD = 3;
+const SECONDARY_CIRCUIT_COOLDOWN_MS = 15 * 60 * 1000;
+const RUNTIME_STALE_AFTER_MS = 12 * 60 * 1000;
 
 type RuntimeCycleReason = "startup" | "scheduler" | "activation" | "manual";
 
@@ -32,6 +35,12 @@ type ServerRuntimeCycleStatus = {
   cycles: number;
   skippedOverlaps: number;
   failures: number;
+  consecutiveFailures: number;
+  circuitState: "closed" | "open" | "half-open";
+  circuitSkips: number;
+  circuitOpenedAt?: string;
+  circuitRetryAt?: string;
+  lastHealthyAt?: string;
   lastReason?: RuntimeCycleReason;
   lastStartedAt?: string;
   lastFinishedAt?: string;
@@ -58,6 +67,9 @@ function getStatus(serverId: string) {
       cycles: 0,
       skippedOverlaps: 0,
       failures: 0,
+      consecutiveFailures: 0,
+      circuitState: "closed",
+      circuitSkips: 0,
     };
     statuses.set(serverId, status);
   } else if (descriptor?.name) {
@@ -66,12 +78,63 @@ function getStatus(serverId: string) {
   return status;
 }
 
+function closeCircuit(status: ServerRuntimeCycleStatus) {
+  status.consecutiveFailures = 0;
+  status.circuitState = "closed";
+  status.circuitOpenedAt = undefined;
+  status.circuitRetryAt = undefined;
+  status.lastHealthyAt = new Date().toISOString();
+}
+
+function recordCycleFailure(serverId: string, error?: unknown) {
+  const status = getStatus(serverId);
+  status.consecutiveFailures += 1;
+  if (error) status.lastError = error instanceof Error ? error.message : String(error);
+  if (serverId === getPrimaryServerId()) return;
+  if (status.consecutiveFailures < SECONDARY_CIRCUIT_FAILURE_THRESHOLD) return;
+
+  const now = Date.now();
+  status.circuitState = "open";
+  status.circuitOpenedAt = new Date(now).toISOString();
+  status.circuitRetryAt = new Date(now + SECONDARY_CIRCUIT_COOLDOWN_MS).toISOString();
+}
+
+function shouldSkipForCircuit(serverId: string, forceCircuitProbe = false) {
+  if (serverId === getPrimaryServerId()) return false;
+  const status = getStatus(serverId);
+  if (status.circuitState !== "open") return false;
+  const retryAt = status.circuitRetryAt ? Date.parse(status.circuitRetryAt) : 0;
+  if (forceCircuitProbe || !retryAt || Date.now() >= retryAt) {
+    status.circuitState = "half-open";
+    return false;
+  }
+  status.circuitSkips += 1;
+  return true;
+}
+
+export function resetManagedServerRuntimeCircuit(serverId: string) {
+  const status = getStatus(serverId);
+  status.consecutiveFailures = 0;
+  status.circuitState = "closed";
+  status.circuitOpenedAt = undefined;
+  status.circuitRetryAt = undefined;
+  status.lastError = undefined;
+}
+
 export async function runManagedServerRuntimeCycle(
   serverId: string,
   reason: RuntimeCycleReason = "manual",
+  options: { forceCircuitProbe?: boolean } = {},
 ) {
   const status = getStatus(serverId);
-  const locked = await runWithServerRuntimeLock(serverId, async () => runInServerRuntimeContext(serverId, async () => {
+  if (shouldSkipForCircuit(serverId, options.forceCircuitProbe === true)) {
+    console.warn(`🛡️ circuit breaker aberto [${serverId}] até ${status.circuitRetryAt || "o próximo probe"}`);
+    return { skipped: true, circuitOpen: true };
+  }
+
+  let locked: { skipped: boolean; value?: unknown };
+  try {
+    locked = await runWithServerRuntimeLock(serverId, async () => runInServerRuntimeContext(serverId, async () => {
     const startedAt = new Date().toISOString();
     const cycleStarted = Date.now();
     let downloadDurationMs = 0;
@@ -172,8 +235,18 @@ export async function runManagedServerRuntimeCycle(
         downloadOk,
         parserOk,
       }, serverId);
+      if (downloadOk && parserOk) closeCircuit(status);
+      else recordCycleFailure(serverId, status.lastError);
     }
   }));
+  } catch (err) {
+    status.cycles += 1;
+    status.failures += 1;
+    status.lastReason = reason;
+    status.lastFinishedAt = new Date().toISOString();
+    recordCycleFailure(serverId, err);
+    throw err;
+  }
 
   if (locked.skipped) {
     status.skippedOverlaps += 1;
@@ -205,7 +278,6 @@ export async function runManagedServerRuntimeBatch(
       await runManagedServerRuntimeCycle(server.id, reason);
     } catch (err) {
       const status = getStatus(server.id);
-      status.failures += 1;
       status.lastError = err instanceof Error ? err.message : String(err);
       // A secondary failure must never prevent the coordinator from moving on
       // or affect the primary runtime on the next scheduler tick.
@@ -224,11 +296,15 @@ export function startManagedServerRuntimeScheduler() {
   schedulerTimer.unref?.();
 }
 
-export function requestManagedServerRuntimeCycle(serverId: string, reason: RuntimeCycleReason = "activation") {
+export function requestManagedServerRuntimeCycle(
+  serverId: string,
+  reason: RuntimeCycleReason = "activation",
+  options: { forceCircuitProbe?: boolean } = {},
+) {
   if (requestedImmediateRuns.has(serverId)) return false;
   requestedImmediateRuns.add(serverId);
   setImmediate(() => {
-    runManagedServerRuntimeCycle(serverId, reason)
+    runManagedServerRuntimeCycle(serverId, reason, options)
       .catch((err) => console.error(`❌ erro no ciclo solicitado [${serverId}]:`, err))
       .finally(() => requestedImmediateRuns.delete(serverId));
   });
@@ -255,6 +331,13 @@ export function getManagedServerRuntimeCoordinatorDiagnostics() {
   return {
     scheduler: "centralized",
     intervalMs: RUNTIME_CYCLE_INTERVAL_MS,
+    healthPolicy: {
+      staleAfterMs: RUNTIME_STALE_AFTER_MS,
+      secondaryCircuitFailureThreshold: SECONDARY_CIRCUIT_FAILURE_THRESHOLD,
+      secondaryCircuitCooldownMs: SECONDARY_CIRCUIT_COOLDOWN_MS,
+      primaryCircuitBreakerEnabled: false,
+      backgroundHealthPollingAdded: false,
+    },
     schedulerRunning: Boolean(schedulerTimer),
     activeRuntimeIds: executableServers.map((server: ManagedServerDescriptor) => server.id),
     activeRuntimes: executableServers.length,
@@ -266,12 +349,27 @@ export function getManagedServerRuntimeCoordinatorDiagnostics() {
           cycles: 0,
           skippedOverlaps: 0,
           failures: 0,
+          consecutiveFailures: 0,
+          circuitState: "closed",
+          circuitSkips: 0,
         }),
         serverId: server.id,
         serverName: server.name,
         primary: server.primary,
         runtimeEnabled: server.runtimeEnabled,
+        paused: server.runtime.operations?.paused === true,
         executable: executableIds.has(server.id),
+        health: (() => {
+          if (!server.runtimeEnabled) return "stopped";
+          if (server.runtime.operations?.paused === true) return "paused";
+          if (!server.primary && status?.circuitState === "open") return "circuit-open";
+          if (!executableIds.has(server.id)) return "blocked";
+          if (!status?.lastFinishedAt) return "starting";
+          if (status.consecutiveFailures > 0) return "degraded";
+          const lastFinishedAt = Date.parse(status.lastFinishedAt);
+          if (Number.isFinite(lastFinishedAt) && Date.now() - lastFinishedAt > RUNTIME_STALE_AFTER_MS) return "stale";
+          return "healthy";
+        })(),
       };
     }),
   };

@@ -68,6 +68,7 @@ import {
   updateManagedServerDraft,
   markManagedServerNitradoValidated,
   setManagedServerRuntimeEnabled,
+  setManagedServerRuntimePaused,
   flushServerRuntimePendingStateAsync,
 } from "../lib/state";
 import { getDiscordClient } from "../lib/discordBot";
@@ -80,7 +81,7 @@ import { getAdmDownloadMetrics, setAdmDownloadMode } from "../lib/nitradoDownloa
 import { getRuntimePerformanceMetrics } from "../lib/runtimeMetrics";
 import { getNetworkMetrics } from "../lib/networkMetrics";
 import { getPrimaryServerDescriptor, getPrimaryServerId, getServerFoundationDiagnostics, listManagedServers } from "../lib/serverRegistry";
-import { getActiveServerId, isServerRuntimeLocked, runInServerMaintenanceContext, runInServerRuntimeContext } from "../lib/serverRuntime";
+import { getActiveServerId, isServerRuntimeLocked, runInServerMaintenanceContext, runInServerRuntimeContext, runWithServerMaintenanceLock } from "../lib/serverRuntime";
 import {
   discoverNitradoServices,
   getIntegrationOnboardingStatus,
@@ -93,6 +94,7 @@ import { getPlayerPortalContextDiagnostics } from "../lib/playerPortalServerCont
 import {
   getManagedServerRuntimeCoordinatorDiagnostics,
   requestManagedServerRuntimeCycle,
+  resetManagedServerRuntimeCircuit,
 } from "../lib/serverRuntimeCoordinator";
 
 const router = Router();
@@ -156,6 +158,13 @@ function buildServerRuntimeObservability() {
         averageParserDurationMs: runtime.averageParserDurationMs,
         lastCycleFinishedAt: runtime.lastCycleFinishedAt,
         lastError: coordinatorStatus?.lastError,
+        health: coordinatorStatus?.health || (server.runtimeEnabled ? "starting" : "stopped"),
+        paused: Boolean(coordinatorStatus?.paused),
+        consecutiveFailures: Number(coordinatorStatus?.consecutiveFailures || 0),
+        circuitState: coordinatorStatus?.circuitState || "closed",
+        circuitSkips: Number(coordinatorStatus?.circuitSkips || 0),
+        circuitRetryAt: coordinatorStatus?.circuitRetryAt || null,
+        lastHealthyAt: coordinatorStatus?.lastHealthyAt || null,
       },
       adm: {
         cycles: Number(admStatus?.cycles || 0),
@@ -4581,7 +4590,7 @@ function renderAdminPanelHtml(token: string) {
               <div class="card">
                 <div class="section-title">
                   <div><h2>Server onboarding</h2><div class="member-meta">Valide integrações e execute um preflight completo antes da ativação manual de qualquer servidor adicional.</div></div>
-                  <span class="chip online">Phase 13 · player portal context</span>
+                  <span class="chip online">Phase 14 · operational hardening</span>
                 </div>
                 <div class="server-onboarding-notice">A Fase 12 permite ativar manualmente somente servidores <strong>Ready</strong>. O scheduler continua único e centralizado; cada runtime usa seu próprio lock, ADM cache, parser context e state namespace. Você pode desligar apenas o servidor adicional sem afetar o PZ.</div>
               </div>
@@ -4715,7 +4724,9 @@ function renderAdminPanelHtml(token: string) {
                       <div class="server-onboarding-form">
                         <div id="managedServerPreflightIntro" class="server-onboarding-info">Valide o Nitrado primeiro. O preflight não inicia runtime nem baixa ADM.</div>
                         <div class="server-onboarding-actions"><button id="managedServerPreflightRun" class="ghost-btn" type="button">Executar preflight</button><button id="managedServerRuntimeToggle" class="primary-btn" type="button" style="display:none">Ativar runtime</button></div>
+                        <div class="server-onboarding-actions"><button id="managedServerRuntimePauseToggle" class="ghost-btn" type="button" style="display:none">Pausar processamento</button><button id="managedServerRuntimeRetry" class="ghost-btn" type="button" style="display:none">Executar ciclo agora</button></div>
                         <div id="managedServerRuntimeActivationMeta" class="member-meta">O runtime só pode ser ativado depois de um preflight aprovado.</div>
+                        <div id="managedServerRuntimeHealthMeta" class="member-meta">Health operacional disponível depois da ativação.</div>
                         <div id="managedServerPreflightSummary" class="member-meta">Ainda não executado nesta sessão.</div>
                         <div id="managedServerPreflightChecks" class="server-preflight-list"><div class="server-preflight-empty">As verificações aparecerão aqui depois de executar o preflight.</div></div>
                         <div class="server-onboarding-info"><strong>Importante:</strong> a ativação é explícita. No primeiro ciclo o novo servidor cria somente o próprio namespace e baixa seus próprios arquivos ADM. O PZ permanece em <code>adm_logs/</code> e <code>state.json</code>.</div>
@@ -4956,7 +4967,7 @@ function renderAdminPanelHtml(token: string) {
       itemModalBackdrop: document.getElementById("itemModalBackdrop"), itemModalTitle: document.getElementById("itemModalTitle"), itemModalSubtitle: document.getElementById("itemModalSubtitle"), itemModalPreviewImage: document.getElementById("itemModalPreviewImage"), itemModalPreviewName: document.getElementById("itemModalPreviewName"), itemModalPreviewClass: document.getElementById("itemModalPreviewClass"), itemModalPopularName: document.getElementById("itemModalPopularName"), itemModalImageUrl: document.getElementById("itemModalImageUrl"), itemModalSpawnEventName: document.getElementById("itemModalSpawnEventName"), itemModalEnabled: document.getElementById("itemModalEnabled"),
       spawnZonesCurrentZone: document.getElementById("spawnZonesCurrentZone"), spawnZonesNextZone: document.getElementById("spawnZonesNextZone"), spawnZonesEnabledCount: document.getElementById("spawnZonesEnabledCount"), spawnZonesVoteHistory: document.getElementById("spawnZonesVoteHistory"), spawnZonesActivePoll: document.getElementById("spawnZonesActivePoll"), spawnZonesNextSelect: document.getElementById("spawnZonesNextSelect"), spawnZonesSetNext: document.getElementById("spawnZonesSetNext"), spawnZonesApplyNext: document.getElementById("spawnZonesApplyNext"), spawnZonesApplyServer: document.getElementById("spawnZonesApplyServer"), spawnZonesCreatePoll: document.getElementById("spawnZonesCreatePoll"), spawnZonesRefreshPoll: document.getElementById("spawnZonesRefreshPoll"), spawnZonesFinalizePoll: document.getElementById("spawnZonesFinalizePoll"), spawnZonesRunAutomation: document.getElementById("spawnZonesRunAutomation"), spawnZonesAutomationStatus: document.getElementById("spawnZonesAutomationStatus"), spawnZonesWelcomeMessage: document.getElementById("spawnZonesWelcomeMessage"), spawnZonesWelcomeStatus: document.getElementById("spawnZonesWelcomeStatus"),
       spawnZonesMapTitle: document.getElementById("spawnZonesMapTitle"), spawnZonesMapHint: document.getElementById("spawnZonesMapHint"), spawnZonesAutosaveStatus: document.getElementById("spawnZonesAutosaveStatus"), spawnZonesMapViewport: document.getElementById("spawnZonesMapViewport"), spawnZonesMapInner: document.getElementById("spawnZonesMapInner"), spawnZonesMarkers: document.getElementById("spawnZonesMarkers"), spawnZonesMapTiles: document.getElementById("spawnZonesMapTiles"), spawnZonesMapZoomIn: document.getElementById("spawnZonesMapZoomIn"), spawnZonesMapZoomOut: document.getElementById("spawnZonesMapZoomOut"), spawnZonesMapZoomLabel: document.getElementById("spawnZonesMapZoomLabel"), spawnZonesCursor: document.getElementById("spawnZonesCursor"), spawnZoneCreate: document.getElementById("spawnZoneCreate"), spawnZoneImport: document.getElementById("spawnZoneImport"), spawnZoneImportFile: document.getElementById("spawnZoneImportFile"), spawnZoneList: document.getElementById("spawnZoneList"), spawnZonesPollChannel: document.getElementById("spawnZonesPollChannel"), spawnZonesPollCategory: document.getElementById("spawnZonesPollCategory"), spawnZonesPollQuestion: document.getElementById("spawnZonesPollQuestion"), spawnZonesPollOpenDay: document.getElementById("spawnZonesPollOpenDay"), spawnZonesPollOpenTime: document.getElementById("spawnZonesPollOpenTime"), spawnZonesPollCloseDay: document.getElementById("spawnZonesPollCloseDay"), spawnZonesPollCloseTime: document.getElementById("spawnZonesPollCloseTime"), spawnZonesPollTimezone: document.getElementById("spawnZonesPollTimezone"), spawnZonesMinVotes: document.getElementById("spawnZonesMinVotes"), spawnZonesTiePolicy: document.getElementById("spawnZonesTiePolicy"), spawnZonesAutoCreatePoll: document.getElementById("spawnZonesAutoCreatePoll"), spawnZonesRecurringPollAfterFinish: document.getElementById("spawnZonesRecurringPollAfterFinish"), spawnZonesAutoApplyWinner: document.getElementById("spawnZonesAutoApplyWinner"), spawnZonesApplyOnNextRestart: document.getElementById("spawnZonesApplyOnNextRestart"), spawnZonesSpawnFilePath: document.getElementById("spawnZonesSpawnFilePath"), spawnZonesServerName: document.getElementById("spawnZonesServerName"), spawnZonesSettingsStatus: document.getElementById("spawnZonesSettingsStatus"), spawnZonesTiePolicyHelp: document.getElementById("spawnZonesTiePolicyHelp"), spawnZonesApplyOnNextRestartRow: document.getElementById("spawnZonesApplyOnNextRestartRow"),
-      managedServersSummary: document.getElementById("managedServersSummary"), managedServersList: document.getElementById("managedServersList"), managedServersRefresh: document.getElementById("managedServersRefresh"), managedServerCreateNew: document.getElementById("managedServerCreateNew"), managedServerCreatePanel: document.getElementById("managedServerCreatePanel"), managedServerSetupPanel: document.getElementById("managedServerSetupPanel"), managedServerFormTitle: document.getElementById("managedServerFormTitle"), managedServerFormStatus: document.getElementById("managedServerFormStatus"), managedServerSetupId: document.getElementById("managedServerSetupId"), managedServerSetupProgressText: document.getElementById("managedServerSetupProgressText"), managedServerSetupProgressBar: document.getElementById("managedServerSetupProgressBar"), managedServerOverviewNitrado: document.getElementById("managedServerOverviewNitrado"), managedServerOverviewDiscord: document.getElementById("managedServerOverviewDiscord"), managedServerOverviewPreflight: document.getElementById("managedServerOverviewPreflight"), managedServerOverviewRuntime: document.getElementById("managedServerOverviewRuntime"), managedServerNitradoState: document.getElementById("managedServerNitradoState"), managedServerDiscordState: document.getElementById("managedServerDiscordState"), managedServerPreflightState: document.getElementById("managedServerPreflightState"), managedServerPreflightIntro: document.getElementById("managedServerPreflightIntro"), managedServerPreflightRun: document.getElementById("managedServerPreflightRun"), managedServerRuntimeToggle: document.getElementById("managedServerRuntimeToggle"), managedServerRuntimeActivationMeta: document.getElementById("managedServerRuntimeActivationMeta"), managedServerPreflightSummary: document.getElementById("managedServerPreflightSummary"), managedServerPreflightChecks: document.getElementById("managedServerPreflightChecks"), managedServerName: document.getElementById("managedServerName"), managedServerId: document.getElementById("managedServerId"), managedServerNitradoConnection: document.getElementById("managedServerNitradoConnection"), managedServerNitradoDiscover: document.getElementById("managedServerNitradoDiscover"), managedServerNitradoServiceSelect: document.getElementById("managedServerNitradoServiceSelect"), managedServerNitradoServiceId: document.getElementById("managedServerNitradoServiceId"), managedServerNitradoBaseDir: document.getElementById("managedServerNitradoBaseDir"), managedServerNitradoValidationMeta: document.getElementById("managedServerNitradoValidationMeta"), managedServerDiscordConnection: document.getElementById("managedServerDiscordConnection"), managedServerDiscordDiscover: document.getElementById("managedServerDiscordDiscover"), managedServerDiscordGuildSelect: document.getElementById("managedServerDiscordGuildSelect"), managedServerDiscordGuildId: document.getElementById("managedServerDiscordGuildId"), managedServerDiscordGlobal: document.getElementById("managedServerDiscordGlobal"), managedServerDiscordDaily: document.getElementById("managedServerDiscordDaily"), managedServerDiscordWeekly: document.getElementById("managedServerDiscordWeekly"), managedServerDiscordOnlineCategory: document.getElementById("managedServerDiscordOnlineCategory"), managedServerSave: document.getElementById("managedServerSave"), managedServerNitradoSave: document.getElementById("managedServerNitradoSave"), managedServerDiscordSave: document.getElementById("managedServerDiscordSave"), managedServerCancel: document.getElementById("managedServerCancel"),
+      managedServersSummary: document.getElementById("managedServersSummary"), managedServersList: document.getElementById("managedServersList"), managedServersRefresh: document.getElementById("managedServersRefresh"), managedServerCreateNew: document.getElementById("managedServerCreateNew"), managedServerCreatePanel: document.getElementById("managedServerCreatePanel"), managedServerSetupPanel: document.getElementById("managedServerSetupPanel"), managedServerFormTitle: document.getElementById("managedServerFormTitle"), managedServerFormStatus: document.getElementById("managedServerFormStatus"), managedServerSetupId: document.getElementById("managedServerSetupId"), managedServerSetupProgressText: document.getElementById("managedServerSetupProgressText"), managedServerSetupProgressBar: document.getElementById("managedServerSetupProgressBar"), managedServerOverviewNitrado: document.getElementById("managedServerOverviewNitrado"), managedServerOverviewDiscord: document.getElementById("managedServerOverviewDiscord"), managedServerOverviewPreflight: document.getElementById("managedServerOverviewPreflight"), managedServerOverviewRuntime: document.getElementById("managedServerOverviewRuntime"), managedServerNitradoState: document.getElementById("managedServerNitradoState"), managedServerDiscordState: document.getElementById("managedServerDiscordState"), managedServerPreflightState: document.getElementById("managedServerPreflightState"), managedServerPreflightIntro: document.getElementById("managedServerPreflightIntro"), managedServerPreflightRun: document.getElementById("managedServerPreflightRun"), managedServerRuntimeToggle: document.getElementById("managedServerRuntimeToggle"), managedServerRuntimePauseToggle: document.getElementById("managedServerRuntimePauseToggle"), managedServerRuntimeRetry: document.getElementById("managedServerRuntimeRetry"), managedServerRuntimeActivationMeta: document.getElementById("managedServerRuntimeActivationMeta"), managedServerRuntimeHealthMeta: document.getElementById("managedServerRuntimeHealthMeta"), managedServerPreflightSummary: document.getElementById("managedServerPreflightSummary"), managedServerPreflightChecks: document.getElementById("managedServerPreflightChecks"), managedServerName: document.getElementById("managedServerName"), managedServerId: document.getElementById("managedServerId"), managedServerNitradoConnection: document.getElementById("managedServerNitradoConnection"), managedServerNitradoDiscover: document.getElementById("managedServerNitradoDiscover"), managedServerNitradoServiceSelect: document.getElementById("managedServerNitradoServiceSelect"), managedServerNitradoServiceId: document.getElementById("managedServerNitradoServiceId"), managedServerNitradoBaseDir: document.getElementById("managedServerNitradoBaseDir"), managedServerNitradoValidationMeta: document.getElementById("managedServerNitradoValidationMeta"), managedServerDiscordConnection: document.getElementById("managedServerDiscordConnection"), managedServerDiscordDiscover: document.getElementById("managedServerDiscordDiscover"), managedServerDiscordGuildSelect: document.getElementById("managedServerDiscordGuildSelect"), managedServerDiscordGuildId: document.getElementById("managedServerDiscordGuildId"), managedServerDiscordGlobal: document.getElementById("managedServerDiscordGlobal"), managedServerDiscordDaily: document.getElementById("managedServerDiscordDaily"), managedServerDiscordWeekly: document.getElementById("managedServerDiscordWeekly"), managedServerDiscordOnlineCategory: document.getElementById("managedServerDiscordOnlineCategory"), managedServerSave: document.getElementById("managedServerSave"), managedServerNitradoSave: document.getElementById("managedServerNitradoSave"), managedServerDiscordSave: document.getElementById("managedServerDiscordSave"), managedServerCancel: document.getElementById("managedServerCancel"),
       playerMapUpdatedAt: document.getElementById("playerMapUpdatedAt"), playerMapSummary: document.getElementById("playerMapSummary"), playerMapRefresh: document.getElementById("playerMapRefresh"), playerMapZoomOut: document.getElementById("playerMapZoomOut"), playerMapZoomIn: document.getElementById("playerMapZoomIn"), playerMapZoomLabel: document.getElementById("playerMapZoomLabel"), playerMapViewport: document.getElementById("playerMapViewport"), playerMapInner: document.getElementById("playerMapInner"), playerMapMarkers: document.getElementById("playerMapMarkers"), playerMapSearch: document.getElementById("playerMapSearch"), playerMapList: document.getElementById("playerMapList"), playerMapVisibleCount: document.getElementById("playerMapVisibleCount")
     };
     function apiUrl(path) { const separator = path.includes("?") ? "&" : "?"; return adminToken ? path + separator + "token=" + encodeURIComponent(adminToken) : path; }
@@ -6717,17 +6728,17 @@ function renderAdminPanelHtml(token: string) {
           const failureCount = Number(stateMetrics.failedWrites || 0) + Number(stateMetrics.granularFailedBatches || 0) + Number(stateMetrics.positionFailedBatches || 0) + Number(stateMetrics.discordRuntimeFailedWrites || 0) + Number(runtimeMetrics.cycleFailures || 0) + Number(admMetrics.downloadFailures || 0);
           return '<tr>' +
             '<td><strong>' + escapeHtml(item.serverName || item.serverId || '-') + '</strong><br><code>' + escapeHtml(item.serverId || '-') + '</code></td>' +
-            '<td>' + (item.runtimeEnabled && item.executable ? '<span class="chip online">Running</span>' : '<span class="chip">' + escapeHtml(item.onboardingStatus || 'inactive') + '</span>') + '</td>' +
+            '<td>' + (() => { const health = String(runtimeMetrics.health || (item.runtimeEnabled ? 'starting' : item.onboardingStatus || 'inactive')); const cls = health === 'healthy' || health === 'starting' ? 'online' : (health === 'circuit-open' ? 'danger' : 'pending'); return '<span class="chip ' + cls + '">' + escapeHtml(health) + '</span>' + (runtimeMetrics.paused ? '<br><span class="member-meta">manual pause</span>' : ''); })() + '</td>' +
             '<td><code>' + escapeHtml(stateMetrics.bootSource || 'pending') + '</code></td>' +
             '<td>' + Number(stateMetrics.domainFlushes || 0).toLocaleString() + ' / ' + Number(stateMetrics.domainRowsWritten || 0).toLocaleString() + '<br><span class="member-meta">' + formatBytes(Number(stateMetrics.domainBytesWritten || 0)) + '</span></td>' +
             '<td>' + Number(stateMetrics.granularRowsWritten || 0).toLocaleString() + '<br><span class="member-meta">boot ' + Number(stateMetrics.granularRowsAppliedAtBoot || 0).toLocaleString() + ' · pending ' + Number(stateMetrics.granularPendingPlayers || 0).toLocaleString() + '</span></td>' +
             '<td>' + Number(stateMetrics.positionRowsWritten || 0).toLocaleString() + '<br><span class="member-meta">' + Number(stateMetrics.positionPlayers || 0).toLocaleString() + ' players · ' + Number(stateMetrics.positionObservations || 0).toLocaleString() + ' obs</span></td>' +
             '<td>' + Number(admMetrics.cycles || 0).toLocaleString() + ' / ' + Number(admMetrics.downloads || 0).toLocaleString() + '<br><span class="member-meta">' + formatBytes(Number(admMetrics.bytesDownloaded || 0)) + '</span></td>' +
-            '<td>' + Number(runtimeMetrics.cyclesCompleted || 0).toLocaleString() + '<br><span class="member-meta">avg ' + Number(runtimeMetrics.averageCycleDurationMs || 0).toLocaleString() + ' ms</span></td>' +
-            '<td>' + (failureCount ? '<span class="chip" style="color:#ff7b7b">' + failureCount.toLocaleString() + '</span>' : '<span class="chip online">0</span>') + (runtimeMetrics.lastError ? '<br><span class="member-meta">' + escapeHtml(runtimeMetrics.lastError) + '</span>' : '') + '</td>' +
+            '<td>' + Number(runtimeMetrics.cyclesCompleted || 0).toLocaleString() + '<br><span class="member-meta">avg ' + Number(runtimeMetrics.averageCycleDurationMs || 0).toLocaleString() + ' ms · circuit ' + escapeHtml(String(runtimeMetrics.circuitState || 'closed')) + '</span></td>' +
+            '<td>' + (failureCount ? '<span class="chip" style="color:#ff7b7b">' + failureCount.toLocaleString() + '</span>' : '<span class="chip online">0</span>') + '<br><span class="member-meta">consecutive ' + Number(runtimeMetrics.consecutiveFailures || 0).toLocaleString() + ' · skipped ' + Number(runtimeMetrics.circuitSkips || 0).toLocaleString() + '</span>' + (runtimeMetrics.lastError ? '<br><span class="member-meta">' + escapeHtml(runtimeMetrics.lastError) + '</span>' : '') + '</td>' +
           '</tr>';
         }).join('') : '<tr><td colspan="9" class="member-meta">Per-server runtime diagnostics become available after the server registry is loaded.</td></tr>';
-        metrics.innerHTML = '<div class="settings-card" style="margin-bottom:16px"><div class="settings-card-head"><div><h3>Runtime diagnostics by server</h3><p>Phase 12 observability hardening keeps persistence, player stats, position history and loop timing attributed to the runtime that produced them.</p></div></div>' +
+        metrics.innerHTML = '<div class="settings-card" style="margin-bottom:16px"><div class="settings-card-head"><div><h3>Runtime diagnostics by server</h3><p>Phase 14 adds operational health, manual pause/resume and a secondary-only circuit breaker without creating new pollers.</p></div></div>' +
           '<div class="table-wrap"><table><thead><tr><th>Server</th><th>Runtime</th><th>Boot source</th><th>V2 flushes / rows</th><th>Player stats rows</th><th>Position rows</th><th>ADM cycles / downloads</th><th>Main cycles</th><th>Failures</th></tr></thead><tbody>' + serverObservabilityRows + '</tbody></table></div>' +
           '<div class="member-meta" style="margin-top:10px">The detailed persistence sections below are scoped to <strong>' + escapeHtml(state.serverFoundation?.currentServerName || 'the primary server') + '</strong>. Network & Render bandwidth remains process-wide by design.</div></div>' +
         '<div class="overview-grid" style="grid-template-columns:repeat(6,minmax(0,1fr))">' +
@@ -6770,10 +6781,10 @@ function renderAdminPanelHtml(token: string) {
             ['stats','processing','social','commerce','config'].map((key) => { const d = domainRows[key] || {}; return '<tr><td><code>' + escapeHtml(key) + '</code></td><td>' + formatBytes(Number(d.currentBytes || 0)) + '</td><td>' + Number(d.changes || 0).toLocaleString() + '</td><td>' + Number(d.writes || 0).toLocaleString() + '</td><td>' + formatBytes(Number(d.bytesWritten || 0)) + '</td></tr>'; }).join('') +
           '</tbody></table></div>' +
         '</div>' +
-        '<div class="settings-card" style="margin-top:16px"><div class="settings-card-head"><div><h3>Multi-server foundation</h3><p>Phase 13 adds an explicit per-server Player Portal context on top of the two active runtimes while keeping admin/legacy FTP routes pinned to the PZ.</p></div></div>' +
-        '<div class="diag-grid"><div><span>Phase</span><strong>' + Number(state.serverFoundation?.phase || 1).toLocaleString() + '</strong></div><div><span>Mode</span><strong>' + escapeHtml(String(state.serverFoundation?.mode || 'single-server-compat')) + '</strong></div><div><span>Current server</span><strong>' + escapeHtml(String(state.serverFoundation?.currentServerName || 'PZ Deathmatch')) + '</strong></div><div><span>Server ID</span><strong>' + escapeHtml(String(state.serverFoundation?.currentServerId || 'pz-deathmatch')) + '</strong></div><div><span>Registry persisted</span><strong>' + (state.serverFoundation?.registryPersisted ? 'Yes' : 'No') + '</strong></div><div><span>Rows tagged</span><strong>' + (state.serverFoundation?.persistenceTaggedWithServerId ? 'Yes' : 'No') + '</strong></div><div><span>bot_state PK</span><strong>' + (state.serverFoundation?.namespace?.botStatePrimaryKeyReady ? 'server + id' : 'Legacy') + '</strong></div><div><span>Player stats PK</span><strong>' + (state.serverFoundation?.namespace?.playerStatsPrimaryKeyReady ? 'server + player' : 'Legacy') + '</strong></div><div><span>Scoped reads</span><strong>' + (state.serverFoundation?.persistenceNamespaced ? 'Enabled' : 'Fallback') + '</strong></div><div><span>Nitrado routing</span><strong>' + (state.serverFoundation?.runtimeIsolation?.nitradoRoutingNamespaced ? 'Server-scoped' : 'Legacy') + '</strong></div><div><span>Discord routing</span><strong>' + (state.serverFoundation?.runtimeIsolation?.discordRoutingNamespaced ? 'Server-scoped' : 'Legacy') + '</strong></div><div><span>Processing lock</span><strong>' + (state.serverFoundation?.runtimeIsolation?.processingLockNamespaced ? 'Per server' : 'Global') + '</strong></div><div><span>ADM storage</span><strong>' + (state.serverFoundation?.runtimeIsolation?.primaryLegacyAdmStoragePreserved ? 'Primary preserved' : 'Namespaced') + '</strong></div><div><span>Execution context</span><strong>' + (state.serverFoundation?.runtimeIsolation?.executionContextNamespaced ? 'Per server' : 'Legacy') + '</strong></div><div><span>State cache</span><strong>' + (state.serverFoundation?.runtimeIsolation?.stateCacheNamespaced ? 'Per server' : 'Legacy') + '</strong></div><div><span>ADM strategy</span><strong>' + (state.serverFoundation?.runtimeIsolation?.admStrategyNamespaced ? 'Per server' : 'Global') + '</strong></div><div><span>ADM parser storage</span><strong>' + (state.serverFoundation?.runtimeIsolation?.admParserStorageNamespaced ? 'Per server' : 'Legacy') + '</strong></div><div><span>Persistence runtime</span><strong>' + (state.serverFoundation?.runtimeIsolation?.persistenceRuntimeNamespaced ? 'Per server' : 'Global') + '</strong></div><div><span>Position history</span><strong>' + (state.serverFoundation?.runtimeIsolation?.positionHistoryNamespaced ? 'Server-scoped' : 'Global') + '</strong></div><div><span>HTTP context</span><strong>' + (state.serverFoundation?.runtimeIsolation?.httpContextNamespaced ? 'Explicit primary' : 'Fallback') + '</strong></div><div><span>Player portal context</span><strong>' + (state.serverFoundation?.runtimeIsolation?.playerPortalContextNamespaced ? 'Per server' : 'Primary only') + '</strong></div><div><span>FTP safety</span><strong>' + (state.serverFoundation?.runtimeIsolation?.ftpPrimaryGuarded ? 'Primary guarded' : 'Global credentials') + '</strong></div><div><span>Discord loop guards</span><strong>' + (state.serverFoundation?.runtimeIsolation?.discordLoopGuardsNamespaced ? 'Per server' : 'Global') + '</strong></div><div><span>Scheduler</span><strong>' + (state.serverFoundation?.runtimeIsolation?.schedulerCentralized ? 'Centralized' : 'Unknown') + '</strong></div><div><span>Activation readiness</span><strong>' + (state.serverFoundation?.runtimeIsolation?.activationReadiness ? 'Prepared' : 'Pending') + '</strong></div><div><span>Context runs</span><strong>' + Number(state.serverFoundation?.runtimeIsolation?.contextRuns || 0).toLocaleString() + '</strong></div><div><span>Context fallbacks</span><strong>' + Number(state.serverFoundation?.runtimeIsolation?.contextFallbacks || 0).toLocaleString() + '</strong></div><div><span>Managed servers</span><strong>' + Number(state.serverFoundation?.managedServers || 1).toLocaleString() + '</strong></div><div><span>Server onboarding</span><strong>' + (state.serverFoundation?.onboarding?.canCreateDrafts ? 'Drafts enabled' : 'Unavailable') + '</strong></div><div><span>Draft servers</span><strong>' + Number(state.serverFoundation?.onboarding?.draftServers || 0).toLocaleString() + '</strong></div><div><span>Configured servers</span><strong>' + Number(state.serverFoundation?.onboarding?.configuredServers || 0).toLocaleString() + '</strong></div><div><span>Ready servers</span><strong>' + Number(state.serverFoundation?.onboarding?.readyServers || 0).toLocaleString() + '</strong></div><div><span>Preflight gate</span><strong>' + (state.serverFoundation?.onboarding?.activationPreflightEnabled ? 'On-demand' : 'Unavailable') + '</strong></div><div><span>Activation endpoint</span><strong>' + (state.serverFoundation?.onboarding?.activationEndpointEnabled ? 'Enabled' : 'None') + '</strong></div><div><span>Runtime policy</span><strong>' + escapeHtml(String(state.serverFoundation?.onboarding?.activationPolicy || 'primary-only')) + '</strong></div><div><span>Secrets in registry</span><strong>' + (state.serverFoundation?.onboarding?.secretsStoredInRegistry ? 'Yes' : 'No') + '</strong></div><div><span>Integration setup</span><strong>' + escapeHtml(String(state.serverFoundation?.onboarding?.integrationValidationMode || 'on-demand')) + '</strong></div><div><span>Nitrado credential</span><strong>' + escapeHtml(String(state.serverFoundation?.onboarding?.nitradoCredentialSource || 'missing')) + '</strong></div><div><span>Integration polling</span><strong>' + (state.serverFoundation?.onboarding?.backgroundPollingAdded ? 'Added' : 'None') + '</strong></div><div><span>Additional servers</span><strong>' + (state.serverFoundation?.additionalServersEnabled ? 'Enabled' : 'Blocked') + '</strong></div><div><span>Active runtimes</span><strong>' + Number(state.runtimeCoordinator?.activeRuntimes || state.serverFoundation?.onboarding?.runtimeEnabledServers || 1).toLocaleString() + '</strong></div></div>' +
+        '<div class="settings-card" style="margin-top:16px"><div class="settings-card-head"><div><h3>Multi-server foundation</h3><p>Phase 14 hardens multi-server operations with per-runtime health, persistent manual pause/resume and a secondary-only circuit breaker while preserving the centralized scheduler.</p></div></div>' +
+        '<div class="diag-grid"><div><span>Phase</span><strong>' + Number(state.serverFoundation?.phase || 1).toLocaleString() + '</strong></div><div><span>Mode</span><strong>' + escapeHtml(String(state.serverFoundation?.mode || 'single-server-compat')) + '</strong></div><div><span>Current server</span><strong>' + escapeHtml(String(state.serverFoundation?.currentServerName || 'PZ Deathmatch')) + '</strong></div><div><span>Server ID</span><strong>' + escapeHtml(String(state.serverFoundation?.currentServerId || 'pz-deathmatch')) + '</strong></div><div><span>Registry persisted</span><strong>' + (state.serverFoundation?.registryPersisted ? 'Yes' : 'No') + '</strong></div><div><span>Rows tagged</span><strong>' + (state.serverFoundation?.persistenceTaggedWithServerId ? 'Yes' : 'No') + '</strong></div><div><span>bot_state PK</span><strong>' + (state.serverFoundation?.namespace?.botStatePrimaryKeyReady ? 'server + id' : 'Legacy') + '</strong></div><div><span>Player stats PK</span><strong>' + (state.serverFoundation?.namespace?.playerStatsPrimaryKeyReady ? 'server + player' : 'Legacy') + '</strong></div><div><span>Scoped reads</span><strong>' + (state.serverFoundation?.persistenceNamespaced ? 'Enabled' : 'Fallback') + '</strong></div><div><span>Nitrado routing</span><strong>' + (state.serverFoundation?.runtimeIsolation?.nitradoRoutingNamespaced ? 'Server-scoped' : 'Legacy') + '</strong></div><div><span>Discord routing</span><strong>' + (state.serverFoundation?.runtimeIsolation?.discordRoutingNamespaced ? 'Server-scoped' : 'Legacy') + '</strong></div><div><span>Processing lock</span><strong>' + (state.serverFoundation?.runtimeIsolation?.processingLockNamespaced ? 'Per server' : 'Global') + '</strong></div><div><span>ADM storage</span><strong>' + (state.serverFoundation?.runtimeIsolation?.primaryLegacyAdmStoragePreserved ? 'Primary preserved' : 'Namespaced') + '</strong></div><div><span>Execution context</span><strong>' + (state.serverFoundation?.runtimeIsolation?.executionContextNamespaced ? 'Per server' : 'Legacy') + '</strong></div><div><span>State cache</span><strong>' + (state.serverFoundation?.runtimeIsolation?.stateCacheNamespaced ? 'Per server' : 'Legacy') + '</strong></div><div><span>ADM strategy</span><strong>' + (state.serverFoundation?.runtimeIsolation?.admStrategyNamespaced ? 'Per server' : 'Global') + '</strong></div><div><span>ADM parser storage</span><strong>' + (state.serverFoundation?.runtimeIsolation?.admParserStorageNamespaced ? 'Per server' : 'Legacy') + '</strong></div><div><span>Persistence runtime</span><strong>' + (state.serverFoundation?.runtimeIsolation?.persistenceRuntimeNamespaced ? 'Per server' : 'Global') + '</strong></div><div><span>Position history</span><strong>' + (state.serverFoundation?.runtimeIsolation?.positionHistoryNamespaced ? 'Server-scoped' : 'Global') + '</strong></div><div><span>HTTP context</span><strong>' + (state.serverFoundation?.runtimeIsolation?.httpContextNamespaced ? 'Explicit primary' : 'Fallback') + '</strong></div><div><span>Player portal context</span><strong>' + (state.serverFoundation?.runtimeIsolation?.playerPortalContextNamespaced ? 'Per server' : 'Primary only') + '</strong></div><div><span>FTP safety</span><strong>' + (state.serverFoundation?.runtimeIsolation?.ftpPrimaryGuarded ? 'Primary guarded' : 'Global credentials') + '</strong></div><div><span>Discord loop guards</span><strong>' + (state.serverFoundation?.runtimeIsolation?.discordLoopGuardsNamespaced ? 'Per server' : 'Global') + '</strong></div><div><span>Scheduler</span><strong>' + (state.serverFoundation?.runtimeIsolation?.schedulerCentralized ? 'Centralized' : 'Unknown') + '</strong></div><div><span>Activation readiness</span><strong>' + (state.serverFoundation?.runtimeIsolation?.activationReadiness ? 'Prepared' : 'Pending') + '</strong></div><div><span>Context runs</span><strong>' + Number(state.serverFoundation?.runtimeIsolation?.contextRuns || 0).toLocaleString() + '</strong></div><div><span>Context fallbacks</span><strong>' + Number(state.serverFoundation?.runtimeIsolation?.contextFallbacks || 0).toLocaleString() + '</strong></div><div><span>Managed servers</span><strong>' + Number(state.serverFoundation?.managedServers || 1).toLocaleString() + '</strong></div><div><span>Server onboarding</span><strong>' + (state.serverFoundation?.onboarding?.canCreateDrafts ? 'Drafts enabled' : 'Unavailable') + '</strong></div><div><span>Draft servers</span><strong>' + Number(state.serverFoundation?.onboarding?.draftServers || 0).toLocaleString() + '</strong></div><div><span>Configured servers</span><strong>' + Number(state.serverFoundation?.onboarding?.configuredServers || 0).toLocaleString() + '</strong></div><div><span>Ready servers</span><strong>' + Number(state.serverFoundation?.onboarding?.readyServers || 0).toLocaleString() + '</strong></div><div><span>Preflight gate</span><strong>' + (state.serverFoundation?.onboarding?.activationPreflightEnabled ? 'On-demand' : 'Unavailable') + '</strong></div><div><span>Activation endpoint</span><strong>' + (state.serverFoundation?.onboarding?.activationEndpointEnabled ? 'Enabled' : 'None') + '</strong></div><div><span>Runtime policy</span><strong>' + escapeHtml(String(state.serverFoundation?.onboarding?.activationPolicy || 'primary-only')) + '</strong></div><div><span>Secrets in registry</span><strong>' + (state.serverFoundation?.onboarding?.secretsStoredInRegistry ? 'Yes' : 'No') + '</strong></div><div><span>Integration setup</span><strong>' + escapeHtml(String(state.serverFoundation?.onboarding?.integrationValidationMode || 'on-demand')) + '</strong></div><div><span>Nitrado credential</span><strong>' + escapeHtml(String(state.serverFoundation?.onboarding?.nitradoCredentialSource || 'missing')) + '</strong></div><div><span>Integration polling</span><strong>' + (state.serverFoundation?.onboarding?.backgroundPollingAdded ? 'Added' : 'None') + '</strong></div><div><span>Additional servers</span><strong>' + (state.serverFoundation?.additionalServersEnabled ? 'Enabled' : 'Blocked') + '</strong></div><div><span>Active runtimes</span><strong>' + Number(state.runtimeCoordinator?.activeRuntimes || state.serverFoundation?.onboarding?.runtimeEnabledServers || 1).toLocaleString() + '</strong></div><div><span>Operational health</span><strong>' + (state.serverFoundation?.onboarding?.operationalHardeningEnabled ? 'Per server' : 'Legacy') + '</strong></div><div><span>Circuit breaker</span><strong>' + escapeHtml(String(state.serverFoundation?.onboarding?.circuitBreakerMode || 'off')) + '</strong></div></div>' +
         '<div class="member-meta" style="margin-top:10px">Registry table: ' + (state.serverFoundation?.registry?.tableReady ? 'ready' : 'not ready') + ' · Primary seeded: ' + (state.serverFoundation?.registry?.primarySeeded ? 'yes' : 'no') + ' · bot_state tagged/untagged: ' + Number(state.serverFoundation?.namespace?.botStateTaggedRows || 0).toLocaleString() + '/' + Number(state.serverFoundation?.namespace?.botStateUntaggedRows || 0).toLocaleString() + ' · player stats tagged/untagged: ' + Number(state.serverFoundation?.namespace?.playerStatsTaggedRows || 0).toLocaleString() + '/' + Number(state.serverFoundation?.namespace?.playerStatsUntaggedRows || 0).toLocaleString() + ' · PK cutover: ' + (state.serverFoundation?.namespace?.primaryKeyCutoverComplete ? 'complete' : 'pending') + ' · Scoped read source: ' + escapeHtml(String(state.serverFoundation?.namespace?.lastScopedReadSource || 'legacy')) + ' · Fallbacks: ' + Number(state.serverFoundation?.namespace?.scopedReadFallbacks || 0).toLocaleString() + ' · Registry drafts/configured: ' + Number(state.serverFoundation?.registry?.draftRows || 0).toLocaleString() + '/' + Number(state.serverFoundation?.registry?.configuredRows || 0).toLocaleString() + ' · Runtime rows: ' + Number(state.serverFoundation?.registry?.runtimeEnabledRows || 0).toLocaleString() + ' · Portal resolutions/switches: ' + Number(state.playerPortalContext?.contextResolutions || 0).toLocaleString() + '/' + Number(state.playerPortalContext?.contextSwitches || 0).toLocaleString() + ' · Invalid portal selections: ' + Number(state.playerPortalContext?.invalidSelections || 0).toLocaleString() + (state.serverFoundation?.namespace?.lastError ? ' · Namespace error: ' + escapeHtml(String(state.serverFoundation.namespace.lastError)) : '') + '</div>' +
-        '<div class="settings-note" style="margin-top:12px">Safety: Phase 13 scopes Player Portal reads/writes to the selected active runtime. Admin/map-event routes remain primary by default; PZ keeps legacy FTP while secondary shop XML uses the server-scoped Nitrado API transport.</div></div>' +
+        '<div class="settings-note" style="margin-top:12px">Safety: Phase 14 never auto-pauses the PZ. Only secondary runtimes can open a circuit after 3 consecutive failed cycles; the same centralized scheduler performs a probe after 15 minutes. Manual pause is persisted per server and does not delete state.</div></div>' +
         '<div class="settings-card" style="margin-top:16px"><div class="settings-card-head"><div><h3>Granular player stats</h3><p>Global K/D and current streaks are upserted only for players that changed, instead of retransmitting the full historical player map.</p></div></div>' +
           '<div class="overview-grid" style="grid-template-columns:repeat(8,minmax(0,1fr))">' +
             '<div class="stat-card"><span>Status</span><strong>' + (granularPlayers.enabled === false ? 'Fallback' : 'Active') + '</strong></div>' +
@@ -7001,9 +7012,22 @@ function renderAdminPanelHtml(token: string) {
         showToast('/' + commandName + (nextEnabled ? ' ativado.' : ' desativado.'));
       } finally { button.disabled = false; }
     }
+    function managedServerRuntimeStatus(serverId) {
+      return (state.runtimeCoordinator?.servers || []).find((item) => item.serverId === serverId) || null;
+    }
     function managedServerStatusChip(server) {
-      if (server.primary) return '<span class="chip success">Active · primary</span>';
-      if (server.runtimeEnabled) return '<span class="chip success">Running</span>';
+      if (server.primary) {
+        const runtimeStatus = managedServerRuntimeStatus(server.id);
+        return '<span class="chip ' + (runtimeStatus?.health === 'degraded' || runtimeStatus?.health === 'stale' ? 'pending' : 'success') + '">Active · primary</span>';
+      }
+      if (server.runtime?.operations?.paused === true) return '<span class="chip pending">Paused</span>';
+      if (server.runtimeEnabled) {
+        const runtimeStatus = managedServerRuntimeStatus(server.id);
+        const health = String(runtimeStatus?.health || 'running');
+        if (health === 'circuit-open') return '<span class="chip danger">Circuit open</span>';
+        if (health === 'degraded' || health === 'stale') return '<span class="chip pending">' + escapeHtml(health === 'stale' ? 'Stale' : 'Degraded') + '</span>';
+        return '<span class="chip success">Running</span>';
+      }
       const status = String(server.onboardingStatus || 'draft');
       const cls = status === 'configured' || status === 'ready' ? 'online' : 'pending';
       return '<span class="chip ' + cls + '">' + escapeHtml(status.charAt(0).toUpperCase() + status.slice(1)) + '</span>';
@@ -7039,7 +7063,8 @@ function renderAdminPanelHtml(token: string) {
       els.managedServersSummary.innerHTML =
         '<span class="chip success">' + servers.filter((server) => server.primary).length + ' primary</span>' +
         '<span class="chip">' + additional.length + ' additional</span>' +
-        '<span class="chip ' + (servers.filter((server) => server.runtimeEnabled).length > 1 ? 'success' : 'pending') + '">runtimes: ' + servers.filter((server) => server.runtimeEnabled).length + '</span>';
+        '<span class="chip ' + (Number(state.runtimeCoordinator?.activeRuntimes || 0) > 1 ? 'success' : 'pending') + '">active: ' + Number(state.runtimeCoordinator?.activeRuntimes || servers.filter((server) => server.runtimeEnabled && server.runtime?.operations?.paused !== true).length) + '</span>' +
+        '<span class="chip">paused: ' + servers.filter((server) => server.runtime?.operations?.paused === true).length + '</span>';
       if (!servers.length) {
         els.managedServersList.innerHTML = '<div class="settings-empty-note">Nenhum servidor carregado.</div>';
         return;
@@ -7054,7 +7079,7 @@ function renderAdminPanelHtml(token: string) {
             '<span class="chip ' + (integration.nitradoConfigured ? 'success' : 'pending') + '">Nitrado ' + nitradoLabel + '</span>' +
             '<span class="chip ' + (integration.discordConfigured ? 'success' : '') + '">Discord ' + (integration.discordConfigured ? 'configured' : 'optional') + '</span>' +
             '<span class="chip ' + (integration.preflightReady ? 'success' : 'pending') + '">Preflight ' + (integration.preflightReady ? 'passed' : 'pending') + '</span>' +
-            '<span class="chip ' + (server.runtimeEnabled ? 'success' : 'pending') + '">Runtime ' + (server.runtimeEnabled ? 'enabled' : 'blocked') + '</span>' +
+            '<span class="chip ' + (server.runtime?.operations?.paused === true ? 'pending' : (server.runtimeEnabled ? 'success' : 'pending')) + '">Runtime ' + (server.runtime?.operations?.paused === true ? 'paused' : (server.runtimeEnabled ? 'enabled' : 'blocked')) + '</span>' +
           '</div>' +
           (!server.primary ? '<div class="server-onboarding-actions"><button class="ghost-btn" type="button" data-managed-server-edit="' + escapeHtml(server.id) + '">Configurar</button></div>' : '') +
         '</div>';
@@ -7129,13 +7154,40 @@ function renderAdminPanelHtml(token: string) {
         els.managedServerRuntimeToggle.textContent = server.runtimeEnabled ? 'Desativar runtime' : 'Ativar runtime';
         els.managedServerRuntimeToggle.className = server.runtimeEnabled ? 'danger-btn' : 'primary-btn';
       }
+      const paused = server?.runtime?.operations?.paused === true;
+      const runtimeStatus = managedServerRuntimeStatus(server.id);
+      if (els.managedServerRuntimePauseToggle) {
+        els.managedServerRuntimePauseToggle.style.display = server.runtimeEnabled ? '' : 'none';
+        els.managedServerRuntimePauseToggle.disabled = false;
+        els.managedServerRuntimePauseToggle.textContent = paused ? 'Retomar processamento' : 'Pausar processamento';
+        els.managedServerRuntimePauseToggle.className = paused ? 'primary-btn' : 'ghost-btn';
+      }
+      if (els.managedServerRuntimeRetry) {
+        els.managedServerRuntimeRetry.style.display = server.runtimeEnabled && !paused ? '' : 'none';
+        els.managedServerRuntimeRetry.disabled = false;
+        els.managedServerRuntimeRetry.textContent = runtimeStatus?.circuitState === 'open' ? 'Tentar recuperação agora' : 'Executar ciclo agora';
+      }
       if (els.managedServerRuntimeActivationMeta) {
         const activation = server?.runtime?.activation;
-        els.managedServerRuntimeActivationMeta.textContent = server.runtimeEnabled
-          ? 'Runtime ativo. O scheduler central processa este servidor no mesmo ciclo coordenado do PZ.'
-          : (activation?.everActivated
-            ? 'Runtime desligado. O namespace existente deste servidor será reutilizado numa reativação.'
-            : (integration.preflightReady ? 'Ready para a primeira ativação. O primeiro ciclo será solicitado uma única vez após ativar.' : 'O runtime só pode ser ativado depois de um preflight aprovado.'));
+        els.managedServerRuntimeActivationMeta.textContent = paused
+          ? 'Runtime pausado manualmente. State, configuração e namespace permanecem intactos; o scheduler não processará este servidor até retomar.'
+          : (server.runtimeEnabled
+            ? 'Runtime ativo. O scheduler central processa este servidor no mesmo ciclo coordenado do PZ.'
+            : (activation?.everActivated
+              ? 'Runtime desligado. O namespace existente deste servidor será reutilizado numa reativação.'
+              : (integration.preflightReady ? 'Ready para a primeira ativação. O primeiro ciclo será solicitado uma única vez após ativar.' : 'O runtime só pode ser ativado depois de um preflight aprovado.')));
+      }
+      if (els.managedServerRuntimeHealthMeta) {
+        if (!server.runtimeEnabled) {
+          els.managedServerRuntimeHealthMeta.textContent = 'Health: stopped · nenhum ciclo agendado.';
+        } else if (paused) {
+          els.managedServerRuntimeHealthMeta.textContent = 'Health: paused · pausa persistida no registry; nenhum polling extra foi criado.';
+        } else {
+          const health = String(runtimeStatus?.health || 'starting');
+          const failures = Number(runtimeStatus?.consecutiveFailures || 0);
+          const retryAt = runtimeStatus?.circuitRetryAt ? new Date(runtimeStatus.circuitRetryAt).toLocaleString('pt-BR') : null;
+          els.managedServerRuntimeHealthMeta.textContent = 'Health: ' + health + ' · falhas consecutivas: ' + failures + (retryAt ? ' · próximo probe: ' + retryAt : '') + (runtimeStatus?.lastHealthyAt ? ' · último saudável: ' + new Date(runtimeStatus.lastHealthyAt).toLocaleString('pt-BR') : '');
+        }
       }
       if (els.managedServerPreflightIntro) {
         els.managedServerPreflightIntro.innerHTML = integration.nitradoValidationPersisted
@@ -7211,7 +7263,11 @@ function renderAdminPanelHtml(token: string) {
         els.managedServerOverviewPreflight.innerHTML = '<span>Preflight</span><strong>' + (ready ? 'Passed' : (configured ? 'Pendente' : 'Bloqueado')) + '</strong><p>' + (ready ? 'Isolation + integrations aprovados. Runtime ainda desligado.' : (configured ? 'Execute a checagem antes da futura ativação.' : 'Disponível depois da validação Nitrado.')) + '</p>';
       }
       if (els.managedServerOverviewRuntime) {
-        els.managedServerOverviewRuntime.innerHTML = '<span>Runtime</span><strong>' + (server.runtimeEnabled ? 'Running' : (ready ? 'Ready to activate' : 'Desligado')) + '</strong><p>' + (server.runtimeEnabled ? 'ADM + parser executam no scheduler central com namespace próprio.' : (ready ? 'Ative manualmente na aba Preflight.' : 'Nenhum processo será iniciado durante o setup.')) + '</p>';
+        const paused = server.runtime?.operations?.paused === true;
+        const runtimeStatus = managedServerRuntimeStatus(server.id);
+        const runtimeLabel = paused ? 'Paused' : (server.runtimeEnabled ? (runtimeStatus?.health === 'circuit-open' ? 'Circuit open' : 'Running') : (ready ? 'Ready to activate' : 'Desligado'));
+        const runtimeCopy = paused ? 'Processamento pausado sem apagar state ou desativar a configuração.' : (server.runtimeEnabled ? 'ADM + parser executam no scheduler central com namespace próprio.' : (ready ? 'Ative manualmente na aba Preflight.' : 'Nenhum processo será iniciado durante o setup.'));
+        els.managedServerOverviewRuntime.innerHTML = '<span>Runtime</span><strong>' + escapeHtml(runtimeLabel) + '</strong><p>' + escapeHtml(runtimeCopy) + '</p>';
       }
       if (els.managedServerNitradoSave) els.managedServerNitradoSave.disabled = Boolean(server.runtimeEnabled);
       if (els.managedServerDiscordSave) els.managedServerDiscordSave.disabled = Boolean(server.runtimeEnabled);
@@ -7233,6 +7289,7 @@ function renderAdminPanelHtml(token: string) {
         state.managedServers = payload.servers || [];
         state.managedServerIntegrationSetup = payload.integrationSetup || null;
         state.serverFoundation = payload.foundation || state.serverFoundation;
+        state.runtimeCoordinator = payload.runtimeCoordinator || state.runtimeCoordinator;
         renderManagedServers();
         const selected = (state.managedServers || []).find((server) => server.id === state.selectedManagedServerId && !server.primary);
         if (selected) renderManagedServerSetup(selected);
@@ -7475,6 +7532,68 @@ function renderAdminPanelHtml(token: string) {
         button.textContent = previous;
         const selected = (state.managedServers || []).find((candidate) => candidate.id === serverId);
         if (selected) renderManagedServerPreflight(selected);
+      }
+    }
+
+    async function toggleManagedServerPause() {
+      const serverId = state.selectedManagedServerId;
+      const button = els.managedServerRuntimePauseToggle;
+      const server = (state.managedServers || []).find((candidate) => candidate.id === serverId && !candidate.primary);
+      if (!serverId || !server || !button || !server.runtimeEnabled) return;
+      const paused = server.runtime?.operations?.paused === true;
+      const confirmed = window.confirm(paused
+        ? 'Retomar este runtime agora? Um ciclo isolado será solicitado imediatamente e o scheduler central voltará a processá-lo.'
+        : 'Pausar o processamento deste runtime? O ADM fará um flush final do namespace e deixará de baixar/processar novos ADMs até você retomar. O PZ continua rodando.');
+      if (!confirmed) return;
+      button.disabled = true;
+      const previous = button.textContent;
+      button.textContent = paused ? 'Retomando...' : 'Pausando...';
+      try {
+        const response = await apiFetch('/admin-panel/api/servers/' + encodeURIComponent(serverId) + '/runtime/' + (paused ? 'resume' : 'pause'), { method:'POST', body:JSON.stringify({ reason:'Manual admin pause' }) });
+        if (!response.ok) { showToast(await response.text()); return; }
+        const payload = await response.json();
+        state.managedServers = payload.servers || state.managedServers;
+        state.serverFoundation = payload.foundation || state.serverFoundation;
+        state.runtimeCoordinator = payload.runtimeCoordinator || state.runtimeCoordinator;
+        renderManagedServers();
+        const selected = (state.managedServers || []).find((candidate) => candidate.id === serverId);
+        if (selected) renderManagedServerSetup(selected);
+        showToast(paused
+          ? (payload.cycleRequested ? 'Runtime retomado. Ciclo de recuperação solicitado.' : 'Runtime retomado; o scheduler fará o próximo ciclo.')
+          : 'Runtime pausado. State preservado e PZ continua ativo.');
+      } catch (error) {
+        showToast(error instanceof Error ? error.message : String(error));
+      } finally {
+        button.disabled = false;
+        button.textContent = previous;
+        const selected = (state.managedServers || []).find((candidate) => candidate.id === serverId);
+        if (selected) renderManagedServerPreflight(selected);
+      }
+    }
+
+    async function retryManagedServerRuntime() {
+      const serverId = state.selectedManagedServerId;
+      const button = els.managedServerRuntimeRetry;
+      const server = (state.managedServers || []).find((candidate) => candidate.id === serverId && !candidate.primary);
+      if (!serverId || !server || !button || !server.runtimeEnabled || server.runtime?.operations?.paused === true) return;
+      button.disabled = true;
+      const previous = button.textContent;
+      button.textContent = 'Solicitando...';
+      try {
+        const response = await apiFetch('/admin-panel/api/servers/' + encodeURIComponent(serverId) + '/runtime/retry', { method:'POST', body:JSON.stringify({}) });
+        if (!response.ok) { showToast(await response.text()); return; }
+        const payload = await response.json();
+        state.runtimeCoordinator = payload.runtimeCoordinator || state.runtimeCoordinator;
+        state.serverFoundation = payload.foundation || state.serverFoundation;
+        renderManagedServers();
+        const selected = (state.managedServers || []).find((candidate) => candidate.id === serverId);
+        if (selected) renderManagedServerPreflight(selected);
+        showToast('Ciclo isolado solicitado. O resultado aparecerá no health operacional.');
+      } catch (error) {
+        showToast(error instanceof Error ? error.message : String(error));
+      } finally {
+        button.disabled = false;
+        button.textContent = previous;
       }
     }
 
@@ -7951,6 +8070,8 @@ function renderAdminPanelHtml(token: string) {
     els.managedServerDiscordSave?.addEventListener("click", () => saveManagedServerForm('discord'));
     els.managedServerPreflightRun?.addEventListener("click", () => runManagedServerPreflight());
     els.managedServerRuntimeToggle?.addEventListener("click", () => toggleManagedServerRuntime());
+    els.managedServerRuntimePauseToggle?.addEventListener("click", () => toggleManagedServerPause());
+    els.managedServerRuntimeRetry?.addEventListener("click", () => retryManagedServerRuntime());
     els.managedServerNitradoServiceSelect?.addEventListener('change', () => {
       const serviceId = els.managedServerNitradoServiceSelect?.value || '';
       const previousServiceId = els.managedServerNitradoServiceId?.value || '';
@@ -8416,7 +8537,8 @@ router.post("/api/servers/:serverId/runtime/activate", async (req, res) => {
     }
 
     const server = await setManagedServerRuntimeEnabled(serverId, true);
-    const cycleRequested = requestManagedServerRuntimeCycle(server.id, "activation");
+    resetManagedServerRuntimeCircuit(server.id);
+    const cycleRequested = requestManagedServerRuntimeCycle(server.id, "activation", { forceCircuitProbe: true });
     res.json({
       server,
       servers: listManagedServers(),
@@ -8440,18 +8562,152 @@ router.post("/api/servers/:serverId/runtime/deactivate", async (req, res) => {
       res.status(404).send("Servidor nao encontrado.");
       return;
     }
-    if (isServerRuntimeLocked(serverId)) {
+    const transition = await runWithServerMaintenanceLock(serverId, async () => {
+      if (current.runtimeEnabled) {
+        await runInServerMaintenanceContext(serverId, () => flushServerRuntimePendingStateAsync());
+      }
+      return setManagedServerRuntimeEnabled(serverId, false);
+    });
+    if (transition.skipped || !transition.value) {
       res.status(409).send("Existe um ciclo em andamento para este servidor. Aguarde ele terminar e tente desativar novamente.");
       return;
     }
-    if (current.runtimeEnabled) {
-      await runInServerMaintenanceContext(serverId, () => flushServerRuntimePendingStateAsync());
-    }
-    const server = await setManagedServerRuntimeEnabled(serverId, false);
+    const server = transition.value;
+    resetManagedServerRuntimeCircuit(serverId);
     res.json({
       server,
       servers: listManagedServers(),
       runtimeActivationBlocked: false,
+      foundation: getServerFoundationDiagnostics(),
+      runtimeCoordinator: getManagedServerRuntimeCoordinatorDiagnostics(),
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(/nao encontrado/i.test(message) ? 404 : 400).send(message);
+  }
+});
+
+router.get("/api/servers/:serverId/runtime/health", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const serverId = String(req.params.serverId || "");
+  const diagnostics = getManagedServerRuntimeCoordinatorDiagnostics();
+  const server = diagnostics.servers.find((candidate: any) => candidate.serverId === serverId);
+  if (!server) {
+    res.status(404).send("Servidor nao encontrado.");
+    return;
+  }
+  res.json({
+    server,
+    policy: diagnostics.healthPolicy,
+    schedulerRunning: diagnostics.schedulerRunning,
+    requestedImmediateRuns: diagnostics.requestedImmediateRuns,
+  });
+});
+
+router.post("/api/servers/:serverId/runtime/pause", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  try {
+    const serverId = String(req.params.serverId || "");
+    const current = listManagedServers().find((server) => server.id === serverId && !server.primary);
+    if (!current) {
+      res.status(404).send("Servidor nao encontrado.");
+      return;
+    }
+    if (!current.runtimeEnabled) {
+      res.status(409).send("Este runtime esta desligado; use Ativar runtime em vez de pausar.");
+      return;
+    }
+    if (current.runtime.operations?.paused === true) {
+      res.status(409).send("Este runtime ja esta pausado.");
+      return;
+    }
+    const transition = await runWithServerMaintenanceLock(serverId, async () => {
+      await runInServerMaintenanceContext(serverId, () => flushServerRuntimePendingStateAsync());
+      return setManagedServerRuntimePaused(serverId, true, req.body?.reason);
+    });
+    if (transition.skipped || !transition.value) {
+      res.status(409).send("Existe um ciclo em andamento. Aguarde o ciclo terminar antes de pausar.");
+      return;
+    }
+    const server = transition.value;
+    res.json({
+      server,
+      servers: listManagedServers(),
+      foundation: getServerFoundationDiagnostics(),
+      runtimeCoordinator: getManagedServerRuntimeCoordinatorDiagnostics(),
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(/nao encontrado/i.test(message) ? 404 : 400).send(message);
+  }
+});
+
+router.post("/api/servers/:serverId/runtime/resume", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  try {
+    const serverId = String(req.params.serverId || "");
+    const current = listManagedServers().find((server) => server.id === serverId && !server.primary);
+    if (!current) {
+      res.status(404).send("Servidor nao encontrado.");
+      return;
+    }
+    if (!current.runtimeEnabled) {
+      res.status(409).send("Este runtime esta desligado; use Ativar runtime.");
+      return;
+    }
+    if (current.runtime.operations?.paused !== true) {
+      res.status(409).send("Este runtime nao esta pausado.");
+      return;
+    }
+    if (isServerRuntimeLocked(serverId)) {
+      res.status(409).send("Existe um ciclo em andamento. Aguarde antes de retomar.");
+      return;
+    }
+    const server = await setManagedServerRuntimePaused(serverId, false);
+    resetManagedServerRuntimeCircuit(serverId);
+    const cycleRequested = requestManagedServerRuntimeCycle(serverId, "manual", { forceCircuitProbe: true });
+    res.json({
+      server,
+      servers: listManagedServers(),
+      cycleRequested,
+      foundation: getServerFoundationDiagnostics(),
+      runtimeCoordinator: getManagedServerRuntimeCoordinatorDiagnostics(),
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(/nao encontrado/i.test(message) ? 404 : 400).send(message);
+  }
+});
+
+router.post("/api/servers/:serverId/runtime/retry", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  try {
+    const serverId = String(req.params.serverId || "");
+    const current = listManagedServers().find((server) => server.id === serverId && !server.primary);
+    if (!current) {
+      res.status(404).send("Servidor nao encontrado.");
+      return;
+    }
+    if (!current.runtimeEnabled) {
+      res.status(409).send("Este runtime esta desligado.");
+      return;
+    }
+    if (current.runtime.operations?.paused === true) {
+      res.status(409).send("Retome o runtime antes de executar um ciclo manual.");
+      return;
+    }
+    if (isServerRuntimeLocked(serverId)) {
+      res.status(409).send("Existe um ciclo em andamento para este servidor.");
+      return;
+    }
+    const cycleRequested = requestManagedServerRuntimeCycle(serverId, "manual", { forceCircuitProbe: true });
+    if (!cycleRequested) {
+      res.status(409).send("Ja existe um ciclo manual/ativacao solicitado para este servidor.");
+      return;
+    }
+    res.json({
+      cycleRequested,
+      servers: listManagedServers(),
       foundation: getServerFoundationDiagnostics(),
       runtimeCoordinator: getManagedServerRuntimeCoordinatorDiagnostics(),
     });

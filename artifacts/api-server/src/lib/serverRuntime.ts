@@ -162,11 +162,8 @@ export function isServerRuntimeLocked(serverId: string) {
   return runtimeLocks.has(String(serverId || "").trim());
 }
 
-export async function runWithServerRuntimeLock<T>(serverId: string, work: () => Promise<T>): Promise<{ skipped: boolean; value?: T }> {
+async function runWithServerLock<T>(serverId: string, work: () => Promise<T>): Promise<{ skipped: boolean; value?: T }> {
   const context = getServerRuntimeContext(serverId);
-  if (!canExecuteManagedServerRuntime(context.serverId)) {
-    throw new Error(`Server ${context.serverId} runtime is disabled or has not passed the activation gate.`);
-  }
   if (runtimeLocks.has(context.serverId)) {
     lockSkips += 1;
     setServerRuntimeIsolationStatus({ activeLocks: runtimeLocks.size, lockSkips, lastLockServerId: context.serverId });
@@ -183,9 +180,25 @@ export async function runWithServerRuntimeLock<T>(serverId: string, work: () => 
   }
 }
 
+export async function runWithServerRuntimeLock<T>(serverId: string, work: () => Promise<T>): Promise<{ skipped: boolean; value?: T }> {
+  const context = getServerRuntimeContext(serverId);
+  if (!canExecuteManagedServerRuntime(context.serverId)) {
+    throw new Error(`Server ${context.serverId} runtime is disabled or has not passed the activation gate.`);
+  }
+  return runWithServerLock(context.serverId, work);
+}
+
+// Operational transitions (pause/deactivate) must serialize against the same
+// runtime lock as ADM cycles, but they cannot require the runtime to be
+// executable because a paused secondary still needs to be safely deactivated.
+export async function runWithServerMaintenanceLock<T>(serverId: string, work: () => Promise<T>): Promise<{ skipped: boolean; value?: T }> {
+  const context = getServerRuntimeContext(serverId);
+  return runWithServerLock(context.serverId, work);
+}
+
 export function assertPrimaryRuntimeServer(serverId: string) {
   const primaryId = getPrimaryServerId();
   if (serverId !== primaryId) {
-    throw new Error(`Legacy FTP/Discord state access remains primary-only during Phase 13 portal context (${serverId}).`);
+    throw new Error(`Legacy FTP/Discord state access remains primary-only during Phase 14 operational hardening (${serverId}).`);
   }
 }
