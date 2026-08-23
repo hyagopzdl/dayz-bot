@@ -38,12 +38,10 @@ export function getServerRuntimeContext(serverId?: string) {
     initialized: true,
     contextServerId: descriptor.id,
     nitradoRoutingNamespaced: Boolean(descriptor.integrations.nitradoServiceId && descriptor.runtime.nitradoBaseDir),
-    discordRoutingNamespaced: !descriptor.integrations.discordGuildId || Boolean(
-      descriptor.runtime.discord.globalChannelId
-      && descriptor.runtime.discord.dailyChannelId
-      && descriptor.runtime.discord.weeklyChannelId
-      && descriptor.runtime.discord.onlineCategoryId
-    ),
+    // Discord command/interactions are routed by managed-server guild ownership.
+    // Feed-channel IDs are optional and primary-specific, so they must not be
+    // used as the isolation signal for secondary/core Discord installs.
+    discordRoutingNamespaced: true,
     processingLockNamespaced: true,
     primaryLegacyAdmStoragePreserved: true,
     staggerOffsetMs,

@@ -72,6 +72,10 @@ export function normalizeOrganizationRole(value: unknown): OrganizationRole {
   return "viewer";
 }
 
+export function isSaasSelfServiceEnabled() {
+  return String(process.env.SAAS_SELF_SERVICE_ENABLED || "").trim().toLowerCase() === "true";
+}
+
 export function getDefaultOrganizationId() {
   return buildOrganizationId(process.env.DEFAULT_ORGANIZATION_ID || FALLBACK_ORGANIZATION_ID) || FALLBACK_ORGANIZATION_ID;
 }
@@ -150,7 +154,7 @@ export function canOrganizationRole(role: OrganizationRole | undefined, capabili
 export function getOrganizationFoundationDiagnostics() {
   const status = getOrganizationRegistryPersistenceStatus();
   return {
-    phase: 15,
+    phase: 16,
     enabled: status.enabled,
     initialized: status.initialized,
     defaultOrganizationId: getDefaultOrganizationId(),
@@ -162,8 +166,9 @@ export function getOrganizationFoundationDiagnostics() {
     authorizationModel: "organization-membership-rbac",
     roles: ["owner", "admin", "moderator", "viewer"] as OrganizationRole[],
     legacyAdminTokenBootstrap: Boolean(process.env.ADMIN_PANEL_TOKEN || process.env.SHOP_ADMIN_TOKEN),
-    credentialIsolation: "pending-phase-16",
-    thirdPartyOnboardingReady: false,
+    credentialIsolation: "organization-nitrado+platform-discord",
+    selfServiceEnabled: isSaasSelfServiceEnabled(),
+    thirdPartyOnboardingReady: isSaasSelfServiceEnabled(),
     backgroundPollingAdded: false,
   };
 }

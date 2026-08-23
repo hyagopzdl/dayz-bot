@@ -29,6 +29,7 @@ import {
   type ServerNitradoValidation,
   type ServerRuntimeActivation,
   type ServerRuntimeOperations,
+  type ServerScopedSettings,
 } from "./serverRegistry";
 import { getActiveServerId, getServerStateStoragePath, runInServerMaintenanceContext, runInServerRuntimeContext } from "./serverRuntime";
 import {
@@ -43,6 +44,11 @@ import {
   type ManagedOrganization,
   type OrganizationMembership,
 } from "./organizationRegistry";
+import {
+  encryptOrganizationSecret,
+  setPersistedOrganizationIntegrations,
+  type OrganizationIntegrationRecord,
+} from "./organizationIntegrations";
 
 const LEGACY_FILE = path.resolve(process.cwd(), "state.json");
 const STATE_ID = "main";
@@ -405,6 +411,7 @@ type ManagedServerDraftInput = {
   nitradoServiceId?: unknown;
   nitradoBaseDir?: unknown;
   discordGuildId?: unknown;
+  settings?: Partial<Record<keyof ServerScopedSettings, unknown>>;
   discord?: Partial<Record<keyof ServerDiscordRuntimeConfig, unknown>>;
 };
 
@@ -460,6 +467,24 @@ function normalizeServerDiscordDraft(value: unknown, existing: ServerDiscordRunt
     else delete (next as Record<string, unknown>)[key];
   }
   if ("memberFeedEnabled" in source) next.memberFeedEnabled = source.memberFeedEnabled !== false;
+  return next;
+}
+
+function normalizeServerScopedSettingsDraft(value: unknown, existing: ServerScopedSettings = {}): ServerScopedSettings {
+  const source = value && typeof value === "object" ? value as Record<string, unknown> : {};
+  const next: ServerScopedSettings = { ...existing };
+  if ("shopRestartTimes" in source) {
+    const normalized = optionalServerText(source.shopRestartTimes, 240);
+    if (normalized) next.shopRestartTimes = normalized; else delete next.shopRestartTimes;
+  }
+  if ("shopRestartTimezone" in source) {
+    const normalized = optionalServerText(source.shopRestartTimezone, 100);
+    if (normalized) next.shopRestartTimezone = normalized; else delete next.shopRestartTimezone;
+  }
+  if ("dayzMissionDir" in source) {
+    const normalized = optionalServerText(source.dayzMissionDir, 300);
+    if (normalized) next.dayzMissionDir = normalized.replace(/\\/g, "/").replace(/^\/+|\/+$/g, ""); else delete next.dayzMissionDir;
+  }
   return next;
 }
 
@@ -546,6 +571,10 @@ function mapManagedServerRow(row: any, primary: ManagedServerDescriptor): Manage
             source: runtimeConfig.operations.source === "phase14-admin" ? "phase14-admin" : undefined,
           }
         : undefined,
+      settings: normalizeServerScopedSettingsDraft(
+        runtimeConfig?.settings,
+        isPrimary ? primary.runtime.settings || {} : {},
+      ),
       discord: isPrimary
         ? { ...(primary.runtime.discord || {}), ...(runtimeConfig?.discord || {}) }
         : { ...(runtimeConfig?.discord || {}) },
@@ -600,6 +629,11 @@ async function reloadOrganizationRegistryFromDb() {
     FROM organization_members
     ORDER BY organization_id ASC, created_at ASC, discord_id ASC
   `;
+  const integrationRows = await sql`
+    SELECT organization_id, provider, encrypted_secret, iv, auth_tag, key_version, metadata, active, created_at, updated_at
+    FROM organization_integrations
+    ORDER BY organization_id ASC, provider ASC
+  `;
   const nextOrganizations: ManagedOrganization[] = (organizationRows as any[]).map((row) => ({
     id: buildOrganizationId(row.id),
     name: normalizeOrganizationName(row.name),
@@ -614,7 +648,20 @@ async function reloadOrganizationRegistryFromDb() {
     createdAt: row.created_at ? new Date(row.created_at).toISOString() : undefined,
     updatedAt: row.updated_at ? new Date(row.updated_at).toISOString() : undefined,
   }));
+  const nextIntegrations: OrganizationIntegrationRecord[] = (integrationRows as any[]).map((row) => ({
+    organizationId: buildOrganizationId(row.organization_id),
+    provider: "nitrado" as const,
+    encryptedSecret: String(row.encrypted_secret || ""),
+    iv: String(row.iv || ""),
+    authTag: String(row.auth_tag || ""),
+    keyVersion: Number(row.key_version || 1),
+    metadata: row.metadata && typeof row.metadata === "object" ? row.metadata : {},
+    active: row.active !== false,
+    createdAt: row.created_at ? new Date(row.created_at).toISOString() : undefined,
+    updatedAt: row.updated_at ? new Date(row.updated_at).toISOString() : undefined,
+  })).filter((row) => row.organizationId && row.encryptedSecret && row.iv && row.authTag);
   setPersistedOrganizations(nextOrganizations, nextMemberships);
+  setPersistedOrganizationIntegrations(nextIntegrations);
   setOrganizationRegistryPersistenceStatus({
     organizationsLoaded: nextOrganizations.length,
     membershipsLoaded: nextMemberships.length,
@@ -642,7 +689,7 @@ async function ensurePrimaryServerRegistryMetadata() {
     const primary = getPrimaryServerDescriptor();
     const defaultOrganization = getDefaultOrganizationDescriptor();
     try {
-      // Phase 15 adds ownership around the existing server-scoped runtime. It does
+      // Phase 16 keeps ownership around the existing server-scoped runtime. It does
       // not rename state rows, ADM paths, parser cursors or runtime identifiers.
       await sql`
         CREATE TABLE IF NOT EXISTS organizations (
@@ -664,6 +711,21 @@ async function ensurePrimaryServerRegistryMetadata() {
         )
       `;
       await sql`CREATE INDEX IF NOT EXISTS organization_members_discord_id_idx ON organization_members (discord_id)`;
+      await sql`
+        CREATE TABLE IF NOT EXISTS organization_integrations (
+          organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+          provider TEXT NOT NULL CHECK (provider IN ('nitrado')),
+          encrypted_secret TEXT NOT NULL,
+          iv TEXT NOT NULL,
+          auth_tag TEXT NOT NULL,
+          key_version INTEGER NOT NULL DEFAULT 1,
+          metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+          active BOOLEAN NOT NULL DEFAULT TRUE,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          PRIMARY KEY (organization_id, provider)
+        )
+      `;
       await sql`
         INSERT INTO organizations (id, name, active, created_at, updated_at)
         VALUES (${defaultOrganization.id}, ${defaultOrganization.name}, TRUE, NOW(), NOW())
@@ -763,6 +825,26 @@ async function ensurePrimaryServerRegistryMetadata() {
         RETURNING id
       `;
 
+
+      // Phase 16 snapshots the legacy process-wide commerce settings into each
+      // existing server row once. From this point forward they can diverge
+      // without one server inheriting changes made for another tenant.
+      const defaultServerSettings = primary.runtime.settings || {
+        shopRestartTimes: String(process.env.SHOP_RESTART_TIMES || process.env.SERVER_RESTART_TIMES || "00:00,04:00,08:00,12:00,16:00,20:00"),
+        shopRestartTimezone: String(process.env.SHOP_RESTART_TIMEZONE || "America/Sao_Paulo"),
+        dayzMissionDir: String(process.env.DAYZ_MISSION_DIR || "dayzps_missions/dayzOffline.chernarusplus"),
+      };
+      await sql`
+        UPDATE managed_servers
+        SET runtime_config = jsonb_set(
+              COALESCE(runtime_config, '{}'::jsonb),
+              '{settings}',
+              ${JSON.stringify(defaultServerSettings)}::jsonb,
+              TRUE
+            ),
+            updated_at = NOW()
+        WHERE runtime_config IS NULL OR runtime_config->'settings' IS NULL
+      `;
       const bootstrapAdminIds = Array.from(new Set(
         String(process.env.DISCORD_ADMIN_USER_IDS || "")
           .split(",")
@@ -1875,6 +1957,11 @@ export async function createManagedServerDraft(input: ManagedServerDraftInput) {
     },
     runtime: {
       nitradoBaseDir: optionalServerText(input?.nitradoBaseDir, 512),
+      settings: normalizeServerScopedSettingsDraft(input?.settings, {
+        shopRestartTimes: "00:00,04:00,08:00,12:00,16:00,20:00",
+        shopRestartTimezone: "America/Sao_Paulo",
+        dayzMissionDir: "dayzps_missions/dayzOffline.chernarusplus",
+      }),
       discord,
     },
   };
@@ -1955,6 +2042,7 @@ export async function updateManagedServerDraft(serverId: string, input: ManagedS
       activationPreflight: undefined,
       activation: current.runtime.activation ? { ...current.runtime.activation } : undefined,
       operations: current.runtime.operations ? { ...current.runtime.operations, paused: false } : undefined,
+      settings: normalizeServerScopedSettingsDraft(input?.settings, current.runtime.settings || {}),
       discord: normalizeServerDiscordDraft(input?.discord, current.runtime.discord),
     },
   };
@@ -1992,6 +2080,85 @@ export async function updateManagedServerDraft(serverId: string, input: ManagedS
     ok: true,
   });
   return servers.find((server) => server.id === id) || next;
+}
+
+export async function bindManagedServerDiscordGuild(serverIdInput: unknown, guildIdInput: unknown) {
+  await ensurePrimaryServerRegistryMetadata();
+  if (!sql || !getServerRegistryPersistenceStatus().tableReady) {
+    throw new Error("Server registry is unavailable. DATABASE_URL and managed_servers must be ready.");
+  }
+
+  const id = buildManagedServerId(serverIdInput);
+  const guildId = optionalServerText(guildIdInput, 64);
+  if (!id) throw new Error("Server ID invalido.");
+  if (!guildId) throw new Error("Discord Guild ID invalido.");
+
+  const currentServers = await reloadManagedServerRegistryFromDb();
+  const current = currentServers.find((server) => server.id === id);
+  if (!current) throw new Error(`Servidor ${id} nao encontrado.`);
+  const duplicate = currentServers.find((server) => server.id !== id && server.integrations.discordGuildId === guildId);
+  if (duplicate) throw new Error(`Este Discord ja esta vinculado ao servidor ${duplicate.name}.`);
+
+  const guildChanged = Boolean(current.integrations.discordGuildId && current.integrations.discordGuildId !== guildId);
+  const nextRuntime = {
+    ...current.runtime,
+    // Channel IDs belong to one guild. If an existing server is deliberately
+    // moved to another guild, fail closed instead of carrying channel IDs from
+    // the old Discord into the new one. Core slash commands need no channels.
+    discord: guildChanged ? {} : { ...(current.runtime.discord || {}) },
+  };
+
+  await sql`
+    UPDATE managed_servers
+    SET discord_guild_id = ${guildId},
+        runtime_config = ${JSON.stringify(nextRuntime)}::jsonb,
+        updated_at = NOW()
+    WHERE id = ${id}
+  `;
+
+  const servers = await reloadManagedServerRegistryFromDb();
+  recordNetworkTransfer({
+    service: "neon-server-registry",
+    operation: "bind_discord_guild",
+    direction: "outbound",
+    bytes: Buffer.byteLength(JSON.stringify({ serverId: id, guildId }), "utf8"),
+    ok: true,
+  });
+  return servers.find((server) => server.id === id);
+}
+
+export async function updateManagedServerScopedSettings(serverIdInput: unknown, settingsInput: unknown) {
+  await ensurePrimaryServerRegistryMetadata();
+  if (!sql || !getServerRegistryPersistenceStatus().tableReady) throw new Error("Server registry is unavailable.");
+  const id = buildManagedServerId(serverIdInput);
+  const currentServers = await reloadManagedServerRegistryFromDb();
+  const current = currentServers.find((server) => server.id === id);
+  if (!current) throw new Error(`Servidor ${id || String(serverIdInput || "")} nao encontrado.`);
+  if (current.runtimeEnabled && !current.runtime.operations?.paused) {
+    throw new Error("Pause o processamento deste servidor antes de alterar restart/timezone/mission path.");
+  }
+  const settings = normalizeServerScopedSettingsDraft(settingsInput, current.runtime.settings || {});
+  const restartTimes = String(settings.shopRestartTimes || "").split(",").map((value) => value.trim()).filter(Boolean);
+  if (!restartTimes.length || restartTimes.some((value) => !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value))) {
+    throw new Error("Restart times deve usar HH:MM separado por virgulas.");
+  }
+  try { new Intl.DateTimeFormat("en-US", { timeZone: settings.shopRestartTimezone || "UTC" }).format(new Date()); }
+  catch { throw new Error("Timezone invalido. Use um timezone IANA, por exemplo America/Sao_Paulo."); }
+  const missionDir = String(settings.dayzMissionDir || "").replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
+  if (!missionDir || missionDir.includes("..")) throw new Error("Mission dir invalido.");
+  settings.dayzMissionDir = missionDir;
+  const runtime = { ...current.runtime, settings };
+  await sql`
+    UPDATE managed_servers
+    SET runtime_config = ${JSON.stringify(runtime)}::jsonb, updated_at = NOW()
+    WHERE id = ${id}
+  `;
+  const servers = await reloadManagedServerRegistryFromDb();
+  recordNetworkTransfer({
+    service: "neon-server-registry", operation: "update_server_scoped_settings", direction: "outbound",
+    bytes: Buffer.byteLength(JSON.stringify({ serverId: id, settings }), "utf8"), ok: true,
+  });
+  return servers.find((server) => server.id === id);
 }
 
 export async function markManagedServerNitradoValidated(
@@ -2308,6 +2475,87 @@ export async function createManagedOrganization(input: { id?: unknown; name?: un
   if (!(inserted as any[]).length) throw new Error(`Organization ID ${id} ja existe.`);
   await reloadOrganizationRegistryFromDb();
   recordNetworkTransfer({ service: "neon-organization-registry", operation: "create_organization", direction: "outbound", bytes: Buffer.byteLength(JSON.stringify({ id, name }), "utf8"), ok: true });
+  return getManagedOrganizationById(id);
+}
+
+export async function saveOrganizationNitradoCredential(organizationIdInput: unknown, tokenInput: unknown, metadata: Record<string, unknown> = {}) {
+  await ensurePrimaryServerRegistryMetadata();
+  if (!sql) throw new Error("Organization integration registry is unavailable.");
+  const organizationId = buildOrganizationId(organizationIdInput);
+  if (!organizationId || !getManagedOrganizationById(organizationId)) throw new Error("Organization nao encontrada.");
+  const encrypted = encryptOrganizationSecret(tokenInput);
+  await sql`
+    INSERT INTO organization_integrations (
+      organization_id, provider, encrypted_secret, iv, auth_tag, key_version, metadata, active, created_at, updated_at
+    ) VALUES (
+      ${organizationId}, 'nitrado', ${encrypted.encryptedSecret}, ${encrypted.iv}, ${encrypted.authTag}, ${encrypted.keyVersion},
+      ${JSON.stringify(metadata || {})}::jsonb, TRUE, NOW(), NOW()
+    )
+    ON CONFLICT (organization_id, provider) DO UPDATE
+    SET encrypted_secret = EXCLUDED.encrypted_secret,
+        iv = EXCLUDED.iv,
+        auth_tag = EXCLUDED.auth_tag,
+        key_version = EXCLUDED.key_version,
+        metadata = EXCLUDED.metadata,
+        active = TRUE,
+        updated_at = NOW()
+  `;
+  await reloadOrganizationRegistryFromDb();
+  recordNetworkTransfer({
+    service: "neon-organization-integrations",
+    operation: "save_nitrado_credential",
+    direction: "outbound",
+    bytes: Buffer.byteLength(JSON.stringify({ organizationId, provider: "nitrado", metadata }), "utf8"),
+    ok: true,
+  });
+}
+
+export async function removeOrganizationNitradoCredential(organizationIdInput: unknown) {
+  await ensurePrimaryServerRegistryMetadata();
+  if (!sql) throw new Error("Organization integration registry is unavailable.");
+  const organizationId = buildOrganizationId(organizationIdInput);
+  if (!organizationId) throw new Error("Organization nao encontrada.");
+  await sql`DELETE FROM organization_integrations WHERE organization_id = ${organizationId} AND provider = 'nitrado'`;
+  await reloadOrganizationRegistryFromDb();
+  recordNetworkTransfer({
+    service: "neon-organization-integrations",
+    operation: "remove_nitrado_credential",
+    direction: "outbound",
+    bytes: Buffer.byteLength(JSON.stringify({ organizationId, provider: "nitrado" }), "utf8"),
+    ok: true,
+  });
+}
+
+export async function createManagedOrganizationForOwner(input: { id?: unknown; name?: unknown }, ownerDiscordIdInput: unknown) {
+  await ensurePrimaryServerRegistryMetadata();
+  if (!sql) throw new Error("Organization registry is unavailable.");
+  const ownerDiscordId = String(ownerDiscordIdInput || "").trim();
+  if (!/^\d{5,32}$/.test(ownerDiscordId)) throw new Error("Discord ID invalido.");
+  const name = normalizeOrganizationName(input?.name);
+  const id = buildOrganizationId(input?.id || `${name}-${ownerDiscordId.slice(-6)}`);
+  if (!id) throw new Error("Informe um Organization ID valido.");
+  await sql.begin(async (tx: any) => {
+    const inserted = await tx`
+      INSERT INTO organizations (id, name, active, created_at, updated_at)
+      VALUES (${id}, ${name}, TRUE, NOW(), NOW())
+      ON CONFLICT (id) DO NOTHING
+      RETURNING id
+    `;
+    if (!(inserted as any[]).length) throw new Error(`Organization ID ${id} ja existe.`);
+    await tx`
+      INSERT INTO organization_members (organization_id, discord_id, role, created_at, updated_at)
+      VALUES (${id}, ${ownerDiscordId}, 'owner', NOW(), NOW())
+      ON CONFLICT (organization_id, discord_id) DO UPDATE SET role = 'owner', updated_at = NOW()
+    `;
+  });
+  await reloadOrganizationRegistryFromDb();
+  recordNetworkTransfer({
+    service: "neon-organization-registry",
+    operation: "self_service_organization",
+    direction: "outbound",
+    bytes: Buffer.byteLength(JSON.stringify({ id, name, ownerDiscordId }), "utf8"),
+    ok: true,
+  });
   return getManagedOrganizationById(id);
 }
 

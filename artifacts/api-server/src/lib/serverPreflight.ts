@@ -96,7 +96,7 @@ async function validateOptionalDiscord(server: ManagedServerDescriptor, checks: 
     return;
   }
 
-  const options = listDiscordGuildOptions(server.id);
+  const options = await listDiscordGuildOptions(server.id);
   if (!options.ready) {
     pushCheck(checks, "discord", "Discord", "fail", "Uma guild foi configurada, mas o bot Discord nao esta conectado.");
     return;

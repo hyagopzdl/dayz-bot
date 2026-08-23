@@ -1,7 +1,7 @@
 import type { PortalSession } from "../auth/session";
 import type { PlayerPortalServerContext } from "../lib/playerPortalServerContext";
 
-const PLAYER_PORTAL_ASSET_VERSION = "20260822-phase13-context-1";
+const PLAYER_PORTAL_ASSET_VERSION = "20260823-phase16-discord-e2e-1";
 
 function escapeHtml(value: unknown) {
   return String(value ?? "")

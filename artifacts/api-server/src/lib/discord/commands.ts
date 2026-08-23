@@ -300,14 +300,35 @@ export function buildDiscordCommands() {
 }
 
 
+
+const SECONDARY_CORE_COMMANDS = new Set([
+  "link",
+  "unlink",
+  "bank",
+  "addcoins",
+  "removecoins",
+  "setcoins",
+  "shop",
+  "shop-queue",
+  "shop-deploy",
+  "shop-clear",
+  "shop-catalog",
+]);
+
+export type DiscordCommandRegistrationScope = "full" | "core";
+
 type DiscordCommandSettingsLike = Record<
   string,
   { enabled?: boolean } | undefined
 >;
 
-export function buildEnabledDiscordCommands(settings?: DiscordCommandSettingsLike) {
+export function buildEnabledDiscordCommands(
+  settings?: DiscordCommandSettingsLike,
+  scope: DiscordCommandRegistrationScope = "full",
+) {
   return buildDiscordCommands().filter((command) =>
-    settings?.[command.name]?.enabled !== false,
+    settings?.[command.name]?.enabled !== false
+    && (scope === "full" || SECONDARY_CORE_COMMANDS.has(command.name)),
   );
 }
 
@@ -315,9 +336,10 @@ export async function registerDiscordCommands(
   client: any,
   settings?: DiscordCommandSettingsLike,
   serverId = getPrimaryServerId(),
+  scope: DiscordCommandRegistrationScope = "full",
 ) {
   try {
-    const commands = buildEnabledDiscordCommands(settings);
+    const commands = buildEnabledDiscordCommands(settings, scope);
 
     const guildId = getServerRuntimeContext(serverId).discord.guildId;
     if (guildId) {
@@ -327,7 +349,7 @@ export async function registerDiscordCommands(
       await client.application?.commands.set(commands);
     }
 
-    console.log(`✅ ${commands.length} comandos do Discord sincronizados`);
+    console.log(`✅ ${commands.length} comandos do Discord sincronizados [${serverId}] (${scope})`);
   } catch (err) {
     console.error("❌ erro registrando comandos:", err);
     throw err;

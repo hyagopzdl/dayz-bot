@@ -43,30 +43,35 @@ function requestedServerId(req: Request) {
   return String(queryValue || headerValue || cookieValue || "").trim() || undefined;
 }
 
-export function listPlayerPortalServers() {
-  // Phase 15 keeps a public/player portal inside one organization boundary.
-  // Future customer organizations must never become discoverable just because
-  // their runtimes share the same ADM process. Phase 16 can add an explicit
-  // organization entrypoint without weakening this default isolation.
-  const primaryOrganizationId = getPrimaryServerDescriptor().organizationId;
+export function listPlayerPortalServers(organizationId = getPrimaryServerDescriptor().organizationId) {
+  // Phase 16 keeps discovery tenant-scoped. A player enters another tenant only
+  // through an explicit server entrypoint (?server=<id>); once inside, the
+  // switcher lists only active servers owned by that same organization.
   return listExecutableManagedServers()
-    .filter((server) => server.organizationId === primaryOrganizationId)
+    .filter((server) => server.organizationId === organizationId)
     .map(publicServer);
 }
 
 export function resolvePlayerPortalServerContext(req: Request): PlayerPortalServerContext {
-  const servers = listPlayerPortalServers();
+  const executable = listExecutableManagedServers();
   const primaryId = getPrimaryServerId();
   const requested = requestedServerId(req);
-  const selected = (requested ? servers.find((server) => server.id === requested) : undefined)
-    || servers.find((server) => server.id === primaryId)
-    || servers[0];
+  const requestedDescriptor = requested ? executable.find((server) => server.id === requested) : undefined;
+  const seed = requestedDescriptor
+    || executable.find((server) => server.id === primaryId)
+    || executable[0];
 
-  if (!selected) {
+  if (!seed) {
     throw new Error("No executable server is available for the Player Portal.");
   }
 
-  const fellBackToPrimary = Boolean(requested && requested !== selected.id);
+  const servers = listPlayerPortalServers(seed.organizationId);
+  const selected = servers.find((server) => server.id === seed.id) || servers[0];
+  if (!selected) {
+    throw new Error("No executable server is available for this organization.");
+  }
+
+  const fellBackToPrimary = Boolean(requested && !requestedDescriptor);
   contextResolutions += 1;
   if (fellBackToPrimary) invalidSelections += 1;
 
@@ -90,9 +95,11 @@ function setSelectedServerCookie(req: Request, res: Response, serverId: string) 
 
 export function setPlayerPortalServerSelection(req: Request, res: Response, serverIdInput: unknown) {
   const serverId = String(serverIdInput || "").trim();
+  const currentContext = getPlayerPortalServerContext(res);
+  const currentDescriptor = listExecutableManagedServers().find((candidate) => candidate.id === currentContext.selectedServer.id);
   const server = listExecutableManagedServers().find((candidate) => candidate.id === serverId);
-  if (!server) {
-    throw new Error("This server is not currently available in the Player Portal.");
+  if (!server || !currentDescriptor || server.organizationId !== currentDescriptor.organizationId) {
+    throw new Error("This server is not available in the current organization portal.");
   }
   setSelectedServerCookie(req, res, server.id);
   contextSwitches += 1;
@@ -127,11 +134,12 @@ export function getPlayerPortalContextDiagnostics() {
   return {
     enabled: true,
     cookie: PLAYER_SERVER_COOKIE,
-    executableServers: listPlayerPortalServers().length,
+    executableServers: listExecutableManagedServers().length,
+    primaryOrganizationServers: listPlayerPortalServers().length,
     contextResolutions,
     contextSwitches,
     invalidSelections,
-    policy: "active-runtime-same-organization-only",
+    policy: "explicit-server-entrypoint+same-organization-switcher",
     organizationId: getPrimaryServerDescriptor().organizationId,
   };
 }

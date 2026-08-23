@@ -10,6 +10,7 @@ import {
 } from "./shopXml";
 import { systems } from "./systems";
 import { getServerRuntimeContext } from "./serverRuntime";
+import { getPrimaryServerId, getServerScopedSettings } from "./serverRegistry";
 
 import {
   findShopItem,
@@ -33,9 +34,6 @@ export function getShopItemsSnapshot(): ShopItem[] {
   return getShopItems(true);
 }
 
-const DEFAULT_DAYZ_MISSION_DIR =
-  process.env.DAYZ_MISSION_DIR || "dayzps_missions/dayzOffline.chernarusplus";
-
 function normalizeRelativePath(value: string) {
   return String(value || "")
     .replace(/\\/g, "/")
@@ -43,10 +41,20 @@ function normalizeRelativePath(value: string) {
     .replace(/\/+$/g, "");
 }
 
-const DAYZ_MISSION_DIR = normalizeRelativePath(DEFAULT_DAYZ_MISSION_DIR);
+export function getShopFilePaths(serverId = getServerRuntimeContext().serverId) {
+  const missionDir = normalizeRelativePath(getServerScopedSettings(serverId).dayzMissionDir);
+  return {
+    missionDir,
+    eventsPath: `${missionDir}/db/events.xml`,
+    eventSpawnsPath: `${missionDir}/cfgeventspawns.xml`,
+  };
+}
 
-export const SHOP_EVENTS_PATH = `${DAYZ_MISSION_DIR}/db/events.xml`;
-export const SHOP_EVENT_SPAWNS_PATH = `${DAYZ_MISSION_DIR}/cfgeventspawns.xml`;
+const PRIMARY_SHOP_PATHS = getShopFilePaths(getPrimaryServerId());
+// Kept for primary-only admin/map-event compatibility. Runtime shop operations
+// use getShopFilePaths() so secondary servers never inherit the PZ mission path.
+export const SHOP_EVENTS_PATH = PRIMARY_SHOP_PATHS.eventsPath;
+export const SHOP_EVENT_SPAWNS_PATH = PRIMARY_SHOP_PATHS.eventSpawnsPath;
 
 
 function hasShopBotBlock(xml: string) {
@@ -129,8 +137,8 @@ function validateInjectedShopXml(options: {
 
 async function verifyUploadedShopBlocks(expectedOrders: ShopOrder[], eventNames: string[]) {
   const [uploadedEventsXml, uploadedEventSpawnsXml] = await Promise.all([
-    downloadServerTextFile(SHOP_EVENTS_PATH),
-    downloadServerTextFile(SHOP_EVENT_SPAWNS_PATH),
+    downloadServerTextFile(getShopFilePaths().eventsPath),
+    downloadServerTextFile(getShopFilePaths().eventSpawnsPath),
   ]);
 
   validateInjectedShopXml({
@@ -144,8 +152,8 @@ async function verifyUploadedShopBlocks(expectedOrders: ShopOrder[], eventNames:
 
 async function verifyShopBlocksRemoved() {
   const [uploadedEventsXml, uploadedEventSpawnsXml] = await Promise.all([
-    downloadServerTextFile(SHOP_EVENTS_PATH),
-    downloadServerTextFile(SHOP_EVENT_SPAWNS_PATH),
+    downloadServerTextFile(getShopFilePaths().eventsPath),
+    downloadServerTextFile(getShopFilePaths().eventSpawnsPath),
   ]);
 
   if (hasShopBotBlock(uploadedEventsXml) || hasShopBotBlock(uploadedEventSpawnsXml)) {
@@ -519,9 +527,9 @@ async function backupShopXmlFiles(_eventsXml: string, _eventSpawnsXml: string) {
       .replace(/[-:]/g, "")
       .replace(/\.\d{3}Z$/, "Z");
 
-    await uploadServerTextFile(`${SHOP_EVENTS_PATH}.shop-backup-${stamp}`, _eventsXml);
+    await uploadServerTextFile(`${getShopFilePaths().eventsPath}.shop-backup-${stamp}`, _eventsXml);
     await uploadServerTextFile(
-      `${SHOP_EVENT_SPAWNS_PATH}.shop-backup-${stamp}`,
+      `${getShopFilePaths().eventSpawnsPath}.shop-backup-${stamp}`,
       _eventSpawnsXml,
     );
   }
@@ -543,7 +551,7 @@ export async function deployPendingShopOrders(state: AppState) {
   if (getIncludedShopOrders(state).length) {
     return {
       deployed: 0,
-      path: `${SHOP_EVENTS_PATH} + ${SHOP_EVENT_SPAWNS_PATH}`,
+      path: `${getShopFilePaths().eventsPath} + ${getShopFilePaths().eventSpawnsPath}`,
       reason: "A shop batch is already waiting for restart/clear.",
     };
   }
@@ -553,21 +561,21 @@ export async function deployPendingShopOrders(state: AppState) {
   if (!pendingOrders.length) {
     return {
       deployed: 0,
-      path: `${SHOP_EVENTS_PATH} + ${SHOP_EVENT_SPAWNS_PATH}`,
+      path: `${getShopFilePaths().eventsPath} + ${getShopFilePaths().eventSpawnsPath}`,
       reason: "No pending shop orders to deploy.",
     };
   }
 
   console.log(
-    `🛒 SHOP DEPLOY START pending=${pendingOrders.length} events=${SHOP_EVENTS_PATH} spawns=${SHOP_EVENT_SPAWNS_PATH}`,
+    `🛒 SHOP DEPLOY START pending=${pendingOrders.length} events=${getShopFilePaths().eventsPath} spawns=${getShopFilePaths().eventSpawnsPath}`,
   );
 
   validateOrdersReadyForXml(pendingOrders);
 
   console.log("🛒 SHOP DEPLOY downloading XML files");
   const [eventsXml, eventSpawnsXml] = await Promise.all([
-    downloadServerTextFile(SHOP_EVENTS_PATH),
-    downloadServerTextFile(SHOP_EVENT_SPAWNS_PATH),
+    downloadServerTextFile(getShopFilePaths().eventsPath),
+    downloadServerTextFile(getShopFilePaths().eventSpawnsPath),
   ]);
 
   await backupShopXmlFiles(eventsXml, eventSpawnsXml);
@@ -590,8 +598,8 @@ export async function deployPendingShopOrders(state: AppState) {
   console.log(
     `🛒 SHOP DEPLOY uploading XML files events=${injectedEvents.eventNames.length}`,
   );
-  await uploadServerTextFile(SHOP_EVENTS_PATH, injectedEvents.xml);
-  await uploadServerTextFile(SHOP_EVENT_SPAWNS_PATH, injectedEventSpawns);
+  await uploadServerTextFile(getShopFilePaths().eventsPath, injectedEvents.xml);
+  await uploadServerTextFile(getShopFilePaths().eventSpawnsPath, injectedEventSpawns);
 
   console.log("🛒 SHOP DEPLOY verifying uploaded XML files");
   await verifyUploadedShopBlocks(pendingOrders, injectedEvents.eventNames);
@@ -633,15 +641,15 @@ export async function deployPendingShopOrders(state: AppState) {
 
   return {
     deployed: pendingOrders.length,
-    path: `${SHOP_EVENTS_PATH} + ${SHOP_EVENT_SPAWNS_PATH}`,
+    path: `${getShopFilePaths().eventsPath} + ${getShopFilePaths().eventSpawnsPath}`,
     batchId,
   };
 }
 
 async function removeShopXmlBlocks(options?: { requireExistingBlock?: boolean }) {
   const [eventsXml, eventSpawnsXml] = await Promise.all([
-    downloadServerTextFile(SHOP_EVENTS_PATH),
-    downloadServerTextFile(SHOP_EVENT_SPAWNS_PATH),
+    downloadServerTextFile(getShopFilePaths().eventsPath),
+    downloadServerTextFile(getShopFilePaths().eventSpawnsPath),
   ]);
 
   const eventsHasBlock = hasShopBotBlock(eventsXml);
@@ -655,9 +663,9 @@ async function removeShopXmlBlocks(options?: { requireExistingBlock?: boolean })
 
   await backupShopXmlFiles(eventsXml, eventSpawnsXml);
 
-  await uploadServerTextFile(SHOP_EVENTS_PATH, removeShopBotBlock(eventsXml));
+  await uploadServerTextFile(getShopFilePaths().eventsPath, removeShopBotBlock(eventsXml));
   await uploadServerTextFile(
-    SHOP_EVENT_SPAWNS_PATH,
+    getShopFilePaths().eventSpawnsPath,
     removeShopBotBlock(eventSpawnsXml),
   );
 
@@ -676,7 +684,7 @@ export async function clearShopSpawnerAndMarkSpawned(
     return {
       cleared: 0,
       cancelled: 0,
-      path: `${SHOP_EVENTS_PATH} + ${SHOP_EVENT_SPAWNS_PATH}`,
+      path: `${getShopFilePaths().eventsPath} + ${getShopFilePaths().eventSpawnsPath}`,
     };
   }
 
@@ -685,7 +693,7 @@ export async function clearShopSpawnerAndMarkSpawned(
     return {
       cleared: 0,
       cancelled: 0,
-      path: `${SHOP_EVENTS_PATH} + ${SHOP_EVENT_SPAWNS_PATH}`,
+      path: `${getShopFilePaths().eventsPath} + ${getShopFilePaths().eventSpawnsPath}`,
     };
   }
   const cancelPending = options?.cancelPending ?? true;
@@ -718,7 +726,7 @@ export async function clearShopSpawnerAndMarkSpawned(
   return {
     cleared: includedOrders.length,
     cancelled: pendingOrders.length,
-    path: `${SHOP_EVENTS_PATH} + ${SHOP_EVENT_SPAWNS_PATH}`,
+    path: `${getShopFilePaths().eventsPath} + ${getShopFilePaths().eventSpawnsPath}`,
   };
 }
 
@@ -857,7 +865,7 @@ export async function tryAutoClearShopAfterAdmReset(
 }
 
 function parseRestartTimes() {
-  const raw = process.env.SHOP_RESTART_TIMES || "00:00,04:00,08:00,12:00,16:00,20:00";
+  const raw = getServerScopedSettings(getServerRuntimeContext().serverId).shopRestartTimes;
 
   return raw
     .split(",")
@@ -935,7 +943,7 @@ function getActiveAutoDeployWindow(
   const times = parseRestartTimes();
   if (!times.length) return null;
 
-  const timeZone = process.env.SHOP_RESTART_TIMEZONE || "America/Sao_Paulo";
+  const timeZone = getServerScopedSettings(getServerRuntimeContext().serverId).shopRestartTimezone;
   const deployBefore = numberEnv("SHOP_DEPLOY_MINUTES_BEFORE_RESET", 15);
   const deployGraceAfter = numberEnv("SHOP_DEPLOY_GRACE_MINUTES_AFTER_SCHEDULE", 15);
   const freezeMinutes = numberEnv("SHOP_DEPLOY_FREEZE_MINUTES", 2);

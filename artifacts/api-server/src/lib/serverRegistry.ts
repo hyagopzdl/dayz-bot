@@ -1,4 +1,5 @@
 import { getDefaultOrganizationId, getOrganizationFoundationDiagnostics } from "./organizationRegistry";
+import { getOrganizationIntegrationStatus, getOrganizationIntegrationsDiagnostics } from "./organizationIntegrations";
 export type ServerFoundationMode = "single-server-compat";
 export type ServerOnboardingStatus = "active" | "draft" | "configured" | "ready";
 
@@ -59,12 +60,19 @@ export type ServerActivationPreflight = {
   warningCount: number;
 };
 
+export type ServerScopedSettings = {
+  shopRestartTimes?: string;
+  shopRestartTimezone?: string;
+  dayzMissionDir?: string;
+};
+
 export type ServerRuntimeConfig = {
   nitradoBaseDir?: string;
   nitradoValidation?: ServerNitradoValidation;
   activationPreflight?: ServerActivationPreflight;
   activation?: ServerRuntimeActivation;
   operations?: ServerRuntimeOperations;
+  settings?: ServerScopedSettings;
   discord: ServerDiscordRuntimeConfig;
 };
 
@@ -203,6 +211,11 @@ function envString(name: string) {
 function getPrimaryRuntimeConfig(): ServerRuntimeConfig {
   return {
     nitradoBaseDir: envString("NITRADO_BASE_DIR") || "/games/ni13029176_1/noftp/dayzps/config",
+    settings: {
+      shopRestartTimes: envString("SHOP_RESTART_TIMES") || envString("SERVER_RESTART_TIMES") || "00:00,04:00,08:00,12:00,16:00,20:00",
+      shopRestartTimezone: envString("SHOP_RESTART_TIMEZONE") || "America/Sao_Paulo",
+      dayzMissionDir: envString("DAYZ_MISSION_DIR") || "dayzps_missions/dayzOffline.chernarusplus",
+    },
     discord: {
       globalChannelId: envString("DISCORD_CHANNEL_ID"),
       dailyChannelId: envString("DISCORD_CHANNEL_DAILY_ID"),
@@ -247,26 +260,24 @@ function normalizeServerOnboardingStatus(value: unknown): ServerOnboardingStatus
   return "draft";
 }
 
+export function getServerScopedSettings(serverId = getPrimaryServerId()): Required<ServerScopedSettings> {
+  const server = getManagedServerById(serverId) || (serverId === getPrimaryServerId() ? getPrimaryServerDescriptor() : undefined);
+  const settings = server?.runtime.settings || {};
+  return {
+    shopRestartTimes: String(settings.shopRestartTimes || "00:00,04:00,08:00,12:00,16:00,20:00").trim(),
+    shopRestartTimezone: String(settings.shopRestartTimezone || "America/Sao_Paulo").trim(),
+    dayzMissionDir: String(settings.dayzMissionDir || "dayzps_missions/dayzOffline.chernarusplus").trim(),
+  };
+}
+
 export function getManagedServerActivationConfigSignature(server: Pick<ManagedServerDescriptor, "integrations" | "runtime">) {
+  // Phase 16 treats Discord as an optional runtime integration. Connecting or
+  // changing a guild must never invalidate an already-approved DayZ/Nitrado
+  // runtime and silently stop ADM processing. The activation signature therefore
+  // protects only the core game routing that can affect ADM/state isolation.
   const payload = {
     nitradoServiceId: String(server.integrations.nitradoServiceId || "").trim(),
     nitradoBaseDir: String(server.runtime.nitradoBaseDir || "").trim(),
-    discordGuildId: String(server.integrations.discordGuildId || "").trim(),
-    discord: {
-      globalChannelId: String(server.runtime.discord?.globalChannelId || "").trim(),
-      dailyChannelId: String(server.runtime.discord?.dailyChannelId || "").trim(),
-      weeklyChannelId: String(server.runtime.discord?.weeklyChannelId || "").trim(),
-      onlineListChannelId: String(server.runtime.discord?.onlineListChannelId || "").trim(),
-      killfeedChannelId: String(server.runtime.discord?.killfeedChannelId || "").trim(),
-      killStreakChannelId: String(server.runtime.discord?.killStreakChannelId || "").trim(),
-      longShotChannelId: String(server.runtime.discord?.longShotChannelId || "").trim(),
-      longShotRankingChannelId: String(server.runtime.discord?.longShotRankingChannelId || "").trim(),
-      streakRankingChannelId: String(server.runtime.discord?.streakRankingChannelId || "").trim(),
-      onlineCategoryId: String(server.runtime.discord?.onlineCategoryId || "").trim(),
-      matchCategoryId: String(server.runtime.discord?.matchCategoryId || "").trim(),
-      memberFeedChannelId: String(server.runtime.discord?.memberFeedChannelId || "").trim(),
-      memberFeedEnabled: server.runtime.discord?.memberFeedEnabled !== false,
-    },
   };
   const serialized = JSON.stringify(payload);
   let hash = 2166136261;
@@ -274,7 +285,7 @@ export function getManagedServerActivationConfigSignature(server: Pick<ManagedSe
     hash ^= serialized.charCodeAt(index);
     hash = Math.imul(hash, 16777619);
   }
-  return `phase11-${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  return `phase16-core-${(hash >>> 0).toString(16).padStart(8, "0")}`;
 }
 
 export function hasMatchingManagedServerNitradoValidation(server: Pick<ManagedServerDescriptor, "integrations" | "runtime">) {
@@ -293,11 +304,16 @@ export function hasMatchingManagedServerNitradoValidation(server: Pick<ManagedSe
 
 export function hasMatchingActivationPreflight(server: Pick<ManagedServerDescriptor, "integrations" | "runtime">) {
   const preflight = server.runtime.activationPreflight;
+  const serviceId = String(server.integrations.nitradoServiceId || "").trim();
+  const baseDir = String(server.runtime.nitradoBaseDir || "").trim();
   return Boolean(
     preflight
     && preflight.passed === true
     && preflight.version === "phase11-v1"
-    && preflight.configurationSignature === getManagedServerActivationConfigSignature(server)
+    && serviceId
+    && baseDir
+    && preflight.serviceId === serviceId
+    && preflight.baseDir === baseDir
   );
 }
 
@@ -402,6 +418,7 @@ export function setPersistedManagedServers(servers: ManagedServerDescriptor[]) {
       activationPreflight: server.runtime?.activationPreflight ? { ...server.runtime.activationPreflight, namespaceRows: { ...server.runtime.activationPreflight.namespaceRows } } : undefined,
       activation: server.runtime?.activation ? { ...server.runtime.activation } : undefined,
       operations: server.runtime?.operations ? { ...server.runtime.operations } : undefined,
+      settings: server.runtime?.settings ? { ...server.runtime.settings } : undefined,
       discord: { ...(server.runtime?.discord || {}) },
     },
   }));
@@ -463,7 +480,7 @@ export function getServerFoundationDiagnostics() {
   const managedServers = listManagedServers();
   const additionalServers = managedServers.filter((candidate) => !candidate.primary);
   return {
-    phase: 15,
+    phase: 16,
     mode: server.mode,
     currentServerId: server.id,
     currentServerName: server.name,
@@ -480,7 +497,7 @@ export function getServerFoundationDiagnostics() {
       activationPolicy: "ready-opt-in",
       secretsStoredInRegistry: false,
       nitradoDiscoveryEnabled: true,
-      nitradoCredentialSource: process.env.NITRADO_TOKEN ? "environment" : "missing",
+      nitradoCredentialSource: getOrganizationIntegrationStatus(server.organizationId).credentialSource,
       discordDiscoveryEnabled: true,
       integrationValidationMode: "on-demand",
       activationPreflightEnabled: true,
@@ -489,6 +506,9 @@ export function getServerFoundationDiagnostics() {
       operationalHardeningEnabled: true,
       multiTenantFoundationEnabled: true,
       organizationAuthorizationEnabled: true,
+      organizationCredentialIsolationEnabled: true,
+      serverScopedCommerceSettingsEnabled: true,
+      serverScopedShopCatalogEnabled: true,
       manualPauseAvailable: true,
       circuitBreakerMode: "secondary-only-in-memory",
       circuitBreakerFailureThreshold: 3,
@@ -546,8 +566,21 @@ export function getServerFoundationDiagnostics() {
       primaryCircuitBreakerDisabled: true,
       organizationOwnershipRequired: true,
       organizationRbacPrepared: true,
+      organizationNitradoCredentialIsolation: true,
+      discordCrossOrganizationDiscoveryBlocked: true,
+      serverScopedCommerceSettings: true,
+      serverScopedShopCatalog: true,
     },
-    tenancy: getOrganizationFoundationDiagnostics(),
+    tenancy: (() => {
+      const foundation = getOrganizationFoundationDiagnostics();
+      const integrations = getOrganizationIntegrationsDiagnostics();
+      return {
+        ...foundation,
+        phase: 16,
+        integrations,
+        thirdPartyOnboardingReady: Boolean(foundation.selfServiceEnabled && integrations.encryptionConfigured),
+      };
+    })(),
     integrations: server.integrations,
   };
 }

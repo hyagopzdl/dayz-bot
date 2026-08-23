@@ -1,4 +1,5 @@
 import { Client, ChannelType, PermissionFlagsBits, TextBasedChannel } from "discord.js";
+import { resolveServerIdFromDiscordGuildId } from "../serverRegistry";
 import {
   createShopOrder,
   deployPendingShopOrders,
@@ -24,6 +25,7 @@ import {
 
 type RegisterInteractionHandlersContext = {
   client: Client;
+  serverId: string;
   getState: () => Promise<any>;
   saveState: (state: any) => Promise<void>;
   longShotChannel: TextBasedChannel | null;
@@ -50,6 +52,7 @@ type RegisterInteractionHandlersContext = {
 export function registerInteractionHandlers(ctx: RegisterInteractionHandlersContext) {
   const {
     client,
+    serverId,
     getState,
     saveState,
     longShotChannel,
@@ -75,6 +78,9 @@ export function registerInteractionHandlers(ctx: RegisterInteractionHandlersCont
 
   client.on("interactionCreate", async (interaction) => {
   try {
+    // The legacy/full handler is bound to exactly one managed guild. Never let
+    // an interaction from another tenant/server fall through to the PZ state.
+    if (!interaction.guildId || resolveServerIdFromDiscordGuildId(interaction.guildId) !== serverId) return;
     if (await handleLinkAutocomplete(interaction, { getState, saveState })) return;
     if (await handleEconomyAdminAutocomplete(interaction, { getState, saveState })) return;
     if (await handleLinkComponentInteraction(interaction, { getState, saveState })) return;

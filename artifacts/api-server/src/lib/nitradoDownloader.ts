@@ -2,7 +2,8 @@ import crypto from "crypto";
 import fs from "fs";
 import path from "path";
 import { byteLengthOfBody, recordNetworkTransfer } from "./networkMetrics";
-import { getPrimaryServerId } from "./serverRegistry";
+import { getManagedServerById, getPrimaryServerDescriptor, getPrimaryServerId } from "./serverRegistry";
+import { getOrganizationNitradoCredential } from "./organizationIntegrations";
 import { getActiveServerId, getServerRuntimeContext } from "./serverRuntime";
 
 const LEGACY_SERVICE_ID = "19149785";
@@ -301,8 +302,17 @@ async function trackedNitradoFetch(url: string, init: RequestInit = {}) {
   }
 }
 
-async function fetchJson(url: string): Promise<any> {
-  const res = await trackedNitradoFetch(url, { headers: { Authorization: `Bearer ${process.env.NITRADO_TOKEN}` } });
+function getNitradoToken(serverId = getActiveServerId()) {
+  const server = getManagedServerById(serverId) || (serverId === getPrimaryServerId() ? getPrimaryServerDescriptor() : undefined);
+  if (!server) throw new Error(`Servidor ${serverId} nao encontrado para resolver a credencial Nitrado.`);
+  const credential = getOrganizationNitradoCredential(server.organizationId);
+  if (!credential.token) throw new Error(`Nitrado nao conectado para a organizacao ${server.organizationId}.`);
+  return credential.token;
+}
+
+async function fetchJson(url: string, serverId = getActiveServerId()): Promise<any> {
+  const token = getNitradoToken(serverId);
+  const res = await trackedNitradoFetch(url, { headers: { Authorization: `Bearer ${token}` } });
   if (!res.ok) throw new Error(`Nitrado HTTP ${res.status}: ${await res.text()}`);
   return (await res.json()) as any;
 }
@@ -315,13 +325,13 @@ function firstString(...values: any[]) {
 }
 
 export async function getNitradoGameserverStatus(serverId = getPrimaryServerId()): Promise<NitradoGameserverStatus> {
-  if (!process.env.NITRADO_TOKEN) throw new Error("NITRADO_TOKEN não definido");
+  getNitradoToken(serverId);
   const serviceId = getNitradoServiceId(serverId);
   const candidates = [`https://api.nitrado.net/services/${serviceId}/gameservers`, `https://api.nitrado.net/services/${serviceId}`];
   const errors: string[] = [];
   for (const url of candidates) {
     try {
-      const json = await fetchJson(url);
+      const json = await fetchJson(url, serverId);
       const data = json?.data || json;
       const gameserver = data?.gameserver || data?.gameservers?.[0] || data;
       const service = data?.service || data?.services?.[0] || data;
@@ -338,7 +348,7 @@ export async function getNitradoGameserverStatus(serverId = getPrimaryServerId()
 async function getDownloadUrl(filePath: string, serverId = getPrimaryServerId()): Promise<string | null> {
   admDownloadMetrics.downloadUrlRequests += 1;
   const serviceId = getNitradoServiceId(serverId);
-  const json = await fetchJson(`https://api.nitrado.net/services/${serviceId}/gameservers/file_server/download?file=${encodeURIComponent(filePath)}`);
+  const json = await fetchJson(`https://api.nitrado.net/services/${serviceId}/gameservers/file_server/download?file=${encodeURIComponent(filePath)}`, serverId);
   return json?.data?.token?.url || null;
 }
 
@@ -463,16 +473,16 @@ export async function downloadADM(serverId = getPrimaryServerId()) {
   admDownloadMetrics.lastDownloadedBytes = 0;
   admDownloadMetrics.strategy.mode = strategy.mode;
 
-  if (!process.env.NITRADO_TOKEN) {
-    console.error("❌ NITRADO_TOKEN não definido");
-    return;
-  }
+  // Missing tenant credentials are a real runtime failure. Let the coordinator
+  // observe it so the secondary circuit breaker can protect Nitrado/Render
+  // instead of silently reporting a successful cycle with no downloads.
+  getNitradoToken(serverId);
 
   console.log(`📂 Listando arquivos ADM... server=${serverId} modo=${strategy.mode}`);
   let listJson: any;
   try {
     admDownloadMetrics.listRequests += 1;
-    listJson = await fetchJson(`https://api.nitrado.net/services/${serviceId}/gameservers/file_server/list?dir=${encodeURIComponent(baseDir)}`);
+    listJson = await fetchJson(`https://api.nitrado.net/services/${serviceId}/gameservers/file_server/list?dir=${encodeURIComponent(baseDir)}`, serverId);
   } catch (err) {
     admDownloadMetrics.listFailures += 1;
     throw err;
@@ -637,7 +647,11 @@ export async function downloadADM(serverId = getPrimaryServerId()) {
 
 function getNitradoServiceId(serverId = getActiveServerId()) {
   const runtime = getServerRuntimeContext(serverId);
-  return runtime.nitrado.serviceId || process.env.NITRADO_SERVICE_ID || LEGACY_SERVICE_ID;
+  if (runtime.nitrado.serviceId) return runtime.nitrado.serviceId;
+  // Legacy service-id fallback is production-primary compatibility only. A
+  // tenant/secondary runtime must never inherit the platform/PZ service ID.
+  if (runtime.isPrimary) return process.env.NITRADO_SERVICE_ID || LEGACY_SERVICE_ID;
+  throw new Error(`Nitrado Service ID nao configurado para o servidor ${serverId}.`);
 }
 
 function normalizeNitradoFileServerPath(value: string) {
@@ -651,9 +665,7 @@ export async function listNitradoDirectory(
   dir: string,
   serverId = getActiveServerId(),
 ): Promise<NitradoEntry[]> {
-  if (!process.env.NITRADO_TOKEN) {
-    throw new Error("NITRADO_TOKEN não definido");
-  }
+  getNitradoToken(serverId);
 
   const serviceId = getNitradoServiceId(serverId);
   const normalizedDir = normalizeNitradoFileServerPath(dir);
@@ -664,6 +676,7 @@ export async function listNitradoDirectory(
     `https://api.nitrado.net/services/${serviceId}/gameservers/file_server/list?dir=${encodeURIComponent(
       normalizedDir,
     )}`,
+    serverId,
   );
 
   return json?.data?.entries || [];
@@ -677,9 +690,7 @@ export async function debugNitradoListRaw(dir: string, serverId = getActiveServe
   text: string;
   entriesCount: number | null;
 }> {
-  if (!process.env.NITRADO_TOKEN) {
-    throw new Error("NITRADO_TOKEN não definido");
-  }
+  getNitradoToken(serverId);
 
   const serviceId = getNitradoServiceId(serverId);
   const normalizedDir = normalizeNitradoFileServerPath(dir);
@@ -689,7 +700,7 @@ export async function debugNitradoListRaw(dir: string, serverId = getActiveServe
 
   const res = await trackedNitradoFetch(url, {
     headers: {
-      Authorization: `Bearer ${process.env.NITRADO_TOKEN}`,
+      Authorization: `Bearer ${getNitradoToken(serverId)}`,
     },
   });
 
@@ -726,9 +737,7 @@ export async function probeNitradoUploadTokenForDirectory(
   statusText: string;
   text: string;
 }> {
-  if (!process.env.NITRADO_TOKEN) {
-    throw new Error("NITRADO_TOKEN não definido");
-  }
+  getNitradoToken(serverId);
 
   const serviceId = getNitradoServiceId(serverId);
   const normalizedDir = String(dir || "")
@@ -740,7 +749,7 @@ export async function probeNitradoUploadTokenForDirectory(
   const res = await trackedNitradoFetch(url, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${process.env.NITRADO_TOKEN}`,
+      Authorization: `Bearer ${getNitradoToken(serverId)}`,
     },
   });
 
@@ -759,13 +768,14 @@ export async function probeNitradoUploadTokenForDirectory(
 async function postForm(
   url: string,
   body: Record<string, string>,
+  serverId: string,
 ): Promise<any> {
   const form = new URLSearchParams(body);
 
   const res = await trackedNitradoFetch(url, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${process.env.NITRADO_TOKEN}`,
+      Authorization: `Bearer ${getNitradoToken(serverId)}`,
       "Content-Type": "application/x-www-form-urlencoded",
     },
     body: form.toString(),
@@ -781,13 +791,14 @@ async function postForm(
 async function postWithQueryParams(
   url: string,
   params: Record<string, string>,
+  serverId: string,
 ): Promise<any> {
   const fullUrl = `${url}?${new URLSearchParams(params).toString()}`;
 
   const res = await trackedNitradoFetch(fullUrl, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${process.env.NITRADO_TOKEN}`,
+      Authorization: `Bearer ${getNitradoToken(serverId)}`,
     },
   });
 
@@ -899,8 +910,8 @@ async function getUploadToken(
 
         const json =
           strategy === "form"
-            ? await postForm(url, body)
-            : await postWithQueryParams(url, body);
+            ? await postForm(url, body, serverId)
+            : await postWithQueryParams(url, body, serverId);
 
         const token = json?.data?.token;
 
@@ -938,9 +949,7 @@ export async function uploadNitradoTextFile(
   content: string,
   serverId = getActiveServerId(),
 ) {
-  if (!process.env.NITRADO_TOKEN) {
-    throw new Error("NITRADO_TOKEN não definido");
-  }
+  getNitradoToken(serverId);
 
   const { url, token } = await getUploadToken(filePath, serverId);
   const res = await trackedNitradoFetch(url, {
@@ -964,9 +973,7 @@ export async function uploadShopSpawnerFile(
   payload: unknown,
   serverId = getActiveServerId(),
 ) {
-  if (!process.env.NITRADO_TOKEN) {
-    throw new Error("NITRADO_TOKEN não definido");
-  }
+  getNitradoToken(serverId);
 
   const { url, token } = await getUploadToken(filePath, serverId);
   const body = JSON.stringify(payload, null, 2);

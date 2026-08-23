@@ -20,6 +20,8 @@ import { buildBrandedEmbed } from "../../ui/embeds";
 import { getOrCreateWalletForLink, formatCoins } from "../../../economy";
 import { normalizeLocale, t } from "../../../i18n";
 import { getPlayerLinkByDiscordId } from "../../../playerLinks";
+import { getServerScopedSettings } from "../../../serverRegistry";
+import { getActiveServerId } from "../../../serverRuntime";
 
 export function formatShopClosedMessage(state: any) {
   const runtime = getShopRuntimeStatus(state);
@@ -295,7 +297,7 @@ export function buildShopLinkRequiredPayload(state: any, discordUserId: string) 
 
 export function formatShopFooterTime(date = new Date()) {
   return new Intl.DateTimeFormat("en-US", {
-    timeZone: process.env.SHOP_RESTART_TIMEZONE || "America/Sao_Paulo",
+    timeZone: getServerScopedSettings(getActiveServerId()).shopRestartTimezone,
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,

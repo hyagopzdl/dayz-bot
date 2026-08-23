@@ -28,12 +28,16 @@ import {
   createPlayerShopCheckout,
   getPlayerShopCheckout,
 } from "../lib/playerShop";
-import { findKnownGamertag, getPlayerLinkByDiscordId, linkPlayerToGamertag } from "../lib/playerLinks";
+import { findKnownGamertag, getPlayerLinkByDiscordId, linkPlayerToGamertag, searchKnownGamertags } from "../lib/playerLinks";
 import { getStateAsync, saveStateAsync, type AppState } from "../lib/state";
 import { isShopServiceEnabled } from "../lib/serviceSettings";
+import { ensureShopCatalogLoaded } from "../lib/shopCatalog";
 import { requirePortalAuth } from "../middlewares/portalAuth";
 import { renderPlayerPortal } from "./playerPortalView";
+import { renderSaasOnboarding } from "./saasOnboardingView";
 import { getManagedServerById, getPrimaryServerDescriptor, getPrimaryServerId } from "../lib/serverRegistry";
+import { isSaasSelfServiceEnabled } from "../lib/organizationRegistry";
+import { isOrganizationSecretEncryptionConfigured } from "../lib/organizationIntegrations";
 import { getActiveServerId, runInServerRuntimeContext } from "../lib/serverRuntime";
 import {
   getPlayerPortalServerContext,
@@ -76,6 +80,10 @@ async function getPrimaryIdentityImportOptions(state: AppState, session: PortalS
   };
 }
 
+router.get("/saas", requirePortalAuth, (req, res) => {
+  res.type("html").send(renderSaasOnboarding(req.portalSession!, isSaasSelfServiceEnabled() && isOrganizationSecretEncryptionConfigured()));
+});
+
 router.get("/login", (req, res) => {
   if (req.portalSession) {
     res.redirect("/app");
@@ -89,9 +97,9 @@ router.get("/login", (req, res) => {
   :root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;background:#08090b;color:#fff;font-family:Inter,system-ui,sans-serif}.card{width:min(420px,calc(100% - 32px));padding:32px;border:1px solid #272a31;border-radius:20px;background:#111318;box-shadow:0 24px 80px #0008}.eyebrow{color:#8c93a3;font-size:12px;font-weight:700;letter-spacing:.14em;text-transform:uppercase}h1{font-size:32px;line-height:1.05;margin:12px 0}p{color:#aeb4c0;line-height:1.55}.button{display:flex;align-items:center;justify-content:center;gap:10px;margin-top:24px;padding:14px 18px;border-radius:12px;background:#5865f2;color:#fff;text-decoration:none;font-weight:800}.error{margin-top:16px;padding:12px;border-radius:10px;background:#39191d;color:#ffb4bd;font-size:14px}</style></head><body><main class="card"><div class="eyebrow">PZ Deathmatch</div><h1>Player Portal</h1><p>Sign in with Discord to access your profile, statistics, coins and purchases.</p><a class="button" href="/api/auth/discord?returnTo=${encodeURIComponent(returnTo)}">Continue with Discord</a>${error ? `<div class="error">Login failed. Please try again.</div>` : ""}</main></body></html>`);
 });
 
-// Phase 13 overrides the app-level primary context only for the Player Portal.
-// Admin/map-event routes stay pinned to the primary until their own write paths
-// are explicitly made multi-server safe.
+// Phase 16 keeps the Player Portal in an explicit server + organization context.
+// Legacy admin/map-event routes remain primary-scoped; tenant onboarding uses /saas
+// and ownership-aware APIs instead of inheriting the player selection cookie.
 router.use((req: Request, res: Response, next: NextFunction) => {
   const isPlayerPortalPath = req.path === "/app"
     || req.path.startsWith("/app/")
@@ -102,6 +110,20 @@ router.use((req: Request, res: Response, next: NextFunction) => {
     return;
   }
   playerPortalServerContextMiddleware(req, res, next);
+});
+
+router.use(async (req: Request, _res: Response, next: NextFunction) => {
+  const isPlayerPortalPath = req.path === "/app" || req.path.startsWith("/app/") || req.path === "/api/player" || req.path.startsWith("/api/player/");
+  if (!isPlayerPortalPath) { next(); return; }
+  try {
+    await ensureShopCatalogLoaded();
+    next();
+  } catch (error) {
+    // Catalog availability must not make rankings/profile unavailable. Shop routes
+    // already surface their own errors while the per-server cache warms up.
+    console.warn(`⚠️ shop catalog unavailable [${getActiveServerId()}]:`, error instanceof Error ? error.message : String(error));
+    next();
+  }
 });
 
 router.get(["/app", "/app/profile", "/app/players/:gamertag", "/app/rankings", "/app/killfeed", "/app/accounts", "/app/clan", "/app/shop", "/app/shop/category/:categoryId", "/app/shop/item/:itemId", "/app/purchases"], requirePortalAuth, async (req, res) => {
@@ -163,6 +185,38 @@ router.get("/api/player/accounts", requirePortalAuth, async (req, res) => {
     primaryIdentityImport,
     serverContext: getPlayerPortalServerContext(res),
   });
+});
+
+router.get("/api/player/accounts/gamertags", requirePortalAuth, async (req: Request, res: Response) => {
+  const state = await getStateAsync();
+  const query = String(req.query.q || "").trim();
+  res.json({ gamertags: searchKnownGamertags(state, query, 20) });
+});
+
+router.post("/api/player/accounts/link", requirePortalAuth, async (req: Request, res: Response) => {
+  try {
+    const state = await getStateAsync();
+    if (getPlayerLinkByDiscordId(state, req.portalSession!.discordId)) {
+      throw new Error("Your Discord account is already linked on this server.");
+    }
+    const requested = String(req.body?.gamertag || "").trim();
+    const known = findKnownGamertag(state, requested);
+    if (!known) throw new Error("This gamertag has not appeared in this server's ADM statistics yet.");
+    const result = linkPlayerToGamertag({
+      state,
+      discordId: req.portalSession!.discordId,
+      gamertag: known,
+    });
+    if (!result.ok) {
+      throw new Error(result.reason === "GAMERTAG_ALREADY_LINKED"
+        ? "That gamertag is already linked to another Discord account on this server."
+        : "Unable to link that gamertag on this server.");
+    }
+    await saveStateAsync(state, `player-portal:link:${getActiveServerId()}`);
+    res.status(201).json({ gamertag: result.link.gamertag });
+  } catch (error) {
+    sendApiError(res, error);
+  }
 });
 
 router.post("/api/player/accounts/import-primary", requirePortalAuth, async (req: Request, res: Response) => {

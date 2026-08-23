@@ -11,6 +11,8 @@ import {
   seedShopCatalogInDatabase,
   reorderShopCatalogCategories,
   reorderShopCatalogItems,
+  cloneShopCatalogFromServer,
+  getShopCatalogIsolationDiagnostics,
 } from "./catalogService";
 
 export type ShopDeliveryKind = "item" | "vehicle";
@@ -190,12 +192,20 @@ export async function reorderShopItems(categoryId: string, itemIds: string[]) {
   return reorderShopCatalogItems(categoryId, itemIds);
 }
 
+export async function cloneShopCatalog(sourceServerId: string, targetServerId?: string) {
+  return cloneShopCatalogFromServer(sourceServerId, targetServerId);
+}
+
+export function getShopCatalogDiagnostics() {
+  return getShopCatalogIsolationDiagnostics();
+}
+
 /**
  * The shop catalog is now database-backed. This function is kept only for
  * compatibility with old admin helpers and no longer creates local files.
  */
 export function ensureShopCatalogFile() {
-  return "Neon PostgreSQL: shop_catalog_items / shop_catalog_categories";
+  return "Neon PostgreSQL: server_shop_catalog_items / server_shop_catalog_categories";
 }
 
 export function saveShopCatalog(_catalog: ShopCatalog): never {

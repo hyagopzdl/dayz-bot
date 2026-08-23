@@ -1,7 +1,8 @@
-import { ChannelType } from "discord.js";
+import { ChannelType, PermissionFlagsBits } from "discord.js";
 import { getDiscordClient } from "./discordBot";
 import { recordNetworkTransfer } from "./networkMetrics";
-import { getManagedServerById, getPrimaryServerId, listManagedServers } from "./serverRegistry";
+import { getManagedServerById, getPrimaryServerDescriptor, getPrimaryServerId, listManagedServers } from "./serverRegistry";
+import { getOrganizationIntegrationStatus, getOrganizationNitradoCredential } from "./organizationIntegrations";
 
 const NITRADO_API_BASE = "https://api.nitrado.net";
 
@@ -40,16 +41,18 @@ function assertOnboardingServer(serverId: string) {
   return server;
 }
 
-function requireNitradoToken() {
-  const token = String(process.env.NITRADO_TOKEN || "").trim();
-  if (!token) {
-    throw new Error("NITRADO_TOKEN nao esta configurado no ambiente. A Fase 10 reutiliza a conexao segura atual do PZ e nunca envia o token para o navegador.");
+function requireNitradoToken(serverId: string) {
+  const server = getManagedServerById(serverId) || (serverId === getPrimaryServerId() ? getPrimaryServerDescriptor() : undefined);
+  if (!server) throw new Error(`Servidor ${serverId} nao encontrado.`);
+  const credential = getOrganizationNitradoCredential(server.organizationId);
+  if (!credential.token) {
+    throw new Error("Conecte a conta Nitrado desta organizacao antes de descobrir ou validar servidores.");
   }
-  return token;
+  return credential.token;
 }
 
-async function nitradoOnboardingJson(pathname: string) {
-  const token = requireNitradoToken();
+async function nitradoOnboardingJson(pathname: string, serverId: string) {
+  const token = requireNitradoToken(serverId);
   const url = `${NITRADO_API_BASE}${pathname}`;
   let response: globalThis.Response;
   try {
@@ -185,25 +188,70 @@ function mapNitradoService(raw: any): NitradoServiceOption | null {
   };
 }
 
-export function getIntegrationOnboardingStatus() {
+
+export async function testOrganizationNitradoCredential(tokenInput: unknown) {
+  const token = String(tokenInput || "").trim();
+  if (!token) throw new Error("Informe o token Nitrado.");
+  const response = await globalThis.fetch(`${NITRADO_API_BASE}/services`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const text = await response.text();
+  recordNetworkTransfer({
+    service: "nitrado-onboarding",
+    operation: "GET /services credential-test",
+    direction: "outbound",
+    bytes: 0,
+    ok: response.ok,
+  });
+  recordNetworkTransfer({
+    service: "nitrado-onboarding",
+    operation: "GET /services credential-test",
+    direction: "inbound",
+    bytes: Buffer.byteLength(text, "utf8"),
+    ok: response.ok,
+  });
+  if (!response.ok) throw new Error(`Nitrado HTTP ${response.status}. O token nao foi aceito.`);
+  let json: any = {};
+  try { json = text ? JSON.parse(text) : {}; } catch { throw new Error("A Nitrado retornou uma resposta invalida."); }
+  const rawServices: unknown[] = Array.isArray(json?.data?.services)
+    ? json.data.services
+    : Array.isArray(json?.services)
+      ? json.services
+      : Array.isArray(json?.data)
+        ? json.data
+        : [];
+  const services = rawServices.map(mapNitradoService).filter((service): service is NitradoServiceOption => Boolean(service));
+  return {
+    validatedAt: new Date().toISOString(),
+    serviceCount: services.length,
+    dayzServiceCount: services.filter((service) => /dayz/i.test(`${service.name} ${service.game || ""}`)).length,
+  };
+}
+
+export function getIntegrationOnboardingStatus(serverId = getPrimaryServerId()) {
+  const server = getManagedServerById(serverId) || getPrimaryServerDescriptor();
+  const nitradoStatus = getOrganizationIntegrationStatus(server.organizationId);
   return {
     mode: "on-demand" as const,
     backgroundPolling: false,
+    organizationId: server.organizationId,
     nitrado: {
-      credentialSource: process.env.NITRADO_TOKEN ? "environment" as const : "missing" as const,
-      tokenConfigured: Boolean(process.env.NITRADO_TOKEN),
+      credentialSource: nitradoStatus.credentialSource,
+      tokenConfigured: nitradoStatus.configured,
+      encryptedAtRest: nitradoStatus.encryptedAtRest,
       tokenExposedToBrowser: false,
     },
     discord: {
       botConfigured: Boolean(process.env.DISCORD_TOKEN),
+      credentialModel: "platform-bot" as const,
       discoveryMode: "bot-cache/on-demand" as const,
     },
   };
 }
 
 export async function discoverNitradoServices(serverId: string) {
-  assertOnboardingServer(serverId);
-  const json = await nitradoOnboardingJson("/services");
+  const onboardingServer = assertOnboardingServer(serverId);
+  const json = await nitradoOnboardingJson("/services", serverId);
   const rawServices: unknown[] = Array.isArray(json?.data?.services)
     ? json.data.services
     : Array.isArray(json?.services)
@@ -214,7 +262,10 @@ export async function discoverNitradoServices(serverId: string) {
   const assignedByServiceId = new Map(
     listManagedServers()
       .filter((server) => server.id !== serverId && server.integrations.nitradoServiceId)
-      .map((server) => [String(server.integrations.nitradoServiceId), { id: server.id, name: server.name }] as const),
+      .map((server) => [String(server.integrations.nitradoServiceId), {
+        id: server.organizationId === onboardingServer.organizationId ? server.id : "assigned",
+        name: server.organizationId === onboardingServer.organizationId ? server.name : "Outro workspace",
+      }] as const),
   );
   const services = rawServices
     .map(mapNitradoService)
@@ -231,7 +282,7 @@ export async function discoverNitradoServices(serverId: string) {
       return bDayz - aDayz || a.name.localeCompare(b.name);
     })
     .slice(0, 100);
-  return { services, connection: getIntegrationOnboardingStatus().nitrado };
+  return { services, connection: getIntegrationOnboardingStatus(serverId).nitrado };
 }
 
 export async function validateNitradoServiceSetup(serverId: string, serviceIdInput: unknown, baseDirInput: unknown) {
@@ -239,7 +290,7 @@ export async function validateNitradoServiceSetup(serverId: string, serviceIdInp
   const serviceId = String(serviceIdInput || "").trim();
   if (!/^\d+$/.test(serviceId)) throw new Error("Selecione um Nitrado Service ID valido.");
 
-  const details = await nitradoOnboardingJson(`/services/${encodeURIComponent(serviceId)}/gameservers`);
+  const details = await nitradoOnboardingJson(`/services/${encodeURIComponent(serviceId)}/gameservers`, serverId);
   const detectedBaseDir = detectNitradoBaseDir(details);
   const baseDir = String(baseDirInput || detectedBaseDir || "").trim().replace(/\\/g, "/").replace(/\/+$/g, "");
   if (!baseDir) {
@@ -251,6 +302,7 @@ export async function validateNitradoServiceSetup(serverId: string, serviceIdInp
 
   const listJson = await nitradoOnboardingJson(
     `/services/${encodeURIComponent(serviceId)}/gameservers/file_server/list?dir=${encodeURIComponent(baseDir)}`,
+    serverId,
   );
   const entries = Array.isArray(listJson?.data?.entries) ? listJson.data.entries : [];
   const admFilesFound = entries.filter((entry: any) => String(entry?.path || "").toUpperCase().endsWith(".ADM")).length;
@@ -265,25 +317,43 @@ export async function validateNitradoServiceSetup(serverId: string, serviceIdInp
   };
 }
 
-export function listDiscordGuildOptions(serverId: string) {
-  assertOnboardingServer(serverId);
+export async function listDiscordGuildOptions(serverId: string, requesterDiscordId?: string) {
+  const server = assertOnboardingServer(serverId);
   const client = getDiscordClient();
   if (!client.isReady()) {
     return { ready: false, guilds: [] as DiscordGuildOption[], message: "Discord bot ainda nao esta conectado." };
   }
-  const guilds = client.guilds.cache
-    .map((guild) => ({
+  const assigned = new Map(
+    listManagedServers()
+      .filter((candidate) => candidate.integrations.discordGuildId)
+      .map((candidate) => [String(candidate.integrations.discordGuildId), candidate] as const),
+  );
+  const guilds: DiscordGuildOption[] = [];
+  for (const guild of client.guilds.cache.values()) {
+    const owner = assigned.get(guild.id);
+    if (owner && owner.organizationId !== server.organizationId) continue;
+    if (!owner && requesterDiscordId) {
+      try {
+        const member = guild.members.cache.get(requesterDiscordId) || await guild.members.fetch(requesterDiscordId);
+        const canManage = member.permissions.has(PermissionFlagsBits.Administrator) || member.permissions.has(PermissionFlagsBits.ManageGuild);
+        if (!canManage) continue;
+      } catch {
+        continue;
+      }
+    }
+    guilds.push({
       id: guild.id,
       name: guild.name,
       memberCount: Number(guild.memberCount || 0),
       iconUrl: guild.iconURL({ extension: "png", size: 64 }) || undefined,
-    }))
-    .sort((a, b) => a.name.localeCompare(b.name));
-  return { ready: true, guilds, message: guilds.length ? undefined : "O bot nao esta em nenhuma guild disponivel." };
+    });
+  }
+  guilds.sort((a, b) => a.name.localeCompare(b.name));
+  return { ready: true, guilds, message: guilds.length ? undefined : "Nenhum servidor Discord elegivel foi encontrado para esta organizacao." };
 }
 
-export async function listDiscordGuildChannels(serverId: string, guildIdInput: unknown) {
-  assertOnboardingServer(serverId);
+export async function listDiscordGuildChannels(serverId: string, guildIdInput: unknown, requesterDiscordId?: string) {
+  const server = assertOnboardingServer(serverId);
   const guildId = String(guildIdInput || "").trim();
   if (!guildId) throw new Error("Selecione um servidor Discord.");
   const client = getDiscordClient();
@@ -291,6 +361,16 @@ export async function listDiscordGuildChannels(serverId: string, guildIdInput: u
 
   const guild = client.guilds.cache.get(guildId) || await client.guilds.fetch(guildId);
   if (!guild) throw new Error("Discord guild nao encontrada para este bot.");
+  const assigned = listManagedServers().find((candidate) => candidate.integrations.discordGuildId === guildId);
+  if (assigned && assigned.organizationId !== server.organizationId) {
+    throw new Error("Este servidor Discord pertence a outra organizacao.");
+  }
+  if (!assigned && requesterDiscordId) {
+    let member;
+    try { member = guild.members.cache.get(requesterDiscordId) || await guild.members.fetch(requesterDiscordId); } catch { member = null; }
+    const canManage = Boolean(member && (member.permissions.has(PermissionFlagsBits.Administrator) || member.permissions.has(PermissionFlagsBits.ManageGuild)));
+    if (!canManage) throw new Error("Sua conta precisa ter Manage Server ou Administrator neste Discord para conecta-lo.");
+  }
   const fetched = await guild.channels.fetch();
   const channels: DiscordChannelOption[] = [];
   fetched.forEach((channel) => {

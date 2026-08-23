@@ -119,11 +119,23 @@ export function readPortalSession(req: Request): PortalSession | null {
   return { ...session, role: resolvePortalRole(session.discordId) };
 }
 
-export function createOAuthState(req: Request, res: Response, returnTo: string) {
+export type OAuthStateMetadata = {
+  mode?: "portal-login" | "discord-install";
+  serverId?: string;
+  requesterDiscordId?: string;
+};
+
+export function createOAuthState(
+  req: Request,
+  res: Response,
+  returnTo: string,
+  metadata: OAuthStateMetadata = {},
+) {
   const state = {
     nonce: crypto.randomBytes(24).toString("base64url"),
     returnTo: returnTo.startsWith("/") && !returnTo.startsWith("//") ? returnTo : "/app",
     expiresAt: Math.floor(Date.now() / 1000) + STATE_TTL_SECONDS,
+    metadata,
   };
   const token = encodeSignedJson(state);
   res.cookie(OAUTH_STATE_COOKIE, token, {
@@ -146,7 +158,7 @@ export function consumeOAuthState(req: Request, res: Response, receivedState: st
   });
   if (!token) return null;
 
-  const state = decodeSignedJson<{ nonce: string; returnTo: string; expiresAt: number }>(token);
+  const state = decodeSignedJson<{ nonce: string; returnTo: string; expiresAt: number; metadata?: OAuthStateMetadata }>(token);
   if (!state || state.nonce !== receivedState || state.expiresAt <= Math.floor(Date.now() / 1000)) return null;
   return state;
 }

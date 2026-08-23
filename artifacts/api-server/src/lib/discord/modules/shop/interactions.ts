@@ -31,6 +31,7 @@ import {
 } from "./ui";
 import { getPlayerLinkByDiscordId } from "../../../playerLinks";
 import { hasEnoughCoins, purchaseWithWallet } from "../../../economy";
+import { getActiveServerId } from "../../../serverRuntime";
 
 export type ShopInteractionContext = {
   getState: () => Promise<any>;
@@ -172,12 +173,13 @@ export async function handleShopInteraction(interaction: any, ctx: ShopInteracti
         return true;
       }
 
-      if (activeShopConfirmations.has(checkoutId)) {
+      const confirmationKey = `${getActiveServerId()}:${checkoutId}`;
+      if (activeShopConfirmations.has(confirmationKey)) {
         await interaction.editReply(buildShopProcessingPayload(state, interaction.user.id));
         return true;
       }
 
-      activeShopConfirmations.add(checkoutId);
+      activeShopConfirmations.add(confirmationKey);
 
       try {
         const price = Number(checkout.price || 0);
@@ -240,7 +242,7 @@ export async function handleShopInteraction(interaction: any, ctx: ShopInteracti
           files: [],
         });
       } finally {
-        activeShopConfirmations.delete(checkoutId);
+        activeShopConfirmations.delete(confirmationKey);
       }
       return true;
     }

@@ -4,7 +4,7 @@ import crypto from "crypto";
 import sharp from "sharp";
 import { Router, type Request, type Response } from "express";
 import { Routes } from "discord.js";
-import { getShopRuntimeStatus, SHOP_EVENTS_PATH } from "../lib/shop";
+import { deployPendingShopOrders, getShopRuntimeStatus, SHOP_EVENTS_PATH } from "../lib/shop";
 import {
   checkAirdropMilitarySetupNow,
   checkLockedContainerSetupNow,
@@ -66,13 +66,17 @@ import {
   type PlayerLink,
   type Wallet,
   updateManagedServerDraft,
+  updateManagedServerScopedSettings,
   markManagedServerNitradoValidated,
   setManagedServerRuntimeEnabled,
   setManagedServerRuntimePaused,
   flushServerRuntimePendingStateAsync,
   createManagedOrganization,
+  createManagedOrganizationForOwner,
   upsertOrganizationMembership,
   removeOrganizationMembership,
+  saveOrganizationNitradoCredential,
+  removeOrganizationNitradoCredential,
 } from "../lib/state";
 import { getDiscordClient } from "../lib/discordBot";
 import { listDiscordCommandDescriptors, normalizeDiscordCommandSettings } from "../lib/discord/commandSettings";
@@ -90,10 +94,12 @@ import {
   getIntegrationOnboardingStatus,
   listDiscordGuildChannels,
   listDiscordGuildOptions,
+  testOrganizationNitradoCredential,
   validateNitradoServiceSetup,
 } from "../lib/serverIntegrations";
 import { runManagedServerActivationPreflight } from "../lib/serverPreflight";
 import { getPlayerPortalContextDiagnostics } from "../lib/playerPortalServerContext";
+import { getPlayerLinkByGamertag } from "../lib/playerLinks";
 import {
   getManagedServerRuntimeCoordinatorDiagnostics,
   requestManagedServerRuntimeCycle,
@@ -109,7 +115,13 @@ import {
   listManagedOrganizations,
   listOrganizationMemberships,
   listUserOrganizationMemberships,
+  isSaasSelfServiceEnabled,
 } from "../lib/organizationRegistry";
+import {
+  getOrganizationIntegrationStatus,
+  getOrganizationIntegrationsDiagnostics,
+} from "../lib/organizationIntegrations";
+import { getShopCatalogDiagnostics, cloneShopCatalog } from "../lib/shopCatalog";
 
 const router = Router();
 startMapEventScheduler();
@@ -1390,6 +1402,127 @@ function authorizedServersForRequest(req: Request, organizationIdInput?: unknown
     organizationIds.has(server.organizationId)
     && (!requestedOrganizationId || server.organizationId === requestedOrganizationId),
   );
+}
+
+function organizationDiagnosticsForRequest(req: Request) {
+  const diagnostics = getOrganizationFoundationDiagnostics();
+  const integrationDiagnostics = getOrganizationIntegrationsDiagnostics();
+  const thirdPartyOnboardingReady = Boolean(diagnostics.selfServiceEnabled && integrationDiagnostics.encryptionConfigured);
+  if (hasPlatformBootstrapAccess(req)) {
+    return { ...diagnostics, thirdPartyOnboardingReady, secretEncryptionConfigured: integrationDiagnostics.encryptionConfigured };
+  }
+  return {
+    phase: diagnostics.phase,
+    enabled: diagnostics.enabled,
+    initialized: diagnostics.initialized,
+    authorizationModel: diagnostics.authorizationModel,
+    roles: diagnostics.roles,
+    credentialIsolation: diagnostics.credentialIsolation,
+    selfServiceEnabled: diagnostics.selfServiceEnabled,
+    thirdPartyOnboardingReady,
+    secretEncryptionConfigured: integrationDiagnostics.encryptionConfigured,
+    backgroundPollingAdded: diagnostics.backgroundPollingAdded,
+  };
+}
+
+function organizationIntegrationDiagnosticsForRequest(req: Request) {
+  const diagnostics = getOrganizationIntegrationsDiagnostics();
+  if (hasPlatformBootstrapAccess(req)) return diagnostics;
+  return {
+    phase: diagnostics.phase,
+    encryptionConfigured: diagnostics.encryptionConfigured,
+    discordCredentialModel: diagnostics.discordCredentialModel,
+    discordGuildIsolation: diagnostics.discordGuildIsolation,
+    secretsExposedToBrowser: diagnostics.secretsExposedToBrowser,
+  };
+}
+
+function foundationForRequest(req: Request, providedServers?: ReturnType<typeof listManagedServers>) {
+  if (hasPlatformBootstrapAccess(req)) return getServerFoundationDiagnostics();
+  const full = getServerFoundationDiagnostics();
+  const servers = providedServers || authorizedServersForRequest(req);
+  const integrations = organizationIntegrationDiagnosticsForRequest(req);
+  return {
+    phase: full.phase,
+    mode: "tenant-scoped",
+    managedServers: servers.length,
+    additionalServersEnabled: true,
+    onboarding: {
+      canCreateDrafts: Boolean(full.onboarding?.canCreateDrafts),
+      draftServers: servers.filter((server) => server.onboardingStatus === "draft").length,
+      configuredServers: servers.filter((server) => server.onboardingStatus === "configured").length,
+      readyServers: servers.filter((server) => server.onboardingStatus === "ready").length,
+      runtimeEnabledServers: servers.filter((server) => server.runtimeEnabled).length,
+      activationPolicy: full.onboarding?.activationPolicy,
+      secretsStoredInRegistry: false,
+      integrationValidationMode: full.onboarding?.integrationValidationMode,
+      activationPreflightEnabled: Boolean(full.onboarding?.activationPreflightEnabled),
+      activationEndpointEnabled: Boolean(full.onboarding?.activationEndpointEnabled),
+      playerPortalContextSwitchingEnabled: Boolean(full.onboarding?.playerPortalContextSwitchingEnabled),
+      operationalHardeningEnabled: Boolean(full.onboarding?.operationalHardeningEnabled),
+      multiTenantFoundationEnabled: true,
+      organizationAuthorizationEnabled: true,
+      organizationCredentialIsolationEnabled: true,
+      serverScopedCommerceSettingsEnabled: true,
+      serverScopedShopCatalogEnabled: true,
+      backgroundPollingAdded: false,
+      backgroundRegistryWritesAdded: false,
+    },
+    tenancy: {
+      authorizationModel: full.tenancy?.authorizationModel || "organization-membership-rbac",
+      credentialIsolation: full.tenancy?.credentialIsolation || "organization-nitrado+platform-discord",
+      selfServiceEnabled: Boolean(full.tenancy?.selfServiceEnabled),
+      thirdPartyOnboardingReady: Boolean(full.tenancy?.thirdPartyOnboardingReady),
+      integrations,
+    },
+    safety: {
+      organizationOwnershipRequired: true,
+      organizationRbacPrepared: true,
+      organizationNitradoCredentialIsolation: true,
+      discordCrossOrganizationDiscoveryBlocked: true,
+      serverScopedCommerceSettings: true,
+      serverScopedShopCatalog: true,
+      nitradoTokenNeverReturnedToBrowser: true,
+      centralizedScheduler: true,
+      perServerExecutionContext: true,
+      perServerStateCache: true,
+      perServerPersistenceRuntime: true,
+      perServerPositionHistory: true,
+      activationPreflightGate: true,
+      secondaryCircuitBreaker: true,
+    },
+  };
+}
+
+function runtimeCoordinatorForRequest(req: Request, providedServers?: ReturnType<typeof listManagedServers>) {
+  const diagnostics = getManagedServerRuntimeCoordinatorDiagnostics();
+  if (hasPlatformBootstrapAccess(req)) return diagnostics;
+  const servers = providedServers || authorizedServersForRequest(req);
+  const allowedIds = new Set(servers.map((server) => server.id));
+  const scopedServers = diagnostics.servers.filter((server) => allowedIds.has(server.serverId));
+  const activeRuntimeIds = diagnostics.activeRuntimeIds.filter((serverId) => allowedIds.has(serverId));
+  return {
+    scheduler: diagnostics.scheduler,
+    intervalMs: diagnostics.intervalMs,
+    healthPolicy: diagnostics.healthPolicy,
+    schedulerRunning: diagnostics.schedulerRunning,
+    activeRuntimeIds,
+    activeRuntimes: activeRuntimeIds.length,
+    requestedImmediateRuns: diagnostics.requestedImmediateRuns.filter((serverId) => allowedIds.has(serverId)),
+    servers: scopedServers,
+  };
+}
+
+function catalogIsolationForRequest(req: Request, serverId: string) {
+  if (hasPlatformBootstrapAccess(req)) return getShopCatalogDiagnostics();
+  const diagnostics = getShopCatalogDiagnostics();
+  return {
+    phase: diagnostics.phase,
+    cacheModel: diagnostics.cacheModel,
+    tableModel: diagnostics.tableModel,
+    serverId,
+    legacyTablesReadOnlyMigrationSource: diagnostics.legacyTablesReadOnlyMigrationSource,
+  };
 }
 
 function setPanelCookie(req: Request, res: Response) {
@@ -4655,15 +4788,15 @@ function renderAdminPanelHtml(token: string) {
               <div class="card">
                 <div class="section-title">
                   <div><h2>Server onboarding</h2><div class="member-meta">Valide integrações e execute um preflight completo antes da ativação manual de qualquer servidor adicional.</div></div>
-                  <span class="chip online">Phase 15 · SaaS foundation</span>
+                  <span class="chip online">Phase 16 · Self-service & isolation</span>
                 </div>
-                <div class="server-onboarding-notice">A Fase 15 adiciona ownership por organização e RBAC sem alterar os runtimes. PZ Deathmatch e PZ Survival permanecem no mesmo workspace inicial, com state, ADM, economia e operação isolados por servidor.</div>
+                <div class="server-onboarding-notice">A Fase 16 mantém ownership/RBAC e adiciona credencial Nitrado por organização, catálogo/settings por servidor e um onboarding SaaS separado. O workspace atual continua compatível com o token Nitrado legado enquanto você migra.</div>
               </div>
 
               <div class="card" style="margin-top:16px">
                 <div class="section-title">
                   <div><h2>SaaS workspace</h2><div class="member-meta">Ownership e autorização da organização que contém os servidores atuais.</div></div>
-                  <button id="organizationRefresh" class="ghost-btn" type="button">Atualizar</button>
+                  <div class="server-onboarding-actions"><a class="ghost-btn" href="/saas" style="text-decoration:none">Abrir onboarding SaaS</a><button id="organizationRefresh" class="ghost-btn" type="button">Atualizar</button></div>
                 </div>
                 <div id="organizationSummary" class="command-settings-summary" style="margin-top:12px"><span class="chip">Carregando...</span></div>
                 <div class="form-grid" style="margin-top:14px">
@@ -6818,7 +6951,7 @@ function renderAdminPanelHtml(token: string) {
             '<td>' + (failureCount ? '<span class="chip" style="color:#ff7b7b">' + failureCount.toLocaleString() + '</span>' : '<span class="chip online">0</span>') + '<br><span class="member-meta">consecutive ' + Number(runtimeMetrics.consecutiveFailures || 0).toLocaleString() + ' · skipped ' + Number(runtimeMetrics.circuitSkips || 0).toLocaleString() + '</span>' + (runtimeMetrics.lastError ? '<br><span class="member-meta">' + escapeHtml(runtimeMetrics.lastError) + '</span>' : '') + '</td>' +
           '</tr>';
         }).join('') : '<tr><td colspan="9" class="member-meta">Per-server runtime diagnostics become available after the server registry is loaded.</td></tr>';
-        metrics.innerHTML = '<div class="settings-card" style="margin-bottom:16px"><div class="settings-card-head"><div><h3>Runtime diagnostics by server</h3><p>Phase 15 keeps the Phase 14 operational guards and adds organization ownership/RBAC without creating new pollers.</p></div></div>' +
+        metrics.innerHTML = '<div class="settings-card" style="margin-bottom:16px"><div class="settings-card-head"><div><h3>Runtime diagnostics by server</h3><p>Phase 16 keeps the operational guards and adds tenant credentials, per-server catalog/settings and self-service without creating new pollers.</p></div></div>' +
           '<div class="table-wrap"><table><thead><tr><th>Server</th><th>Runtime</th><th>Boot source</th><th>V2 flushes / rows</th><th>Player stats rows</th><th>Position rows</th><th>ADM cycles / downloads</th><th>Main cycles</th><th>Failures</th></tr></thead><tbody>' + serverObservabilityRows + '</tbody></table></div>' +
           '<div class="member-meta" style="margin-top:10px">The detailed persistence sections below are scoped to <strong>' + escapeHtml(state.serverFoundation?.currentServerName || 'the primary server') + '</strong>. Network & Render bandwidth remains process-wide by design.</div></div>' +
         '<div class="overview-grid" style="grid-template-columns:repeat(6,minmax(0,1fr))">' +
@@ -6861,10 +6994,10 @@ function renderAdminPanelHtml(token: string) {
             ['stats','processing','social','commerce','config'].map((key) => { const d = domainRows[key] || {}; return '<tr><td><code>' + escapeHtml(key) + '</code></td><td>' + formatBytes(Number(d.currentBytes || 0)) + '</td><td>' + Number(d.changes || 0).toLocaleString() + '</td><td>' + Number(d.writes || 0).toLocaleString() + '</td><td>' + formatBytes(Number(d.bytesWritten || 0)) + '</td></tr>'; }).join('') +
           '</tbody></table></div>' +
         '</div>' +
-        '<div class="settings-card" style="margin-top:16px"><div class="settings-card-head"><div><h3>Multi-server foundation</h3><p>Phase 15 wraps the existing multi-server runtime in organization ownership and RBAC while preserving per-runtime health, pause/resume, circuit breaker and the centralized scheduler.</p></div></div>' +
-        '<div class="diag-grid"><div><span>Phase</span><strong>' + Number(state.serverFoundation?.phase || 1).toLocaleString() + '</strong></div><div><span>Mode</span><strong>' + escapeHtml(String(state.serverFoundation?.mode || 'single-server-compat')) + '</strong></div><div><span>Current server</span><strong>' + escapeHtml(String(state.serverFoundation?.currentServerName || 'PZ Deathmatch')) + '</strong></div><div><span>Server ID</span><strong>' + escapeHtml(String(state.serverFoundation?.currentServerId || 'pz-deathmatch')) + '</strong></div><div><span>Registry persisted</span><strong>' + (state.serverFoundation?.registryPersisted ? 'Yes' : 'No') + '</strong></div><div><span>Rows tagged</span><strong>' + (state.serverFoundation?.persistenceTaggedWithServerId ? 'Yes' : 'No') + '</strong></div><div><span>bot_state PK</span><strong>' + (state.serverFoundation?.namespace?.botStatePrimaryKeyReady ? 'server + id' : 'Legacy') + '</strong></div><div><span>Player stats PK</span><strong>' + (state.serverFoundation?.namespace?.playerStatsPrimaryKeyReady ? 'server + player' : 'Legacy') + '</strong></div><div><span>Scoped reads</span><strong>' + (state.serverFoundation?.persistenceNamespaced ? 'Enabled' : 'Fallback') + '</strong></div><div><span>Nitrado routing</span><strong>' + (state.serverFoundation?.runtimeIsolation?.nitradoRoutingNamespaced ? 'Server-scoped' : 'Legacy') + '</strong></div><div><span>Discord routing</span><strong>' + (state.serverFoundation?.runtimeIsolation?.discordRoutingNamespaced ? 'Server-scoped' : 'Legacy') + '</strong></div><div><span>Processing lock</span><strong>' + (state.serverFoundation?.runtimeIsolation?.processingLockNamespaced ? 'Per server' : 'Global') + '</strong></div><div><span>ADM storage</span><strong>' + (state.serverFoundation?.runtimeIsolation?.primaryLegacyAdmStoragePreserved ? 'Primary preserved' : 'Namespaced') + '</strong></div><div><span>Execution context</span><strong>' + (state.serverFoundation?.runtimeIsolation?.executionContextNamespaced ? 'Per server' : 'Legacy') + '</strong></div><div><span>State cache</span><strong>' + (state.serverFoundation?.runtimeIsolation?.stateCacheNamespaced ? 'Per server' : 'Legacy') + '</strong></div><div><span>ADM strategy</span><strong>' + (state.serverFoundation?.runtimeIsolation?.admStrategyNamespaced ? 'Per server' : 'Global') + '</strong></div><div><span>ADM parser storage</span><strong>' + (state.serverFoundation?.runtimeIsolation?.admParserStorageNamespaced ? 'Per server' : 'Legacy') + '</strong></div><div><span>Persistence runtime</span><strong>' + (state.serverFoundation?.runtimeIsolation?.persistenceRuntimeNamespaced ? 'Per server' : 'Global') + '</strong></div><div><span>Position history</span><strong>' + (state.serverFoundation?.runtimeIsolation?.positionHistoryNamespaced ? 'Server-scoped' : 'Global') + '</strong></div><div><span>HTTP context</span><strong>' + (state.serverFoundation?.runtimeIsolation?.httpContextNamespaced ? 'Explicit primary' : 'Fallback') + '</strong></div><div><span>Player portal context</span><strong>' + (state.serverFoundation?.runtimeIsolation?.playerPortalContextNamespaced ? 'Per server' : 'Primary only') + '</strong></div><div><span>FTP safety</span><strong>' + (state.serverFoundation?.runtimeIsolation?.ftpPrimaryGuarded ? 'Primary guarded' : 'Global credentials') + '</strong></div><div><span>Discord loop guards</span><strong>' + (state.serverFoundation?.runtimeIsolation?.discordLoopGuardsNamespaced ? 'Per server' : 'Global') + '</strong></div><div><span>Scheduler</span><strong>' + (state.serverFoundation?.runtimeIsolation?.schedulerCentralized ? 'Centralized' : 'Unknown') + '</strong></div><div><span>Activation readiness</span><strong>' + (state.serverFoundation?.runtimeIsolation?.activationReadiness ? 'Prepared' : 'Pending') + '</strong></div><div><span>Context runs</span><strong>' + Number(state.serverFoundation?.runtimeIsolation?.contextRuns || 0).toLocaleString() + '</strong></div><div><span>Context fallbacks</span><strong>' + Number(state.serverFoundation?.runtimeIsolation?.contextFallbacks || 0).toLocaleString() + '</strong></div><div><span>Managed servers</span><strong>' + Number(state.serverFoundation?.managedServers || 1).toLocaleString() + '</strong></div><div><span>Server onboarding</span><strong>' + (state.serverFoundation?.onboarding?.canCreateDrafts ? 'Drafts enabled' : 'Unavailable') + '</strong></div><div><span>Draft servers</span><strong>' + Number(state.serverFoundation?.onboarding?.draftServers || 0).toLocaleString() + '</strong></div><div><span>Configured servers</span><strong>' + Number(state.serverFoundation?.onboarding?.configuredServers || 0).toLocaleString() + '</strong></div><div><span>Ready servers</span><strong>' + Number(state.serverFoundation?.onboarding?.readyServers || 0).toLocaleString() + '</strong></div><div><span>Preflight gate</span><strong>' + (state.serverFoundation?.onboarding?.activationPreflightEnabled ? 'On-demand' : 'Unavailable') + '</strong></div><div><span>Activation endpoint</span><strong>' + (state.serverFoundation?.onboarding?.activationEndpointEnabled ? 'Enabled' : 'None') + '</strong></div><div><span>Runtime policy</span><strong>' + escapeHtml(String(state.serverFoundation?.onboarding?.activationPolicy || 'primary-only')) + '</strong></div><div><span>Secrets in registry</span><strong>' + (state.serverFoundation?.onboarding?.secretsStoredInRegistry ? 'Yes' : 'No') + '</strong></div><div><span>Integration setup</span><strong>' + escapeHtml(String(state.serverFoundation?.onboarding?.integrationValidationMode || 'on-demand')) + '</strong></div><div><span>Nitrado credential</span><strong>' + escapeHtml(String(state.serverFoundation?.onboarding?.nitradoCredentialSource || 'missing')) + '</strong></div><div><span>Integration polling</span><strong>' + (state.serverFoundation?.onboarding?.backgroundPollingAdded ? 'Added' : 'None') + '</strong></div><div><span>Additional servers</span><strong>' + (state.serverFoundation?.additionalServersEnabled ? 'Enabled' : 'Blocked') + '</strong></div><div><span>Active runtimes</span><strong>' + Number(state.runtimeCoordinator?.activeRuntimes || state.serverFoundation?.onboarding?.runtimeEnabledServers || 1).toLocaleString() + '</strong></div><div><span>Operational health</span><strong>' + (state.serverFoundation?.onboarding?.operationalHardeningEnabled ? 'Per server' : 'Legacy') + '</strong></div><div><span>Circuit breaker</span><strong>' + escapeHtml(String(state.serverFoundation?.onboarding?.circuitBreakerMode || 'off')) + '</strong></div><div><span>Organizations</span><strong>' + Number(state.serverFoundation?.tenancy?.organizations || 0).toLocaleString() + '</strong></div><div><span>Memberships</span><strong>' + Number(state.serverFoundation?.tenancy?.memberships || 0).toLocaleString() + '</strong></div><div><span>Server ownership</span><strong>' + (state.serverFoundation?.tenancy?.ownershipColumnReady && Number(state.serverFoundation?.tenancy?.serversWithoutOrganization || 0) === 0 ? 'Required' : 'Pending') + '</strong></div><div><span>Tenant auth</span><strong>' + escapeHtml(String(state.serverFoundation?.tenancy?.authorizationModel || 'legacy')) + '</strong></div></div>' +
+        '<div class="settings-card" style="margin-top:16px"><div class="settings-card-head"><div><h3>Multi-server foundation</h3><p>Phase 16 extends organization ownership/RBAC with encrypted tenant Nitrado credentials, per-server commerce settings/catalog and self-service while preserving the centralized scheduler.</p></div></div>' +
+        '<div class="diag-grid"><div><span>Phase</span><strong>' + Number(state.serverFoundation?.phase || 1).toLocaleString() + '</strong></div><div><span>Mode</span><strong>' + escapeHtml(String(state.serverFoundation?.mode || 'single-server-compat')) + '</strong></div><div><span>Current server</span><strong>' + escapeHtml(String(state.serverFoundation?.currentServerName || 'PZ Deathmatch')) + '</strong></div><div><span>Server ID</span><strong>' + escapeHtml(String(state.serverFoundation?.currentServerId || 'pz-deathmatch')) + '</strong></div><div><span>Registry persisted</span><strong>' + (state.serverFoundation?.registryPersisted ? 'Yes' : 'No') + '</strong></div><div><span>Rows tagged</span><strong>' + (state.serverFoundation?.persistenceTaggedWithServerId ? 'Yes' : 'No') + '</strong></div><div><span>bot_state PK</span><strong>' + (state.serverFoundation?.namespace?.botStatePrimaryKeyReady ? 'server + id' : 'Legacy') + '</strong></div><div><span>Player stats PK</span><strong>' + (state.serverFoundation?.namespace?.playerStatsPrimaryKeyReady ? 'server + player' : 'Legacy') + '</strong></div><div><span>Scoped reads</span><strong>' + (state.serverFoundation?.persistenceNamespaced ? 'Enabled' : 'Fallback') + '</strong></div><div><span>Nitrado routing</span><strong>' + (state.serverFoundation?.runtimeIsolation?.nitradoRoutingNamespaced ? 'Server-scoped' : 'Legacy') + '</strong></div><div><span>Discord routing</span><strong>' + (state.serverFoundation?.runtimeIsolation?.discordRoutingNamespaced ? 'Server-scoped' : 'Legacy') + '</strong></div><div><span>Processing lock</span><strong>' + (state.serverFoundation?.runtimeIsolation?.processingLockNamespaced ? 'Per server' : 'Global') + '</strong></div><div><span>ADM storage</span><strong>' + (state.serverFoundation?.runtimeIsolation?.primaryLegacyAdmStoragePreserved ? 'Primary preserved' : 'Namespaced') + '</strong></div><div><span>Execution context</span><strong>' + (state.serverFoundation?.runtimeIsolation?.executionContextNamespaced ? 'Per server' : 'Legacy') + '</strong></div><div><span>State cache</span><strong>' + (state.serverFoundation?.runtimeIsolation?.stateCacheNamespaced ? 'Per server' : 'Legacy') + '</strong></div><div><span>ADM strategy</span><strong>' + (state.serverFoundation?.runtimeIsolation?.admStrategyNamespaced ? 'Per server' : 'Global') + '</strong></div><div><span>ADM parser storage</span><strong>' + (state.serverFoundation?.runtimeIsolation?.admParserStorageNamespaced ? 'Per server' : 'Legacy') + '</strong></div><div><span>Persistence runtime</span><strong>' + (state.serverFoundation?.runtimeIsolation?.persistenceRuntimeNamespaced ? 'Per server' : 'Global') + '</strong></div><div><span>Position history</span><strong>' + (state.serverFoundation?.runtimeIsolation?.positionHistoryNamespaced ? 'Server-scoped' : 'Global') + '</strong></div><div><span>HTTP context</span><strong>' + (state.serverFoundation?.runtimeIsolation?.httpContextNamespaced ? 'Explicit primary' : 'Fallback') + '</strong></div><div><span>Player portal context</span><strong>' + (state.serverFoundation?.runtimeIsolation?.playerPortalContextNamespaced ? 'Per server' : 'Primary only') + '</strong></div><div><span>FTP safety</span><strong>' + (state.serverFoundation?.runtimeIsolation?.ftpPrimaryGuarded ? 'Primary guarded' : 'Global credentials') + '</strong></div><div><span>Discord loop guards</span><strong>' + (state.serverFoundation?.runtimeIsolation?.discordLoopGuardsNamespaced ? 'Per server' : 'Global') + '</strong></div><div><span>Scheduler</span><strong>' + (state.serverFoundation?.runtimeIsolation?.schedulerCentralized ? 'Centralized' : 'Unknown') + '</strong></div><div><span>Activation readiness</span><strong>' + (state.serverFoundation?.runtimeIsolation?.activationReadiness ? 'Prepared' : 'Pending') + '</strong></div><div><span>Context runs</span><strong>' + Number(state.serverFoundation?.runtimeIsolation?.contextRuns || 0).toLocaleString() + '</strong></div><div><span>Context fallbacks</span><strong>' + Number(state.serverFoundation?.runtimeIsolation?.contextFallbacks || 0).toLocaleString() + '</strong></div><div><span>Managed servers</span><strong>' + Number(state.serverFoundation?.managedServers || 1).toLocaleString() + '</strong></div><div><span>Server onboarding</span><strong>' + (state.serverFoundation?.onboarding?.canCreateDrafts ? 'Drafts enabled' : 'Unavailable') + '</strong></div><div><span>Draft servers</span><strong>' + Number(state.serverFoundation?.onboarding?.draftServers || 0).toLocaleString() + '</strong></div><div><span>Configured servers</span><strong>' + Number(state.serverFoundation?.onboarding?.configuredServers || 0).toLocaleString() + '</strong></div><div><span>Ready servers</span><strong>' + Number(state.serverFoundation?.onboarding?.readyServers || 0).toLocaleString() + '</strong></div><div><span>Preflight gate</span><strong>' + (state.serverFoundation?.onboarding?.activationPreflightEnabled ? 'On-demand' : 'Unavailable') + '</strong></div><div><span>Activation endpoint</span><strong>' + (state.serverFoundation?.onboarding?.activationEndpointEnabled ? 'Enabled' : 'None') + '</strong></div><div><span>Runtime policy</span><strong>' + escapeHtml(String(state.serverFoundation?.onboarding?.activationPolicy || 'primary-only')) + '</strong></div><div><span>Secrets in registry</span><strong>' + (state.serverFoundation?.onboarding?.secretsStoredInRegistry ? 'Yes' : 'No') + '</strong></div><div><span>Integration setup</span><strong>' + escapeHtml(String(state.serverFoundation?.onboarding?.integrationValidationMode || 'on-demand')) + '</strong></div><div><span>Nitrado credential</span><strong>' + escapeHtml(String(state.serverFoundation?.onboarding?.nitradoCredentialSource || 'missing')) + '</strong></div><div><span>Integration polling</span><strong>' + (state.serverFoundation?.onboarding?.backgroundPollingAdded ? 'Added' : 'None') + '</strong></div><div><span>Additional servers</span><strong>' + (state.serverFoundation?.additionalServersEnabled ? 'Enabled' : 'Blocked') + '</strong></div><div><span>Active runtimes</span><strong>' + Number(state.runtimeCoordinator?.activeRuntimes || state.serverFoundation?.onboarding?.runtimeEnabledServers || 1).toLocaleString() + '</strong></div><div><span>Operational health</span><strong>' + (state.serverFoundation?.onboarding?.operationalHardeningEnabled ? 'Per server' : 'Legacy') + '</strong></div><div><span>Circuit breaker</span><strong>' + escapeHtml(String(state.serverFoundation?.onboarding?.circuitBreakerMode || 'off')) + '</strong></div><div><span>Organizations</span><strong>' + Number(state.serverFoundation?.tenancy?.organizations || 0).toLocaleString() + '</strong></div><div><span>Memberships</span><strong>' + Number(state.serverFoundation?.tenancy?.memberships || 0).toLocaleString() + '</strong></div><div><span>Server ownership</span><strong>' + (state.serverFoundation?.tenancy?.ownershipColumnReady && Number(state.serverFoundation?.tenancy?.serversWithoutOrganization || 0) === 0 ? 'Required' : 'Pending') + '</strong></div><div><span>Tenant auth</span><strong>' + escapeHtml(String(state.serverFoundation?.tenancy?.authorizationModel || 'legacy')) + '</strong></div><div><span>Tenant credentials</span><strong>' + escapeHtml(String(state.serverFoundation?.tenancy?.credentialIsolation || 'pending')) + '</strong></div><div><span>Secret encryption</span><strong>' + (state.serverFoundation?.tenancy?.integrations?.encryptionConfigured ? 'Ready' : 'Missing key') + '</strong></div><div><span>Self-service</span><strong>' + (state.serverFoundation?.tenancy?.selfServiceEnabled ? 'Enabled' : 'Private / disabled') + '</strong></div><div><span>Shop catalog</span><strong>' + (state.serverFoundation?.onboarding?.serverScopedShopCatalogEnabled ? 'Per server' : 'Shared') + '</strong></div><div><span>Commerce settings</span><strong>' + (state.serverFoundation?.onboarding?.serverScopedCommerceSettingsEnabled ? 'Per server' : 'Shared') + '</strong></div></div>' +
         '<div class="member-meta" style="margin-top:10px">Registry table: ' + (state.serverFoundation?.registry?.tableReady ? 'ready' : 'not ready') + ' · Primary seeded: ' + (state.serverFoundation?.registry?.primarySeeded ? 'yes' : 'no') + ' · bot_state tagged/untagged: ' + Number(state.serverFoundation?.namespace?.botStateTaggedRows || 0).toLocaleString() + '/' + Number(state.serverFoundation?.namespace?.botStateUntaggedRows || 0).toLocaleString() + ' · player stats tagged/untagged: ' + Number(state.serverFoundation?.namespace?.playerStatsTaggedRows || 0).toLocaleString() + '/' + Number(state.serverFoundation?.namespace?.playerStatsUntaggedRows || 0).toLocaleString() + ' · PK cutover: ' + (state.serverFoundation?.namespace?.primaryKeyCutoverComplete ? 'complete' : 'pending') + ' · Scoped read source: ' + escapeHtml(String(state.serverFoundation?.namespace?.lastScopedReadSource || 'legacy')) + ' · Fallbacks: ' + Number(state.serverFoundation?.namespace?.scopedReadFallbacks || 0).toLocaleString() + ' · Registry drafts/configured: ' + Number(state.serverFoundation?.registry?.draftRows || 0).toLocaleString() + '/' + Number(state.serverFoundation?.registry?.configuredRows || 0).toLocaleString() + ' · Runtime rows: ' + Number(state.serverFoundation?.registry?.runtimeEnabledRows || 0).toLocaleString() + ' · Portal resolutions/switches: ' + Number(state.playerPortalContext?.contextResolutions || 0).toLocaleString() + '/' + Number(state.playerPortalContext?.contextSwitches || 0).toLocaleString() + ' · Invalid portal selections: ' + Number(state.playerPortalContext?.invalidSelections || 0).toLocaleString() + (state.serverFoundation?.namespace?.lastError ? ' · Namespace error: ' + escapeHtml(String(state.serverFoundation.namespace.lastError)) : '') + '</div>' +
-        '<div class="settings-note" style="margin-top:12px">Safety: Phase 15 does not move or rewrite gameplay data. Existing servers are backfilled into one organization; tenant users are authorized by organization membership + role, while the legacy admin token remains only as a platform-bootstrap escape hatch during the SaaS migration.</div></div>' +
+        '<div class="settings-note" style="margin-top:12px">Safety: Phase 16 does not move or rewrite gameplay data. The default organization may keep the legacy Nitrado environment token as a compatibility fallback; other organizations can only use their own encrypted credential. Catalog and runtime settings are server-scoped.</div></div>' +
         '<div class="settings-card" style="margin-top:16px"><div class="settings-card-head"><div><h3>Granular player stats</h3><p>Global K/D and current streaks are upserted only for players that changed, instead of retransmitting the full historical player map.</p></div></div>' +
           '<div class="overview-grid" style="grid-template-columns:repeat(8,minmax(0,1fr))">' +
             '<div class="stat-card"><span>Status</span><strong>' + (granularPlayers.enabled === false ? 'Fallback' : 'Active') + '</strong></div>' +
@@ -7324,7 +7457,7 @@ function renderAdminPanelHtml(token: string) {
       if (els.managedServerNitradoConnection) {
         els.managedServerNitradoConnection.innerHTML = nitradoConnection?.tokenConfigured
           ? '<strong>Conta Nitrado disponível</strong><br>Usando a credencial protegida no backend. O token não é retornado para esta página.'
-          : '<strong>Conexão Nitrado indisponível</strong><br>NITRADO_TOKEN não está configurado no ambiente do serviço.';
+          : '<strong>Conexão Nitrado indisponível</strong><br>Conecte uma credencial Nitrado para a organização deste servidor.';
       }
       if (els.managedServerNitradoValidationMeta) {
         els.managedServerNitradoValidationMeta.textContent = integration.nitradoValidationPersisted
@@ -8399,7 +8532,7 @@ function renderAdminPanelHtml(token: string) {
 </html>`;
 }
 
-// Phase 15 closes legacy admin API gaps centrally. Server/organization routes
+// Phase 16 keeps legacy admin API gaps closed centrally. Server/organization routes
 // have their own ownership-aware guards below; every other admin API is pinned
 // to the primary organization and derives read/write capability from HTTP method.
 router.use("/api", (req, res, next) => {
@@ -8434,7 +8567,7 @@ router.get("/api/service-settings", async (req, res) => {
       playerPositionHistoryMetrics: getPlayerPositionHistoryMetrics(),
       admDownloadMetrics: getAdmDownloadMetrics(),
       runtimeMetrics: getRuntimePerformanceMetrics(),
-      runtimeCoordinator: getManagedServerRuntimeCoordinatorDiagnostics(),
+      runtimeCoordinator: runtimeCoordinatorForRequest(req),
       serverRuntimeObservability: buildServerRuntimeObservability(),
       playerPortalContext: getPlayerPortalContextDiagnostics(),
       networkMetrics: getNetworkMetrics(),
@@ -8478,7 +8611,7 @@ router.patch("/api/service-settings", async (req, res) => {
       playerPositionHistoryMetrics: getPlayerPositionHistoryMetrics(),
       admDownloadMetrics: getAdmDownloadMetrics(),
       runtimeMetrics: getRuntimePerformanceMetrics(),
-      runtimeCoordinator: getManagedServerRuntimeCoordinatorDiagnostics(),
+      runtimeCoordinator: runtimeCoordinatorForRequest(req),
       serverRuntimeObservability: buildServerRuntimeObservability(),
       playerPortalContext: getPlayerPortalContextDiagnostics(),
       networkMetrics: getNetworkMetrics(),
@@ -8546,7 +8679,7 @@ router.get("/api/organization", async (req, res) => {
     membership: req.portalSession ? getUserOrganizationMembership(req.portalSession.discordId, organizationId) || null : null,
     members: listOrganizationMemberships(organizationId),
     servers: listManagedServers().filter((server) => server.organizationId === organizationId),
-    diagnostics: getOrganizationFoundationDiagnostics(),
+    diagnostics: organizationDiagnosticsForRequest(req),
     platformBootstrap: hasPlatformBootstrapAccess(req),
   });
 });
@@ -8575,15 +8708,87 @@ router.delete("/api/organization/members/:discordId", async (req, res) => {
 
 router.get("/api/organizations", async (req, res) => {
   if (hasPlatformBootstrapAccess(req)) {
-    res.json({ organizations: listManagedOrganizations(), diagnostics: getOrganizationFoundationDiagnostics() });
+    res.json({ organizations: listManagedOrganizations(), diagnostics: organizationDiagnosticsForRequest(req) });
     return;
   }
   if (!req.portalSession) { res.status(401).json({ error: "AUTH_REQUIRED" }); return; }
   const allowedIds = new Set(listUserOrganizationMemberships(req.portalSession.discordId).map((membership) => membership.organizationId));
   res.json({
     organizations: listManagedOrganizations().filter((organization) => allowedIds.has(organization.id)),
-    diagnostics: getOrganizationFoundationDiagnostics(),
+    diagnostics: organizationDiagnosticsForRequest(req),
   });
+});
+
+router.post("/api/organizations/self-service", async (req, res) => {
+  if (!req.portalSession) { res.status(401).json({ error: "AUTH_REQUIRED" }); return; }
+  const integrationDiagnostics = getOrganizationIntegrationsDiagnostics();
+  if (!isSaasSelfServiceEnabled() || !integrationDiagnostics.encryptionConfigured) {
+    res.status(403).json({
+      error: "SELF_SERVICE_NOT_READY",
+      message: !isSaasSelfServiceEnabled()
+        ? "O onboarding SaaS esta fechado para novos clientes neste ambiente."
+        : "Configure ADM_SECRETS_KEY com pelo menos 32 caracteres antes de abrir o self-service.",
+    });
+    return;
+  }
+  const existing = listUserOrganizationMemberships(req.portalSession.discordId);
+  if (existing.length) {
+    res.status(409).json({ error: "ORGANIZATION_ALREADY_EXISTS", organizationId: existing[0].organizationId });
+    return;
+  }
+  try {
+    const organization = await createManagedOrganizationForOwner(req.body || {}, req.portalSession.discordId);
+    res.status(201).json({ organization, membership: getUserOrganizationMembership(req.portalSession.discordId, organization?.id) || null });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(/ja existe/i.test(message) ? 409 : 400).send(message);
+  }
+});
+
+router.get("/api/organizations/:organizationId/integrations", async (req, res) => {
+  const organizationId = buildOrganizationId(req.params.organizationId);
+  if (!requireOrganizationAccess(req, res, organizationId, "view")) return;
+  res.json({
+    organizationId,
+    nitrado: getOrganizationIntegrationStatus(organizationId),
+    discord: {
+      configured: Boolean(process.env.DISCORD_TOKEN),
+      credentialModel: "platform-bot",
+      tokenExposedToBrowser: false,
+    },
+    diagnostics: organizationIntegrationDiagnosticsForRequest(req),
+  });
+});
+
+router.post("/api/organizations/:organizationId/integrations/nitrado", async (req, res) => {
+  const organizationId = buildOrganizationId(req.params.organizationId);
+  if (!requireOrganizationAccess(req, res, organizationId, "own")) return;
+  try {
+    const validation = await testOrganizationNitradoCredential(req.body?.token);
+    await saveOrganizationNitradoCredential(organizationId, req.body?.token, validation);
+    res.json({ organizationId, validation, nitrado: getOrganizationIntegrationStatus(organizationId) });
+  } catch (err) {
+    res.status(400).send(err instanceof Error ? err.message : String(err));
+  }
+});
+
+router.delete("/api/organizations/:organizationId/integrations/nitrado", async (req, res) => {
+  const organizationId = buildOrganizationId(req.params.organizationId);
+  if (!requireOrganizationAccess(req, res, organizationId, "own")) return;
+  try {
+    const runningServers = listManagedServers().filter((server) => server.organizationId === organizationId && server.runtimeEnabled);
+    if (runningServers.length) {
+      res.status(409).json({
+        error: "NITRADO_CREDENTIAL_IN_USE",
+        message: `Desative os runtimes da organizacao antes de remover a credencial Nitrado (${runningServers.map((server) => server.name).join(", ")}).`,
+      });
+      return;
+    }
+    await removeOrganizationNitradoCredential(organizationId);
+    res.json({ organizationId, nitrado: getOrganizationIntegrationStatus(organizationId) });
+  } catch (err) {
+    res.status(400).send(err instanceof Error ? err.message : String(err));
+  }
 });
 
 router.post("/api/organizations", async (req, res) => {
@@ -8633,36 +8838,43 @@ router.delete("/api/organizations/:organizationId/members/:discordId", async (re
 });
 
 router.get("/api/servers", async (req, res) => {
-  if (!requireAdmin(req, res, "view")) return;
-  const foundation = getServerFoundationDiagnostics();
-  const primaryServer = getPrimaryServerDescriptor();
+  if (!hasPlatformBootstrapAccess(req) && !req.portalSession) { res.status(401).json({ error: "AUTH_REQUIRED" }); return; }
+  const servers = authorizedServersForRequest(req);
+  const foundation = foundationForRequest(req, servers);
+  const currentServer = servers.find((server) => server.primary) || servers[0] || null;
   res.json({
-    mode: "single-server-compat",
-    currentServer: primaryServer,
-    servers: authorizedServersForRequest(req, primaryServer.organizationId),
+    mode: hasPlatformBootstrapAccess(req) ? "single-server-compat" : "tenant-scoped",
+    currentServer,
+    servers,
     canCreateServer: Boolean(foundation.onboarding?.canCreateDrafts),
     runtimeActivationBlocked: false,
     activationEndpointAvailable: true,
-    runtimeCoordinator: getManagedServerRuntimeCoordinatorDiagnostics(),
+    runtimeCoordinator: runtimeCoordinatorForRequest(req, servers),
     preflightEnabled: true,
     secretsAccepted: false,
-    integrationSetup: getIntegrationOnboardingStatus(),
+    integrationSetup: currentServer ? getIntegrationOnboardingStatus(currentServer.id) : null,
     foundation,
   });
 });
 
 router.post("/api/servers", async (req, res) => {
-  if (!requireAdmin(req, res, "manage")) return;
   try {
-    const organizationId = hasPlatformBootstrapAccess(req)
-      ? (buildOrganizationId(req.body?.organizationId) || getDefaultOrganizationId())
-      : getPrimaryServerDescriptor().organizationId;
+    let organizationId: string;
+    if (hasPlatformBootstrapAccess(req)) {
+      organizationId = buildOrganizationId(req.body?.organizationId) || getDefaultOrganizationId();
+    } else {
+      if (!req.portalSession) { res.status(401).json({ error: "AUTH_REQUIRED" }); return; }
+      organizationId = buildOrganizationId(req.body?.organizationId)
+        || listUserOrganizationMemberships(req.portalSession.discordId)[0]?.organizationId
+        || "";
+      if (!organizationId || !requireOrganizationAccess(req, res, organizationId, "manage")) return;
+    }
     const server = await createManagedServerDraft({ ...(req.body || {}), organizationId });
     res.status(201).json({
       server,
       servers: authorizedServersForRequest(req),
       runtimeActivationBlocked: false,
-      foundation: getServerFoundationDiagnostics(),
+      foundation: foundationForRequest(req),
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -8678,12 +8890,103 @@ router.patch("/api/servers/:serverId", async (req, res) => {
       server,
       servers: authorizedServersForRequest(req),
       runtimeActivationBlocked: false,
-      foundation: getServerFoundationDiagnostics(),
+      foundation: foundationForRequest(req),
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     res.status(/nao encontrado/i.test(message) ? 404 : 400).send(message);
   }
+});
+
+router.get("/api/servers/:serverId/settings", async (req, res) => {
+  if (!requireServerAdmin(req, res, req.params.serverId, "view")) return;
+  const server = getManagedServerById(req.params.serverId);
+  if (!server) { res.status(404).json({ error: "SERVER_NOT_FOUND" }); return; }
+  res.json({ serverId: server.id, settings: server.runtime.settings || {} });
+});
+
+router.patch("/api/servers/:serverId/settings", async (req, res) => {
+  if (!requireServerAdmin(req, res, req.params.serverId, "manage")) return;
+  try {
+    const server = await updateManagedServerScopedSettings(req.params.serverId, req.body || {});
+    res.json({ server, settings: server?.runtime.settings || {} });
+  } catch (err) {
+    res.status(400).send(err instanceof Error ? err.message : String(err));
+  }
+});
+
+router.get("/api/servers/:serverId/catalog", async (req, res) => {
+  if (!requireServerAdmin(req, res, req.params.serverId, "view")) return;
+  try {
+    const serverId = String(req.params.serverId || "");
+    const catalog = await runInServerRuntimeContext(serverId, async () => {
+      await ensureShopCatalogLoaded();
+      return getShopCatalog();
+    });
+    res.json({ serverId, catalog, isolation: catalogIsolationForRequest(req, serverId) });
+  } catch (err) {
+    res.status(400).send(err instanceof Error ? err.message : String(err));
+  }
+});
+
+router.post("/api/servers/:serverId/catalog/clone", async (req, res) => {
+  if (!requireServerAdmin(req, res, req.params.serverId, "manage")) return;
+  try {
+    const target = getManagedServerById(req.params.serverId);
+    if (!target) throw new Error("Servidor de destino nao encontrado.");
+    const requestedSourceId = String(req.body?.sourceServerId || "").trim();
+    const fallbackSource = listManagedServers().find((server) => server.organizationId === target.organizationId && server.id !== target.id);
+    const sourceId = requestedSourceId || fallbackSource?.id || "";
+    const source = sourceId ? getManagedServerById(sourceId) : undefined;
+    if (!source) throw new Error("Nenhum servidor de origem da mesma organizacao foi informado para clonar o catalogo.");
+    if (!hasPlatformBootstrapAccess(req) && source.organizationId !== target.organizationId) {
+      res.status(403).json({ error: "CROSS_ORGANIZATION_CATALOG_CLONE_FORBIDDEN" });
+      return;
+    }
+    const result = await runInServerRuntimeContext(target.id, () => cloneShopCatalog(source.id, target.id));
+    res.json({ ...result, isolation: catalogIsolationForRequest(req, target.id) });
+  } catch (err) {
+    res.status(400).send(err instanceof Error ? err.message : String(err));
+  }
+});
+
+router.post("/api/servers/:serverId/catalog/categories", async (req, res) => {
+  if (!requireServerAdmin(req, res, req.params.serverId, "manage")) return;
+  try {
+    const serverId = String(req.params.serverId || "");
+    const catalog = await runInServerRuntimeContext(serverId, async () => {
+      await ensureShopCatalogLoaded();
+      await upsertShopCatalogCategoryItem(req.body || {});
+      return getShopCatalog();
+    });
+    res.json({ serverId, catalog });
+  } catch (err) { res.status(400).send(err instanceof Error ? err.message : String(err)); }
+});
+
+router.post("/api/servers/:serverId/catalog/items", async (req, res) => {
+  if (!requireServerAdmin(req, res, req.params.serverId, "manage")) return;
+  try {
+    const serverId = String(req.params.serverId || "");
+    const catalog = await runInServerRuntimeContext(serverId, async () => {
+      await ensureShopCatalogLoaded();
+      await upsertShopCatalogItem(req.body || {});
+      return getShopCatalog();
+    });
+    res.json({ serverId, catalog });
+  } catch (err) { res.status(400).send(err instanceof Error ? err.message : String(err)); }
+});
+
+router.delete("/api/servers/:serverId/catalog/items/:itemId", async (req, res) => {
+  if (!requireServerAdmin(req, res, req.params.serverId, "manage")) return;
+  try {
+    const serverId = String(req.params.serverId || "");
+    const catalog = await runInServerRuntimeContext(serverId, async () => {
+      await ensureShopCatalogLoaded();
+      await deleteShopCatalogItem(req.params.itemId);
+      return getShopCatalog();
+    });
+    res.json({ serverId, catalog });
+  } catch (err) { res.status(400).send(err instanceof Error ? err.message : String(err)); }
 });
 
 router.get("/api/servers/:serverId/nitrado/services", async (req, res) => {
@@ -8711,7 +9014,7 @@ router.post("/api/servers/:serverId/nitrado/validate", async (req, res) => {
       validation,
       servers: authorizedServersForRequest(req),
       runtimeActivationBlocked: false,
-      foundation: getServerFoundationDiagnostics(),
+      foundation: foundationForRequest(req),
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -8722,7 +9025,7 @@ router.post("/api/servers/:serverId/nitrado/validate", async (req, res) => {
 router.get("/api/servers/:serverId/discord/options", async (req, res) => {
   if (!requireServerAdmin(req, res, req.params.serverId, "manage")) return;
   try {
-    res.json(listDiscordGuildOptions(String(req.params.serverId || "")));
+    res.json(await listDiscordGuildOptions(String(req.params.serverId || ""), req.portalSession?.discordId));
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     res.status(/nao encontrado/i.test(message) ? 404 : 400).send(message);
@@ -8732,10 +9035,54 @@ router.get("/api/servers/:serverId/discord/options", async (req, res) => {
 router.get("/api/servers/:serverId/discord/guilds/:guildId/channels", async (req, res) => {
   if (!requireServerAdmin(req, res, req.params.serverId, "manage")) return;
   try {
-    res.json(await listDiscordGuildChannels(String(req.params.serverId || ""), req.params.guildId));
+    res.json(await listDiscordGuildChannels(String(req.params.serverId || ""), req.params.guildId, req.portalSession?.discordId));
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     res.status(/nao encontrado/i.test(message) ? 404 : 400).send(message);
+  }
+});
+
+router.post("/api/servers/:serverId/economy/coins", async (req, res) => {
+  if (!requireServerAdmin(req, res, req.params.serverId, "manage")) return;
+  try {
+    const serverId = String(req.params.serverId || "");
+    const result = await runInServerRuntimeContext(serverId, async () => {
+      const state = await getStateAsync();
+      const gamertag = String(req.body?.gamertag || "").trim();
+      const link = getPlayerLinkByGamertag(state, gamertag);
+      if (!link) throw new Error("Vincule esta gamertag a uma conta Discord neste servidor antes de alterar moedas.");
+      const action = String(req.body?.action || "add").trim().toLowerCase();
+      const amount = Math.floor(Number(req.body?.amount || 0));
+      if (!Number.isFinite(amount) || amount < 0 || (action !== "set" && amount <= 0)) throw new Error("Informe uma quantidade valida de moedas.");
+      const reason = String(req.body?.reason || "SaaS server setup").trim().slice(0, 160);
+      const createdBy = req.portalSession?.discordId || "platform-bootstrap";
+      const changed = action === "remove"
+        ? removeCoins({ state, link, amount, reason, createdBy })
+        : action === "set"
+          ? setCoins({ state, link, amount, reason, createdBy })
+          : addCoins({ state, link, amount, reason, createdBy });
+      await saveStateAsync(state, `phase16:server-economy:${serverId}`);
+      return { gamertag: link.gamertag, wallet: changed.wallet, transaction: changed.transaction };
+    });
+    res.json({ serverId, ...result });
+  } catch (err) {
+    res.status(400).send(err instanceof Error ? err.message : String(err));
+  }
+});
+
+router.post("/api/servers/:serverId/shop/deploy", async (req, res) => {
+  if (!requireServerAdmin(req, res, req.params.serverId, "manage")) return;
+  try {
+    const serverId = String(req.params.serverId || "");
+    const result = await runInServerRuntimeContext(serverId, async () => {
+      const state = await getStateAsync();
+      const deployed = await deployPendingShopOrders(state);
+      if (deployed?.deployed) await saveStateAsync(state, `phase16:manual-shop-deploy:${serverId}`);
+      return deployed;
+    });
+    res.json({ serverId, result });
+  } catch (err) {
+    res.status(400).send(err instanceof Error ? err.message : String(err));
   }
 });
 
@@ -8746,7 +9093,7 @@ router.post("/api/servers/:serverId/preflight", async (req, res) => {
     res.json({
       ...result,
       servers: authorizedServersForRequest(req),
-      foundation: getServerFoundationDiagnostics(),
+      foundation: foundationForRequest(req),
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -8791,8 +9138,8 @@ router.post("/api/servers/:serverId/runtime/activate", async (req, res) => {
       servers: authorizedServersForRequest(req),
       cycleRequested,
       runtimeActivationBlocked: false,
-      foundation: getServerFoundationDiagnostics(),
-      runtimeCoordinator: getManagedServerRuntimeCoordinatorDiagnostics(),
+      foundation: foundationForRequest(req),
+      runtimeCoordinator: runtimeCoordinatorForRequest(req),
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -8825,8 +9172,8 @@ router.post("/api/servers/:serverId/runtime/deactivate", async (req, res) => {
       server,
       servers: authorizedServersForRequest(req),
       runtimeActivationBlocked: false,
-      foundation: getServerFoundationDiagnostics(),
-      runtimeCoordinator: getManagedServerRuntimeCoordinatorDiagnostics(),
+      foundation: foundationForRequest(req),
+      runtimeCoordinator: runtimeCoordinatorForRequest(req),
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -8837,7 +9184,7 @@ router.post("/api/servers/:serverId/runtime/deactivate", async (req, res) => {
 router.get("/api/servers/:serverId/runtime/health", async (req, res) => {
   if (!requireServerAdmin(req, res, req.params.serverId, "view")) return;
   const serverId = String(req.params.serverId || "");
-  const diagnostics = getManagedServerRuntimeCoordinatorDiagnostics();
+  const diagnostics = runtimeCoordinatorForRequest(req);
   const server = diagnostics.servers.find((candidate: any) => candidate.serverId === serverId);
   if (!server) {
     res.status(404).send("Servidor nao encontrado.");
@@ -8880,8 +9227,8 @@ router.post("/api/servers/:serverId/runtime/pause", async (req, res) => {
     res.json({
       server,
       servers: authorizedServersForRequest(req),
-      foundation: getServerFoundationDiagnostics(),
-      runtimeCoordinator: getManagedServerRuntimeCoordinatorDiagnostics(),
+      foundation: foundationForRequest(req),
+      runtimeCoordinator: runtimeCoordinatorForRequest(req),
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -8917,8 +9264,8 @@ router.post("/api/servers/:serverId/runtime/resume", async (req, res) => {
       server,
       servers: authorizedServersForRequest(req),
       cycleRequested,
-      foundation: getServerFoundationDiagnostics(),
-      runtimeCoordinator: getManagedServerRuntimeCoordinatorDiagnostics(),
+      foundation: foundationForRequest(req),
+      runtimeCoordinator: runtimeCoordinatorForRequest(req),
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -8955,8 +9302,8 @@ router.post("/api/servers/:serverId/runtime/retry", async (req, res) => {
     res.json({
       cycleRequested,
       servers: authorizedServersForRequest(req),
-      foundation: getServerFoundationDiagnostics(),
-      runtimeCoordinator: getManagedServerRuntimeCoordinatorDiagnostics(),
+      foundation: foundationForRequest(req),
+      runtimeCoordinator: runtimeCoordinatorForRequest(req),
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -8966,7 +9313,7 @@ router.post("/api/servers/:serverId/runtime/retry", async (req, res) => {
 
 router.get("/api/servers/current", async (req, res) => {
   if (!requireAdmin(req, res)) return;
-  res.json({ server: getPrimaryServerDescriptor(), foundation: getServerFoundationDiagnostics() });
+  res.json({ server: getPrimaryServerDescriptor(), foundation: foundationForRequest(req) });
 });
 
 router.get("/api/overview", async (req, res) => {

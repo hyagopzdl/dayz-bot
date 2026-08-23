@@ -1,10 +1,10 @@
 import { getStateAsync, saveDiscordRuntimeStateOnlyAsync, saveDiscordStateAsync } from "../state";
 import { ensureBotState } from "./state";
-import { getPrimaryServerId } from "../serverRegistry";
-import { assertPrimaryRuntimeServer, runInServerRuntimeContext } from "../serverRuntime";
+import { getManagedServerById, getPrimaryServerId } from "../serverRegistry";
+import { runInServerRuntimeContext } from "../serverRuntime";
 
 export function createDiscordStateAccess(serverId = getPrimaryServerId()) {
-  assertPrimaryRuntimeServer(serverId);
+  if (!getManagedServerById(serverId)) throw new Error(`Discord runtime server not found: ${serverId}`);
   async function getState() {
     const state = ensureBotState(await runInServerRuntimeContext(serverId, () => getStateAsync()));
 
