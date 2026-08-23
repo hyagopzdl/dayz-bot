@@ -60,6 +60,18 @@ export async function ensureAdminUsersSchema() {
         ON CONFLICT (username) DO NOTHING
       `;
     }
+
+    // Repair only the two temporary test accounts if an older admin-panel build
+    // cleared their binding because the in-memory registry had not loaded yet.
+    for (const seed of seeds) {
+      await db`
+        UPDATE admin_users
+        SET server_id = ${seed.serverId}, updated_at = NOW()
+        WHERE username = ${seed.username}
+          AND (server_id IS NULL OR BTRIM(server_id) = '')
+          AND EXISTS (SELECT 1 FROM managed_servers WHERE id = ${seed.serverId})
+      `;
+    }
   })().catch((error) => {
     schemaPromise = null;
     throw error;

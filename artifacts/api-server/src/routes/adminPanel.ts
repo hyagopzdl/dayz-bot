@@ -77,6 +77,7 @@ import {
   removeOrganizationMembership,
   saveOrganizationNitradoCredential,
   removeOrganizationNitradoCredential,
+  refreshManagedServerRegistryFromDb,
 } from "../lib/state";
 import { getDiscordClient } from "../lib/discordBot";
 import { listDiscordCommandDescriptors, normalizeDiscordCommandSettings } from "../lib/discord/commandSettings";
@@ -8599,10 +8600,19 @@ function renderAdminPanelHtml(token: string) {
 // Database-backed ADM sessions are hard-bound to one managed server. Every
 // downstream admin handler inherits that server through AsyncLocalStorage, so
 // legacy admin APIs cannot silently fall back to the primary runtime.
-router.use((req, res, next) => {
+router.use(async (req, res, next) => {
   const serverId = req.adminSession?.serverId;
   if (!serverId) { next(); return; }
-  if (!getManagedServerById(serverId)) {
+  let server = getManagedServerById(serverId);
+  if (!server) {
+    try {
+      await refreshManagedServerRegistryFromDb();
+      server = getManagedServerById(serverId);
+    } catch (error) {
+      console.error(`[admin-panel] failed to refresh managed server registry for ${serverId}:`, error);
+    }
+  }
+  if (!server) {
     const acceptsHtml = String(req.headers.accept || "").includes("text/html");
     if ((req.method === "GET" || req.method === "HEAD") && acceptsHtml) {
       res.redirect("/admin-panel/setup");

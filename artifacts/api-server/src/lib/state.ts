@@ -619,6 +619,10 @@ async function reloadManagedServerRegistryFromDb(primary = getPrimaryServerDescr
   return next;
 }
 
+export async function refreshManagedServerRegistryFromDb() {
+  return reloadManagedServerRegistryFromDb();
+}
+
 async function reloadOrganizationRegistryFromDb() {
   if (!sql) {
     setPersistedOrganizations([getDefaultOrganizationDescriptor()], []);
