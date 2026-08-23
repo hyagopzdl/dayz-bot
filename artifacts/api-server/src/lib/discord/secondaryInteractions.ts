@@ -9,29 +9,19 @@ import { isShopServiceEnabled, SHOP_COMMAND_NAMES } from "../serviceSettings";
 import { clearShopSpawnerAndMarkSpawned, deployPendingShopOrders, formatShopQueue, getShopItems } from "../shop";
 import { ensureShopCatalogLoaded } from "../shopCatalog";
 import {
-  canExecuteManagedServerRuntime,
   getPrimaryServerId,
   resolveServerIdFromDiscordGuildId,
 } from "../serverRegistry";
-import { runInServerRuntimeContext } from "../serverRuntime";
+import { runInServerDataContext } from "../serverRuntime";
 import { refreshManagedServerRegistryFromDb } from "../state";
 import { deferEphemeral } from "./responses";
 import { assertAdmin } from "./permissions";
+import { buildNeutralEmbed } from "./ui/embeds";
 
 const SECONDARY_ADMIN_SHOP_COMMANDS = new Set(["shop-queue", "shop-deploy", "shop-clear", "shop-catalog"]);
 
 const secondaryInteractionClients = new WeakSet<object>();
 
-async function replyUnavailable(interaction: any) {
-  const payload = { content: "This DayZ server runtime is currently unavailable. Try again after the administrator resumes it.", ephemeral: true };
-  if (interaction.isAutocomplete?.()) {
-    await interaction.respond([]).catch(() => undefined);
-  } else if (interaction.deferred || interaction.replied) {
-    await interaction.editReply({ content: payload.content }).catch(() => undefined);
-  } else {
-    await interaction.reply(payload).catch(() => undefined);
-  }
-}
 
 function isLinkInteraction(interaction: any) {
   if (interaction.isAutocomplete?.()) return interaction.commandName === "link";
@@ -104,6 +94,31 @@ async function handleSecondaryInteraction(interaction: any, serverId: string) {
   if (await handleLinkCommand(interaction, ctx)) return;
   if (await handleEconomyCommand(interaction, ctx)) return;
   if (await handleEconomyAdminCommand(interaction, ctx)) return;
+
+  if (interaction.commandName === "player-stats") {
+    const query = String(interaction.options.getString("player", true) || "").trim();
+    const state = await stateAccess.getState();
+    const key = Object.keys(state.players || {}).find((name) => name.toLowerCase() === query.toLowerCase()) || query;
+    const stats = state.players?.[key] || { kills: 0, deaths: 0 };
+    const kills = Number(stats.kills || 0);
+    const deaths = Number(stats.deaths || 0);
+    const kd = deaths > 0 ? (kills / deaths).toFixed(2) : kills.toFixed(2);
+    const online = Boolean(state.onlinePlayers?.[key]);
+    await interaction.reply({
+      embeds: [buildNeutralEmbed({
+        title: `Player Stats · ${key}`,
+        description: [
+          `${online ? "🟢 Online" : "⚫ Offline"}`,
+          `Kills: **${kills.toLocaleString()}**`,
+          `Deaths: **${deaths.toLocaleString()}**`,
+          `K/D: **${kd}**`,
+        ].join("\n"),
+        footerSuffix: serverId,
+      })],
+      ephemeral: true,
+    });
+    return;
+  }
 
   if (!SECONDARY_ADMIN_SHOP_COMMANDS.has(interaction.commandName)) return;
   const acknowledged = await deferEphemeral(interaction);
@@ -205,20 +220,16 @@ export function registerSecondaryManagedServerInteractions(client: Client) {
       // immediately in the guild-resolved server context so they acknowledge
       // Discord before any full runtime readiness checks or settings reads.
       if (isLinkInteraction(interaction)) {
-        await runInServerRuntimeContext(serverId, () => handleSecondaryLinkInteraction(interaction, serverId!));
+        await runInServerDataContext(serverId, () => handleSecondaryLinkInteraction(interaction, serverId!));
         return;
       }
 
-      if (!canExecuteManagedServerRuntime(serverId)) {
-        await replyUnavailable(interaction);
-        return;
-      }
-
-      // Keep the complete interaction (catalog lookup, wallet mutation, order
-      // creation and XML deploy included) inside the resolved server context.
-      // This is stronger than wrapping only getState/saveState and prevents any
-      // helper that calls getActiveServerId() from falling back to the PZ.
-      await runInServerRuntimeContext(serverId, () => handleSecondaryInteraction(interaction, serverId!));
+      // Data-plane Discord commands (wallet, link, catalog browsing, identity)
+      // must remain available independently from ADM/Nitrado activation. Helpers
+      // that actually perform FTP/Nitrado work still enforce their own runtime
+      // safety gates. Keeping the whole interaction in DataContext also prevents
+      // any helper from falling back to the primary tenant.
+      await runInServerDataContext(serverId, () => handleSecondaryInteraction(interaction, serverId!));
     } catch (error) {
       console.error(`❌ secondary Discord interaction failed [${serverId || "unresolved"}]:`, error);
       if (interaction.isAutocomplete?.()) {

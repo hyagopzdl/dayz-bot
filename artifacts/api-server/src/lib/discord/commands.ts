@@ -313,6 +313,7 @@ const SECONDARY_CORE_COMMANDS = new Set([
   "shop-deploy",
   "shop-clear",
   "shop-catalog",
+  "player-stats",
 ]);
 
 export type DiscordCommandRegistrationScope = "full" | "core";

@@ -4,9 +4,13 @@ import { flushServerRuntimePendingStateAsync, getStateAsync, saveStateAsync } fr
 import { isShopServiceEnabled, normalizeServiceSettings } from "./serviceSettings";
 import { autoDeployPendingShopOrdersIfNeeded } from "./shop";
 import { getPlaytimeRewardConfig, processPlaytimeRewards } from "./discord/modules/economy/rewards";
+import { refreshDiscordFeedsForManagedServer } from "./discordBot";
 import {
   getManagedServerById,
   getPrimaryServerId,
+  hasManagedServerRuntimeActivation,
+  hasMatchingActivationPreflight,
+  hasMatchingManagedServerNitradoValidation,
   listExecutableManagedServers,
   listManagedServers,
   type ManagedServerDescriptor,
@@ -16,6 +20,8 @@ import {
   recordMainCycleSkippedOverlap,
   recordMainCycleStarted,
 } from "./runtimeMetrics";
+import { runManagedServerActivationPreflight } from "./serverPreflight";
+import { setManagedServerRuntimeEnabled } from "./state";
 import {
   runInServerMaintenanceContext,
   runInServerRuntimeContext,
@@ -170,6 +176,14 @@ export async function runManagedServerRuntimeCycle(
       console.log(`🔥 PARSER AUTOMÁTICO [${serverId}]`);
       await getLeaderboard();
 
+      // Feed refresh piggybacks on the centralized ADM cycle. This keeps
+      // rankings/online/killfeed isolated per server without one timer per tenant.
+      try {
+        await refreshDiscordFeedsForManagedServer(serverId);
+      } catch (discordFeedError) {
+        console.error(`❌ erro atualizando feeds Discord [${serverId}]:`, discordFeedError);
+      }
+
       // The PZ keeps its existing 30-second Discord shop monitor. Secondary
       // runtimes reuse the centralized 5-minute coordinator instead of adding
       // one monitor/timer per server. No Nitrado file I/O occurs unless a shop
@@ -254,6 +268,45 @@ export async function runManagedServerRuntimeCycle(
     console.log(`⏭️ ciclo ignorado para ${serverId}: execução anterior ainda rodando`);
   }
   return { skipped: locked.skipped };
+}
+
+
+export async function reconcileManagedServerRuntimeActivation() {
+  // Phase 17B turns a validated tenant server into a first-class runtime without
+  // requiring a hidden manual Phase-11/12 workflow. We only auto-enable servers
+  // that have never been explicitly disabled. A previous lastDisabledAt remains
+  // an operator decision and is never overridden on boot.
+  const candidates = listManagedServers().filter((server: ManagedServerDescriptor) => {
+    if (server.primary || !server.enabled || server.runtime.operations?.paused === true) return false;
+    if (server.runtimeEnabled) return false;
+    if (!hasMatchingManagedServerNitradoValidation(server)) return false;
+    if (server.runtime.activation?.lastDisabledAt) return false;
+    return true;
+  });
+
+  for (const candidate of candidates) {
+    try {
+      let server = getManagedServerById(candidate.id) || candidate;
+      if (!hasMatchingActivationPreflight(server)) {
+        const preflight = await runManagedServerActivationPreflight(server.id);
+        if (!preflight.passed) {
+          console.warn(`⚠️ runtime nao ativado [${server.id}]: preflight reprovado`, {
+            failures: preflight.failureCount,
+            warnings: preflight.warningCount,
+          });
+          continue;
+        }
+        server = getManagedServerById(server.id) || server;
+      }
+
+      if (!hasManagedServerRuntimeActivation(server) || !server.runtimeEnabled) {
+        await setManagedServerRuntimeEnabled(server.id, true);
+        console.log(`✅ runtime multi-tenant ativado automaticamente [${server.id}]`);
+      }
+    } catch (error) {
+      console.error(`❌ falha reconciliando runtime [${candidate.id}]:`, error);
+    }
+  }
 }
 
 export async function runManagedServerRuntimeBatch(

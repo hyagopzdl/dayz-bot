@@ -9,10 +9,12 @@ import { startShopStatusMonitor } from "./discord/shopStatusMonitor";
 import { startEconomyRewardsLoop } from "./discord/modules/economy/rewardsLoop";
 import { registerMemberFeed } from "./discord/modules/memberFeed";
 import { applyServiceSettingsToCommandSettings } from "./serviceSettings";
-import { canExecuteManagedServerRuntime, getPrimaryServerId, listManagedServers } from "./serverRegistry";
+import { getPrimaryServerId, listManagedServers } from "./serverRegistry";
 import { getServerRuntimeContext } from "./serverRuntime";
 
 const client = createDiscordClient();
+const managedFeedRuntimes = new Map<string, ReturnType<typeof createDiscordFeedRuntime>>();
+const registeredMemberFeedServers = new Set<string>();
 
 export function getDiscordClient() {
   return client;
@@ -24,19 +26,77 @@ export async function syncDiscordCommandsForManagedServer(serverId: string) {
   const scope = serverId === getPrimaryServerId() ? "full" : "core";
   let settings: ReturnType<typeof applyServiceSettingsToCommandSettings> | undefined;
 
-  // Discord is connected during onboarding, before a new DayZ runtime may be
-  // active. Register the safe command surface immediately, but only read
-  // server state/settings when the activation gate already allows execution.
-  if (canExecuteManagedServerRuntime(serverId)) {
-    const stateAccess = createDiscordStateAccess(serverId);
-    const commandState = await stateAccess.getState();
-    settings = applyServiceSettingsToCommandSettings(
-      commandState.discordCommandSettings,
-      commandState.serviceSettings,
-    );
-  }
+  // Phase 17B: command settings are data-plane state and do not require the
+  // Nitrado runtime activation gate. Every bound guild can therefore use its
+  // identity/economy/core command surface during onboarding or runtime pauses.
+  const stateAccess = createDiscordStateAccess(serverId);
+  const commandState = await stateAccess.getState();
+  settings = applyServiceSettingsToCommandSettings(
+    commandState.discordCommandSettings,
+    commandState.serviceSettings,
+  );
 
   await registerDiscordCommands(client, settings, serverId, scope);
+  if (client.isReady?.() && serverId !== getPrimaryServerId()) {
+    await ensureManagedServerFeedRuntime(serverId);
+  }
+}
+
+async function ensureManagedServerFeedRuntime(serverId: string) {
+  if (serverId === getPrimaryServerId()) return managedFeedRuntimes.get(serverId);
+  if (managedFeedRuntimes.has(serverId)) return managedFeedRuntimes.get(serverId);
+  const server = listManagedServers().find((item) => item.id === serverId);
+  if (!server?.enabled || !server.integrations.discordGuildId) return undefined;
+
+  try {
+    const channels = await resolveDiscordChannels(client, serverId);
+    const stateAccess = createDiscordStateAccess(serverId);
+    const feeds = createDiscordFeedRuntime({
+      serverId,
+      client,
+      categoryId: channels.categoryId,
+      globalChannel: channels.globalChannel,
+      dailyChannel: channels.dailyChannel,
+      weeklyChannel: channels.weeklyChannel,
+      onlineListChannel: channels.onlineListChannel,
+      killfeedChannel: channels.killfeedChannel,
+      killStreakChannel: channels.killStreakChannel,
+      longShotChannel: channels.longShotChannel,
+      longShotRankingChannel: channels.longShotRankingChannel,
+      streakRankingChannel: channels.streakRankingChannel,
+      getState: stateAccess.getState,
+      saveState: stateAccess.saveState,
+      saveRuntimeState: stateAccess.saveRuntimeState,
+    });
+    managedFeedRuntimes.set(serverId, feeds);
+    const memberConfig = getServerRuntimeContext(serverId).discord;
+    if (!registeredMemberFeedServers.has(serverId) && memberConfig.memberFeedEnabled !== false && memberConfig.memberFeedChannelId) {
+      registerMemberFeed(client, serverId);
+      registeredMemberFeedServers.add(serverId);
+    }
+    await feeds.updateLeaderboard();
+    console.log(`✅ Discord feed runtime server-scoped ativo [${serverId}]`);
+    return feeds;
+  } catch (error) {
+    // Channels are optional during onboarding. Commands remain available and the
+    // feed runtime will be retried by command sync / the next runtime cycle.
+    console.log(`ℹ️ Discord feed runtime aguardando canais [${serverId}]`, error instanceof Error ? error.message : String(error));
+    return undefined;
+  }
+}
+
+export async function refreshDiscordFeedsForManagedServer(serverId: string) {
+  if (!client.isReady?.()) return false;
+  if (serverId === getPrimaryServerId()) {
+    const feeds = managedFeedRuntimes.get(serverId);
+    if (!feeds) return false;
+    await feeds.updateLeaderboard();
+    return true;
+  }
+  const feeds = managedFeedRuntimes.get(serverId) || await ensureManagedServerFeedRuntime(serverId);
+  if (!feeds) return false;
+  await feeds.updateLeaderboard();
+  return true;
 }
 
 async function syncSecondaryManagedServerCommands() {
@@ -44,8 +104,24 @@ async function syncSecondaryManagedServerCommands() {
   for (const server of servers) {
     try {
       await syncDiscordCommandsForManagedServer(server.id);
+      await ensureManagedServerFeedRuntime(server.id);
     } catch (error) {
       console.error(`❌ erro sincronizando comandos Discord [${server.id}]:`, error);
+    }
+  }
+}
+
+
+function registerManagedServerMemberFeeds() {
+  for (const server of listManagedServers().filter((item) => item.enabled && item.integrations.discordGuildId)) {
+    if (registeredMemberFeedServers.has(server.id)) continue;
+    const memberConfig = getServerRuntimeContext(server.id).discord;
+    if (memberConfig.memberFeedEnabled === false || !memberConfig.memberFeedChannelId) continue;
+    try {
+      registerMemberFeed(client, server.id);
+      registeredMemberFeedServers.add(server.id);
+    } catch (error) {
+      console.error(`❌ erro inicializando member feed [${server.id}]:`, error);
     }
   }
 }
@@ -69,6 +145,7 @@ export async function startDiscordBot(serverId = getPrimaryServerId()) {
     // runtime-readiness concern. Any enabled managed server with a bound guild
     // must receive its command surface after every bot restart.
     await syncSecondaryManagedServerCommands();
+    registerManagedServerMemberFeeds();
 
     const channels = await resolveDiscordChannels(client, serverId);
     const stateAccess = createDiscordStateAccess(serverId);
@@ -90,8 +167,7 @@ export async function startDiscordBot(serverId = getPrimaryServerId()) {
       saveState: stateAccess.saveState,
       saveRuntimeState: stateAccess.saveRuntimeState,
     });
-
-    registerMemberFeed(client, serverId);
+    managedFeedRuntimes.set(serverId, feeds);
 
     registerInteractionHandlers({
       client,

@@ -21,6 +21,7 @@ import {
 } from "../../constants";
 import { getKillStreakMeta } from "../killstreak/service";
 import { getCoreStateFingerprint } from "../../../state";
+import { getServerRuntimeContext } from "../../../serverRuntime";
 
 type DiscordFeedRuntimeContext = {
   serverId: string;
@@ -1531,7 +1532,7 @@ function markCurrentAdmFilesAsProcessed(state: any) {
   state.files = state.files || {};
 
   try {
-    const manifestPath = path.resolve(process.cwd(), "adm_manifest.json");
+    const manifestPath = getServerRuntimeContext(serverId).storage.manifestFile;
 
     if (!fs.existsSync(manifestPath)) {
       return;

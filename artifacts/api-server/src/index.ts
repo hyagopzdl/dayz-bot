@@ -6,11 +6,11 @@ import { getStateAsync } from "./lib/state";
 import { initializeShopCatalog } from "./lib/shopCatalog";
 import { normalizeServiceSettings } from "./lib/serviceSettings";
 import { getPrimaryServerId } from "./lib/serverRegistry";
-import { getServerRuntimeContext, runInServerRuntimeContext } from "./lib/serverRuntime";
+import { getServerRuntimeContext, runInServerDataContext, runInServerRuntimeContext } from "./lib/serverRuntime";
 import {
   flushExecutableManagedServerStates,
+  reconcileManagedServerRuntimeActivation,
   runManagedServerRuntimeBatch,
-  runManagedServerRuntimeCycle,
   startManagedServerRuntimeScheduler,
 } from "./lib/serverRuntimeCoordinator";
 
@@ -70,28 +70,28 @@ function startServer(port: number) {
     }
 
     try {
-      await initializeShopCatalog();
+      await runInServerDataContext(primaryServerId, () => initializeShopCatalog());
       console.log("🛒 shop catalog loaded from Neon");
     } catch (err) {
       console.error("❌ shop catalog unavailable:", err);
     }
 
-    // Keep the production PZ startup path first. A newly activated secondary
-    // may need a larger one-time ADM download and must never delay PZ Discord.
-    await runManagedServerRuntimeCycle(primaryServerId, "startup");
-    startManagedServerRuntimeScheduler();
-
+    // Phase 17B: Discord is a control/interaction plane and must never wait for
+    // a potentially large ADM download. Start it independently from game runtime.
     try {
-      console.log("🚀 iniciando bot do Discord...");
-      startDiscordBot(primaryServerId);
+      console.log("🚀 iniciando bot do Discord multi-tenant...");
+      void startDiscordBot(primaryServerId);
     } catch (err) {
       console.error("❌ erro ao iniciar Discord:", err);
     }
 
-    // Resume already-activated secondary runtimes without blocking the primary
-    // startup. They still run sequentially under the same centralized coordinator.
-    runManagedServerRuntimeBatch("startup", { includePrimary: false }).catch((err) => {
-      console.error("❌ erro iniciando runtimes secundarios:", err);
+    // One centralized scheduler for every tenant. Reconcile newly-onboarded,
+    // validated servers into their first runtime activation, then process the
+    // complete executable registry sequentially (no timer/poller per tenant).
+    await reconcileManagedServerRuntimeActivation();
+    startManagedServerRuntimeScheduler();
+    runManagedServerRuntimeBatch("startup").catch((err) => {
+      console.error("❌ erro iniciando runtimes multi-tenant:", err);
     });
   });
 

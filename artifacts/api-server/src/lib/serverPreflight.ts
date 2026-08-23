@@ -292,16 +292,17 @@ export async function runManagedServerActivationPreflight(serverIdInput: string)
   let namespaceRows = { botState: 0, playerStats: 0, positionHistory: 0 };
   try {
     namespaceRows = await inspectManagedServerNamespaceRows(server.id);
+    // Phase 17B: data-context access may legitimately create server-scoped rows
+    // before the first ADM runtime activation (onboarding, Discord link, portal,
+    // config). Row existence is therefore not evidence of cross-tenant leakage.
+    // The isolation foundation above already proves composite PKs + scoped reads;
+    // preflight records the rows for diagnostics but does not require emptiness.
     const firstActivation = !server.runtime.activation?.everActivated;
-    const namespaceClean = namespaceRows.botState === 0 && namespaceRows.playerStats === 0 && namespaceRows.positionHistory === 0;
-    const namespaceSafe = firstActivation ? namespaceClean : true;
-    pushCheck(checks, "namespace-clean", "Database namespace", namespaceSafe ? "pass" : "fail", namespaceSafe
-      ? (firstActivation
-        ? "Nenhum state/stats/position-history existe ainda para este Server ID."
-        : "O servidor ja foi ativado anteriormente; as rows existentes pertencem ao proprio namespace e podem ser reutilizadas na reativacao.")
-      : "Ja existem rows persistidas para este Server ID antes da primeira ativacao. Revise antes de continuar.", namespaceRows);
+    pushCheck(checks, "namespace-owned", "Database namespace", "pass", firstActivation
+      ? `Namespace exclusivo do servidor confirmado antes da primeira ativacao (${namespaceRows.botState}/${namespaceRows.playerStats}/${namespaceRows.positionHistory}). Rows de onboarding podem ser reutilizadas com seguranca.`
+      : "O servidor ja foi ativado anteriormente; as rows existentes permanecem no proprio namespace.", namespaceRows);
   } catch (error) {
-    pushCheck(checks, "namespace-clean", "Database namespace", "fail", error instanceof Error ? error.message : String(error));
+    pushCheck(checks, "namespace-owned", "Database namespace", "fail", error instanceof Error ? error.message : String(error));
   }
 
   if (nitradoMetadataValid && uniqueRouting && !samePrimaryBaseDir) {

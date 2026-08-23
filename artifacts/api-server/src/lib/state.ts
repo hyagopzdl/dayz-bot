@@ -2382,9 +2382,12 @@ export async function setManagedServerRuntimeEnabled(serverId: string, enabled: 
     if (!hasMatchingActivationPreflight(current)) throw new Error("O activation preflight nao corresponde mais a configuracao salva.");
 
     if (!current.runtime.activation?.everActivated) {
+      // Phase 17B permits rows created by tenant-safe data access before the ADM
+      // runtime starts. Composite server_id PKs and scoped-read safety are the
+      // security boundary; an empty namespace is no longer required.
       const namespaceRows = await inspectManagedServerNamespaceRows(id);
       if (namespaceRows.botState || namespaceRows.playerStats || namespaceRows.positionHistory) {
-        throw new Error(`Primeira ativacao bloqueada: o namespace ${id} deixou de estar vazio (${namespaceRows.botState}/${namespaceRows.playerStats}/${namespaceRows.positionHistory}). Execute o preflight e investigue antes de continuar.`);
+        console.log(`🧭 reutilizando namespace preexistente e server-scoped na primeira ativacao [${id}]`, namespaceRows);
       }
     }
   }
