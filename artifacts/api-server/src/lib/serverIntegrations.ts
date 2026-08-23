@@ -41,12 +41,6 @@ function assertOnboardingServer(serverId: string) {
   return server;
 }
 
-function assertManagedServer(serverId: string) {
-  const server = getManagedServerById(serverId) || (serverId === getPrimaryServerId() ? getPrimaryServerDescriptor() : undefined);
-  if (!server) throw new Error(`Servidor ${serverId} nao encontrado.`);
-  return server;
-}
-
 function requireNitradoToken(serverId: string) {
   const server = getManagedServerById(serverId) || (serverId === getPrimaryServerId() ? getPrimaryServerDescriptor() : undefined);
   if (!server) throw new Error(`Servidor ${serverId} nao encontrado.`);
@@ -234,6 +228,28 @@ export async function testOrganizationNitradoCredential(tokenInput: unknown) {
   };
 }
 
+
+export async function discoverOrganizationNitradoServices(organizationIdInput: unknown) {
+  const organizationId = String(organizationIdInput || "").trim();
+  if (!organizationId) throw new Error("Organization invalida.");
+  const credential = getOrganizationNitradoCredential(organizationId);
+  if (!credential.token) throw new Error("Conecte sua conta Nitrado antes de buscar os servidores.");
+  const response = await globalThis.fetch(`${NITRADO_API_BASE}/services`, { headers: { Authorization: `Bearer ${credential.token}` } });
+  const text = await response.text();
+  recordNetworkTransfer({ service: "nitrado-onboarding", operation: "GET /services admin-discovery", direction: "outbound", bytes: 0, ok: response.ok });
+  recordNetworkTransfer({ service: "nitrado-onboarding", operation: "GET /services admin-discovery", direction: "inbound", bytes: Buffer.byteLength(text, "utf8"), ok: response.ok });
+  if (!response.ok) throw new Error(`Nitrado HTTP ${response.status}. O token nao foi aceito.`);
+  let json: any = {};
+  try { json = text ? JSON.parse(text) : {}; } catch { throw new Error("A Nitrado retornou uma resposta invalida."); }
+  const rawServices: unknown[] = Array.isArray(json?.data?.services) ? json.data.services : Array.isArray(json?.services) ? json.services : Array.isArray(json?.data) ? json.data : [];
+  const assigned = new Map(listManagedServers().filter((server) => server.integrations.nitradoServiceId).map((server) => [String(server.integrations.nitradoServiceId), server] as const));
+  const services = rawServices.map(mapNitradoService).filter((service): service is NitradoServiceOption => Boolean(service)).filter((service) => /dayz/i.test(`${service.name} ${service.game || ""}`)).map((service) => {
+    const owner = assigned.get(service.id);
+    return owner ? { ...service, assignedServerId: owner.id, assignedServerName: owner.name } : service;
+  }).sort((a,b) => a.name.localeCompare(b.name)).slice(0,100);
+  return { services };
+}
+
 export function getIntegrationOnboardingStatus(serverId = getPrimaryServerId()) {
   const server = getManagedServerById(serverId) || getPrimaryServerDescriptor();
   const nitradoStatus = getOrganizationIntegrationStatus(server.organizationId);
@@ -324,7 +340,7 @@ export async function validateNitradoServiceSetup(serverId: string, serviceIdInp
 }
 
 export async function listDiscordGuildOptions(serverId: string, requesterDiscordId?: string) {
-  const server = assertManagedServer(serverId);
+  const server = assertOnboardingServer(serverId);
   const client = getDiscordClient();
   if (!client.isReady()) {
     return { ready: false, guilds: [] as DiscordGuildOption[], message: "Discord bot ainda nao esta conectado." };
@@ -359,7 +375,7 @@ export async function listDiscordGuildOptions(serverId: string, requesterDiscord
 }
 
 export async function listDiscordGuildChannels(serverId: string, guildIdInput: unknown, requesterDiscordId?: string) {
-  const server = assertManagedServer(serverId);
+  const server = assertOnboardingServer(serverId);
   const guildId = String(guildIdInput || "").trim();
   if (!guildId) throw new Error("Selecione um servidor Discord.");
   const client = getDiscordClient();
