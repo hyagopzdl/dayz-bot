@@ -2663,12 +2663,17 @@ async function ensureGranularPlayerStatsTable() {
       )
     `;
     await sql`ALTER TABLE player_stats_state ADD COLUMN IF NOT EXISTS server_id TEXT`;
-    await sql`UPDATE player_stats_state SET server_id = ${getActiveServerId()} WHERE server_id IS NULL`;
+    // Any row without server_id predates multi-server and therefore belongs to
+    // the production primary. Never derive this migration from the active
+    // AsyncLocalStorage context: a secondary/admin request must not be able to
+    // retag legacy Deathmatch player stats.
+    const legacyPlayerStatsOwner = getPrimaryServerId();
+    await sql`UPDATE player_stats_state SET server_id = ${legacyPlayerStatsOwner} WHERE server_id IS NULL`;
     await sql`CREATE INDEX IF NOT EXISTS player_stats_state_updated_at_idx ON player_stats_state (updated_at)`;
     await sql`CREATE INDEX IF NOT EXISTS player_stats_state_server_id_idx ON player_stats_state (server_id)`;
     const namespaceCounts = await sql`
       SELECT
-        COUNT(*) FILTER (WHERE server_id = ${getActiveServerId()})::int AS tagged_rows,
+        COUNT(*) FILTER (WHERE server_id = ${legacyPlayerStatsOwner})::int AS tagged_rows,
         COUNT(*) FILTER (WHERE server_id IS NULL)::int AS untagged_rows
       FROM player_stats_state
     `;
@@ -3474,6 +3479,106 @@ function writeLocalState(data: AppState) {
   fs.writeFileSync(file, JSON.stringify(data, null, 2));
 }
 
+
+type PlayerTotalsSummary = { players: number; kills: number; deaths: number };
+
+function summarizeGlobalPlayers(players: Record<string, PlayerStats> | undefined): PlayerTotalsSummary {
+  const entries = Object.values(players || {});
+  return entries.reduce<PlayerTotalsSummary>((summary, stats) => {
+    summary.players += 1;
+    summary.kills += Number(stats?.kills || 0);
+    summary.deaths += Number(stats?.deaths || 0);
+    return summary;
+  }, { players: 0, kills: 0, deaths: 0 });
+}
+
+function applyGranularPlayerRows(state: AppState, rows: any[]) {
+  let newestGranularAt = 0;
+  let applied = 0;
+  for (const row of rows || []) {
+    const playerKey = String(row.player_key || "");
+    if (!playerKey || !row.stats || typeof row.stats !== "object") continue;
+    state.players[playerKey] = {
+      kills: Number(row.stats.kills || 0),
+      deaths: Number(row.stats.deaths || 0),
+    };
+    const streak = Number(row.current_streak || 0);
+    if (streak > 0) state.currentKillStreaks[playerKey] = streak;
+    else delete state.currentKillStreaks[playerKey];
+    applied += 1;
+    const rowAt = row.updated_at ? new Date(row.updated_at).getTime() : 0;
+    if (rowAt > newestGranularAt) newestGranularAt = rowAt;
+  }
+  granularPlayerStatsMetrics.rowsAppliedAtBoot += applied;
+  if (newestGranularAt) granularPlayerStatsMetrics.newestRowAtBoot = new Date(newestGranularAt).toISOString();
+  return { applied, newestGranularAt };
+}
+
+async function loadAllGranularPlayerRowsForActiveServer() {
+  if (!sql) return [] as any[];
+  return playerStatsScopedPersistenceReady
+    ? await sql`
+        SELECT player_key, stats, current_streak, updated_at
+        FROM player_stats_state
+        WHERE server_id = ${getActiveServerId()}
+        ORDER BY player_key ASC
+      ` as any[]
+    : await sql`
+        SELECT player_key, stats, current_streak, updated_at
+        FROM player_stats_state
+        WHERE server_id = ${getPrimaryServerId()} OR server_id IS NULL
+        ORDER BY player_key ASC
+      ` as any[];
+}
+
+async function readGranularPlayerSummaryForActiveServer(): Promise<PlayerTotalsSummary> {
+  if (!sql) return { players: 0, kills: 0, deaths: 0 };
+  const rows = playerStatsScopedPersistenceReady
+    ? await sql`
+        SELECT
+          COUNT(*)::int AS players,
+          COALESCE(SUM(CASE WHEN COALESCE(stats->>'kills','') ~ '^[0-9]+$' THEN (stats->>'kills')::bigint ELSE 0 END), 0)::bigint AS kills,
+          COALESCE(SUM(CASE WHEN COALESCE(stats->>'deaths','') ~ '^[0-9]+$' THEN (stats->>'deaths')::bigint ELSE 0 END), 0)::bigint AS deaths
+        FROM player_stats_state
+        WHERE server_id = ${getActiveServerId()}
+      `
+    : await sql`
+        SELECT
+          COUNT(*)::int AS players,
+          COALESCE(SUM(CASE WHEN COALESCE(stats->>'kills','') ~ '^[0-9]+$' THEN (stats->>'kills')::bigint ELSE 0 END), 0)::bigint AS kills,
+          COALESCE(SUM(CASE WHEN COALESCE(stats->>'deaths','') ~ '^[0-9]+$' THEN (stats->>'deaths')::bigint ELSE 0 END), 0)::bigint AS deaths
+        FROM player_stats_state
+        WHERE server_id = ${getPrimaryServerId()} OR server_id IS NULL
+      `;
+  const row = (rows as any[])[0] || {};
+  return { players: Number(row.players || 0), kills: Number(row.kills || 0), deaths: Number(row.deaths || 0) };
+}
+
+async function persistRecoveredPrimarySnapshot(state: AppState, previousMainRow?: any) {
+  if (!sql || getActiveServerId() !== getPrimaryServerId() || !botStateScopedPersistenceReady) return;
+  const recoveryAt = new Date().toISOString();
+  if (previousMainRow?.data) {
+    const backupId = `recovery_backup_main_${Date.now()}`;
+    await sql`
+      INSERT INTO bot_state (id, data, updated_at, server_id)
+      VALUES (${backupId}, ${sql.json(previousMainRow.data)}, NOW(), ${getPrimaryServerId()})
+      ON CONFLICT (server_id, id) DO NOTHING
+    `;
+  }
+  await sql`
+    INSERT INTO bot_state (id, data, updated_at, server_id)
+    VALUES (${STATE_ID}, ${sql.json(state)}, NOW(), ${getPrimaryServerId()})
+    ON CONFLICT (server_id, id)
+    DO UPDATE SET data = EXCLUDED.data, updated_at = NOW()
+  `;
+  console.warn("🛟 PZ Deathmatch state recovered from same-server persistence sources", {
+    serverId: getPrimaryServerId(),
+    recoveryAt,
+    totals: summarizeGlobalPlayers(state.players),
+    backupCreated: Boolean(previousMainRow?.data),
+  });
+}
+
 export async function getStateAsync(): Promise<AppState> {
   await ensurePrimaryServerRegistryMetadata();
   const existingCachedState = getCachedState();
@@ -3515,7 +3620,8 @@ export async function getStateAsync(): Promise<AppState> {
         rows = await sql`
           SELECT id, data, updated_at, server_id
           FROM bot_state
-          WHERE id IN (${stateIds[0]}, ${stateIds[1]}, ${stateIds[2]}, ${stateIds[3]}, ${stateIds[4]}, ${stateIds[5]}, ${stateIds[6]})
+          WHERE (server_id = ${getPrimaryServerId()} OR server_id IS NULL)
+            AND id IN (${stateIds[0]}, ${stateIds[1]}, ${stateIds[2]}, ${stateIds[3]}, ${stateIds[4]}, ${stateIds[5]}, ${stateIds[6]})
         ` as any[];
       }
     } else {
@@ -3535,17 +3641,49 @@ export async function getStateAsync(): Promise<AppState> {
     const runtimeRow = rows.find((row: any) => row.id === DISCORD_RUNTIME_STATE_ID);
 
     if (!mainRow) {
-      domainPersistenceMetrics.bootSource = "fresh-main";
-      const state = defaultState();
-      if (getActiveServerId() !== getPrimaryServerId()) {
+      const isPrimary = getActiveServerId() === getPrimaryServerId();
+      let state = defaultState();
+      let recoveredPrimary = false;
+
+      if (isPrimary) {
+        // A missing primary main row is never allowed to silently become an
+        // empty production snapshot. Rebuild only from sources that are already
+        // owned by pz-deathmatch: local legacy state, primary V2 domains and
+        // primary granular player rows. Secondary rows are never considered.
+        const local = readLocalState();
+        if (summarizeGlobalPlayers(local.players).players > 0) {
+          state = local;
+          recoveredPrimary = true;
+        }
+        if (STATE_PERSISTENCE_V2_ENABLED) {
+          for (const domain of Object.keys(STATE_DOMAIN_IDS) as StateDomainName[]) {
+            const row = rows.find((candidate: any) => candidate.id === STATE_DOMAIN_IDS[domain]);
+            if (!row) continue;
+            applyStateDomain(state, domain, row.data || {});
+            recoveredPrimary = true;
+          }
+        }
+        if (GRANULAR_PLAYER_STATS_ENABLED) {
+          await ensureGranularPlayerStatsTable();
+          const granularRows = await loadAllGranularPlayerRowsForActiveServer();
+          if (granularRows.length) {
+            applyGranularPlayerRows(state, granularRows);
+            recoveredPrimary = true;
+          }
+        }
+      } else {
         // New runtimes start directly in the proven optimized ADM strategy so
         // they do not retransmit every historical candidate every 5 minutes.
         state.serviceSettings = normalizeServiceSettings({ ...state.serviceSettings, admDownloadMode: "optimized" });
       }
+
+      domainPersistenceMetrics.bootSource = recoveredPrimary ? "persistence-v2" : "fresh-main";
       const serialized = serializeState(state);
       const hash = hashState(serialized);
 
-      if (botStateScopedPersistenceReady) {
+      if (recoveredPrimary) {
+        await persistRecoveredPrimarySnapshot(state);
+      } else if (botStateScopedPersistenceReady) {
         await sql`
           INSERT INTO bot_state (id, data, updated_at, server_id)
           VALUES (${STATE_ID}, ${sql.json(state)}, NOW(), ${getActiveServerId()})
@@ -3593,36 +3731,41 @@ export async function getStateAsync(): Promise<AppState> {
         }
       }
     }
+    let primaryStatsRecovered = false;
     if (STATE_PERSISTENCE_V2_ENABLED && GRANULAR_PLAYER_STATS_ENABLED) {
       await ensureGranularPlayerStatsTable();
-      const granularRows = playerStatsScopedPersistenceReady
-        ? await sql`
-            SELECT player_key, stats, current_streak, updated_at
-            FROM player_stats_state
-            WHERE server_id = ${getActiveServerId()}
-              AND updated_at > ${new Date(mainUpdatedAt || 0)}
-          `
-        : await sql`
-            SELECT player_key, stats, current_streak, updated_at
-            FROM player_stats_state
-            WHERE updated_at > ${new Date(mainUpdatedAt || 0)}
-          `;
-      let newestGranularAt = 0;
-      for (const row of granularRows as any[]) {
-        const playerKey = String(row.player_key || "");
-        if (!playerKey || !row.stats || typeof row.stats !== "object") continue;
-        getCachedState()!.players[playerKey] = {
-          kills: Number(row.stats.kills || 0),
-          deaths: Number(row.stats.deaths || 0),
-        };
-        const streak = Number(row.current_streak || 0);
-        if (streak > 0) getCachedState()!.currentKillStreaks[playerKey] = streak;
-        else delete getCachedState()!.currentKillStreaks[playerKey];
-        granularPlayerStatsMetrics.rowsAppliedAtBoot += 1;
-        const rowAt = row.updated_at ? new Date(row.updated_at).getTime() : 0;
-        if (rowAt > newestGranularAt) newestGranularAt = rowAt;
+      const inMemoryTotals = summarizeGlobalPlayers(getCachedState()!.players);
+      const granularTotals = await readGranularPlayerSummaryForActiveServer();
+      const granularHasMoreAuthoritativeData =
+        granularTotals.players > inMemoryTotals.players
+        || granularTotals.kills > inMemoryTotals.kills
+        || granularTotals.deaths > inMemoryTotals.deaths;
+
+      const granularRows = granularHasMoreAuthoritativeData
+        ? await loadAllGranularPlayerRowsForActiveServer()
+        : playerStatsScopedPersistenceReady
+          ? await sql`
+              SELECT player_key, stats, current_streak, updated_at
+              FROM player_stats_state
+              WHERE server_id = ${getActiveServerId()}
+                AND updated_at > ${new Date(mainUpdatedAt || 0)}
+            ` as any[]
+          : await sql`
+              SELECT player_key, stats, current_streak, updated_at
+              FROM player_stats_state
+              WHERE (server_id = ${getPrimaryServerId()} OR server_id IS NULL)
+                AND updated_at > ${new Date(mainUpdatedAt || 0)}
+            ` as any[];
+
+      applyGranularPlayerRows(getCachedState()!, granularRows as any[]);
+      primaryStatsRecovered = getActiveServerId() === getPrimaryServerId() && granularHasMoreAuthoritativeData;
+      if (primaryStatsRecovered) {
+        console.warn("🛟 detected reduced PZ Deathmatch compatibility snapshot; restoring global players from primary granular rows", {
+          before: inMemoryTotals,
+          granular: granularTotals,
+          after: summarizeGlobalPlayers(getCachedState()!.players),
+        });
       }
-      granularPlayerStatsMetrics.newestRowAtBoot = newestGranularAt ? new Date(newestGranularAt).toISOString() : undefined;
     }
     domainPersistenceMetrics.domainRowsFoundAtBoot = domainRowsFoundAtBoot;
     domainPersistenceMetrics.domainRowsAppliedAtBoot = domainRowsAppliedAtBoot;
@@ -3634,6 +3777,9 @@ export async function getStateAsync(): Promise<AppState> {
     const runtimeUpdatedAt = runtimeRow?.updated_at ? new Date(runtimeRow.updated_at).getTime() : 0;
     if (runtimeRow && runtimeUpdatedAt >= mainUpdatedAt) {
       applyDiscordRuntimeState(getCachedState()!, normalizeDiscordRuntimeState(runtimeRow.data || defaultDiscordRuntimeState()));
+    }
+    if (primaryStatsRecovered) {
+      await persistRecoveredPrimarySnapshot(getCachedState()!, mainRow);
     }
     const loadedStateJson = serializeState(getCachedState()!);
     recordNetworkTransfer({
