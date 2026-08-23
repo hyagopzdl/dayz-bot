@@ -307,6 +307,91 @@ export async function discoverNitradoServices(serverId: string) {
   return { services, connection: getIntegrationOnboardingStatus(serverId).nitrado };
 }
 
+
+function normalizeMissionRelativePath(value: unknown) {
+  return String(value || "")
+    .replace(/\\/g, "/")
+    .replace(/^\/+|\/+$/g, "");
+}
+
+function nitradoEntryPath(entry: any) {
+  return firstText(entry?.path, entry?.name, entry?.file, entry?.filename) || "";
+}
+
+async function listNitradoMissionDirectory(serverId: string, serviceId: string, dir: string) {
+  try {
+    const json = await nitradoOnboardingJson(
+      `/services/${encodeURIComponent(serviceId)}/gameservers/file_server/list?dir=${encodeURIComponent(dir)}`,
+      serverId,
+    );
+    return Array.isArray(json?.data?.entries) ? json.data.entries : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Discovers the editable DayZ mission directory from this server's own Nitrado
+ * file server. This never falls back to the primary server mission path.
+ */
+async function discoverNitradoMissionDirFor(
+  serverId: string,
+  serviceIdInput: unknown,
+  baseDirInput: unknown,
+): Promise<string | undefined> {
+  const serviceId = String(serviceIdInput || "").trim();
+  const baseDir = String(baseDirInput || "").trim().replace(/\\/g, "/");
+  if (!serviceId || !baseDir) return undefined;
+
+  const platform = /\/dayzxb\//i.test(baseDir) ? "dayzxb" : "dayzps";
+  const roots = [`${platform}_missions`, `${platform}_mission`];
+  const noftpIndex = baseDir.toLowerCase().indexOf("/noftp/");
+  const noftpRoot = noftpIndex >= 0 ? baseDir.slice(0, noftpIndex + "/noftp".length) : "";
+  const missionNames = new Set(["dayzOffline.chernarusplus", "dayzOffline.enoch", "dayzOffline.sakhal"]);
+
+  for (const root of roots) {
+    const rootCandidates = [root, noftpRoot ? `${noftpRoot}/${root}` : ""].filter(Boolean);
+    for (const rootDir of rootCandidates) {
+      const entries = await listNitradoMissionDirectory(serverId, serviceId, rootDir);
+      for (const entry of entries) {
+        const raw = normalizeMissionRelativePath(nitradoEntryPath(entry));
+        if (!raw) continue;
+        const parts = raw.split("/").filter(Boolean);
+        const name = parts[parts.length - 1];
+        if (!name || !name.includes(".")) continue;
+        missionNames.add(name);
+      }
+    }
+
+    for (const missionName of missionNames) {
+      const relative = `${root}/${missionName}`;
+      const candidateDirs = [relative, noftpRoot ? `${noftpRoot}/${relative}` : ""].filter(Boolean);
+      for (const candidateDir of candidateDirs) {
+        const entries = await listNitradoMissionDirectory(serverId, serviceId, candidateDir);
+        const names = entries.map((entry: any) => normalizeMissionRelativePath(nitradoEntryPath(entry)).split("/").pop()?.toLowerCase() || "");
+        if (names.includes("cfgeventspawns.xml") && (names.includes("db") || names.includes("cfgplayerspawnpoints.xml") || names.includes("cfgspawnabletypes.xml"))) {
+          return relative;
+        }
+      }
+    }
+  }
+
+  return undefined;
+}
+
+/**
+ * Discovers the editable DayZ mission directory from this server's own Nitrado
+ * file server. This never falls back to the primary server mission path.
+ */
+export async function discoverNitradoMissionDir(serverId: string): Promise<string | undefined> {
+  const server = assertOnboardingServer(serverId);
+  return discoverNitradoMissionDirFor(
+    serverId,
+    server.integrations.nitradoServiceId || server.runtime.nitradoValidation?.serviceId,
+    server.runtime.nitradoBaseDir || server.runtime.nitradoValidation?.baseDir,
+  );
+}
+
 export async function validateNitradoServiceSetup(serverId: string, serviceIdInput: unknown, baseDirInput: unknown) {
   assertOnboardingServer(serverId);
   const serviceId = String(serviceIdInput || "").trim();
@@ -329,9 +414,11 @@ export async function validateNitradoServiceSetup(serverId: string, serviceIdInp
   const entries = Array.isArray(listJson?.data?.entries) ? listJson.data.entries : [];
   const admFilesFound = entries.filter((entry: any) => String(entry?.path || "").toUpperCase().endsWith(".ADM")).length;
   const gameText = collectObjectStrings(details).join(" ");
+  const missionDir = await discoverNitradoMissionDirFor(serverId, serviceId, baseDir);
   return {
     serviceId,
     baseDir,
+    missionDir,
     detectedBaseDir,
     looksLikeDayz: /dayz/i.test(gameText),
     admFilesFound,

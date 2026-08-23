@@ -1,4 +1,5 @@
 import type { AppState, ShopOrder, ShopSavedLocation } from "./state";
+import { ensureManagedServerShopDeliveryConfiguration } from "./state";
 import { getNitradoGameserverStatus } from "./nitradoDownloader";
 import { downloadServerTextFile, uploadServerTextFile } from "./serverFileTransport";
 import {
@@ -20,6 +21,7 @@ import {
   isManagedServerRuntimePaused,
 } from "./serverRegistry";
 import { getOrganizationIntegrationStatus } from "./organizationIntegrations";
+import { discoverNitradoMissionDir } from "./serverIntegrations";
 
 import {
   findShopItem,
@@ -106,6 +108,37 @@ export function getShopDeliveryReadiness(serverId = getServerRuntimeContext().se
   }
 
   return { ready: true, serverId: server.id, transport: "nitrado-file-server", missionDir };
+}
+
+export async function ensureShopDeliveryConfiguration(serverId = getServerRuntimeContext().serverId): Promise<ShopDeliveryReadiness> {
+  let readiness = getShopDeliveryReadiness(serverId);
+  if (readiness.ready || serverId === getPrimaryServerId()) return readiness;
+
+  const server = getManagedServerById(serverId);
+  if (!server) return readiness;
+
+  // Self-heal only an otherwise-valid tenant whose Shop settings were never
+  // bootstrapped by the older onboarding flow. Never bypass activation, pause,
+  // preflight, credential, or ownership guards.
+  const canBootstrap = Boolean(
+    server.runtimeEnabled
+    && hasManagedServerRuntimeActivation(server)
+    && !isManagedServerRuntimePaused(server)
+    && hasMatchingManagedServerNitradoValidation(server)
+    && hasMatchingActivationPreflight(server)
+    && String(server.integrations.nitradoServiceId || "").trim()
+    && String(server.runtime.nitradoBaseDir || "").trim()
+    && getOrganizationIntegrationStatus(server.organizationId).configured
+  );
+  if (!canBootstrap) return readiness;
+
+  const existingMissionDir = normalizeRelativePath(String(server.runtime.settings?.dayzMissionDir || ""));
+  const missionDir = existingMissionDir || await discoverNitradoMissionDir(serverId);
+  if (!missionDir) return readiness;
+
+  await ensureManagedServerShopDeliveryConfiguration(serverId, { missionDir });
+  readiness = getShopDeliveryReadiness(serverId);
+  return readiness;
 }
 
 export function getShopFilePaths(serverId = getServerRuntimeContext().serverId) {

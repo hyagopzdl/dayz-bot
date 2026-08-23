@@ -2201,9 +2201,51 @@ export async function updateManagedServerScopedSettings(serverIdInput: unknown, 
   return servers.find((server) => server.id === id);
 }
 
+export async function ensureManagedServerShopDeliveryConfiguration(
+  serverIdInput: unknown,
+  input: { missionDir: string; restartTimes?: string; restartTimezone?: string },
+) {
+  await ensurePrimaryServerRegistryMetadata();
+  if (!sql || !getServerRegistryPersistenceStatus().tableReady) throw new Error("Server registry is unavailable.");
+  const id = buildManagedServerId(serverIdInput);
+  if (!id || id === getPrimaryServerId()) return getPrimaryServerDescriptor();
+
+  const currentServers = await reloadManagedServerRegistryFromDb();
+  const current = currentServers.find((server) => server.id === id);
+  if (!current) throw new Error(`Servidor ${id} nao encontrado.`);
+
+  const existing = current.runtime.settings || {};
+  const missionDir = String(existing.dayzMissionDir || input.missionDir || "")
+    .replace(/\\/g, "/")
+    .replace(/^\/+|\/+$/g, "");
+  if (!missionDir || missionDir.includes("..")) throw new Error("Mission dir invalido para Shop delivery.");
+
+  // Initial bootstrap is fill-only: never overwrite explicit tenant settings.
+  const settings: ServerScopedSettings = {
+    ...existing,
+    dayzMissionDir: missionDir,
+    shopRestartTimes: String(existing.shopRestartTimes || input.restartTimes || "00:00,04:00,08:00,12:00,16:00,20:00").trim(),
+    shopRestartTimezone: String(existing.shopRestartTimezone || input.restartTimezone || "America/Sao_Paulo").trim(),
+    shopDeliveryConfiguredAt: String(existing.shopDeliveryConfiguredAt || new Date().toISOString()).trim(),
+  };
+
+  const runtime = { ...current.runtime, settings };
+  await sql`
+    UPDATE managed_servers
+    SET runtime_config = ${JSON.stringify(runtime)}::jsonb, updated_at = NOW()
+    WHERE id = ${id}
+  `;
+  const servers = await reloadManagedServerRegistryFromDb();
+  recordNetworkTransfer({
+    service: "neon-server-registry", operation: "bootstrap_shop_delivery_settings", direction: "outbound",
+    bytes: Buffer.byteLength(JSON.stringify({ serverId: id, settings }), "utf8"), ok: true,
+  });
+  return servers.find((server) => server.id === id);
+}
+
 export async function markManagedServerNitradoValidated(
   serverId: string,
-  validation: { serviceId: string; baseDir: string },
+  validation: { serviceId: string; baseDir: string; missionDir?: string },
 ) {
   await ensurePrimaryServerRegistryMetadata();
   if (!sql || !getServerRegistryPersistenceStatus().tableReady) {
@@ -2227,6 +2269,20 @@ export async function markManagedServerNitradoValidated(
     throw new Error("Este Nitrado Service ID ja esta vinculado a outro servidor.");
   }
 
+  const discoveredMissionDir = String(validation?.missionDir || "")
+    .replace(/\\/g, "/")
+    .replace(/^\/+|\/+$/g, "");
+  const currentSettings = current.runtime.settings || {};
+  const initialSettings: ServerScopedSettings = discoveredMissionDir
+    ? {
+        ...currentSettings,
+        dayzMissionDir: currentSettings.dayzMissionDir || discoveredMissionDir,
+        shopRestartTimes: currentSettings.shopRestartTimes || "00:00,04:00,08:00,12:00,16:00,20:00",
+        shopRestartTimezone: currentSettings.shopRestartTimezone || "America/Sao_Paulo",
+        shopDeliveryConfiguredAt: currentSettings.shopDeliveryConfiguredAt || new Date().toISOString(),
+      }
+    : { ...currentSettings };
+
   const nitradoValidation: ServerNitradoValidation = {
     serviceId,
     baseDir,
@@ -2247,6 +2303,7 @@ export async function markManagedServerNitradoValidated(
       activationPreflight: undefined,
       activation: current.runtime.activation ? { ...current.runtime.activation } : undefined,
       operations: current.runtime.operations ? { ...current.runtime.operations, paused: false } : undefined,
+      settings: initialSettings,
       discord: { ...(current.runtime.discord || {}) },
     },
   };

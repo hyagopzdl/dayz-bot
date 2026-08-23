@@ -7,6 +7,7 @@ import {
 } from "discord.js";
 import {
   createShopOrder,
+  ensureShopDeliveryConfiguration,
   findSavedShopLocation,
   getShopItems,
   parseShopCoordinates,
@@ -377,6 +378,7 @@ export async function handleShopInteraction(interaction: any, ctx: ShopInteracti
   if (interaction.isChatInputCommand() && interaction.commandName === "shop") {
     await safeDeferReply(interaction);
     await ensureShopCatalogLoaded();
+    await ensureShopDeliveryConfiguration();
     const state = await ctx.getState();
 
     if (!hasLinkedGamertag(state, interaction.user.id)) {
