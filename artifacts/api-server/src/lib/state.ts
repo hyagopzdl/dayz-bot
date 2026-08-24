@@ -3996,6 +3996,16 @@ export async function getStateAsync(): Promise<AppState> {
     initializeGranularPlayerSignatures(getCachedState()!);
     return getCachedState()!;
   } catch (err) {
+    if (getActiveServerId() !== getPrimaryServerId()) {
+      domainPersistenceMetrics.bootSource = "neon-read-failed-closed";
+      console.error(
+        "❌ Neon state read failed for secondary server " +
+          getActiveServerId() +
+          "; refusing local state fallback to prevent stale or cross-tenant recovery.",
+        err,
+      );
+      throw err;
+    }
     console.error("❌ erro lendo state no Neon, usando state.json local:", err);
     domainPersistenceMetrics.bootSource = "local-fallback";
     setCachedState(readLocalState());

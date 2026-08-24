@@ -329,6 +329,26 @@ async function verifyShopBlocksRemoved() {
   }
 }
 
+async function restoreAndVerifyShopXmlFiles(
+  eventsXml: string,
+  eventSpawnsXml: string,
+  operation: string,
+) {
+  await uploadServerTextFile(getShopFilePaths().eventsPath, eventsXml);
+  await uploadServerTextFile(getShopFilePaths().eventSpawnsPath, eventSpawnsXml);
+
+  const [restoredEventsXml, restoredEventSpawnsXml] = await Promise.all([
+    downloadServerTextFile(getShopFilePaths().eventsPath),
+    downloadServerTextFile(getShopFilePaths().eventSpawnsPath),
+  ]);
+
+  if (restoredEventsXml !== eventsXml || restoredEventSpawnsXml !== eventSpawnsXml) {
+    throw new Error(
+      "SHOP " + operation + " ROLLBACK FAILED: restored XML payloads do not match the original files.",
+    );
+  }
+}
+
 function isShopResetFallbackEnabled() {
   return boolEnv("SHOP_RESET_CONFIRM_FALLBACK_ENABLED", false);
 }
@@ -801,16 +821,17 @@ export async function deployPendingShopOrders(state: AppState) {
     console.log("🛒 SHOP DEPLOY verifying uploaded XML files");
     await verifyUploadedShopBlocks(pendingOrders, injectedEvents.eventNames);
   } catch (deployError) {
-    // Do not leave a half-deployed CE configuration behind. A successful
-    // events.xml upload with a failed spawn-file upload could otherwise create
-    // a broken batch on the next restart while orders remain pending.
     console.error("❌ SHOP DEPLOY partial failure; attempting XML rollback", deployError);
     try {
-      await uploadServerTextFile(getShopFilePaths().eventsPath, eventsXml);
-      await uploadServerTextFile(getShopFilePaths().eventSpawnsPath, eventSpawnsXml);
-      console.log("✅ SHOP DEPLOY rollback verified by restoring original XML payloads");
+      await restoreAndVerifyShopXmlFiles(eventsXml, eventSpawnsXml, "DEPLOY");
+      console.log("✅ SHOP DEPLOY rollback verified by restoring and re-downloading both original XML payloads");
     } catch (rollbackError) {
-      console.error("❌ SHOP DEPLOY rollback failed", rollbackError);
+      console.error("❌ SHOP DEPLOY rollback failed or could not be verified", rollbackError);
+      throw new Error(
+        "SHOP DEPLOY FAILED AND ROLLBACK COULD NOT BE VERIFIED: " +
+          (rollbackError instanceof Error ? rollbackError.message : String(rollbackError)),
+        { cause: deployError },
+      );
     }
     throw deployError;
   }
@@ -875,13 +896,29 @@ async function removeShopXmlBlocks(options?: { requireExistingBlock?: boolean })
 
   await backupShopXmlFiles(eventsXml, eventSpawnsXml);
 
-  await uploadServerTextFile(getShopFilePaths().eventsPath, removeShopBotBlock(eventsXml));
-  await uploadServerTextFile(
-    getShopFilePaths().eventSpawnsPath,
-    removeShopBotBlock(eventSpawnsXml),
-  );
+  try {
+    await uploadServerTextFile(getShopFilePaths().eventsPath, removeShopBotBlock(eventsXml));
+    await uploadServerTextFile(
+      getShopFilePaths().eventSpawnsPath,
+      removeShopBotBlock(eventSpawnsXml),
+    );
 
-  await verifyShopBlocksRemoved();
+    await verifyShopBlocksRemoved();
+  } catch (clearError) {
+    console.error("❌ SHOP CLEAR partial failure; attempting XML rollback", clearError);
+    try {
+      await restoreAndVerifyShopXmlFiles(eventsXml, eventSpawnsXml, "CLEAR");
+      console.log("✅ SHOP CLEAR rollback verified by restoring and re-downloading both original XML payloads");
+    } catch (rollbackError) {
+      console.error("❌ SHOP CLEAR rollback failed or could not be verified", rollbackError);
+      throw new Error(
+        "SHOP CLEAR FAILED AND ROLLBACK COULD NOT BE VERIFIED: " +
+          (rollbackError instanceof Error ? rollbackError.message : String(rollbackError)),
+        { cause: clearError },
+      );
+    }
+    throw clearError;
+  }
 }
 
 export async function clearShopSpawnerAndMarkSpawned(
