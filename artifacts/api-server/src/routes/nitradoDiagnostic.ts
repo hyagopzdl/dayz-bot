@@ -4,9 +4,9 @@ import {
   listNitradoDirectory,
   probeNitradoUploadTokenForDirectory,
 } from "../lib/nitradoDownloader";
+import { getOrganizationIntegrationStatus } from "../lib/organizationIntegrations";
 import {
   getManagedServerById,
-  getOrganizationIntegrationStatus,
   getPrimaryServerDescriptor,
   getPrimaryServerId,
   getServerRuntimeIsolationStatus,
