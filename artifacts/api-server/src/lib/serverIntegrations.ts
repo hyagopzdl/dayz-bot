@@ -433,11 +433,18 @@ export async function discoverNitradoShopDeliveryRouting(serverId: string): Prom
       const candidateDir = `${rootDir}/${missionName}`.replace(/\/{2,}/g, "/");
       const entries = await listNitradoMissionDirectory(serverId, serviceId, candidateDir, { quiet: true });
       const names = entries.map((entry: any) => normalizeMissionRelativePath(nitradoEntryPath(entry)).split("/").pop()?.toLowerCase() || "");
-      const valid = names.includes("cfgeventspawns.xml") && (names.includes("db") || names.includes("cfgplayerspawnpoints.xml") || names.includes("cfgspawnabletypes.xml"));
-      if (!valid) continue;
+      if (!names.includes("cfgeventspawns.xml") || !names.includes("db")) continue;
+
+      // A mission root is only useful for Shop delivery if the exact CE files
+      // we mutate are present. Older discovery accepted any `db/` directory,
+      // which could persist a visually valid mission root whose events.xml was
+      // actually exposed through a different Nitrado file-server root.
+      const dbEntries = await listNitradoMissionDirectory(serverId, serviceId, `${candidateDir}/db`, { quiet: true });
+      const dbNames = dbEntries.map((entry: any) => normalizeMissionRelativePath(nitradoEntryPath(entry)).split("/").pop()?.toLowerCase() || "");
+      if (!dbNames.includes("events.xml")) continue;
 
       const missionDir = relativeMissionPathFromCandidate(rootDir, missionName);
-      console.log(`[shop-delivery][${serverId}] mission found root=${rootDir} mission=${missionName} persisted=${missionDir}`);
+      console.log(`[shop-delivery][${serverId}] mission found root=${rootDir} mission=${missionName} persisted=${missionDir} events=yes spawns=yes`);
       return { serviceId, baseDir: verifiedBaseDir, missionDir };
     }
   }

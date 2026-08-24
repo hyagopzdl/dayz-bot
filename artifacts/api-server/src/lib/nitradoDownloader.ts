@@ -366,11 +366,13 @@ export async function downloadNitradoTextFile(
   const normalized = normalizeNitradoFileServerPath(filePath);
   const { path: directory, file } = splitRemoteFilePath(normalized);
   const noFtpRoot = getNoFtpRootFromAdmBaseDir(serverId);
+  const ftpRoot = getFtpRootFromAdmBaseDir(serverId);
   const candidates: string[] = [normalized];
 
   for (const variant of withDayzMissionFolderVariants(directory)) {
     candidates.push(`${variant}/${file}`);
     if (noFtpRoot) candidates.push(`${noFtpRoot}/${variant}/${file}`);
+    if (ftpRoot) candidates.push(`${ftpRoot}/${variant}/${file}`);
   }
 
   const errors: string[] = [];
@@ -844,6 +846,13 @@ function getNoFtpRootFromAdmBaseDir(serverId = getActiveServerId()) {
   return baseDir.slice(0, index + marker.length - 1);
 }
 
+function getFtpRootFromAdmBaseDir(serverId = getActiveServerId()) {
+  const baseDir = String(getServerRuntimeContext(serverId).nitrado.baseDir || LEGACY_BASE_DIR)
+    .replace(/\\/g, "/");
+  const match = baseDir.match(/^(\/games\/[^/]+)\/(?:noftp|ftproot)(?:\/|$)/i);
+  return match?.[1] ? `${match[1]}/ftproot` : "";
+}
+
 function withDayzMissionFolderVariants(pathValue: string) {
   const normalized = normalizeNitradoFileServerPath(pathValue);
   const variants = [normalized];
@@ -865,6 +874,7 @@ function withDayzMissionFolderVariants(pathValue: string) {
 
 function buildUploadPathCandidates(pathValue: string, serverId = getActiveServerId()) {
   const noFtpRoot = getNoFtpRootFromAdmBaseDir(serverId);
+  const ftpRoot = getFtpRootFromAdmBaseDir(serverId);
   const candidates: string[] = [];
 
   for (const variant of withDayzMissionFolderVariants(pathValue)) {
@@ -874,6 +884,11 @@ function buildUploadPathCandidates(pathValue: string, serverId = getActiveServer
     if (noFtpRoot) {
       candidates.push(ensureTrailingSlash(`${noFtpRoot}/${variant}`));
       candidates.push(`${noFtpRoot}/${variant}`);
+    }
+
+    if (ftpRoot) {
+      candidates.push(ensureTrailingSlash(`${ftpRoot}/${variant}`));
+      candidates.push(`${ftpRoot}/${variant}`);
     }
   }
 

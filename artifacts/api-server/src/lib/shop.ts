@@ -185,6 +185,20 @@ export async function ensureShopDeliveryConfiguration(serverId = getServerRuntim
   return getShopDeliveryReadiness(serverId);
 }
 
+async function repairShopDeliveryRouting(serverId = getServerRuntimeContext().serverId) {
+  if (serverId === getPrimaryServerId()) return getShopDeliveryReadiness(serverId);
+  const discovered = await discoverNitradoShopDeliveryRouting(serverId);
+  if (!discovered.baseDir || !discovered.missionDir) {
+    throw new Error(`SHOP DELIVERY ROUTING REPAIR FAILED: no valid mission/filesystem route found for ${serverId}.`);
+  }
+  await ensureManagedServerShopDeliveryRoutingConfiguration(serverId, {
+    serviceId: discovered.serviceId,
+    baseDir: discovered.baseDir,
+    missionDir: discovered.missionDir,
+  });
+  return getShopDeliveryReadiness(serverId);
+}
+
 export function getShopFilePaths(serverId = getServerRuntimeContext().serverId) {
   const readiness = getShopDeliveryReadiness(serverId);
   if (!readiness.ready || !readiness.missionDir) {
@@ -424,6 +438,7 @@ export function getShopResetMonitorPersistenceKey(state: Pick<AppState, "shopRes
   return JSON.stringify({
     batchId: monitor.batchId,
     deployedAt: monitor.deployedAt,
+    admFileAtDeploy: monitor.admFileAtDeploy,
     sawOfflineAt: monitor.sawOfflineAt,
     sawOnlineAt: monitor.sawOnlineAt,
     clearedAt: monitor.clearedAt,
@@ -700,7 +715,7 @@ async function backupShopXmlFiles(_eventsXml: string, _eventSpawnsXml: string) {
 export async function deployPendingShopOrders(state: AppState) {
   ensureShopState(state);
 
-  const delivery = getShopDeliveryReadiness();
+  const delivery = await ensureShopDeliveryConfiguration();
   if (!delivery.ready) {
     throw new Error(delivery.reason || "SHOP DEPLOY BLOCKED: server-scoped delivery routing is not ready.");
   }
@@ -740,10 +755,24 @@ export async function deployPendingShopOrders(state: AppState) {
   validateOrdersReadyForXml(pendingOrders);
 
   console.log("🛒 SHOP DEPLOY downloading XML files");
-  const [eventsXml, eventSpawnsXml] = await Promise.all([
-    downloadServerTextFile(getShopFilePaths().eventsPath),
-    downloadServerTextFile(getShopFilePaths().eventSpawnsPath),
-  ]);
+  let eventsXml: string;
+  let eventSpawnsXml: string;
+  try {
+    [eventsXml, eventSpawnsXml] = await Promise.all([
+      downloadServerTextFile(getShopFilePaths().eventsPath),
+      downloadServerTextFile(getShopFilePaths().eventSpawnsPath),
+    ]);
+  } catch (firstError) {
+    const serverId = getServerRuntimeContext().serverId;
+    if (serverId === getPrimaryServerId()) throw firstError;
+    console.warn(`[shop-delivery][${serverId}] configured XML route failed; rediscovering before one retry: ${firstError instanceof Error ? firstError.message : String(firstError)}`);
+    const repaired = await repairShopDeliveryRouting(serverId);
+    if (!repaired.ready) throw firstError;
+    [eventsXml, eventSpawnsXml] = await Promise.all([
+      downloadServerTextFile(getShopFilePaths().eventsPath),
+      downloadServerTextFile(getShopFilePaths().eventSpawnsPath),
+    ]);
+  }
 
   await backupShopXmlFiles(eventsXml, eventSpawnsXml);
 
@@ -765,11 +794,26 @@ export async function deployPendingShopOrders(state: AppState) {
   console.log(
     `🛒 SHOP DEPLOY uploading XML files events=${injectedEvents.eventNames.length}`,
   );
-  await uploadServerTextFile(getShopFilePaths().eventsPath, injectedEvents.xml);
-  await uploadServerTextFile(getShopFilePaths().eventSpawnsPath, injectedEventSpawns);
+  try {
+    await uploadServerTextFile(getShopFilePaths().eventsPath, injectedEvents.xml);
+    await uploadServerTextFile(getShopFilePaths().eventSpawnsPath, injectedEventSpawns);
 
-  console.log("🛒 SHOP DEPLOY verifying uploaded XML files");
-  await verifyUploadedShopBlocks(pendingOrders, injectedEvents.eventNames);
+    console.log("🛒 SHOP DEPLOY verifying uploaded XML files");
+    await verifyUploadedShopBlocks(pendingOrders, injectedEvents.eventNames);
+  } catch (deployError) {
+    // Do not leave a half-deployed CE configuration behind. A successful
+    // events.xml upload with a failed spawn-file upload could otherwise create
+    // a broken batch on the next restart while orders remain pending.
+    console.error("❌ SHOP DEPLOY partial failure; attempting XML rollback", deployError);
+    try {
+      await uploadServerTextFile(getShopFilePaths().eventsPath, eventsXml);
+      await uploadServerTextFile(getShopFilePaths().eventSpawnsPath, eventSpawnsXml);
+      console.log("✅ SHOP DEPLOY rollback verified by restoring original XML payloads");
+    } catch (rollbackError) {
+      console.error("❌ SHOP DEPLOY rollback failed", rollbackError);
+    }
+    throw deployError;
+  }
 
   const now = new Date().toISOString();
   const batchId = `restart_${Date.now()}`;
@@ -785,6 +829,7 @@ export async function deployPendingShopOrders(state: AppState) {
   state.shopResetMonitor = {
     batchId,
     deployedAt: now,
+    admFileAtDeploy: state.lastFileName,
     sawOfflineAt: undefined,
     sawOnlineAt: undefined,
     lastStatus: null,
@@ -1028,6 +1073,21 @@ export async function tryAutoClearShopAfterAdmReset(
   state: AppState,
   _admFiles?: unknown,
 ) {
+  ensureShopState(state);
+  const included = getIncludedShopOrders(state);
+  const monitor = state.shopResetMonitor;
+  const currentAdmFile = String(state.lastFileName || "").trim();
+  const deployedAdmFile = String(monitor?.admFileAtDeploy || "").trim();
+
+  // Nitrado status polling can miss a fast restart entirely between 5-minute
+  // coordinator ticks. A new ADM file after deployment is server-scoped,
+  // parser-observed evidence that a fresh DayZ process has started.
+  if (included.length && monitor && deployedAdmFile && currentAdmFile && currentAdmFile !== deployedAdmFile && !monitor.sawOnlineAt) {
+    monitor.sawOnlineAt = new Date().toISOString();
+    monitor.confirmationReason = `adm_file_rotated:${deployedAdmFile}->${currentAdmFile}`;
+    console.log(`🛒 shop reset monitor: restart confirmed by ADM rotation ${deployedAdmFile} -> ${currentAdmFile}`);
+  }
+
   return pollShopResetStatusAndAutoClear(state);
 }
 
@@ -1105,7 +1165,7 @@ function getActiveAutoDeployWindow(
   const requireAutoDeployEnabled = options.requireAutoDeployEnabled ?? true;
   const allowFreezeWindow = options.allowFreezeWindow ?? false;
 
-  if (requireAutoDeployEnabled && !boolEnv("SHOP_AUTO_DEPLOY_ENABLED", false)) return null;
+  if (requireAutoDeployEnabled && !boolEnv("SHOP_AUTO_DEPLOY_ENABLED", true)) return null;
 
   const times = parseRestartTimes();
   if (!times.length) return null;
@@ -1158,6 +1218,8 @@ export async function autoDeployPendingShopOrdersIfNeeded(state: AppState) {
     return null;
   }
 
+  if (!boolEnv("SHOP_AUTO_DEPLOY_ENABLED", true)) return null;
+
   const window = getActiveAutoDeployWindow();
   if (!window) return null;
 
@@ -1165,10 +1227,8 @@ export async function autoDeployPendingShopOrdersIfNeeded(state: AppState) {
   state.shopAutoDeploy = autoDeployState;
   autoDeployState.lastCheckedAt = new Date().toISOString();
 
-  if (autoDeployState.lastWindowId === window.windowId) {
-    console.log(
-      `🛒 shop auto-deploy já executado para janela ${window.windowId}.`,
-    );
+  if (window && autoDeployState.lastWindowId === window.windowId) {
+    console.log(`🛒 shop auto-deploy já executado para janela ${window.windowId}.`);
     return null;
   }
 
@@ -1177,16 +1237,13 @@ export async function autoDeployPendingShopOrdersIfNeeded(state: AppState) {
   );
 
   const result = await deployPendingShopOrders(state);
-
-  if (!result) {
-    return null;
-  }
+  if (!result) return null;
 
   autoDeployState.lastWindowId = window.windowId;
   autoDeployState.lastDeployAt = new Date().toISOString();
 
   console.log(
-    `✅ SHOP_BOT auto-deploy completed: deployed=${result.deployed} batch=${result.batchId || "none"}`,
+    `✅ SHOP_BOT auto-deploy completed: deployed=${result.deployed} batch=${result.batchId || "none"} window=${window.windowId}`,
   );
 
   return {

@@ -1184,6 +1184,7 @@ export type ShopOrderStatus =
 export type ShopResetMonitor = {
   batchId?: string;
   deployedAt?: string;
+  admFileAtDeploy?: string;
   sawOfflineAt?: string;
   sawOnlineAt?: string;
   lastStatus?: string | null;
