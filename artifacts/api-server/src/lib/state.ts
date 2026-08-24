@@ -257,7 +257,7 @@ function createDomainPersistenceMetrics() {
     lastWriteDurationMs: 0,
     lastWriteAt: undefined as string | undefined,
     lastError: undefined as string | undefined,
-    bootSource: "pending" as "pending" | "persistence-v2" | "compat-main" | "legacy-main" | "fresh-main" | "local-file" | "local-fallback",
+    bootSource: "pending" as "pending" | "persistence-v2" | "compat-main" | "legacy-main" | "fresh-main" | "local-file" | "local-fallback" | "neon-read-failed-closed",
     domainRowsFoundAtBoot: 0,
     domainRowsAppliedAtBoot: 0,
     mainUpdatedAtAtBoot: undefined as string | undefined,
