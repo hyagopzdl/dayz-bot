@@ -124,6 +124,7 @@ import {
 } from "../lib/organizationIntegrations";
 import { getShopCatalogDiagnostics, cloneShopCatalog } from "../lib/shopCatalog";
 import { getAdminServerAccess } from "../lib/adminUsers";
+import { certifyTenantIsolation } from "../lib/tenantIsolationCertification";
 
 const router = Router();
 
@@ -10339,11 +10340,21 @@ router.post("/api/map-events/inject", async (req, res) => {
 });
 
 
+router.get("/api/tenant-isolation/certification", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  try {
+    const state = await getStateAsync();
+    res.json(await certifyTenantIsolation(state));
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
 router.get("/api/map-events/scheduled", async (req, res) => {
   if (!requireAdmin(req, res)) return;
 
   try {
-    res.json(listScheduledMapEvents());
+    res.json(await listScheduledMapEvents());
   } catch (err) {
     res.status(400).json({ ok: false, error: err instanceof Error ? err.message : String(err) });
   }
@@ -10353,7 +10364,7 @@ router.post("/api/map-events/scheduled", async (req, res) => {
   if (!requireAdmin(req, res)) return;
 
   try {
-    const result = createScheduledMapEvent((req.body || {}) as any);
+    const result = await createScheduledMapEvent((req.body || {}) as any);
     res.json({ ok: true, event: result });
   } catch (err) {
     res.status(400).json({ ok: false, error: err instanceof Error ? err.message : String(err) });
@@ -10376,7 +10387,7 @@ router.patch("/api/map-events/scheduled/:id/status", async (req, res) => {
 
   try {
     const status = String(req.body?.status || "active") as "paused" | "active" | "cancelled";
-    const event = updateScheduledMapEventStatus(String(req.params.id || ""), status);
+    const event = await updateScheduledMapEventStatus(String(req.params.id || ""), status);
     res.json({ ok: true, event });
   } catch (err) {
     res.status(400).json({ ok: false, error: err instanceof Error ? err.message : String(err) });
@@ -10387,7 +10398,7 @@ router.delete("/api/map-events/scheduled/:id", async (req, res) => {
   if (!requireAdmin(req, res)) return;
 
   try {
-    res.json(deleteScheduledMapEvent(String(req.params.id || "")));
+    res.json(await deleteScheduledMapEvent(String(req.params.id || "")));
   } catch (err) {
     res.status(400).json({ ok: false, error: err instanceof Error ? err.message : String(err) });
   }

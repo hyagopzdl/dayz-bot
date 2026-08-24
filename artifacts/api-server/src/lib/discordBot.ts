@@ -5,8 +5,6 @@ import { registerDiscordCommands } from "./discord/commands";
 import { createDiscordFeedRuntime } from "./discord/modules/feeds/runtime";
 import { registerInteractionHandlers } from "./discord/interactions";
 import { registerSecondaryManagedServerInteractions } from "./discord/secondaryInteractions";
-import { startShopStatusMonitor } from "./discord/shopStatusMonitor";
-import { startEconomyRewardsLoop } from "./discord/modules/economy/rewardsLoop";
 import { registerMemberFeed } from "./discord/modules/memberFeed";
 import { applyServiceSettingsToCommandSettings } from "./serviceSettings";
 import { getPrimaryServerId, listManagedServers } from "./serverRegistry";
@@ -198,9 +196,6 @@ export async function startDiscordBot(serverId = getPrimaryServerId()) {
     await syncDiscordCommandsForManagedServer(serverId);
     await feeds.updateLeaderboard();
 
-    startShopStatusMonitor(stateAccess);
-    startEconomyRewardsLoop(stateAccess);
-    setInterval(() => feeds.updateLeaderboard(), 5 * 60 * 1000);
   });
 
   try {

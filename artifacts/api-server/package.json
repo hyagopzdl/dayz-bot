@@ -8,7 +8,8 @@
     "start": "tsx src/index.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "seed:shop-catalog": "tsx src/scripts/seedShopCatalogToNeon.ts",
-    "seed:dayz-items": "tsx src/scripts/seedDayzItemsToNeon.ts"
+    "seed:dayz-items": "tsx src/scripts/seedDayzItemsToNeon.ts",
+    "audit:tenant-isolation": "node scripts/check-tenant-isolation.mjs"
   },
   "dependencies": {
     "@workspace/api-zod": "workspace:*",
