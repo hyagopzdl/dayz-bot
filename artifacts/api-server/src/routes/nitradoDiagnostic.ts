@@ -17,9 +17,12 @@ import {
 
 const router = Router();
 
+// These are registry IDs, not Nitrado service IDs. The service ID is read from
+// each descriptor so the diagnostic exercises the exact same per-server routing
+// used by the production runtime.
 const TARGET_SERVERS = [
-  { id: "19149785", label: "deathmatch" },
-  { id: "19791331", label: "survival" },
+  { id: "pz-deathmatch", serviceId: "19149785", label: "deathmatch" },
+  { id: "pz-survival", serviceId: "19791331", label: "survival" },
 ] as const;
 
 function getAdminToken(req: Request) {
@@ -96,11 +99,12 @@ function descriptorSnapshot(serverId: string) {
   };
 }
 
-async function diagnoseServer(serverId: string, label: string) {
+async function diagnoseServer(serverId: string, expectedServiceId: string, label: string) {
   const descriptor = descriptorSnapshot(serverId);
   if (!descriptor) {
     return {
       serverId,
+      expectedServiceId,
       label,
       descriptor: null,
       error: "SERVER_NOT_REGISTERED",
@@ -132,6 +136,7 @@ async function diagnoseServer(serverId: string, label: string) {
 
   return {
     serverId,
+    expectedServiceId,
     label,
     descriptor,
     status: status.ok
@@ -149,11 +154,11 @@ router.get("/nitrado-diagnostic", async (req, res) => {
   const servers = [];
 
   for (const target of TARGET_SERVERS) {
-    servers.push(await diagnoseServer(target.id, target.label));
+    servers.push(await diagnoseServer(target.id, target.serviceId, target.label));
   }
 
   res.json({
-    diagnostic: "nitrado-file-server-v1",
+    diagnostic: "nitrado-file-server-v2",
     generatedAt: new Date().toISOString(),
     durationMs: Date.now() - startedAt,
     targetServers: TARGET_SERVERS,
@@ -167,7 +172,8 @@ router.get("/nitrado-diagnostic", async (req, res) => {
     interpretation: {
       listSuccessMeans: "Nitrado accepted the service credential and resolved the requested directory for the File Server list endpoint.",
       uploadProbeSuccessMeans: "Nitrado accepted the same credential and returned an upload token for that logical directory; no file is uploaded by this diagnostic.",
-      usefulComparison: "Compare Deathmatch 19149785 with Survival 19791331 directory listings and upload probes before changing any Render secret or Shop path.",
+      credentialWarning: "credentialSource=environment-fallback means both servers in the default organization currently inherit the single Render NITRADO_TOKEN. A per-organization secret is preferred for production isolation.",
+      usefulComparison: "Compare Deathmatch 19149785 with Survival 19791331 directory listings, upload probes, and credential source before changing any Render secret or Shop path.",
     },
   });
 });
