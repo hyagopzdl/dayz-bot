@@ -826,41 +826,18 @@ function splitRemoteFilePath(filePath: string) {
   };
 }
 
-function ensureTrailingSlash(value: string) {
-  return value.endsWith("/") ? value : `${value}/`;
-}
-
 function uniqueStrings(values: string[]) {
   return Array.from(new Set(values.filter(Boolean)));
-}
-
-function getNoFtpRootFromAdmBaseDir(serverId = getActiveServerId()) {
-  const baseDir = getServerRuntimeContext(serverId).nitrado.baseDir || LEGACY_BASE_DIR;
-  const marker = "/noftp/";
-  const index = baseDir.indexOf(marker);
-
-  if (index === -1) {
-    return "";
-  }
-
-  return baseDir.slice(0, index + marker.length - 1);
-}
-
-function getFtpRootFromAdmBaseDir(serverId = getActiveServerId()) {
-  const baseDir = String(getServerRuntimeContext(serverId).nitrado.baseDir || LEGACY_BASE_DIR)
-    .replace(/\\/g, "/");
-  const match = baseDir.match(/^(\/games\/[^/]+)\/(?:noftp|ftproot)(?:\/|$)/i);
-  return match?.[1] ? `${match[1]}/ftproot` : "";
 }
 
 function withDayzMissionFolderVariants(pathValue: string) {
   const normalized = normalizeNitradoFileServerPath(pathValue);
   const variants = [normalized];
 
-  // Nitrado console guides commonly refer to the editable mission folder as
-  // dayzps_mission/dayzxb_mission (singular). Some panels visually show
-  // dayzps_missions, but the upload endpoint can reject that directory even
-  // when file_server/list returns success with empty entries. Try both safely.
+  // The Nitrado File Browser exposes the editable console mission directory
+  // using the logical path (for example dayzps_missions/dayzOffline.chernarusplus).
+  // Keep the persisted/discovered path in that namespace. Singular variants are
+  // retained only as a narrow compatibility fallback for older tenants.
   if (normalized.startsWith("dayzps_missions/")) {
     variants.push(normalized.replace(/^dayzps_missions\//, "dayzps_mission/"));
   }
@@ -872,27 +849,13 @@ function withDayzMissionFolderVariants(pathValue: string) {
   return uniqueStrings(variants);
 }
 
-function buildUploadPathCandidates(pathValue: string, serverId = getActiveServerId()) {
-  const noFtpRoot = getNoFtpRootFromAdmBaseDir(serverId);
-  const ftpRoot = getFtpRootFromAdmBaseDir(serverId);
-  const candidates: string[] = [];
-
-  for (const variant of withDayzMissionFolderVariants(pathValue)) {
-    candidates.push(ensureTrailingSlash(variant));
-    candidates.push(variant);
-
-    if (noFtpRoot) {
-      candidates.push(ensureTrailingSlash(`${noFtpRoot}/${variant}`));
-      candidates.push(`${noFtpRoot}/${variant}`);
-    }
-
-    if (ftpRoot) {
-      candidates.push(ensureTrailingSlash(`${ftpRoot}/${variant}`));
-      candidates.push(`${ftpRoot}/${variant}`);
-    }
-  }
-
-  return uniqueStrings(candidates);
+function buildUploadPathCandidates(pathValue: string) {
+  // IMPORTANT: the File Server upload API expects the logical directory shown
+  // by Nitrado's File Browser. Do not translate it into /games/.../noftp or
+  // /games/.../ftproot. Those are internal filesystem representations and are
+  // not the canonical upload destination. Also avoid a trailing slash: Nitrado
+  // has been returning "Destination directory doesn't exist" for that form.
+  return withDayzMissionFolderVariants(pathValue);
 }
 
 async function getUploadToken(
@@ -903,17 +866,13 @@ async function getUploadToken(
   const { path, file } = splitRemoteFilePath(filePath);
   const url = `https://api.nitrado.net/services/${serviceId}/gameservers/file_server/upload`;
   const errors: string[] = [];
-  const pathCandidates = buildUploadPathCandidates(path, serverId);
+  const pathCandidates = buildUploadPathCandidates(path);
 
   console.log(`📤 Nitrado upload token request: file=${file}`);
-  console.log(
-    `📤 Nitrado upload path candidates: ${pathCandidates.join(" | ")}`,
-  );
+  console.log(`📤 Nitrado canonical upload path candidates: ${pathCandidates.join(" | ")}`);
 
-  // Public SDK/issues show this endpoint receives path/file parameters and then
-  // returns a temporary file-server URL + token. Nitrado is strict about the
-  // directory path format, so we try the same directory with and without the
-  // trailing slash and with the absolute /games/.../noftp prefix.
+  // Query and form are two parameter encodings for the same canonical logical
+  // path. Keep both, but never expand into internal absolute filesystem roots.
   for (const pathCandidate of pathCandidates) {
     for (const strategy of ["query", "form"] as const) {
       const body = { path: pathCandidate, file };
