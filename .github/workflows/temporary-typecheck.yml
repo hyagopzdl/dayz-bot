@@ -1,0 +1,34 @@
+name: Temporary ADM typecheck
+
+on:
+  push:
+    branches:
+      - patch-2-nitrado-canonical-upload
+
+permissions:
+  contents: write
+
+jobs:
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.25.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile=false
+      - run: pnpm -w run typecheck:libs
+      - run: pnpm --filter @workspace/api-server typecheck
+      - name: Remove temporary workflow
+        if: ${{ success() }}
+        run: |
+          rm .github/workflows/temporary-typecheck.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github/workflows/temporary-typecheck.yml
+          git commit -m "chore: remove temporary typecheck workflow"
+          git push origin HEAD:patch-2-nitrado-canonical-upload
