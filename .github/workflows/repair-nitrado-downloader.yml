@@ -1,0 +1,72 @@
+name: Repair Nitrado downloader
+
+on:
+  push:
+    branches:
+      - patch-2-nitrado-canonical-upload
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Restore downloader compatibility helpers
+        shell: python
+        run: |
+          from pathlib import Path
+
+          p = Path("artifacts/api-server/src/lib/nitradoDownloader.ts")
+          text = p.read_text()
+
+          if "function getNoFtpRootFromAdmBaseDir" not in text:
+              marker = "function withDayzMissionFolderVariants(pathValue: string) {"
+              helpers = '''function getNoFtpRootFromAdmBaseDir(serverId = getActiveServerId()) {
+                const baseDir = getServerRuntimeContext(serverId).nitrado.baseDir || LEGACY_BASE_DIR;
+                const marker = "/noftp/";
+                const index = baseDir.indexOf(marker);
+
+                if (index === -1) {
+                  return "";
+                }
+
+                return baseDir.slice(0, index + marker.length - 1);
+              }
+
+              function getFtpRootFromAdmBaseDir(serverId = getActiveServerId()) {
+                const baseDir = String(getServerRuntimeContext(serverId).nitrado.baseDir || LEGACY_BASE_DIR)
+                  .replace(/\\\\/g, "/");
+                const match = baseDir.match(/^(\\/games\\/[^/]+)\\/(?:noftp|ftproot)(?:\\/|$)/i);
+                return match?.[1] ? `${match[1]}/ftproot` : "";
+              }
+
+              '''
+              text = text.replace(marker, helpers + marker, 1)
+              p.write_text(text)
+
+      - name: Verify typecheck
+        run: |
+          corepack prepare pnpm@10.25.0 --activate
+          unset npm_config_user_agent
+          pnpm install
+          pnpm -w run typecheck:libs
+          pnpm --filter @workspace/api-server typecheck
+
+      - name: Commit repair and remove workflow
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add artifacts/api-server/src/lib/nitradoDownloader.ts .github/workflows/repair-nitrado-downloader.yml
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git rm .github/workflows/repair-nitrado-downloader.yml
+          git add artifacts/api-server/src/lib/nitradoDownloader.ts
+          git commit -m "fix: restore Nitrado downloader compatibility helpers"
+          git push
