@@ -830,7 +830,21 @@ function uniqueStrings(values: string[]) {
   return Array.from(new Set(values.filter(Boolean)));
 }
 
-function withDayzMissionFolderVariants(pathValue: string) {
+function getNoFtpRootFromAdmBaseDir(serverId = getActiveServerId()) {
+      const baseDir = getServerRuntimeContext(serverId).nitrado.baseDir || LEGACY_BASE_DIR;
+      const marker = "/noftp/";
+      const index = baseDir.indexOf(marker);
+      if (index === -1) return "";
+      return baseDir.slice(0, index + marker.length - 1);
+    }
+
+    function getFtpRootFromAdmBaseDir(serverId = getActiveServerId()) {
+      const baseDir = String(getServerRuntimeContext(serverId).nitrado.baseDir || LEGACY_BASE_DIR).replace(/\\/g, "/");
+      const match = baseDir.match(/^(\/games\/[^/]+)\/(?:noftp|ftproot)(?:\/|$)/i);
+      return match?.[1] ? `${match[1]}/ftproot` : "";
+    }
+
+    function withDayzMissionFolderVariants(pathValue: string) {
   const normalized = normalizeNitradoFileServerPath(pathValue);
   const variants = [normalized];
 
