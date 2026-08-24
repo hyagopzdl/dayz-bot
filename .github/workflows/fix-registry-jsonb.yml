@@ -51,3 +51,5 @@ jobs:
           git add artifacts/api-server/src/lib/state.ts
           git commit -m "fix: guard managed server runtime config JSONB migration"
           git push
+
+# one-time repair trigger
