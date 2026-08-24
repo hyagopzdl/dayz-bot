@@ -2243,6 +2243,88 @@ export async function ensureManagedServerShopDeliveryConfiguration(
   return servers.find((server) => server.id === id);
 }
 
+export async function ensureManagedServerShopDeliveryRoutingConfiguration(
+  serverIdInput: unknown,
+  input: { serviceId: string; baseDir: string; missionDir: string; restartTimes?: string; restartTimezone?: string },
+) {
+  await ensurePrimaryServerRegistryMetadata();
+  if (!sql || !getServerRegistryPersistenceStatus().tableReady) throw new Error("Server registry is unavailable.");
+  const id = buildManagedServerId(serverIdInput);
+  if (!id || id === getPrimaryServerId()) return getPrimaryServerDescriptor();
+
+  const currentServers = await reloadManagedServerRegistryFromDb();
+  const current = currentServers.find((server) => server.id === id);
+  if (!current) throw new Error(`Servidor ${id} nao encontrado.`);
+
+  const serviceId = String(input.serviceId || "").trim();
+  const registeredServiceId = String(current.integrations.nitradoServiceId || "").trim();
+  if (!serviceId || serviceId !== registeredServiceId) {
+    throw new Error("Shop delivery routing recusado: o Service ID descoberto nao corresponde ao servidor cadastrado.");
+  }
+
+  const baseDir = String(input.baseDir || "").trim().replace(/\\/g, "/").replace(/\/+$/g, "");
+  if (!/\/noftp\/(?:dayzps|dayzxb)\/config$/i.test(baseDir)) {
+    throw new Error("Shop delivery routing recusado: base dir Nitrado invalido.");
+  }
+  const missionDir = String(input.missionDir || "").replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
+  if (!missionDir || missionDir.includes("..") || !/^(?:dayzps|dayzxb)_missions?\//i.test(missionDir)) {
+    throw new Error("Shop delivery routing recusado: mission dir invalido.");
+  }
+
+  const now = new Date().toISOString();
+  const existing = current.runtime.settings || {};
+  const settings: ServerScopedSettings = {
+    ...existing,
+    dayzMissionDir: missionDir,
+    shopRestartTimes: String(existing.shopRestartTimes || input.restartTimes || "00:00,04:00,08:00,12:00,16:00,20:00").trim(),
+    shopRestartTimezone: String(existing.shopRestartTimezone || input.restartTimezone || "America/Sao_Paulo").trim(),
+    shopDeliveryConfiguredAt: String(existing.shopDeliveryConfiguredAt || now).trim(),
+  };
+  const nitradoValidation: ServerNitradoValidation = {
+    serviceId,
+    baseDir,
+    validatedAt: now,
+    source: "phase10-on-demand",
+  };
+
+  let runtime = {
+    ...current.runtime,
+    nitradoBaseDir: baseDir,
+    nitradoValidation,
+    settings,
+  };
+
+  // A live discovery proves the recovered base dir belongs to the exact same
+  // Nitrado service. Preserve a previously-passed isolation preflight while
+  // realigning only its routing metadata; namespace/ownership checks are not
+  // changed by this recovery.
+  const existingPreflight = current.runtime.activationPreflight;
+  if (existingPreflight?.passed && existingPreflight.serviceId === serviceId) {
+    const descriptorForSignature: ManagedServerDescriptor = { ...current, runtime };
+    runtime = {
+      ...runtime,
+      activationPreflight: {
+        ...existingPreflight,
+        baseDir,
+        configurationSignature: getManagedServerActivationConfigSignature(descriptorForSignature),
+      },
+    };
+  }
+
+  await sql`
+    UPDATE managed_servers
+    SET runtime_config = ${JSON.stringify(runtime)}::jsonb, updated_at = NOW()
+    WHERE id = ${id}
+  `;
+  const servers = await reloadManagedServerRegistryFromDb();
+  recordNetworkTransfer({
+    service: "neon-server-registry", operation: "self_heal_shop_delivery_routing", direction: "outbound",
+    bytes: Buffer.byteLength(JSON.stringify({ serverId: id, serviceId, baseDir, missionDir }), "utf8"), ok: true,
+  });
+  console.log(`[shop-delivery][${id}] routing persisted base=${baseDir} mission=${missionDir}`);
+  return servers.find((server) => server.id === id);
+}
+
 export async function markManagedServerNitradoValidated(
   serverId: string,
   validation: { serviceId: string; baseDir: string; missionDir?: string },

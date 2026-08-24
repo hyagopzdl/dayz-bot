@@ -1,5 +1,5 @@
 import type { AppState, ShopOrder, ShopSavedLocation } from "./state";
-import { ensureManagedServerShopDeliveryConfiguration } from "./state";
+import { ensureManagedServerShopDeliveryConfiguration, ensureManagedServerShopDeliveryRoutingConfiguration } from "./state";
 import { getNitradoGameserverStatus } from "./nitradoDownloader";
 import { downloadServerTextFile, uploadServerTextFile } from "./serverFileTransport";
 import {
@@ -21,7 +21,7 @@ import {
   isManagedServerRuntimePaused,
 } from "./serverRegistry";
 import { getOrganizationIntegrationStatus } from "./organizationIntegrations";
-import { discoverNitradoMissionDir } from "./serverIntegrations";
+import { discoverNitradoMissionDir, discoverNitradoShopDeliveryRouting } from "./serverIntegrations";
 
 import {
   findShopItem,
@@ -110,6 +110,8 @@ export function getShopDeliveryReadiness(serverId = getServerRuntimeContext().se
   return { ready: true, serverId: server.id, transport: "nitrado-file-server", missionDir };
 }
 
+const shopDeliveryDiscoveryCooldown = new Map<string, number>();
+
 export async function ensureShopDeliveryConfiguration(serverId = getServerRuntimeContext().serverId): Promise<ShopDeliveryReadiness> {
   let readiness = getShopDeliveryReadiness(serverId);
   if (readiness.ready || serverId === getPrimaryServerId()) return readiness;
@@ -117,28 +119,70 @@ export async function ensureShopDeliveryConfiguration(serverId = getServerRuntim
   const server = getManagedServerById(serverId);
   if (!server) return readiness;
 
-  // Self-heal only an otherwise-valid tenant whose Shop settings were never
-  // bootstrapped by the older onboarding flow. Never bypass activation, pause,
-  // preflight, credential, or ownership guards.
-  const canBootstrap = Boolean(
+  // Recover filesystem routing before applying the strict readiness checks.
+  // Older onboarding versions could activate a valid secondary runtime while
+  // leaving runtime.nitradoBaseDir/dayzMissionDir empty. Requiring those fields
+  // before discovery made the self-heal path unreachable.
+  const canDiscover = Boolean(
     server.runtimeEnabled
     && hasManagedServerRuntimeActivation(server)
     && !isManagedServerRuntimePaused(server)
-    && hasMatchingManagedServerNitradoValidation(server)
-    && hasMatchingActivationPreflight(server)
     && String(server.integrations.nitradoServiceId || "").trim()
-    && String(server.runtime.nitradoBaseDir || "").trim()
     && getOrganizationIntegrationStatus(server.organizationId).configured
   );
-  if (!canBootstrap) return readiness;
+  if (!canDiscover) return readiness;
 
-  const existingMissionDir = normalizeRelativePath(String(server.runtime.settings?.dayzMissionDir || ""));
+  const hasRouting = Boolean(
+    String(server.runtime.nitradoBaseDir || "").trim()
+    && String(server.runtime.settings?.dayzMissionDir || "").trim()
+    && String(server.runtime.settings?.shopDeliveryConfiguredAt || "").trim()
+  );
+
+  if (!hasRouting) {
+    const now = Date.now();
+    const retryAt = shopDeliveryDiscoveryCooldown.get(serverId) || 0;
+    if (now >= retryAt) {
+      shopDeliveryDiscoveryCooldown.set(serverId, now + 60_000);
+      try {
+        const discovered = await discoverNitradoShopDeliveryRouting(serverId);
+        if (discovered.baseDir && discovered.missionDir) {
+          await ensureManagedServerShopDeliveryRoutingConfiguration(serverId, {
+            serviceId: discovered.serviceId,
+            baseDir: discovered.baseDir,
+            missionDir: discovered.missionDir,
+          });
+          shopDeliveryDiscoveryCooldown.delete(serverId);
+          readiness = getShopDeliveryReadiness(serverId);
+          if (readiness.ready) return readiness;
+        }
+      } catch (error) {
+        console.error(`[shop-delivery][${serverId}] automatic routing bootstrap failed: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+  }
+
+  // Existing correctly-routed tenants may only be missing the fill-only Shop
+  // settings marker. Keep the old lightweight bootstrap for that case.
+  const refreshed = getManagedServerById(serverId);
+  if (!refreshed) return getShopDeliveryReadiness(serverId);
+  const canBootstrapSettings = Boolean(
+    refreshed.runtimeEnabled
+    && hasManagedServerRuntimeActivation(refreshed)
+    && !isManagedServerRuntimePaused(refreshed)
+    && hasMatchingManagedServerNitradoValidation(refreshed)
+    && hasMatchingActivationPreflight(refreshed)
+    && String(refreshed.integrations.nitradoServiceId || "").trim()
+    && String(refreshed.runtime.nitradoBaseDir || "").trim()
+    && getOrganizationIntegrationStatus(refreshed.organizationId).configured
+  );
+  if (!canBootstrapSettings) return getShopDeliveryReadiness(serverId);
+
+  const existingMissionDir = normalizeRelativePath(String(refreshed.runtime.settings?.dayzMissionDir || ""));
   const missionDir = existingMissionDir || await discoverNitradoMissionDir(serverId);
-  if (!missionDir) return readiness;
+  if (!missionDir) return getShopDeliveryReadiness(serverId);
 
   await ensureManagedServerShopDeliveryConfiguration(serverId, { missionDir });
-  readiness = getShopDeliveryReadiness(serverId);
-  return readiness;
+  return getShopDeliveryReadiness(serverId);
 }
 
 export function getShopFilePaths(serverId = getServerRuntimeContext().serverId) {

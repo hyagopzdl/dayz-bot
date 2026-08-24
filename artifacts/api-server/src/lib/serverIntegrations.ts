@@ -318,14 +318,26 @@ function nitradoEntryPath(entry: any) {
   return firstText(entry?.path, entry?.name, entry?.file, entry?.filename) || "";
 }
 
-async function listNitradoMissionDirectory(serverId: string, serviceId: string, dir: string) {
+async function listNitradoMissionDirectory(
+  serverId: string,
+  serviceId: string,
+  dir: string,
+  options: { quiet?: boolean } = {},
+) {
   try {
     const json = await nitradoOnboardingJson(
       `/services/${encodeURIComponent(serviceId)}/gameservers/file_server/list?dir=${encodeURIComponent(dir)}`,
       serverId,
     );
-    return Array.isArray(json?.data?.entries) ? json.data.entries : [];
-  } catch {
+    const entries = Array.isArray(json?.data?.entries) ? json.data.entries : [];
+    if (!options.quiet) {
+      console.log(`[shop-delivery][${serverId}] Nitrado list ok dir=${dir || "/"} entries=${entries.length}`);
+    }
+    return entries;
+  } catch (error) {
+    if (!options.quiet) {
+      console.warn(`[shop-delivery][${serverId}] Nitrado list failed dir=${dir || "/"}: ${error instanceof Error ? error.message : String(error)}`);
+    }
     return [];
   }
 }
@@ -334,48 +346,121 @@ async function listNitradoMissionDirectory(serverId: string, serviceId: string, 
  * Discovers the editable DayZ mission directory from this server's own Nitrado
  * file server. This never falls back to the primary server mission path.
  */
+function uniqueMissionCandidates(values: string[]) {
+  return Array.from(new Set(values.map((value) => String(value || "").replace(/\\/g, "/").replace(/\/{2,}/g, "/").replace(/\/$/, "")).filter(Boolean)));
+}
+
+function deriveNitradoFileRoots(baseDirInput: unknown, details: unknown) {
+  const baseDir = String(baseDirInput || "").trim().replace(/\\/g, "/").replace(/\/{2,}/g, "/").replace(/\/$/, "");
+  const strings = collectObjectStrings(details);
+  const detailsText = strings.join(" ").toLowerCase();
+  const platform = /(?:dayzxb|xbox)/i.test(`${baseDir} ${detailsText}`) ? "dayzxb" : "dayzps";
+  const roots = [`${platform}_missions`, `${platform}_mission`];
+  const username = firstText(
+    findRecursiveField(details, new Set(["username", "service_username", "gameserver_username"])),
+    baseDir.match(/\/games\/([^/]+)\//i)?.[1],
+  );
+  const noftpIndex = baseDir.toLowerCase().indexOf("/noftp/");
+  const noftpRoot = noftpIndex >= 0 ? baseDir.slice(0, noftpIndex + "/noftp".length) : "";
+  const gameRoot = baseDir.replace(/\/config$/i, "");
+  const gameOwnerRoot = username ? `/games/${username}` : "";
+  const ftprootRoot = username ? `${gameOwnerRoot}/ftproot` : "";
+
+  const missionRoots: string[] = [];
+  for (const root of roots) {
+    missionRoots.push(root);
+    missionRoots.push(`ftproot/${root}`);
+    if (noftpRoot) missionRoots.push(`${noftpRoot}/${root}`);
+    if (ftprootRoot) missionRoots.push(`${ftprootRoot}/${root}`);
+    if (gameRoot && !/\/config$/i.test(root)) missionRoots.push(`${gameRoot}/../${root}`);
+  }
+
+  const normalizedMissionRoots = uniqueMissionCandidates(missionRoots.map((value) => value.replace(/\/[^/]+\/\.\.\//g, "/")));
+  return { baseDir, platform, username, noftpRoot, ftprootRoot, missionRoots: normalizedMissionRoots };
+}
+
+function relativeMissionPathFromCandidate(candidateDir: string, missionName: string) {
+  const normalized = String(candidateDir || "").replace(/\\/g, "/").replace(/\/{2,}/g, "/").replace(/^\/+|\/+$/g, "");
+  const match = normalized.match(/(?:^|\/)(dayz(?:ps|xb)_missions?)(?:\/|$)/i);
+  const root = match?.[1] || "dayzps_missions";
+  return `${root}/${missionName}`;
+}
+
+/**
+ * Discovers both the ADM base directory and editable mission path from the
+ * selected Nitrado service itself. It can recover tenants created by older
+ * onboarding versions where runtime.nitradoBaseDir was never persisted.
+ */
+export async function discoverNitradoShopDeliveryRouting(serverId: string): Promise<{
+  serviceId: string;
+  baseDir?: string;
+  missionDir?: string;
+}> {
+  const server = assertOnboardingServer(serverId);
+  const serviceId = String(server.integrations.nitradoServiceId || server.runtime.nitradoValidation?.serviceId || "").trim();
+  if (!serviceId) throw new Error(`Nitrado Service ID nao configurado para ${serverId}.`);
+
+  console.log(`[shop-delivery][${serverId}] discovering Nitrado filesystem routing for service=${serviceId}`);
+  const details = await nitradoOnboardingJson(`/services/${encodeURIComponent(serviceId)}/gameservers`, serverId);
+  const persistedBaseDir = String(server.runtime.nitradoBaseDir || server.runtime.nitradoValidation?.baseDir || "").trim();
+  const detectedBaseDir = detectNitradoBaseDir(details);
+  const baseCandidates = uniqueMissionCandidates([persistedBaseDir, detectedBaseDir || ""]);
+
+  let verifiedBaseDir: string | undefined;
+  for (const candidate of baseCandidates) {
+    const entries = await listNitradoMissionDirectory(serverId, serviceId, candidate);
+    if (entries.length || candidate === detectedBaseDir) {
+      verifiedBaseDir = candidate;
+      if (entries.some((entry: any) => String(entry?.path || entry?.name || "").toUpperCase().endsWith(".ADM"))) break;
+    }
+  }
+  if (!verifiedBaseDir) verifiedBaseDir = detectedBaseDir || persistedBaseDir || undefined;
+
+  const roots = deriveNitradoFileRoots(verifiedBaseDir, details);
+  const missionNames = new Set(["dayzOffline.chernarusplus", "dayzOffline.enoch", "dayzOffline.sakhal"]);
+
+  for (const rootDir of roots.missionRoots) {
+    const entries = await listNitradoMissionDirectory(serverId, serviceId, rootDir, { quiet: true });
+    for (const entry of entries) {
+      const raw = normalizeMissionRelativePath(nitradoEntryPath(entry));
+      const name = raw.split("/").filter(Boolean).pop();
+      if (name && /dayzoffline\./i.test(name)) missionNames.add(name);
+    }
+  }
+
+  for (const rootDir of roots.missionRoots) {
+    for (const missionName of missionNames) {
+      const candidateDir = `${rootDir}/${missionName}`.replace(/\/{2,}/g, "/");
+      const entries = await listNitradoMissionDirectory(serverId, serviceId, candidateDir, { quiet: true });
+      const names = entries.map((entry: any) => normalizeMissionRelativePath(nitradoEntryPath(entry)).split("/").pop()?.toLowerCase() || "");
+      const valid = names.includes("cfgeventspawns.xml") && (names.includes("db") || names.includes("cfgplayerspawnpoints.xml") || names.includes("cfgspawnabletypes.xml"));
+      if (!valid) continue;
+
+      const missionDir = relativeMissionPathFromCandidate(rootDir, missionName);
+      console.log(`[shop-delivery][${serverId}] mission found root=${rootDir} mission=${missionName} persisted=${missionDir}`);
+      return { serviceId, baseDir: verifiedBaseDir, missionDir };
+    }
+  }
+
+  console.warn(`[shop-delivery][${serverId}] mission discovery failed. base=${verifiedBaseDir || "missing"} roots=${roots.missionRoots.join(" | ")}`);
+  return { serviceId, baseDir: verifiedBaseDir };
+}
+
 async function discoverNitradoMissionDirFor(
   serverId: string,
   serviceIdInput: unknown,
   baseDirInput: unknown,
 ): Promise<string | undefined> {
   const serviceId = String(serviceIdInput || "").trim();
-  const baseDir = String(baseDirInput || "").trim().replace(/\\/g, "/");
-  if (!serviceId || !baseDir) return undefined;
-
-  const platform = /\/dayzxb\//i.test(baseDir) ? "dayzxb" : "dayzps";
-  const roots = [`${platform}_missions`, `${platform}_mission`];
-  const noftpIndex = baseDir.toLowerCase().indexOf("/noftp/");
-  const noftpRoot = noftpIndex >= 0 ? baseDir.slice(0, noftpIndex + "/noftp".length) : "";
-  const missionNames = new Set(["dayzOffline.chernarusplus", "dayzOffline.enoch", "dayzOffline.sakhal"]);
-
-  for (const root of roots) {
-    const rootCandidates = [root, noftpRoot ? `${noftpRoot}/${root}` : ""].filter(Boolean);
-    for (const rootDir of rootCandidates) {
-      const entries = await listNitradoMissionDirectory(serverId, serviceId, rootDir);
-      for (const entry of entries) {
-        const raw = normalizeMissionRelativePath(nitradoEntryPath(entry));
-        if (!raw) continue;
-        const parts = raw.split("/").filter(Boolean);
-        const name = parts[parts.length - 1];
-        if (!name || !name.includes(".")) continue;
-        missionNames.add(name);
-      }
-    }
-
-    for (const missionName of missionNames) {
-      const relative = `${root}/${missionName}`;
-      const candidateDirs = [relative, noftpRoot ? `${noftpRoot}/${relative}` : ""].filter(Boolean);
-      for (const candidateDir of candidateDirs) {
-        const entries = await listNitradoMissionDirectory(serverId, serviceId, candidateDir);
-        const names = entries.map((entry: any) => normalizeMissionRelativePath(nitradoEntryPath(entry)).split("/").pop()?.toLowerCase() || "");
-        if (names.includes("cfgeventspawns.xml") && (names.includes("db") || names.includes("cfgplayerspawnpoints.xml") || names.includes("cfgspawnabletypes.xml"))) {
-          return relative;
-        }
-      }
-    }
+  const baseDir = String(baseDirInput || "").trim();
+  if (!serviceId) return undefined;
+  const server = assertOnboardingServer(serverId);
+  const serviceMatches = String(server.integrations.nitradoServiceId || server.runtime.nitradoValidation?.serviceId || "").trim() === serviceId;
+  if (serviceMatches) {
+    const discovered = await discoverNitradoShopDeliveryRouting(serverId);
+    return discovered.missionDir;
   }
-
+  if (!baseDir) return undefined;
   return undefined;
 }
 
@@ -384,12 +469,7 @@ async function discoverNitradoMissionDirFor(
  * file server. This never falls back to the primary server mission path.
  */
 export async function discoverNitradoMissionDir(serverId: string): Promise<string | undefined> {
-  const server = assertOnboardingServer(serverId);
-  return discoverNitradoMissionDirFor(
-    serverId,
-    server.integrations.nitradoServiceId || server.runtime.nitradoValidation?.serviceId,
-    server.runtime.nitradoBaseDir || server.runtime.nitradoValidation?.baseDir,
-  );
+  return (await discoverNitradoShopDeliveryRouting(serverId)).missionDir;
 }
 
 export async function validateNitradoServiceSetup(serverId: string, serviceIdInput: unknown, baseDirInput: unknown) {
