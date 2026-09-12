@@ -12,6 +12,29 @@ function createSql() {
 }
 
 /**
+ * Protect the registry bootstrap from malformed JSONB values left by older
+ * migrations. Scalar values are wrapped instead of discarded, so the original
+ * value remains available for forensic recovery while the runtime_config row
+ * becomes a normal JSON object that supports scoped settings.
+ */
+export async function normalizeManagedServerRuntimeConfig() {
+  const sql = createSql();
+  if (!sql) return;
+
+  try {
+    await sql`
+      UPDATE managed_servers
+      SET runtime_config = jsonb_build_object('legacyRuntimeConfig', runtime_config),
+          updated_at = NOW()
+      WHERE runtime_config IS NOT NULL
+        AND jsonb_typeof(runtime_config) <> 'object'
+    `;
+  } finally {
+    await sql.end({ timeout: 5 }).catch(() => undefined);
+  }
+}
+
+/**
  * One-time compatibility bridge for the original single-server deployment.
  * The legacy organization/environment credential is copied into the primary
  * managed_servers row in encrypted form. Runtime consumers then use only the
