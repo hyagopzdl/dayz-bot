@@ -1,6 +1,6 @@
 import { getDefaultOrganizationId, getOrganizationFoundationDiagnostics } from "./organizationRegistry";
 import { getOrganizationIntegrationStatus, getOrganizationIntegrationsDiagnostics } from "./organizationIntegrations";
-export type ServerFoundationMode = "single-server-compat";
+export type ServerFoundationMode = "multi-server-native";
 export type ServerOnboardingStatus = "active" | "draft" | "configured" | "ready";
 
 export type ServerRuntimeActivation = {
@@ -245,8 +245,7 @@ export function buildManagedServerId(value: unknown) {
 }
 
 function normalizeServerId(value: unknown) {
-  const normalized = buildManagedServerId(value);
-  return normalized || FALLBACK_SERVER_ID;
+  return buildManagedServerId(value);
 }
 
 export function normalizeManagedServerName(value: unknown) {
@@ -352,7 +351,7 @@ export function isServerNamespaceRuntimeSafe() {
 
 export function canExecuteManagedServerRuntime(serverId: unknown) {
   const normalized = normalizeServerId(serverId);
-  if (normalized === getPrimaryServerId()) return true;
+  if (!normalized) return false;
   const server = getManagedServerById(normalized);
   return Boolean(
     server
@@ -384,7 +383,7 @@ export function getPrimaryServerDescriptor(): ManagedServerDescriptor {
     primary: true,
     runtimeEnabled: true,
     onboardingStatus: "active",
-    mode: "single-server-compat",
+    mode: "multi-server-native",
     integrations: {
       nitradoServiceId: String(process.env.NITRADO_SERVICE_ID || FALLBACK_NITRADO_SERVICE_ID).trim() || undefined,
       discordGuildId: String(process.env.DISCORD_SERVER_ID || process.env.DISCORD_GUILD_ID || "").trim() || undefined,
@@ -409,7 +408,7 @@ export function setPersistedManagedServers(servers: ManagedServerDescriptor[]) {
     primary: Boolean(server.primary),
     runtimeEnabled: Boolean(server.primary ? true : server.runtimeEnabled),
     onboardingStatus: server.primary ? "active" : normalizeServerOnboardingStatus(server.onboardingStatus),
-    mode: "single-server-compat",
+    mode: "multi-server-native",
     integrations: {
       nitradoServiceId: String(server.integrations?.nitradoServiceId || "").trim() || undefined,
       discordGuildId: String(server.integrations?.discordGuildId || "").trim() || undefined,
@@ -456,7 +455,8 @@ export function getServerRegistryPersistenceStatus(): ServerRegistryPersistenceS
 }
 
 export function getManagedServerById(serverId: unknown): ManagedServerDescriptor | undefined {
-  const normalized = normalizeServerId(serverId);
+  const normalized = buildManagedServerId(serverId);
+  if (!normalized) return undefined;
   return listManagedServers().find((server) => server.id === normalized);
 }
 

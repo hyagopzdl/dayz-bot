@@ -509,7 +509,7 @@ function mapManagedServerRow(row: any, primary: ManagedServerDescriptor): Manage
     primary: isPrimary,
     runtimeEnabled: isPrimary ? true : Boolean(row.runtime_enabled),
     onboardingStatus: isPrimary ? "active" : "draft",
-    mode: "single-server-compat",
+    mode: "multi-server-native",
     integrations: {
       nitradoServiceId: String(row.nitrado_service_id || "").trim() || undefined,
       discordGuildId: String(row.discord_guild_id || "").trim() || undefined,
@@ -761,7 +761,7 @@ async function ensurePrimaryServerRegistryMetadata() {
           primary_server BOOLEAN NOT NULL DEFAULT FALSE,
           runtime_enabled BOOLEAN NOT NULL DEFAULT FALSE,
           onboarding_status TEXT NOT NULL DEFAULT 'draft',
-          mode TEXT NOT NULL DEFAULT 'single-server-compat',
+          mode TEXT NOT NULL DEFAULT 'multi-server-native',
           nitrado_service_id TEXT,
           discord_guild_id TEXT,
           runtime_config JSONB,
@@ -846,14 +846,21 @@ async function ensurePrimaryServerRegistryMetadata() {
       };
       await sql`
         UPDATE managed_servers
-        SET runtime_config = jsonb_set(
-              COALESCE(runtime_config, '{}'::jsonb),
-              '{settings}',
-              ${JSON.stringify(defaultServerSettings)}::jsonb,
-              TRUE
-            ),
+        SET runtime_config = CASE
+              WHEN runtime_config IS NULL THEN jsonb_build_object(
+                'settings', ${JSON.stringify(defaultServerSettings)}::jsonb
+              )
+              WHEN jsonb_typeof(runtime_config) = 'object' THEN jsonb_set(
+                runtime_config,
+                '{settings}',
+                ${JSON.stringify(defaultServerSettings)}::jsonb,
+                TRUE
+              )
+              ELSE runtime_config
+            END,
             updated_at = NOW()
-        WHERE runtime_config IS NULL OR runtime_config->'settings' IS NULL
+        WHERE runtime_config IS NULL
+           OR (jsonb_typeof(runtime_config) = 'object' AND runtime_config->'settings' IS NULL)
       `;
       const bootstrapAdminIds = Array.from(new Set(
         String(process.env.DISCORD_ADMIN_USER_IDS || "")
@@ -1966,7 +1973,7 @@ export async function createManagedServerDraft(input: ManagedServerDraftInput) {
     primary: false,
     runtimeEnabled: false,
     onboardingStatus: "draft",
-    mode: "single-server-compat",
+    mode: "multi-server-native",
     integrations: {
       nitradoServiceId: optionalServerText(input?.nitradoServiceId, 64),
       discordGuildId: undefined,
