@@ -1,0 +1,148 @@
+name: Apply native per-server Nitrado transport patch
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Patch Nitrado transport boundary
+        shell: python
+        run: |
+          from pathlib import Path
+
+          def replace(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              if old not in text:
+                  raise SystemExit(f"expected block not found in {path}: {old[:100]!r}")
+              p.write_text(text.replace(old, new, 1))
+
+          # Registry: keep credentials server-scoped and encrypted. Plaintext secrets
+          # never become part of ManagedServerDescriptor or diagnostic output.
+          replace(
+              "artifacts/api-server/src/lib/serverRegistry.ts",
+              '''export type ServerRuntimeConfig = {\n  nitradoBaseDir?: string;''',
+              '''export type ServerRuntimeConfig = {\n  nitradoBaseDir?: string;\n  nitradoApiTokenEncrypted?: {\n    encryptedSecret: string;\n    iv: string;\n    authTag: string;\n    keyVersion: number;\n  };\n  nitradoFtp?: {\n    host: string;\n    port: number;\n    user: string;\n    passwordEncrypted: {\n      encryptedSecret: string;\n      iv: string;\n      authTag: string;\n      keyVersion: number;\n    };\n    root?: string;\n    secure?: boolean;\n  };'''
+          )
+
+          replace(
+              "artifacts/api-server/src/lib/serverRegistry.ts",
+              '''      nitradoBaseDir: String(server.runtime?.nitradoBaseDir || "").trim() || undefined,\n      nitradoValidation:''',
+              '''      nitradoBaseDir: String(server.runtime?.nitradoBaseDir || "").trim() || undefined,\n      nitradoApiTokenEncrypted: server.runtime?.nitradoApiTokenEncrypted && typeof server.runtime.nitradoApiTokenEncrypted === "object"\n        ? { ...server.runtime.nitradoApiTokenEncrypted }\n        : undefined,\n      nitradoFtp: server.runtime?.nitradoFtp && typeof server.runtime.nitradoFtp === "object"\n        ? {\n            host: String(server.runtime.nitradoFtp.host || "").trim(),\n            port: Number(server.runtime.nitradoFtp.port || 21),\n            user: String(server.runtime.nitradoFtp.user || "").trim(),\n            passwordEncrypted: { ...(server.runtime.nitradoFtp.passwordEncrypted || {}) },\n            root: String(server.runtime.nitradoFtp.root || "").trim() || undefined,\n            secure: server.runtime.nitradoFtp.secure === true,\n          }\n        : undefined,\n      nitradoValidation:'''
+          )
+
+          # Preserve encrypted credential material when re-hydrating a DB row.
+          replace(
+              "artifacts/api-server/src/lib/state.ts",
+              '''      nitradoBaseDir: String(runtimeConfig?.nitradoBaseDir || (isPrimary ? primary.runtime.nitradoBaseDir : "") || "").trim() || undefined,\n      nitradoValidation:''',
+              '''      nitradoBaseDir: String(runtimeConfig?.nitradoBaseDir || (isPrimary ? primary.runtime.nitradoBaseDir : "") || "").trim() || undefined,\n      nitradoApiTokenEncrypted: runtimeConfig?.nitradoApiTokenEncrypted && typeof runtimeConfig.nitradoApiTokenEncrypted === "object"\n        ? { ...runtimeConfig.nitradoApiTokenEncrypted }\n        : undefined,\n      nitradoFtp: runtimeConfig?.nitradoFtp && typeof runtimeConfig.nitradoFtp === "object"\n        ? {\n            host: String(runtimeConfig.nitradoFtp.host || "").trim(),\n            port: Number(runtimeConfig.nitradoFtp.port || 21),\n            user: String(runtimeConfig.nitradoFtp.user || "").trim(),\n            passwordEncrypted: { ...(runtimeConfig.nitradoFtp.passwordEncrypted || {}) },\n            root: String(runtimeConfig.nitradoFtp.root || "").trim() || undefined,\n            secure: runtimeConfig.nitradoFtp.secure === true,\n          }\n        : undefined,\n      nitradoValidation:'''
+          )
+
+          # Allow the explicitly encrypted credential container to be persisted,
+          # while continuing to reject plaintext token/password fields.
+          replace(
+              "artifacts/api-server/src/lib/state.ts",
+              '''    if (SERVER_SECRET_KEY_PATTERN.test(key)) {\n      throw new Error(`Server onboarding does not persist secrets in managed_servers (${pathName}.${key}). Nitrado credentials stay server-side and are never accepted by this registry form.`);\n    }''',
+              '''    if (SERVER_SECRET_KEY_PATTERN.test(key) && key !== "nitradoApiTokenEncrypted" && key !== "passwordEncrypted") {\n      throw new Error(`Server onboarding does not persist plaintext secrets in managed_servers (${pathName}.${key}).`);\n    }'''
+          )
+
+          # Organization integration decryption becomes reusable by the server-scoped
+          # transport resolver without exposing the secret through diagnostics.
+          replace(
+              "artifacts/api-server/src/lib/organizationIntegrations.ts",
+              '''function decryptOrganizationSecret(record: OrganizationIntegrationRecord) {''',
+              '''export function decryptEncryptedSecret(record: Pick<OrganizationIntegrationRecord, "encryptedSecret" | "iv" | "authTag">) {'''
+          )
+          replace(
+              "artifacts/api-server/src/lib/organizationIntegrations.ts",
+              '''    return decryptOrganizationSecret(record);''',
+              '''    return decryptEncryptedSecret(record);'''
+          )
+
+          Path("artifacts/api-server/src/lib/serverNitrado.ts").write_text('''import {\n  decryptEncryptedSecret,\n  getOrganizationNitradoCredential,\n} from "./organizationIntegrations";\nimport {\n  getManagedServerById,\n  getPrimaryServerDescriptor,\n  getPrimaryServerId,\n  type ManagedServerDescriptor,\n} from "./serverRegistry";\n\nexport type ServerNitradoConfig = {\n  serverId: string;\n  serviceId: string;\n  baseDir: string;\n  apiToken: string;\n  apiTokenSource: "server-secret" | "organization-secret" | "environment-fallback";\n  ftp?: {\n    host: string;\n    port: number;\n    user: string;\n    password: string;\n    root?: string;\n    secure: boolean;\n  };\n};\n\nfunction resolveDescriptor(serverId: string): ManagedServerDescriptor {\n  const normalized = String(serverId || "").trim();\n  const descriptor = getManagedServerById(normalized)\n    || (normalized === getPrimaryServerId() ? getPrimaryServerDescriptor() : undefined);\n  if (!descriptor) throw new Error(`Servidor ${serverId} nao encontrado para resolver Nitrado.`);\n  return descriptor;\n}\n\nfunction decryptServerSecret(value: any, label: string) {\n  if (!value?.encryptedSecret || !value?.iv || !value?.authTag) {\n    throw new Error(`Credencial Nitrado do servidor esta incompleta: ${label}.`);\n  }\n  return decryptEncryptedSecret(value);\n}\n\nexport function getServerNitradoConfig(serverId: string): ServerNitradoConfig {\n  const server = resolveDescriptor(serverId);\n  const serviceId = String(server.integrations.nitradoServiceId || "").trim();\n  const baseDir = String(server.runtime.nitradoBaseDir || "").trim();\n  if (!serviceId) throw new Error(`Nitrado Service ID nao configurado para o servidor ${server.id}.`);\n  if (!baseDir) throw new Error(`Nitrado baseDir nao configurado para o servidor ${server.id}.`);\n\n  let apiToken = "";\n  let apiTokenSource: ServerNitradoConfig["apiTokenSource"];\n  if (server.runtime.nitradoApiTokenEncrypted?.encryptedSecret) {\n    apiToken = decryptServerSecret(server.runtime.nitradoApiTokenEncrypted, "api token");\n    apiTokenSource = "server-secret";\n  } else {\n    const organizationCredential = getOrganizationNitradoCredential(server.organizationId);\n    if (!server.primary && organizationCredential.source === "environment-fallback") {\n      throw new Error(`Nitrado credential server-scoped required for ${server.id}; organization environment fallback is not allowed.`);\n    }\n    apiToken = organizationCredential.token;\n    apiTokenSource = organizationCredential.source;\n  }\n  if (!apiToken) throw new Error(`Nitrado nao conectado para o servidor ${server.id}.`);\n\n  let ftp: ServerNitradoConfig["ftp"];\n  const storedFtp = server.runtime.nitradoFtp;\n  if (storedFtp?.host && storedFtp.user && storedFtp.passwordEncrypted?.encryptedSecret) {\n    ftp = {\n      host: storedFtp.host,\n      port: Number(storedFtp.port || 21),\n      user: storedFtp.user,\n      password: decryptServerSecret(storedFtp.passwordEncrypted, "ftp password"),\n      root: storedFtp.root,\n      secure: storedFtp.secure === true,\n    };\n  }\n\n  return { serverId: server.id, serviceId, baseDir, apiToken, apiTokenSource, ftp };\n}\n\nexport function getServerNitradoApiBaseUrl(serviceId: string) {\n  return `https://api.nitrado.net/services/${encodeURIComponent(serviceId)}`;\n}\n''')
+
+          # Downloader consumes the common resolver: no service ID/base-dir/credential
+          # fallback logic is allowed to drift between consumers anymore.
+          replace(
+              "artifacts/api-server/src/lib/nitradoDownloader.ts",
+              '''import { getOrganizationNitradoCredential } from "./organizationIntegrations";\nimport { getActiveServerId, getServerRuntimeContext } from "./serverRuntime";''',
+              '''import { getActiveServerId, getServerRuntimeContext } from "./serverRuntime";\nimport { getServerNitradoConfig } from "./serverNitrado";'''
+          )
+          replace(
+              "artifacts/api-server/src/lib/nitradoDownloader.ts",
+              '''const LEGACY_SERVICE_ID = "19149785";\nconst LEGACY_BASE_DIR = "/games/ni13029176_1/noftp/dayzps/config";\n\n''',
+              ''''''
+          )
+          replace(
+              "artifacts/api-server/src/lib/nitradoDownloader.ts",
+              '''function getNitradoToken(serverId = getActiveServerId()) {\n  const server = getManagedServerById(serverId) || (serverId === getPrimaryServerId() ? getPrimaryServerDescriptor() : undefined);\n  if (!server) throw new Error(`Servidor ${serverId} nao encontrado para resolver a credencial Nitrado.`);\n  const credential = getOrganizationNitradoCredential(server.organizationId);\n  if (!credential.token) throw new Error(`Nitrado nao conectado para a organizacao ${server.organizationId}.`);\n  return credential.token;\n}''',
+              '''function getNitradoToken(serverId = getActiveServerId()) {\n  return getServerNitradoConfig(serverId).apiToken;\n}'''
+          )
+          replace(
+              "artifacts/api-server/src/lib/nitradoDownloader.ts",
+              '''  const baseDir = runtime.nitrado.baseDir || LEGACY_BASE_DIR;''',
+              '''  const baseDir = runtime.nitrado.baseDir;\n  if (!baseDir) throw new Error(`Nitrado baseDir nao configurado para o servidor ${serverId}.`);'''
+          )
+          replace(
+              "artifacts/api-server/src/lib/nitradoDownloader.ts",
+              '''function getNitradoServiceId(serverId = getActiveServerId()) {\n  const runtime = getServerRuntimeContext(serverId);\n  if (runtime.nitrado.serviceId) return runtime.nitrado.serviceId;\n  // Legacy service-id fallback is production-primary compatibility only. A\n  // tenant/secondary runtime must never inherit the platform/PZ service ID.\n  if (runtime.isPrimary) return process.env.NITRADO_SERVICE_ID || LEGACY_SERVICE_ID;\n  throw new Error(`Nitrado Service ID nao configurado para o servidor ${serverId}.`);\n}''',
+              '''function getNitradoServiceId(serverId = getActiveServerId()) {\n  return getServerNitradoConfig(serverId).serviceId;\n}'''
+          )
+
+          # FTP becomes server-scoped too. Keep the implementation deliberately small;
+          # the next patch can add onboarding/write endpoints without changing callers.
+          replace(
+              "artifacts/api-server/src/lib/nitradoFtp.ts",
+              '''import { assertPrimaryRuntimeServer, getActiveServerId } from "./serverRuntime";''',
+              '''import { getActiveServerId } from "./serverRuntime";\nimport { getServerNitradoConfig } from "./serverNitrado";'''
+          )
+          replace(
+              "artifacts/api-server/src/lib/nitradoFtp.ts",
+              '''function normalizeFtpPath(value: string) {\n  const root = String(process.env.NITRADO_FTP_ROOT || "")\n    .replace(/\\\\/g, "/")\n    .replace(/^\\/+|\\/+$/g, "");''',
+              '''function normalizeFtpPath(value: string, rootValue = "") {\n  const root = String(rootValue || "")\n    .replace(/\\\\/g, "/")\n    .replace(/^\\/+|\\/+$/g, "");'''
+          )
+          start = Path("artifacts/api-server/src/lib/nitradoFtp.ts").read_text()
+          a = start.index("function getFtpConnectionOptions()")
+          b = start.index("async function uploadTextViaFtp", a)
+          replacement = '''function getFtpConnectionOptions(serverId: string) {\n  const config = getServerNitradoConfig(serverId);\n  if (!config.ftp) throw new Error(`FTP nao configurado para o servidor ${serverId}.`);\n  if (config.ftp.secure) throw new Error("NITRADO FTPS ainda nao e suportado neste uploader simples.");\n  return config.ftp;\n}\n\n'''
+          Path("artifacts/api-server/src/lib/nitradoFtp.ts").write_text(start[:a] + replacement + start[b:])
+
+          replace(
+              "artifacts/api-server/src/lib/nitradoFtp.ts",
+              '''  const serverId = getActiveServerId();\n  // Phase 8 deliberately fails closed: FTP credentials are still the legacy\n  // PZ credentials. A future onboarding phase must provide per-server secrets\n  // before a non-primary runtime is allowed to use this transport.\n  assertPrimaryRuntimeServer(serverId);\n  const { host, port, user, password } = getFtpConnectionOptions();\n  const remotePath = normalizeFtpPath(filePath);''',
+              '''  const serverId = getActiveServerId();\n  const { host, port, user, password, root } = getFtpConnectionOptions(serverId);\n  const remotePath = normalizeFtpPath(filePath, root);'''
+          )
+          replace(
+              "artifacts/api-server/src/lib/nitradoFtp.ts",
+              '''  const serverId = getActiveServerId();\n  assertPrimaryRuntimeServer(serverId);\n  const { host, port, user, password } = getFtpConnectionOptions();\n  const remotePath = normalizeFtpPath(filePath);''',
+              '''  const serverId = getActiveServerId();\n  const { host, port, user, password, root } = getFtpConnectionOptions(serverId);\n  const remotePath = normalizeFtpPath(filePath, root);'''
+          )
+      - name: Verify
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.25.0 --activate
+          pnpm install --frozen-lockfile
+          pnpm -w run typecheck:libs
+          pnpm --filter @workspace/api-server typecheck
+
+      - name: Commit and remove workflow
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add artifacts/api-server/src/lib/serverRegistry.ts artifacts/api-server/src/lib/state.ts artifacts/api-server/src/lib/organizationIntegrations.ts artifacts/api-server/src/lib/serverNitrado.ts artifacts/api-server/src/lib/nitradoDownloader.ts artifacts/api-server/src/lib/nitradoFtp.ts
+          git rm .github/workflows/patch-2-native-nitrado.yml
+          git diff --cached --check
+          git commit -m "refactor: make Nitrado transport server-scoped"
+          git push
