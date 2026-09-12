@@ -7,7 +7,7 @@ import { initializeShopCatalog } from "./lib/shopCatalog";
 import { normalizeServiceSettings } from "./lib/serviceSettings";
 import { getPrimaryServerId } from "./lib/serverRegistry";
 import { getServerRuntimeContext, runInServerDataContext, runInServerRuntimeContext } from "./lib/serverRuntime";
-import { migratePrimaryNitradoCredentialToServerScope } from "./lib/serverNitradoMigration";
+import { migratePrimaryNitradoCredentialToServerScope, hydrateServerNitradoSecretsFromDb } from "./lib/serverNitradoMigration";
 import {
   flushExecutableManagedServerStates,
   reconcileManagedServerRuntimeActivation,
@@ -66,6 +66,7 @@ function startServer(port: number) {
 
     try {
       const state = await runInServerRuntimeContext(primaryServerId, () => getStateAsync());
+      await hydrateServerNitradoSecretsFromDb();
       const runtime = getServerRuntimeContext(primaryServerId);
       console.log(`🧭 runtime isolado: ${runtime.server.name} (${runtime.serverId})`);
       const settings = normalizeServiceSettings(state.serviceSettings);
