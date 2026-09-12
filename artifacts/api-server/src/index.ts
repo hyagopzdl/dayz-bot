@@ -7,6 +7,7 @@ import { initializeShopCatalog } from "./lib/shopCatalog";
 import { normalizeServiceSettings } from "./lib/serviceSettings";
 import { getPrimaryServerId } from "./lib/serverRegistry";
 import { getServerRuntimeContext, runInServerDataContext, runInServerRuntimeContext } from "./lib/serverRuntime";
+import { migratePrimaryNitradoCredentialToServerScope } from "./lib/serverNitradoMigration";
 import {
   flushExecutableManagedServerStates,
   reconcileManagedServerRuntimeActivation,
@@ -56,6 +57,12 @@ function startServer(port: number) {
 
     logger.info({ port }, "Server listening");
     const primaryServerId = getPrimaryServerId();
+
+    try {
+      await migratePrimaryNitradoCredentialToServerScope();
+    } catch (err) {
+      console.error("❌ unable to migrate primary Nitrado credential to server scope:", err);
+    }
 
     try {
       const state = await runInServerRuntimeContext(primaryServerId, () => getStateAsync());
