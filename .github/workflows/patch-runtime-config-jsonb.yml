@@ -1,4 +1,4 @@
-name: Apply runtime config JSONB patch
+name: Apply multi-server foundation patch
 
 on:
   push:
@@ -17,37 +17,70 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Patch managed server runtime_config
+      - name: Patch multi-server foundation
         shell: python
         run: |
           from pathlib import Path
 
-          p = Path("artifacts/api-server/src/lib/state.ts")
-          text = p.read_text()
+          registry = Path("artifacts/api-server/src/lib/serverRegistry.ts")
+          text = registry.read_text()
 
+          replacements = [
+              (
+                  'export type ServerFoundationMode = "single-server-compat";',
+                  'export type ServerFoundationMode = "multi-server-native";',
+              ),
+              (
+                  'function normalizeServerId(value: unknown) {\n  const normalized = buildManagedServerId(value);\n  return normalized || FALLBACK_SERVER_ID;\n}',
+                  'function normalizeServerId(value: unknown) {\n  return buildManagedServerId(value);\n}',
+              ),
+              (
+                  '  if (normalized === getPrimaryServerId()) return true;\n  const server = getManagedServerById(normalized);',
+                  '  if (!normalized) return false;\n  const server = getManagedServerById(normalized);',
+              ),
+              (
+                  '  // Phase 11 allows additional servers to exist as draft/configured/ready registry rows,\n  // while runtime execution remains explicitly primary-only.\n  if (persistedServers.length) return persistedServers.map((server) => ({ ...server, integrations: { ...server.integrations }, runtime: { ...server.runtime, nitradoValidation: server.runtime.nitradoValidation ? { ...server.runtime.nitradoValidation } : undefined, activationPreflight: server.runtime.activationPreflight ? { ...server.runtime.activationPreflight, namespaceRows: { ...server.runtime.activationPreflight.namespaceRows } } : undefined, activation: server.runtime.activation ? { ...server.runtime.activation } : undefined, operations: server.runtime.operations ? { ...server.runtime.operations } : undefined, discord: { ...server.runtime.discord } } }));\n  return [getPrimaryServerDescriptor()];',
+                  '  return persistedServers.map((server) => ({ ...server, integrations: { ...server.integrations }, runtime: { ...server.runtime, nitradoValidation: server.runtime.nitradoValidation ? { ...server.runtime.nitradoValidation } : undefined, activationPreflight: server.runtime.activationPreflight ? { ...server.runtime.activationPreflight, namespaceRows: { ...server.runtime.activationPreflight.namespaceRows } } : undefined, activation: server.runtime.activation ? { ...server.runtime.activation } : undefined, operations: server.runtime.operations ? { ...server.runtime.operations } : undefined, discord: { ...server.runtime.discord } } }));',
+              ),
+              (
+                  '  const normalized = normalizeServerId(serverId);\n  return listManagedServers().find((server) => server.id === normalized);',
+                  '  const normalized = buildManagedServerId(serverId);\n  if (!normalized) return undefined;\n  return listManagedServers().find((server) => server.id === normalized);',
+              ),
+              (
+                  '    mode: "single-server-compat",',
+                  '    mode: "multi-server-native",',
+              ),
+          ]
+
+          for old, new in replacements:
+              if old not in text:
+                  raise SystemExit(f"expected registry block not found: {old[:80]!r}")
+              text = text.replace(old, new, 1)
+          registry.write_text(text)
+
+          state = Path("artifacts/api-server/src/lib/state.ts")
+          text = state.read_text()
           old = '''      await sql`\n        UPDATE managed_servers\n        SET runtime_config = jsonb_set(\n              COALESCE(runtime_config, '{}'::jsonb),\n              '{settings}',\n              ${JSON.stringify(defaultServerSettings)}::jsonb,\n              TRUE\n            ),\n            updated_at = NOW()\n        WHERE runtime_config IS NULL OR runtime_config->'settings' IS NULL\n      `;'''
-
-          new = '''      await sql`\n        UPDATE managed_servers\n        SET runtime_config = CASE\n              WHEN runtime_config IS NULL THEN jsonb_build_object(\n                'settings',\n                ${JSON.stringify(defaultServerSettings)}::jsonb\n              )\n              WHEN jsonb_typeof(runtime_config) = 'object' THEN jsonb_set(\n                runtime_config,\n                '{settings}',\n                ${JSON.stringify(defaultServerSettings)}::jsonb,\n                TRUE\n              )\n              ELSE runtime_config\n            END,\n            updated_at = NOW()\n        WHERE runtime_config IS NULL OR runtime_config->'settings' IS NULL\n      `;'''
-
+          new = '''      await sql`\n        UPDATE managed_servers\n        SET runtime_config = CASE\n              WHEN runtime_config IS NULL THEN jsonb_build_object(\n                'settings', ${JSON.stringify(defaultServerSettings)}::jsonb\n              )\n              WHEN jsonb_typeof(runtime_config) = 'object' THEN jsonb_set(\n                runtime_config,\n                '{settings}',\n                ${JSON.stringify(defaultServerSettings)}::jsonb,\n                TRUE\n              )\n              ELSE runtime_config\n            END,\n            updated_at = NOW()\n        WHERE runtime_config IS NULL\n           OR (jsonb_typeof(runtime_config) = 'object' AND runtime_config->'settings' IS NULL)\n      `;'''
           if old not in text:
-              raise SystemExit("expected managed_servers runtime_config block was not found; refusing blind edit")
-
-          p.write_text(text.replace(old, new, 1))
+              raise SystemExit("expected runtime_config block not found; refusing blind edit")
+          state.write_text(text.replace(old, new, 1))
 
       - name: Verify typecheck
         run: |
+          corepack enable
           corepack prepare pnpm@10.25.0 --activate
-          unset npm_config_user_agent
-          pnpm install
+          pnpm install --frozen-lockfile
           pnpm -w run typecheck:libs
           pnpm --filter @workspace/api-server typecheck
 
-      - name: Commit patch and remove workflow
+      - name: Commit patch and remove temporary workflows
         shell: bash
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add artifacts/api-server/src/lib/state.ts
-          git rm .github/workflows/patch-runtime-config-jsonb.yml
-          git commit -m "fix: guard managed server runtime config JSONB"
+          git add artifacts/api-server/src/lib/serverRegistry.ts artifacts/api-server/src/lib/state.ts
+          git rm .github/workflows/patch-runtime-config-jsonb.yml .github/workflows/patch-multiserver-foundation.yml
+          git diff --cached --check
+          git commit -m "refactor: establish native multi-server foundation"
           git push
