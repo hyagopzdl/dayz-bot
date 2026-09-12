@@ -1,0 +1,95 @@
+name: Apply Patch 3 registry hardening
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply Patch 3
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+          import subprocess
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              if old not in text:
+                  raise SystemExit(f"expected block not found in {path}: {old[:160]!r}")
+              p.write_text(text.replace(old, new, 1))
+
+          # 1. Never let malformed legacy JSONB in managed_servers abort the
+          # registry bootstrap. Preserve the value and only add settings when
+          # the runtime_config value is actually an object.
+          replace_once(
+              "artifacts/api-server/src/lib/state.ts",
+              '''UPDATE managed_servers
+        SET runtime_config = jsonb_set(
+          COALESCE(runtime_config, '{}'::jsonb),
+          '{settings}',
+          ${JSON.stringify(defaultServerSettings)}::jsonb,
+          TRUE
+        ),
+        updated_at = NOW()
+        WHERE runtime_config IS NULL OR runtime_config->'settings' IS NULL''',
+              '''UPDATE managed_servers
+        SET runtime_config = CASE
+          WHEN runtime_config IS NULL THEN jsonb_build_object(
+            'settings', ${JSON.stringify(defaultServerSettings)}::jsonb
+          )
+          WHEN jsonb_typeof(runtime_config) = 'object' THEN jsonb_set(
+            runtime_config,
+            '{settings}',
+            ${JSON.stringify(defaultServerSettings)}::jsonb,
+            TRUE
+          )
+          ELSE runtime_config
+        END,
+        updated_at = NOW()
+        WHERE runtime_config IS NULL
+           OR (jsonb_typeof(runtime_config) = 'object' AND runtime_config->'settings' IS NULL)'''
+          )
+
+          # 2. Server-scoped settings must fail closed for unknown servers;
+          # there is no legitimate secondary->primary settings fallback.
+          replace_once(
+              "artifacts/api-server/src/lib/serverRegistry.ts",
+              '  const server = getManagedServerById(serverId) || (serverId === getPrimaryServerId() ? getPrimaryServerDescriptor() : undefined);',
+              '  const server = getManagedServerById(serverId);'
+          )
+
+          # 3. Diagnostics must reflect that encrypted credential containers are
+          # part of the managed-server registry model (without exposing secrets).
+          p = Path("artifacts/api-server/src/lib/serverRegistry.ts")
+          text = p.read_text()
+          text2 = re.sub(
+              r'secretsStoredInRegistry:\s*false',
+              'secretsStoredInRegistry: persistedServers.some((server) => Boolean(server.runtime.nitradoApiTokenEncrypted?.encryptedSecret || server.runtime.nitradoFtp?.passwordEncrypted?.encryptedSecret))',
+              text,
+              count=1,
+          )
+          if text2 == text:
+              raise SystemExit("expected secretsStoredInRegistry diagnostic was not found")
+          p.write_text(text2)
+
+          # 4. Keep the source tree clean: this workflow removes itself after
+          # the validated source commit.
+          subprocess.run(["pnpm", "--filter", "@workspace/api-server", "typecheck"], check=True)
+          subprocess.run(["git", "config", "user.name", "github-actions[bot]"], check=True)
+          subprocess.run(["git", "config", "user.email", "41898282+github-actions[bot]@users.noreply.github.com"], check=True)
+          subprocess.run(["git", "rm", ".github/workflows/patch-3-registry-hardening.yml"], check=True)
+          subprocess.run(["git", "add", "artifacts/api-server/src/lib/state.ts", "artifacts/api-server/src/lib/serverRegistry.ts"], check=True)
+          subprocess.run(["git", "commit", "-m", "fix: harden server registry bootstrap"], check=True)
+          subprocess.run(["git", "push", "origin", "main"], check=True)
