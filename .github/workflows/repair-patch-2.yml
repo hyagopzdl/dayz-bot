@@ -21,10 +21,20 @@ jobs:
           from pathlib import Path
           p = Path('.github/workflows/patch-2-native-nitrado.yml')
           text = p.read_text()
-          bad = '''          replace(\n              "artifacts/api-server/src/lib/organizationIntegrations.ts",\n              ''' + "'''    return decryptOrganizationSecret(record);'''" + ''',\n              ''' + "'''    return decryptEncryptedSecret(record);'''" + '''\n          )\n\n'''
-          if bad not in text:
-              raise SystemExit('invalid replacement block not found; refusing blind edit')
-          p.write_text(text.replace(bad, '', 1))
+          marker = '          # Organization integration decryption becomes reusable by the server-scoped\n'
+          start = text.find(marker)
+          if start < 0:
+              raise SystemExit('organization decryption marker not found')
+          block_start = text.find('          replace(', start)
+          next_marker = '          # Downloader consumes the common resolver:'
+          end = text.find(next_marker, block_start)
+          if block_start < 0 or end < 0:
+              raise SystemExit('invalid organization replacement block not found')
+          block = text[block_start:end]
+          lines = block.splitlines(True)
+          if len(lines) < 1 or 'return decryptEncryptedSecret' not in block:
+              raise SystemExit('refusing to remove unexpected block')
+          p.write_text(text[:block_start] + text[end:])
       - name: Commit repair
         shell: bash
         run: |
