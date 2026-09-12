@@ -1,12 +1,12 @@
-import { decryptEncryptedSecret, getOrganizationNitradoCredential } from "./organizationIntegrations";
-import { getManagedServerById, getPrimaryServerId, type ManagedServerDescriptor } from "./serverRegistry";
+import { decryptEncryptedSecret } from "./organizationIntegrations";
+import { getManagedServerById, type ManagedServerDescriptor } from "./serverRegistry";
 
 export type ServerNitradoConfig = {
   serverId: string;
   serviceId: string;
   baseDir: string;
   apiToken: string;
-  apiTokenSource: "server-secret" | "organization-secret" | "environment-fallback" | "missing";
+  apiTokenSource: "server-secret";
   ftp?: { host: string; port: number; user: string; password: string; root?: string; secure: boolean };
 };
 
@@ -31,23 +31,24 @@ export function getServerNitradoConfig(serverId: string): ServerNitradoConfig {
   if (!serviceId) throw new Error(`Nitrado Service ID nao configurado para ${server.id}.`);
   if (!baseDir) throw new Error(`Nitrado baseDir nao configurado para ${server.id}.`);
 
-  let apiToken = "";
-  let apiTokenSource: ServerNitradoConfig["apiTokenSource"];
-  if (server.runtime.nitradoApiTokenEncrypted?.encryptedSecret) {
-    apiToken = decryptServerSecret(server.runtime.nitradoApiTokenEncrypted, "api token");
-    apiTokenSource = "server-secret";
-  } else if (server.id === getPrimaryServerId()) {
-    const credential = getOrganizationNitradoCredential(server.organizationId);
-    apiToken = credential.token;
-    apiTokenSource = credential.source;
-  } else {
+  const encryptedToken = server.runtime.nitradoApiTokenEncrypted;
+  if (!encryptedToken?.encryptedSecret) {
     throw new Error(`Credencial Nitrado server-scoped obrigatoria para ${server.id}.`);
   }
+  const apiToken = decryptServerSecret(encryptedToken, "api token");
   if (!apiToken) throw new Error(`Nitrado nao conectado para ${server.id}.`);
 
   const f = server.runtime.nitradoFtp;
   const ftp = f?.host && f.user && f.passwordEncrypted?.encryptedSecret
-    ? { host: f.host, port: Number(f.port || 21), user: f.user, password: decryptServerSecret(f.passwordEncrypted, "ftp password"), root: f.root, secure: f.secure === true }
+    ? {
+        host: f.host,
+        port: Number(f.port || 21),
+        user: f.user,
+        password: decryptServerSecret(f.passwordEncrypted, "ftp password"),
+        root: f.root,
+        secure: f.secure === true,
+      }
     : undefined;
-  return { serverId: server.id, serviceId, baseDir, apiToken, apiTokenSource, ftp };
+
+  return { serverId: server.id, serviceId, baseDir, apiToken, apiTokenSource: "server-secret", ftp };
 }
