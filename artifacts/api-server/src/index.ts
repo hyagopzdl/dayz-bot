@@ -7,7 +7,7 @@ import { initializeShopCatalog } from "./lib/shopCatalog";
 import { normalizeServiceSettings } from "./lib/serviceSettings";
 import { getPrimaryServerId } from "./lib/serverRegistry";
 import { getServerRuntimeContext, runInServerDataContext, runInServerRuntimeContext } from "./lib/serverRuntime";
-import { migratePrimaryNitradoCredentialToServerScope, hydrateServerNitradoSecretsFromDb } from "./lib/serverNitradoMigration";
+import { migratePrimaryNitradoCredentialToServerScope, hydrateServerNitradoSecretsFromDb, normalizeManagedServerRuntimeConfig } from "./lib/serverNitradoMigration";
 import {
   flushExecutableManagedServerStates,
   reconcileManagedServerRuntimeActivation,
@@ -59,9 +59,10 @@ function startServer(port: number) {
     const primaryServerId = getPrimaryServerId();
 
     try {
+      await normalizeManagedServerRuntimeConfig();
       await migratePrimaryNitradoCredentialToServerScope();
     } catch (err) {
-      console.error("❌ unable to migrate primary Nitrado credential to server scope:", err);
+      console.error("❌ unable to prepare server-scoped Nitrado registry:", err);
     }
 
     try {
