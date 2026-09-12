@@ -95,7 +95,7 @@ export function getOrganizationNitradoCredential(organizationId: string) {
   const record = records.get(integrationKey(organizationId, "nitrado"));
   if (record?.active) {
     return {
-      token: decryptOrganizationSecret(record),
+    token: decryptOrganizationSecret(record),
       source: "organization-secret" as const,
     };
   }
