@@ -63,7 +63,7 @@ export function encryptOrganizationSecret(secretInput: unknown) {
   };
 }
 
-function decryptOrganizationSecret(record: OrganizationIntegrationRecord) {
+export function decryptEncryptedSecret(record: Pick<OrganizationIntegrationRecord, "encryptedSecret" | "iv" | "authTag">) {
   const key = getEncryptionKey();
   if (!key) throw new Error("ADM_SECRETS_KEY nao esta configurado para descriptografar a integracao.");
   const decipher = crypto.createDecipheriv("aes-256-gcm", key, Buffer.from(record.iv, "base64"));
@@ -95,7 +95,7 @@ export function getOrganizationNitradoCredential(organizationId: string) {
   const record = records.get(integrationKey(organizationId, "nitrado"));
   if (record?.active) {
     return {
-    token: decryptOrganizationSecret(record),
+    token: decryptEncryptedSecret(record),
       source: "organization-secret" as const,
     };
   }

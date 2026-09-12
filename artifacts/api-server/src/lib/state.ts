@@ -421,8 +421,8 @@ const SERVER_SECRET_KEY_PATTERN = /(token|password|secret|api[_-]?key|authorizat
 function assertNoServerSecrets(value: unknown, pathName = "server") {
   if (!value || typeof value !== "object") return;
   for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
-    if (SERVER_SECRET_KEY_PATTERN.test(key)) {
-      throw new Error(`Server onboarding does not persist secrets in managed_servers (${pathName}.${key}). Nitrado credentials stay server-side and are never accepted by this registry form.`);
+    if (SERVER_SECRET_KEY_PATTERN.test(key) && key !== "nitradoApiTokenEncrypted" && key !== "passwordEncrypted") {
+      throw new Error(`Server onboarding does not persist plaintext secrets in managed_servers (${pathName}.${key}).`);
     }
     if (child && typeof child === "object" && !Array.isArray(child)) {
       assertNoServerSecrets(child, `${pathName}.${key}`);

@@ -3,11 +3,8 @@ import fs from "fs";
 import path from "path";
 import { byteLengthOfBody, recordNetworkTransfer } from "./networkMetrics";
 import { getManagedServerById, getPrimaryServerDescriptor, getPrimaryServerId } from "./serverRegistry";
-import { getOrganizationNitradoCredential } from "./organizationIntegrations";
 import { getActiveServerId, getServerRuntimeContext } from "./serverRuntime";
-
-const LEGACY_SERVICE_ID = "19149785";
-const LEGACY_BASE_DIR = "/games/ni13029176_1/noftp/dayzps/config";
+import { getServerNitradoConfig } from "./serverNitrado";
 
 export const LOG_DIR = path.resolve(process.cwd(), "adm_logs");
 export const MANIFEST_FILE = path.resolve(process.cwd(), "adm_manifest.json");
@@ -303,11 +300,7 @@ async function trackedNitradoFetch(url: string, init: RequestInit = {}) {
 }
 
 function getNitradoToken(serverId = getActiveServerId()) {
-  const server = getManagedServerById(serverId) || (serverId === getPrimaryServerId() ? getPrimaryServerDescriptor() : undefined);
-  if (!server) throw new Error(`Servidor ${serverId} nao encontrado para resolver a credencial Nitrado.`);
-  const credential = getOrganizationNitradoCredential(server.organizationId);
-  if (!credential.token) throw new Error(`Nitrado nao conectado para a organizacao ${server.organizationId}.`);
-  return credential.token;
+  return getServerNitradoConfig(serverId).apiToken;
 }
 
 async function fetchJson(url: string, serverId = getActiveServerId()): Promise<any> {
@@ -463,7 +456,8 @@ export async function downloadADM(serverId = getPrimaryServerId()) {
   const logDir = runtime.storage.logDir;
   const manifestFile = runtime.storage.manifestFile;
   const serviceId = getNitradoServiceId(serverId);
-  const baseDir = runtime.nitrado.baseDir || LEGACY_BASE_DIR;
+  const baseDir = runtime.nitrado.baseDir;
+  if (!baseDir) throw new Error(`Nitrado baseDir nao configurado para o servidor ${serverId}.`);
   if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true });
   const cycleStarted = Date.now();
   strategy.cycles += 1;
@@ -648,12 +642,7 @@ export async function downloadADM(serverId = getPrimaryServerId()) {
 }
 
 function getNitradoServiceId(serverId = getActiveServerId()) {
-  const runtime = getServerRuntimeContext(serverId);
-  if (runtime.nitrado.serviceId) return runtime.nitrado.serviceId;
-  // Legacy service-id fallback is production-primary compatibility only. A
-  // tenant/secondary runtime must never inherit the platform/PZ service ID.
-  if (runtime.isPrimary) return process.env.NITRADO_SERVICE_ID || LEGACY_SERVICE_ID;
-  throw new Error(`Nitrado Service ID nao configurado para o servidor ${serverId}.`);
+  return getServerNitradoConfig(serverId).serviceId;
 }
 
 function normalizeNitradoFileServerPath(value: string) {
@@ -831,7 +820,7 @@ function uniqueStrings(values: string[]) {
 }
 
 function getNoFtpRootFromAdmBaseDir(serverId = getActiveServerId()) {
-      const baseDir = getServerRuntimeContext(serverId).nitrado.baseDir || LEGACY_BASE_DIR;
+      const baseDir = getServerRuntimeContext(serverId).nitrado.baseDir || "";
       const marker = "/noftp/";
       const index = baseDir.indexOf(marker);
       if (index === -1) return "";
@@ -839,7 +828,7 @@ function getNoFtpRootFromAdmBaseDir(serverId = getActiveServerId()) {
     }
 
     function getFtpRootFromAdmBaseDir(serverId = getActiveServerId()) {
-      const baseDir = String(getServerRuntimeContext(serverId).nitrado.baseDir || LEGACY_BASE_DIR).replace(/\\/g, "/");
+      const baseDir = String(getServerRuntimeContext(serverId).nitrado.baseDir || "").replace(/\\/g, "/");
       const match = baseDir.match(/^(\/games\/[^/]+)\/(?:noftp|ftproot)(?:\/|$)/i);
       return match?.[1] ? `${match[1]}/ftproot` : "";
     }

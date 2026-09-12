@@ -69,6 +69,25 @@ export type ServerScopedSettings = {
 
 export type ServerRuntimeConfig = {
   nitradoBaseDir?: string;
+  nitradoApiTokenEncrypted?: {
+    encryptedSecret: string;
+    iv: string;
+    authTag: string;
+    keyVersion: number;
+  };
+  nitradoFtp?: {
+    host: string;
+    port: number;
+    user: string;
+    passwordEncrypted: {
+      encryptedSecret: string;
+      iv: string;
+      authTag: string;
+      keyVersion: number;
+    };
+    root?: string;
+    secure?: boolean;
+  };
   nitradoValidation?: ServerNitradoValidation;
   activationPreflight?: ServerActivationPreflight;
   activation?: ServerRuntimeActivation;
@@ -396,7 +415,7 @@ export function listManagedServers(): ManagedServerDescriptor[] {
   // Phase 11 allows additional servers to exist as draft/configured/ready registry rows,
   // while runtime execution remains explicitly primary-only.
   if (persistedServers.length) return persistedServers.map((server) => ({ ...server, integrations: { ...server.integrations }, runtime: { ...server.runtime, nitradoValidation: server.runtime.nitradoValidation ? { ...server.runtime.nitradoValidation } : undefined, activationPreflight: server.runtime.activationPreflight ? { ...server.runtime.activationPreflight, namespaceRows: { ...server.runtime.activationPreflight.namespaceRows } } : undefined, activation: server.runtime.activation ? { ...server.runtime.activation } : undefined, operations: server.runtime.operations ? { ...server.runtime.operations } : undefined, discord: { ...server.runtime.discord } } }));
-  return [getPrimaryServerDescriptor()];
+  return [];
 }
 
 export function setPersistedManagedServers(servers: ManagedServerDescriptor[]) {
@@ -415,6 +434,19 @@ export function setPersistedManagedServers(servers: ManagedServerDescriptor[]) {
     },
     runtime: {
       nitradoBaseDir: String(server.runtime?.nitradoBaseDir || "").trim() || undefined,
+      nitradoApiTokenEncrypted: server.runtime?.nitradoApiTokenEncrypted && typeof server.runtime.nitradoApiTokenEncrypted === "object"
+        ? { ...server.runtime.nitradoApiTokenEncrypted }
+        : undefined,
+      nitradoFtp: server.runtime?.nitradoFtp && typeof server.runtime.nitradoFtp === "object"
+        ? {
+            host: String(server.runtime.nitradoFtp.host || "").trim(),
+            port: Number(server.runtime.nitradoFtp.port || 21),
+            user: String(server.runtime.nitradoFtp.user || "").trim(),
+            passwordEncrypted: { ...(server.runtime.nitradoFtp.passwordEncrypted || {}) },
+            root: String(server.runtime.nitradoFtp.root || "").trim() || undefined,
+            secure: server.runtime.nitradoFtp.secure === true,
+          }
+        : undefined,
       nitradoValidation: server.runtime?.nitradoValidation ? { ...server.runtime.nitradoValidation } : undefined,
       activationPreflight: server.runtime?.activationPreflight ? { ...server.runtime.activationPreflight, namespaceRows: { ...server.runtime.activationPreflight.namespaceRows } } : undefined,
       activation: server.runtime?.activation ? { ...server.runtime.activation } : undefined,

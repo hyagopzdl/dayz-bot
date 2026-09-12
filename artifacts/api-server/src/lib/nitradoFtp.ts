@@ -1,6 +1,7 @@
 import net from "net";
 import { recordNetworkTransfer } from "./networkMetrics";
-import { assertPrimaryRuntimeServer, getActiveServerId } from "./serverRuntime";
+import { getActiveServerId } from "./serverRuntime";
+import { getServerNitradoConfig } from "./serverNitrado";
 
 type FtpResponse = {
   code: number;
@@ -26,8 +27,8 @@ function getRequiredEnv(name: string) {
   return value;
 }
 
-function normalizeFtpPath(value: string) {
-  const root = String(process.env.NITRADO_FTP_ROOT || "")
+function normalizeFtpPath(value: string, rootValue = "") {
+  const root = String(rootValue || "")
     .replace(/\\/g, "/")
     .replace(/^\/+|\/+$/g, "");
 
@@ -245,29 +246,10 @@ class SimpleFtpClient {
   }
 }
 
-function getFtpConnectionOptions() {
-  const secure = String(
-    process.env.NITRADO_FTP_SECURE || "false",
-  ).toLowerCase();
-
-  if (secure === "true" || secure === "1") {
-    throw new Error(
-      "NITRADO_FTP_SECURE=true ainda não é suportado neste uploader simples. Use FTP padrão na porta 21 ou me peça para trocar para a dependência basic-ftp.",
-    );
-  }
-
-  const host = getRequiredEnv("NITRADO_FTP_HOST");
-  const user = getRequiredEnv("NITRADO_FTP_USER");
-  const password = getRequiredEnv("NITRADO_FTP_PASSWORD");
-  const port = Number(process.env.NITRADO_FTP_PORT || "21");
-
-  if (!Number.isFinite(port) || port <= 0) {
-    throw new Error(
-      `NITRADO_FTP_PORT inválido: ${process.env.NITRADO_FTP_PORT}`,
-    );
-  }
-
-  return { host, port, user, password };
+function getFtpConnectionOptions(serverId: string) {
+  const config = getServerNitradoConfig(serverId);
+  if (!config.ftp) throw new Error(`FTP nao configurado para o servidor ${serverId}.`);
+  return config.ftp;
 }
 
 async function uploadTextViaFtp(options: UploadOptions) {
@@ -296,12 +278,8 @@ async function downloadTextViaFtp(options: Omit<UploadOptions, "content">) {
 
 export async function uploadTextFile(filePath: string, content: string) {
   const serverId = getActiveServerId();
-  // Phase 8 deliberately fails closed: FTP credentials are still the legacy
-  // PZ credentials. A future onboarding phase must provide per-server secrets
-  // before a non-primary runtime is allowed to use this transport.
-  assertPrimaryRuntimeServer(serverId);
-  const { host, port, user, password } = getFtpConnectionOptions();
-  const remotePath = normalizeFtpPath(filePath);
+  const { host, port, user, password, root } = getFtpConnectionOptions(serverId);
+  const remotePath = normalizeFtpPath(filePath, root);
 
   console.log(`📤 FTP upload: ${host}:${port} -> ${remotePath}`);
 
@@ -326,9 +304,8 @@ export async function uploadTextFile(filePath: string, content: string) {
 
 export async function downloadTextFile(filePath: string) {
   const serverId = getActiveServerId();
-  assertPrimaryRuntimeServer(serverId);
-  const { host, port, user, password } = getFtpConnectionOptions();
-  const remotePath = normalizeFtpPath(filePath);
+  const { host, port, user, password, root } = getFtpConnectionOptions(serverId);
+  const remotePath = normalizeFtpPath(filePath, root);
 
   console.log(`📥 FTP download: ${host}:${port} <- ${remotePath}`);
 
