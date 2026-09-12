@@ -17,7 +17,9 @@ jobs:
         with:
           fetch-depth: 0
       - name: Apply source transformer
-        run: python .github/patch2.py
+        run: |
+          python .github/patch2.py
+          python .github/patch2fix.py
       - name: Typecheck
         run: |
           corepack enable
@@ -30,7 +32,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add artifacts/api-server/src/lib/serverRegistry.ts artifacts/api-server/src/lib/state.ts artifacts/api-server/src/lib/organizationIntegrations.ts artifacts/api-server/src/lib/serverNitrado.ts artifacts/api-server/src/lib/nitradoDownloader.ts artifacts/api-server/src/lib/nitradoFtp.ts artifacts/api-server/src/lib/.gitkeep
-          git rm -f .github/patch2.py .github/workflows/patch-2-native-nitrado.yml .github/workflows/repair-patch-2.yml .github/workflows/repair-nitrado-downloader.yml 2>/dev/null || true
+          git rm -f .github/patch2.py .github/patch2fix.py .github/workflows/patch-2-native-nitrado.yml .github/workflows/repair-patch-2.yml .github/workflows/repair-nitrado-downloader.yml 2>/dev/null || true
           git diff --cached --check
           git commit -m "refactor: make Nitrado transport server-scoped"
           git push
