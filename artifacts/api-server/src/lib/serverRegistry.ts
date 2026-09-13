@@ -280,8 +280,12 @@ function normalizeServerOnboardingStatus(value: unknown): ServerOnboardingStatus
 }
 
 export function getServerScopedSettings(serverId = getPrimaryServerId()): Required<ServerScopedSettings> {
-  const server = getManagedServerById(serverId) || (serverId === getPrimaryServerId() ? getPrimaryServerDescriptor() : undefined);
-  const settings = server?.runtime.settings || {};
+  const normalizedServerId = normalizeServerId(serverId);
+  const server = getManagedServerById(normalizedServerId);
+  if (!server) {
+    throw new Error(`Servidor ${normalizedServerId || String(serverId || "").trim()} nao encontrado para resolver configuracoes.`);
+  }
+  const settings = server.runtime.settings || {};
   return {
     shopRestartTimes: String(settings.shopRestartTimes || "00:00,04:00,08:00,12:00,16:00,20:00").trim(),
     shopRestartTimezone: String(settings.shopRestartTimezone || "America/Sao_Paulo").trim(),
@@ -412,8 +416,8 @@ export function getPrimaryServerDescriptor(): ManagedServerDescriptor {
 }
 
 export function listManagedServers(): ManagedServerDescriptor[] {
-  // Phase 11 allows additional servers to exist as draft/configured/ready registry rows,
-  // while runtime execution remains explicitly primary-only.
+  // The registry is the runtime source of truth. An empty registry stays empty;
+  // callers must not silently inherit the primary server's descriptor.
   if (persistedServers.length) return persistedServers.map((server) => ({ ...server, integrations: { ...server.integrations }, runtime: { ...server.runtime, nitradoValidation: server.runtime.nitradoValidation ? { ...server.runtime.nitradoValidation } : undefined, activationPreflight: server.runtime.activationPreflight ? { ...server.runtime.activationPreflight, namespaceRows: { ...server.runtime.activationPreflight.namespaceRows } } : undefined, activation: server.runtime.activation ? { ...server.runtime.activation } : undefined, operations: server.runtime.operations ? { ...server.runtime.operations } : undefined, discord: { ...server.runtime.discord } } }));
   return [];
 }
