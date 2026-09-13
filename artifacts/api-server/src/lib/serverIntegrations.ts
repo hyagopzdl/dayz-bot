@@ -188,7 +188,6 @@ function mapNitradoService(raw: any): NitradoServiceOption | null {
   };
 }
 
-
 export async function testOrganizationNitradoCredential(tokenInput: unknown) {
   const token = String(tokenInput || "").trim();
   if (!token) throw new Error("Informe o token Nitrado.");
@@ -228,7 +227,6 @@ export async function testOrganizationNitradoCredential(tokenInput: unknown) {
   };
 }
 
-
 export async function discoverOrganizationNitradoServices(organizationIdInput: unknown) {
   const organizationId = String(organizationIdInput || "").trim();
   if (!organizationId) throw new Error("Organization invalida.");
@@ -251,7 +249,33 @@ export async function discoverOrganizationNitradoServices(organizationIdInput: u
 }
 
 export function getIntegrationOnboardingStatus(serverId = getPrimaryServerId()) {
-  const server = getManagedServerById(serverId) || getPrimaryServerDescriptor();
+  const server = getManagedServerById(serverId);
+  if (!server) {
+    // Only the implicit primary default is allowed before the persistent registry
+    // has initialized. An explicit secondary/unknown id must never resolve to the
+    // primary organization by accident.
+    if (serverId === getPrimaryServerId()) {
+      const primary = getPrimaryServerDescriptor();
+      const nitradoStatus = getOrganizationIntegrationStatus(primary.organizationId);
+      return {
+        mode: "on-demand" as const,
+        backgroundPolling: false,
+        organizationId: primary.organizationId,
+        nitrado: {
+          credentialSource: nitradoStatus.credentialSource,
+          tokenConfigured: nitradoStatus.configured,
+          encryptedAtRest: nitradoStatus.encryptedAtRest,
+          tokenExposedToBrowser: false,
+        },
+        discord: {
+          botConfigured: Boolean(process.env.DISCORD_TOKEN),
+          credentialModel: "platform-bot" as const,
+          discoveryMode: "bot-cache/on-demand" as const,
+        },
+      };
+    }
+    throw new Error(`Servidor ${serverId} nao encontrado.`);
+  }
   const nitradoStatus = getOrganizationIntegrationStatus(server.organizationId);
   return {
     mode: "on-demand" as const,
@@ -270,43 +294,6 @@ export function getIntegrationOnboardingStatus(serverId = getPrimaryServerId()) 
     },
   };
 }
-
-export async function discoverNitradoServices(serverId: string) {
-  const onboardingServer = assertOnboardingServer(serverId);
-  const json = await nitradoOnboardingJson("/services", serverId);
-  const rawServices: unknown[] = Array.isArray(json?.data?.services)
-    ? json.data.services
-    : Array.isArray(json?.services)
-      ? json.services
-      : Array.isArray(json?.data)
-        ? json.data
-        : [];
-  const assignedByServiceId = new Map(
-    listManagedServers()
-      .filter((server) => server.id !== serverId && server.integrations.nitradoServiceId)
-      .map((server) => [String(server.integrations.nitradoServiceId), {
-        id: server.organizationId === onboardingServer.organizationId ? server.id : "assigned",
-        name: server.organizationId === onboardingServer.organizationId ? server.name : "Outro workspace",
-      }] as const),
-  );
-  const services = rawServices
-    .map(mapNitradoService)
-    .filter((service: NitradoServiceOption | null): service is NitradoServiceOption => Boolean(service))
-    .map((service) => {
-      const assigned = assignedByServiceId.get(service.id);
-      return assigned
-        ? { ...service, assignedServerId: assigned.id, assignedServerName: assigned.name }
-        : service;
-    })
-    .sort((a, b) => {
-      const aDayz = /dayz/i.test(`${a.name} ${a.game || ""}`) ? 1 : 0;
-      const bDayz = /dayz/i.test(`${b.name} ${b.game || ""}`) ? 1 : 0;
-      return bDayz - aDayz || a.name.localeCompare(b.name);
-    })
-    .slice(0, 100);
-  return { services, connection: getIntegrationOnboardingStatus(serverId).nitrado };
-}
-
 
 function normalizeMissionRelativePath(value: unknown) {
   return String(value || "")
@@ -340,7 +327,6 @@ async function listNitradoMissionDirectory(
     }
     return [];
   }
-}
 
 /**
  * Discovers the editable DayZ mission directory from this server's own Nitrado
@@ -435,10 +421,6 @@ export async function discoverNitradoShopDeliveryRouting(serverId: string): Prom
       const names = entries.map((entry: any) => normalizeMissionRelativePath(nitradoEntryPath(entry)).split("/").pop()?.toLowerCase() || "");
       if (!names.includes("cfgeventspawns.xml") || !names.includes("db")) continue;
 
-      // A mission root is only useful for Shop delivery if the exact CE files
-      // we mutate are present. Older discovery accepted any `db/` directory,
-      // which could persist a visually valid mission root whose events.xml was
-      // actually exposed through a different Nitrado file-server root.
       const dbEntries = await listNitradoMissionDirectory(serverId, serviceId, `${candidateDir}/db`, { quiet: true });
       const dbNames = dbEntries.map((entry: any) => normalizeMissionRelativePath(nitradoEntryPath(entry)).split("/").pop()?.toLowerCase() || "");
       if (!dbNames.includes("events.xml")) continue;
@@ -519,66 +501,30 @@ export async function listDiscordGuildOptions(serverId: string, requesterDiscord
   if (!client.isReady()) {
     return { ready: false, guilds: [] as DiscordGuildOption[], message: "Discord bot ainda nao esta conectado." };
   }
-  const assigned = new Map(
-    listManagedServers()
-      .filter((candidate) => candidate.integrations.discordGuildId)
-      .map((candidate) => [String(candidate.integrations.discordGuildId), candidate] as const),
-  );
-  const guilds: DiscordGuildOption[] = [];
-  for (const guild of client.guilds.cache.values()) {
-    const owner = assigned.get(guild.id);
-    if (owner && owner.organizationId !== server.organizationId) continue;
-    if (!owner && requesterDiscordId) {
-      try {
-        const member = guild.members.cache.get(requesterDiscordId) || await guild.members.fetch(requesterDiscordId);
-        const canManage = member.permissions.has(PermissionFlagsBits.Administrator) || member.permissions.has(PermissionFlagsBits.ManageGuild);
-        if (!canManage) continue;
-      } catch {
-        continue;
-      }
-    }
-    guilds.push({
-      id: guild.id,
-      name: guild.name,
-      memberCount: Number(guild.memberCount || 0),
-      iconUrl: guild.iconURL({ extension: "png", size: 64 }) || undefined,
-    });
-  }
-  guilds.sort((a, b) => a.name.localeCompare(b.name));
-  return { ready: true, guilds, message: guilds.length ? undefined : "Nenhum servidor Discord elegivel foi encontrado para esta organizacao." };
+  const guilds = client.guilds.cache.map((guild) => ({
+    id: guild.id,
+    name: guild.name,
+    memberCount: guild.memberCount,
+    iconUrl: guild.iconURL() || undefined,
+  })).filter((guild) => {
+    if (!requesterDiscordId) return true;
+    const member = client.guilds.cache.get(guild.id)?.members.cache.get(requesterDiscordId);
+    return Boolean(member?.permissions.has(PermissionFlagsBits.ManageGuild));
+  });
+  return { serverId: server.id, guilds };
 }
 
-export async function listDiscordGuildChannels(serverId: string, guildIdInput: unknown, requesterDiscordId?: string) {
+export async function listDiscordChannelOptions(serverId: string, guildIdInput: unknown) {
   const server = assertOnboardingServer(serverId);
   const guildId = String(guildIdInput || "").trim();
-  if (!guildId) throw new Error("Selecione um servidor Discord.");
+  if (!guildId) throw new Error("Selecione um Discord server valido.");
   const client = getDiscordClient();
-  if (!client.isReady()) throw new Error("Discord bot ainda nao esta conectado.");
-
-  const guild = client.guilds.cache.get(guildId) || await client.guilds.fetch(guildId);
-  if (!guild) throw new Error("Discord guild nao encontrada para este bot.");
-  const assigned = listManagedServers().find((candidate) => candidate.integrations.discordGuildId === guildId);
-  if (assigned && assigned.organizationId !== server.organizationId) {
-    throw new Error("Este servidor Discord pertence a outra organizacao.");
-  }
-  if (!assigned && requesterDiscordId) {
-    let member;
-    try { member = guild.members.cache.get(requesterDiscordId) || await guild.members.fetch(requesterDiscordId); } catch { member = null; }
-    const canManage = Boolean(member && (member.permissions.has(PermissionFlagsBits.Administrator) || member.permissions.has(PermissionFlagsBits.ManageGuild)));
-    if (!canManage) throw new Error("Sua conta precisa ter Manage Server ou Administrator neste Discord para conecta-lo.");
-  }
-  const fetched = await guild.channels.fetch();
-  const channels: DiscordChannelOption[] = [];
-  fetched.forEach((channel) => {
-    if (!channel) return;
-    if (channel.type === ChannelType.GuildCategory) {
-      channels.push({ id: channel.id, name: channel.name, type: "category" });
-      return;
-    }
-    if (channel.type === ChannelType.GuildText || channel.type === ChannelType.GuildAnnouncement) {
-      channels.push({ id: channel.id, name: channel.name, type: "text", parentId: channel.parentId || undefined });
-    }
-  });
-  channels.sort((a, b) => a.type.localeCompare(b.type) || a.name.localeCompare(b.name));
-  return { guild: { id: guild.id, name: guild.name }, channels };
+  const guild = client.guilds.cache.get(guildId);
+  if (!guild) throw new Error("Discord server nao encontrado pelo bot.");
+  const channels = guild.channels.cache.map((channel) => {
+    if (channel.type === ChannelType.GuildCategory) return { id: channel.id, name: channel.name, type: "category" as const };
+    if (channel.type === ChannelType.GuildText) return { id: channel.id, name: channel.name, type: "text" as const, parentId: channel.parentId || undefined };
+    return null;
+  }).filter((channel): channel is DiscordChannelOption => Boolean(channel));
+  return { serverId: server.id, guildId, channels };
 }
