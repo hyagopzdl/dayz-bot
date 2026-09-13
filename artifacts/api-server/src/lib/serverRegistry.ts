@@ -282,6 +282,19 @@ export function getServerScopedSettings(serverId = getPrimaryServerId()): Requir
   const normalizedServerId = normalizeServerId(serverId);
   const server = getManagedServerById(normalizedServerId);
   if (!server) {
+    // During module bootstrap the registry has not loaded from the database yet.
+    // The primary Shop compatibility constants need only the legacy primary
+    // configuration at this point; once the registry is initialized, an explicit
+    // server lookup remains mandatory and no tenant may inherit another server.
+    if (normalizedServerId === getPrimaryServerId() && !registryPersistenceStatus.initialized) {
+      const settings = getPrimaryRuntimeConfig().settings || {};
+      return {
+        shopRestartTimes: String(settings.shopRestartTimes || "00:00,04:00,08:00,12:00,16:00,20:00").trim(),
+        shopRestartTimezone: String(settings.shopRestartTimezone || "America/Sao_Paulo").trim(),
+        dayzMissionDir: String(settings.dayzMissionDir || "dayzps_missions/dayzOffline.chernarusplus").trim(),
+        shopDeliveryConfiguredAt: String(settings.shopDeliveryConfiguredAt || "").trim(),
+      };
+    }
     throw new Error(`Servidor ${normalizedServerId || String(serverId || "").trim()} nao encontrado para resolver configuracoes.`);
   }
   const settings = server.runtime.settings || {};
