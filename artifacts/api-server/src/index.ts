@@ -69,12 +69,11 @@ function startServer(port: number) {
       console.error("❌ unable to prepare server-scoped Nitrado registry:", err);
     }
 
-    let stateInitialized = false;
+    let state: Awaited<ReturnType<typeof getStateAsync>> | undefined;
     try {
-      await runInServerRuntimeContext(primaryServerId, async () => {
-        await getStateAsync();
-      });
-      stateInitialized = true;
+      state = await runInServerRuntimeContext(primaryServerId, () => getStateAsync());
+      const runtime = getServerRuntimeContext(primaryServerId);
+      console.log(`🧭 runtime isolado: ${runtime.server.name} (${runtime.serverId})`);
     } catch (err) {
       console.error("❌ unable to initialize ADM state:", err);
     }
@@ -88,11 +87,8 @@ function startServer(port: number) {
       console.error("❌ unable to hydrate server-scoped Nitrado secrets:", err);
     }
 
-    if (stateInitialized) {
+    if (state) {
       try {
-        const runtime = getServerRuntimeContext(primaryServerId);
-        console.log(`🧭 runtime isolado: ${runtime.server.name} (${runtime.serverId})`);
-        const state = await runInServerRuntimeContext(primaryServerId, () => getStateAsync());
         const settings = normalizeServiceSettings(state.serviceSettings);
         setAdmDownloadMode(settings.admDownloadMode);
         console.log(`📥 ADM download mode: ${settings.admDownloadMode}`);
