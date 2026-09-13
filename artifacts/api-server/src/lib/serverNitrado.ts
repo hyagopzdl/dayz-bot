@@ -1,4 +1,4 @@
-import { decryptEncryptedSecret } from "./organizationIntegrations";
+import { decryptEncryptedSecret, getOrganizationNitradoCredential } from "./organizationIntegrations";
 import { getManagedServerById, type ManagedServerDescriptor } from "./serverRegistry";
 
 export type ServerNitradoConfig = {
@@ -6,7 +6,7 @@ export type ServerNitradoConfig = {
   serviceId: string;
   baseDir: string;
   apiToken: string;
-  apiTokenSource: "server-secret";
+  apiTokenSource: "server-secret" | "organization-bootstrap";
   ftp?: { host: string; port: number; user: string; password: string; root?: string; secure: boolean };
 };
 
@@ -32,10 +32,22 @@ export function getServerNitradoConfig(serverId: string): ServerNitradoConfig {
   if (!baseDir) throw new Error(`Nitrado baseDir nao configurado para ${server.id}.`);
 
   const encryptedToken = server.runtime.nitradoApiTokenEncrypted;
-  if (!encryptedToken?.encryptedSecret) {
-    throw new Error(`Credencial Nitrado server-scoped obrigatoria para ${server.id}.`);
+  let apiToken = "";
+  let apiTokenSource: ServerNitradoConfig["apiTokenSource"] = "server-secret";
+
+  if (encryptedToken?.encryptedSecret) {
+    apiToken = decryptServerSecret(encryptedToken, "api token");
+  } else {
+    // Bootstrap-only compatibility: onboarding stores one Nitrado credential at
+    // organization scope, while the durable runtime contract is server-scoped.
+    // If a newly created server has not been hydrated yet, use the credential
+    // from its own organization only. Never read another server's credential or
+    // the global primary server as a fallback.
+    const organizationCredential = getOrganizationNitradoCredential(server.organizationId);
+    apiToken = String(organizationCredential.token || "").trim();
+    apiTokenSource = "organization-bootstrap";
   }
-  const apiToken = decryptServerSecret(encryptedToken, "api token");
+
   if (!apiToken) throw new Error(`Nitrado nao conectado para ${server.id}.`);
 
   const f = server.runtime.nitradoFtp;
@@ -50,5 +62,5 @@ export function getServerNitradoConfig(serverId: string): ServerNitradoConfig {
       }
     : undefined;
 
-  return { serverId: server.id, serviceId, baseDir, apiToken, apiTokenSource: "server-secret", ftp };
+  return { serverId: server.id, serviceId, baseDir, apiToken, apiTokenSource, ftp };
 }
