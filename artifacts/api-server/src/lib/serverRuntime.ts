@@ -40,9 +40,6 @@ export function getServerRuntimeContext(serverId?: string) {
     initialized: true,
     contextServerId: descriptor.id,
     nitradoRoutingNamespaced: Boolean(descriptor.integrations.nitradoServiceId && descriptor.runtime.nitradoBaseDir),
-    // Discord command/interactions are routed by managed-server guild ownership.
-    // Feed-channel IDs are optional and primary-specific, so they must not be
-    // used as the isolation signal for secondary/core Discord installs.
     discordRoutingNamespaced: true,
     processingLockNamespaced: true,
     primaryLegacyAdmStoragePreserved: true,
@@ -100,7 +97,6 @@ function getAdmStoragePaths(descriptor: ManagedServerDescriptor) {
   };
 }
 
-
 export function getServerStoragePlan(serverId: string) {
   const targetId = String(serverId || "").trim();
   const descriptor = getManagedServerById(targetId) || (targetId === getPrimaryServerId() ? getPrimaryServerDescriptor() : undefined);
@@ -125,10 +121,6 @@ export function getActiveServerId() {
   return getPrimaryServerId();
 }
 
-// Tenant-facing code must use this accessor instead of getActiveServerId().
-// getActiveServerId() intentionally remains as a compatibility bridge for
-// legacy background jobs until Phase 17B, but web/Discord/data access must fail
-// closed when no explicit tenant context exists.
 export function requireActiveServerId() {
   const active = executionContext.getStore()?.serverId;
   if (!active) throw new Error("TENANT_CONTEXT_REQUIRED");
@@ -154,7 +146,11 @@ function runInKnownServerContext<T>(
   requireExecutable: boolean,
 ): T {
   const context = getServerRuntimeContext(serverId);
-  if (requireExecutable && !canExecuteManagedServerRuntime(context.serverId)) {
+  // The primary server is the legacy-compatible bootstrap runtime. It must be
+  // able to initialize the service before the multi-server activation gate is
+  // satisfied; secondary servers remain strictly subject to that gate.
+  const enforceActivationGate = requireExecutable && !context.isPrimary;
+  if (enforceActivationGate && !canExecuteManagedServerRuntime(context.serverId)) {
     throw new Error(`Server ${context.serverId} runtime is disabled or has not passed the activation gate.`);
   }
   contextRuns += 1;
@@ -172,9 +168,6 @@ function runInKnownServerContext<T>(
   }, work);
 }
 
-// Data context is deliberately independent from runtime activation. Opening a
-// tenant panel, linking a player, reading a wallet, or editing configuration must
-// not require ADM/Nitrado processing to be operational.
 export function runInServerDataContext<T>(serverId: string, work: () => T): T {
   return runInKnownServerContext(serverId, work, "data", false);
 }
@@ -183,9 +176,6 @@ export function runInServerRuntimeContext<T>(serverId: string, work: () => T): T
   return runInKnownServerContext(serverId, work, "runtime", true);
 }
 
-// Persistence timers may still need to finish a scoped flush immediately after
-// a runtime is disabled. This context never authorizes ADM/Nitrado execution; it
-// only provides the server namespace to maintenance work that was already queued.
 export function runInServerMaintenanceContext<T>(serverId: string, work: () => T): T {
   return runInKnownServerContext(serverId, work, "maintenance", false);
 }
@@ -232,15 +222,14 @@ async function runWithServerLock<T>(serverId: string, work: () => Promise<T>): P
 
 export async function runWithServerRuntimeLock<T>(serverId: string, work: () => Promise<T>): Promise<{ skipped: boolean; value?: T }> {
   const context = getServerRuntimeContext(serverId);
-  if (!canExecuteManagedServerRuntime(context.serverId)) {
+  // Keep the primary bootstrap path operational while preserving the strict
+  // activation gate for every secondary managed server.
+  if (!context.isPrimary && !canExecuteManagedServerRuntime(context.serverId)) {
     throw new Error(`Server ${context.serverId} runtime is disabled or has not passed the activation gate.`);
   }
   return runWithServerLock(context.serverId, work);
 }
 
-// Operational transitions (pause/deactivate) must serialize against the same
-// runtime lock as ADM cycles, but they cannot require the runtime to be
-// executable because a paused secondary still needs to be safely deactivated.
 export async function runWithServerMaintenanceLock<T>(serverId: string, work: () => Promise<T>): Promise<{ skipped: boolean; value?: T }> {
   const context = getServerRuntimeContext(serverId);
   return runWithServerLock(context.serverId, work);
