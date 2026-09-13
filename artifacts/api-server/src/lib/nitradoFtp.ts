@@ -2,6 +2,7 @@ import net from "net";
 import { recordNetworkTransfer } from "./networkMetrics";
 import { getActiveServerId } from "./serverRuntime";
 import { getServerNitradoConfig } from "./serverNitrado";
+import { getPrimaryServerId, getServerScopedSettings } from "./serverRegistry";
 
 type FtpResponse = {
   code: number;
@@ -38,6 +39,52 @@ function normalizeFtpPath(value: string, rootValue = "") {
     .replace(/\/+/g, "/");
 
   return root ? `${root}/${cleanPath}` : cleanPath;
+}
+
+/**
+ * Legacy Shop and Map Events modules still carry a few mission-relative paths
+ * that are built from the primary server configuration at module load time.
+ * The transport is the last safe boundary where those paths can be resolved
+ * against the active managed server without rewriting large legacy modules.
+ *
+ * Only paths rooted at the primary mission directory are rewritten. Other
+ * paths are left untouched, so unrelated FTP files retain their existing
+ * semantics. The server credential is still resolved independently by
+ * getServerNitradoConfig(serverId).
+ */
+function resolveServerScopedFilePath(filePath: string, serverId: string) {
+  const cleanPath = String(filePath || "")
+    .replace(/\\/g, "/")
+    .replace(/^\/+/, "")
+    .replace(/\/+/g, "/");
+
+  if (!cleanPath) return cleanPath;
+
+  const primaryMissionDir = String(
+    getServerScopedSettings(getPrimaryServerId()).dayzMissionDir || "",
+  )
+    .replace(/\\/g, "/")
+    .replace(/^\/+|\/+$/g, "");
+  const serverMissionDir = String(
+    getServerScopedSettings(serverId).dayzMissionDir || "",
+  )
+    .replace(/\\/g, "/")
+    .replace(/^\/+|\/+$/g, "");
+
+  if (!primaryMissionDir || !serverMissionDir || primaryMissionDir === serverMissionDir) {
+    return cleanPath;
+  }
+
+  if (cleanPath === primaryMissionDir) {
+    return serverMissionDir;
+  }
+
+  const primaryPrefix = `${primaryMissionDir}/`;
+  if (cleanPath.startsWith(primaryPrefix)) {
+    return `${serverMissionDir}/${cleanPath.slice(primaryPrefix.length)}`;
+  }
+
+  return cleanPath;
 }
 
 function parsePasvEndpoint(message: string) {
@@ -279,7 +326,8 @@ async function downloadTextViaFtp(options: Omit<UploadOptions, "content">) {
 export async function uploadTextFile(filePath: string, content: string) {
   const serverId = getActiveServerId();
   const { host, port, user, password, root } = getFtpConnectionOptions(serverId);
-  const remotePath = normalizeFtpPath(filePath, root);
+  const scopedFilePath = resolveServerScopedFilePath(filePath, serverId);
+  const remotePath = normalizeFtpPath(scopedFilePath, root);
 
   console.log(`📤 FTP upload: ${host}:${port} -> ${remotePath}`);
 
@@ -305,7 +353,8 @@ export async function uploadTextFile(filePath: string, content: string) {
 export async function downloadTextFile(filePath: string) {
   const serverId = getActiveServerId();
   const { host, port, user, password, root } = getFtpConnectionOptions(serverId);
-  const remotePath = normalizeFtpPath(filePath, root);
+  const scopedFilePath = resolveServerScopedFilePath(filePath, serverId);
+  const remotePath = normalizeFtpPath(scopedFilePath, root);
 
   console.log(`📥 FTP download: ${host}:${port} <- ${remotePath}`);
 
