@@ -58,6 +58,10 @@ function startServer(port: number) {
     logger.info({ port }, "Server listening");
     const primaryServerId = getPrimaryServerId();
 
+    // Registry normalization/migration is deliberately isolated from ADM mode.
+    // A failure here must not change the download mode or make one server inherit
+    // another server's credentials. The runtime readiness gate will keep affected
+    // servers out of execution until their scoped configuration is valid.
     try {
       await normalizeManagedServerRuntimeConfig();
       await migratePrimaryNitradoCredentialToServerScope();
@@ -65,17 +69,36 @@ function startServer(port: number) {
       console.error("❌ unable to prepare server-scoped Nitrado registry:", err);
     }
 
+    let stateInitialized = false;
     try {
-      const state = await runInServerRuntimeContext(primaryServerId, () => getStateAsync());
-      await hydrateServerNitradoSecretsFromDb();
-      const runtime = getServerRuntimeContext(primaryServerId);
-      console.log(`🧭 runtime isolado: ${runtime.server.name} (${runtime.serverId})`);
-      const settings = normalizeServiceSettings(state.serviceSettings);
-      setAdmDownloadMode(settings.admDownloadMode);
-      console.log(`📥 ADM download mode: ${settings.admDownloadMode}`);
+      await runInServerRuntimeContext(primaryServerId, async () => {
+        await getStateAsync();
+      });
+      stateInitialized = true;
     } catch (err) {
-      console.error("❌ unable to initialize ADM download mode; using shadow:", err);
-      setAdmDownloadMode("shadow");
+      console.error("❌ unable to initialize ADM state:", err);
+    }
+
+    // Secret hydration is registry infrastructure, not an ADM mode decision.
+    // Keep it separate so a credential-hydration problem cannot silently switch
+    // the entire service to shadow mode or affect another tenant.
+    try {
+      await hydrateServerNitradoSecretsFromDb();
+    } catch (err) {
+      console.error("❌ unable to hydrate server-scoped Nitrado secrets:", err);
+    }
+
+    if (stateInitialized) {
+      try {
+        const runtime = getServerRuntimeContext(primaryServerId);
+        console.log(`🧭 runtime isolado: ${runtime.server.name} (${runtime.serverId})`);
+        const state = await runInServerRuntimeContext(primaryServerId, () => getStateAsync());
+        const settings = normalizeServiceSettings(state.serviceSettings);
+        setAdmDownloadMode(settings.admDownloadMode);
+        console.log(`📥 ADM download mode: ${settings.admDownloadMode}`);
+      } catch (err) {
+        console.error("❌ unable to resolve ADM download mode; keeping configured mode:", err);
+      }
     }
 
     try {
