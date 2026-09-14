@@ -10,7 +10,14 @@ export function createDiscordStateAccess(serverId = getPrimaryServerId()) {
   const runtime = getServerRuntimeContext(serverId);
   const resolvedServerId = runtime.serverId;
 
+  function assertDiscordServiceEnabled() {
+    if (!runtime.server.enabled) {
+      throw new Error(`SERVER_DISABLED:${resolvedServerId}`);
+    }
+  }
+
   async function getState() {
+    assertDiscordServiceEnabled();
     const state = ensureBotState(await runInServerDataContext(resolvedServerId, () => getStateAsync()));
 
     console.log("📊 Discord lendo state:", {
@@ -29,11 +36,13 @@ export function createDiscordStateAccess(serverId = getPrimaryServerId()) {
   }
 
   async function saveState(state: any) {
+    assertDiscordServiceEnabled();
     await runInServerDataContext(resolvedServerId, () => saveDiscordStateAsync(ensureBotState(state)));
     console.log("💾 state salvo pelo Discord", { serverId: resolvedServerId });
   }
 
   async function saveRuntimeState(state: any) {
+    assertDiscordServiceEnabled();
     await runInServerDataContext(resolvedServerId, () => saveDiscordRuntimeStateOnlyAsync(
       ensureBotState(state),
       `discord:feeds-runtime:${resolvedServerId}`,
