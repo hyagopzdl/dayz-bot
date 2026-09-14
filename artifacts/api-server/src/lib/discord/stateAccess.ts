@@ -1,6 +1,6 @@
 import { getStateAsync, saveDiscordRuntimeStateOnlyAsync, saveDiscordStateAsync } from "../state";
 import { ensureBotState } from "./state";
-import { getPrimaryServerId } from "../serverRegistry";
+import { getManagedServerById, getPrimaryServerId } from "../serverRegistry";
 import { getServerRuntimeContext, runInServerDataContext } from "../serverRuntime";
 
 export function createDiscordStateAccess(serverId = getPrimaryServerId()) {
@@ -11,7 +11,11 @@ export function createDiscordStateAccess(serverId = getPrimaryServerId()) {
   const resolvedServerId = runtime.serverId;
 
   function assertDiscordServiceEnabled() {
-    if (!runtime.server.enabled) {
+    // The master switch can change after this state-access object is created.
+    // Always read the current registry row instead of trusting the bootstrap
+    // snapshot captured above.
+    const currentServer = getManagedServerById(resolvedServerId);
+    if (currentServer && !currentServer.enabled) {
       throw new Error(`SERVER_DISABLED:${resolvedServerId}`);
     }
   }
