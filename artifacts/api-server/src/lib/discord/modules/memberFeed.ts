@@ -8,7 +8,6 @@ import { buildNeutralEmbed, buildSuccessEmbed } from "../ui/embeds";
 import { getPrimaryServerId } from "../../serverRegistry";
 import { getServerRuntimeContext } from "../../serverRuntime";
 
-
 function formatDiscordTimestamp(date: Date | null | undefined, style: "f" | "R" = "f") {
   if (!date) return "Unknown";
   return `<t:${Math.floor(date.getTime() / 1000)}:${style}>`;
@@ -23,7 +22,10 @@ function isSendableTextChannel(channel: TextBasedChannel | null): channel is Tex
 }
 
 async function resolveMemberFeedChannel(client: Client, serverId = getPrimaryServerId()) {
-  const config = getServerRuntimeContext(serverId).discord;
+  const runtime = getServerRuntimeContext(serverId);
+  if (!runtime.server.enabled) return null;
+
+  const config = runtime.discord;
   if (config.memberFeedEnabled === false || !config.memberFeedChannelId) return null;
 
   try {
@@ -58,6 +60,11 @@ async function sendMemberFeedEmbed(client: Client, embed: ReturnType<typeof buil
 
 export function registerMemberFeed(client: Client, serverId = getPrimaryServerId()) {
   const runtime = getServerRuntimeContext(serverId);
+  if (!runtime.server.enabled) {
+    console.log(`👥 member feed desativado para ${serverId}: servidor desligado`);
+    return;
+  }
+
   if (runtime.discord.memberFeedEnabled === false) {
     console.log(`👥 member feed desativado para ${serverId}`);
     return;
@@ -100,6 +107,4 @@ export function registerMemberFeed(client: Client, serverId = getPrimaryServerId
 
     await sendMemberFeedEmbed(client, embed, serverId);
   });
-
-  console.log("👥 member feed ativo");
 }
