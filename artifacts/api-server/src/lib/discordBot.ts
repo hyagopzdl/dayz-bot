@@ -109,7 +109,6 @@ async function syncSecondaryManagedServerCommands() {
   }
 }
 
-
 function registerManagedServerMemberFeeds() {
   for (const server of listManagedServers().filter((item) => item.enabled && item.integrations.discordGuildId)) {
     if (registeredMemberFeedServers.has(server.id)) continue;
@@ -144,6 +143,16 @@ export async function startDiscordBot(serverId = getPrimaryServerId()) {
     // must receive its command surface after every bot restart.
     await syncSecondaryManagedServerCommands();
     registerManagedServerMemberFeeds();
+
+    // The global Discord client may remain connected while this server is
+    // disabled, but no primary-server commands, feeds, interactions, or state
+    // reads may be initialized. This is the server master switch: enabled
+    // secondary servers continue to operate through the shared client.
+    const primaryServer = listManagedServers().find((server) => server.id === serverId);
+    if (primaryServer && !primaryServer.enabled) {
+      console.log(`⏸️ Discord runtime do servidor desativado; mantendo apenas o cliente global [${serverId}]`);
+      return;
+    }
 
     const channels = await resolveDiscordChannels(client, serverId);
     const stateAccess = createDiscordStateAccess(serverId);
@@ -195,7 +204,6 @@ export async function startDiscordBot(serverId = getPrimaryServerId()) {
 
     await syncDiscordCommandsForManagedServer(serverId);
     await feeds.updateLeaderboard();
-
   });
 
   try {
