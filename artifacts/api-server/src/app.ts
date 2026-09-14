@@ -5,6 +5,7 @@ import pinoHttp from "pino-http";
 import router from "./routes";
 import adminRoutes from "./routes/admin";
 import adminPanelRoutes from "./routes/adminPanel";
+import serverControlPanelRoutes from "./routes/serverControlPanel";
 import nitradoDiagnosticRoutes from "./routes/nitradoDiagnostic";
 import { logger } from "./lib/logger";
 import { recordNetworkTransfer } from "./lib/networkMetrics";
@@ -97,9 +98,7 @@ app.use(playerPortalRoutes);
 app.use("/admin", nitradoDiagnosticRoutes);
 app.use("/admin", adminRoutes);
 app.use("/admin-panel", adminAuthRoutes);
+app.use("/admin-panel", serverControlPanelRoutes);
 app.use("/admin-panel", adminPanelRoutes);
-
-// API
-app.use("/api", router);
 
 export default app;
