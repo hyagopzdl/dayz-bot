@@ -25,7 +25,7 @@ async function requireServerManage(req: Request, res: Response, serverId: string
     return null;
   }
   const access = await getAdminServerAccess(session.adminUserId, server.id);
-  if (!access || access.organizationId !== server.organizationId || !["owner", "admin", "manager"].includes(String(access.role || "").toLowerCase())) {
+  if (!access || access.organizationId !== server.organizationId) {
     res.status(403).json({ error: "ADMIN_SERVER_FORBIDDEN" });
     return null;
   }
@@ -47,19 +47,34 @@ function serviceStatus(server: ReturnType<typeof getManagedServerById>) {
   };
 }
 
-router.get("/admin-panel/servers", (_req, res) => {
+router.get("/servers", (req, res) => {
+  if (!req.adminSession?.adminUserId) {
+    res.redirect("/admin-panel/login");
+    return;
+  }
   res.type("html").send(buildPage());
 });
 
-router.get("/admin-panel/api/servers/control", async (req, res) => {
+router.get("/api/servers/control", async (req, res) => {
   if (!req.adminSession?.adminUserId) {
     res.status(401).json({ error: "AUTH_REQUIRED" });
     return;
   }
-  const servers = listManagedServers().filter((server) => {
-    if (req.adminSession?.serverId && req.adminSession.serverId === server.id) return true;
-    return false;
-  });
+
+  const anchorServer = req.adminSession.serverId
+    ? getManagedServerById(req.adminSession.serverId)
+    : undefined;
+  if (!anchorServer) {
+    res.status(403).json({ error: "ADMIN_SERVER_CONTEXT_REQUIRED" });
+    return;
+  }
+
+  const candidates = listManagedServers().filter((server) => server.organizationId === anchorServer.organizationId);
+  const servers = (await Promise.all(candidates.map(async (server) => {
+    const access = await getAdminServerAccess(req.adminSession!.adminUserId, server.id);
+    return access && access.organizationId === server.organizationId ? server : null;
+  }))).filter(Boolean) as NonNullable<ReturnType<typeof getManagedServerById>>[];
+
   const coordinator = getManagedServerRuntimeCoordinatorDiagnostics();
   const coordinatorByServer = new Map((coordinator.servers || []).map((item: any) => [item.serverId, item]));
   res.json({
@@ -81,7 +96,7 @@ router.get("/admin-panel/api/servers/control", async (req, res) => {
   });
 });
 
-router.post("/admin-panel/api/servers/:serverId/master-switch", async (req, res) => {
+router.post("/api/servers/:serverId/master-switch", async (req, res) => {
   const serverId = String(req.params.serverId || "").trim();
   const server = await requireServerManage(req, res, serverId);
   if (!server) return;
@@ -89,31 +104,30 @@ router.post("/admin-panel/api/servers/:serverId/master-switch", async (req, res)
     res.status(409).json({ error: "PRIMARY_SERVER_PROTECTED", message: "O servidor principal nao pode ser desligado por este circuito." });
     return;
   }
+
   const enabled = req.body?.enabled === true;
   const db = sql();
   try {
-    await db.begin(async (tx) => {
-      await tx`
-        UPDATE managed_servers
-        SET enabled = ${enabled},
-            runtime_config = jsonb_set(
-              CASE
-                WHEN runtime_config IS NULL THEN '{}'::jsonb
-                WHEN jsonb_typeof(runtime_config) = 'object' THEN runtime_config
-                ELSE jsonb_build_object('legacyRuntimeConfig', runtime_config)
-              END,
-              '{operations}',
-              jsonb_build_object(
-                'paused', false,
-                'source', 'phase18-master-switch',
-                'masterDisabled', ${!enabled}
-              ),
-              true
+    await db`
+      UPDATE managed_servers
+      SET enabled = ${enabled},
+          runtime_config = jsonb_set(
+            CASE
+              WHEN runtime_config IS NULL THEN '{}'::jsonb
+              WHEN jsonb_typeof(runtime_config) = 'object' THEN runtime_config
+              ELSE jsonb_build_object('legacyRuntimeConfig', runtime_config)
+            END,
+            '{operations}',
+            jsonb_build_object(
+              'paused', false,
+              'source', 'phase18-master-switch',
+              'masterDisabled', ${!enabled}
             ),
-            updated_at = NOW()
-        WHERE id = ${server.id}
-      `;
-    });
+            true
+          ),
+          updated_at = NOW()
+      WHERE id = ${server.id}
+    `;
     await refreshManagedServerRegistryFromDb();
     const updated = getManagedServerById(server.id);
     res.json({ server: updated, services: serviceStatus(updated) });
@@ -148,7 +162,7 @@ const esc=s=>String(s??'').replace(/[&<>\"']/g,m=>({'&':'&amp;','<':'&lt;','>':'
 const labels={runtime:'Runtime / Scheduler',parser:'ADM Parser',discord:'Discord',shop:'Shop',mapEvents:'Map Events',nitrado:'Nitrado'};
 function state(v){return v==='enabled'||v==='configured'?'OK':v==='disabled'?'Desligado':'Pendente'}
 async function toggle(id,enabled){const r=await fetch('/admin-panel/api/servers/'+encodeURIComponent(id)+'/master-switch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({enabled})});if(!r.ok){alert(await r.text());return}load()}
-function card(s){const on=s.enabled;const serviceRows=Object.entries(s.services).map(([k,v])=>'<div class="service"><strong>'+labels[k]+'</strong><span>'+state(v)+'</span></div>').join('');return '<article class="card"><div class="top"><div><div class="name">'+esc(s.name)+'</div><div class="id">'+esc(s.id)+'</div></div><span class="badge '+(on?'on':'off')+'">'+(on?'ATIVO':'DESLIGADO')+'</span></div><div class="meta"><div><b>Nitrado</b><span>'+esc(s.nitradoServiceId||'Não configurado')+'</span></div><div><b>Runtime</b><span>'+esc(s.runtimeHealth)+'</span></div></div><div class="services">'+serviceRows+'</div><div class="switchrow"><div class="switchlabel"><b>Serviços do servidor</b><span>Desliga o circuito operacional deste servidor</span></div><button class="switch '+(on?'on':'')+'" aria-label="Alternar servidor" onclick="toggle(\''+esc(s.id).replace(/'/g,"\\'")+'', '+(!on)+')"><i></i></button></div></article>'}
+function card(s){const on=s.enabled;const serviceRows=Object.entries(s.services).map(([k,v])=>'<div class="service"><strong>'+labels[k]+'</strong><span>'+state(v)+'</span></div>').join('');return '<article class="card"><div class="top"><div><div class="name">'+esc(s.name)+'</div><div class="id">'+esc(s.id)+'</div></div><span class="badge '+(on?'on':'off')+'">'+(on?'ATIVO':'DESLIGADO')+'</span></div><div class="meta"><div><b>Nitrado</b><span>'+esc(s.nitradoServiceId||'Não configurado')+'</span></div><div><b>Runtime</b><span>'+esc(s.runtimeHealth)+'</span></div></div><div class="services">'+serviceRows+'</div><div class="switchrow"><div class="switchlabel"><b>Serviços do servidor</b><span>Desliga o circuito operacional deste servidor</span></div><button class="switch '+(on?'on':'')+'" aria-label="Alternar servidor" onclick="toggle('+JSON.stringify(s.id)+', '+(!on)+')"><i></i></button></div></article>'}
 async function load(){try{const r=await fetch('/admin-panel/api/servers/control');if(!r.ok)throw new Error(await r.text());const d=await r.json();document.getElementById('grid').innerHTML=d.servers.length?d.servers.map(card).join(''):'<div class="empty">Nenhum servidor disponível para esta conta.</div>'}catch(e){document.getElementById('grid').innerHTML='<div class="empty">Não foi possível carregar os servidores.<br>'+esc(e.message)+'</div>'}}
 load();
 </script></body></html>`;
