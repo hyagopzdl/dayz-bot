@@ -101,4 +101,7 @@ app.use("/admin-panel", adminAuthRoutes);
 app.use("/admin-panel", serverControlPanelRoutes);
 app.use("/admin-panel", adminPanelRoutes);
 
+// API
+app.use("/api", router);
+
 export default app;
