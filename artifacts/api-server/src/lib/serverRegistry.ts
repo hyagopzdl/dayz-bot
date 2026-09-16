@@ -1,5 +1,6 @@
 import { getDefaultOrganizationId, getOrganizationFoundationDiagnostics } from "./organizationRegistry";
 import { getOrganizationIntegrationStatus, getOrganizationIntegrationsDiagnostics } from "./organizationIntegrations";
+
 export type ServerFoundationMode = "multi-server-native";
 export type ServerOnboardingStatus = "active" | "draft" | "configured" | "ready";
 
@@ -52,11 +53,7 @@ export type ServerActivationPreflight = {
   serviceId: string;
   baseDir: string;
   discordGuildId?: string;
-  namespaceRows: {
-    botState: number;
-    playerStats: number;
-    positionHistory: number;
-  };
+  namespaceRows: { botState: number; playerStats: number; positionHistory: number };
   warningCount: number;
 };
 
@@ -101,7 +98,6 @@ export type ManagedServerDescriptor = {
   name: string;
   organizationId: string;
   enabled: boolean;
-  primary: boolean;
   runtimeEnabled: boolean;
   onboardingStatus: ServerOnboardingStatus;
   mode: ServerFoundationMode;
@@ -124,7 +120,7 @@ export type ServerNamespacePersistenceStatus = {
   primaryKeyCutoverComplete: boolean;
   scopedReadsEnabled: boolean;
   scopedReadFallbacks: number;
-  lastScopedReadSource?: "server-scoped" | "legacy-fallback" | "legacy" | "server-id-safe-fallback" | "primary-untagged-fallback";
+  lastScopedReadSource?: "server-scoped" | "legacy-fallback" | "legacy" | "server-id-safe-fallback";
   botStateTaggedRows: number;
   botStateUntaggedRows: number;
   playerStatsTaggedRows: number;
@@ -137,7 +133,6 @@ export type ServerRegistryPersistenceStatus = {
   enabled: boolean;
   initialized: boolean;
   tableReady: boolean;
-  primarySeeded: boolean;
   rowsLoaded: number;
   draftRows?: number;
   configuredRows?: number;
@@ -158,7 +153,6 @@ export type ServerRuntimeIsolationStatus = {
   nitradoRoutingNamespaced: boolean;
   discordRoutingNamespaced: boolean;
   processingLockNamespaced: boolean;
-  primaryLegacyAdmStoragePreserved: boolean;
   staggerOffsetMs: number;
   activeLocks: number;
   lockSkips: number;
@@ -174,7 +168,6 @@ export type ServerRuntimeIsolationStatus = {
   positionHistoryNamespaced?: boolean;
   admParserStorageNamespaced?: boolean;
   activationReadiness?: boolean;
-  ftpPrimaryGuarded?: boolean;
   discordLoopGuardsNamespaced?: boolean;
   mapSchedulersContextualized?: boolean;
   contextRuns?: number;
@@ -182,35 +175,20 @@ export type ServerRuntimeIsolationStatus = {
   lastContextServerId?: string;
 };
 
-const FALLBACK_SERVER_ID = "pz-deathmatch";
-const FALLBACK_SERVER_NAME = "PZ Deathmatch";
-const FALLBACK_NITRADO_SERVICE_ID = "19149785";
-
 let persistedServers: ManagedServerDescriptor[] = [];
 let namespacePersistenceStatus: ServerNamespacePersistenceStatus = {
-  enabled: Boolean(process.env.DATABASE_URL),
-  initialized: false,
-  botStateTableReady: false,
-  playerStatsTableReady: false,
-  botStateCompositeKeyReady: false,
-  playerStatsCompositeKeyReady: false,
-  botStatePrimaryKeyReady: false,
-  playerStatsPrimaryKeyReady: false,
-  primaryKeyCutoverComplete: false,
-  scopedReadsEnabled: false,
-  scopedReadFallbacks: 0,
-  botStateTaggedRows: 0,
-  botStateUntaggedRows: 0,
-  playerStatsTaggedRows: 0,
-  playerStatsUntaggedRows: 0,
+  enabled: Boolean(process.env.DATABASE_URL), initialized: false,
+  botStateTableReady: false, playerStatsTableReady: false,
+  botStateCompositeKeyReady: false, playerStatsCompositeKeyReady: false,
+  botStatePrimaryKeyReady: false, playerStatsPrimaryKeyReady: false,
+  primaryKeyCutoverComplete: false, scopedReadsEnabled: false,
+  scopedReadFallbacks: 0, botStateTaggedRows: 0, botStateUntaggedRows: 0,
+  playerStatsTaggedRows: 0, playerStatsUntaggedRows: 0,
 };
 
 let registryPersistenceStatus: ServerRegistryPersistenceStatus = {
-  enabled: Boolean(process.env.DATABASE_URL),
-  initialized: false,
-  tableReady: false,
-  primarySeeded: false,
-  rowsLoaded: 0,
+  enabled: Boolean(process.env.DATABASE_URL), initialized: false,
+  tableReady: false, rowsLoaded: 0,
 };
 
 let runtimeIsolationStatus: ServerRuntimeIsolationStatus = {
@@ -218,49 +196,14 @@ let runtimeIsolationStatus: ServerRuntimeIsolationStatus = {
   nitradoRoutingNamespaced: false,
   discordRoutingNamespaced: false,
   processingLockNamespaced: false,
-  primaryLegacyAdmStoragePreserved: true,
   staggerOffsetMs: 0,
   activeLocks: 0,
   lockSkips: 0,
 };
 
-function envString(name: string) {
-  return String(process.env[name] || "").trim() || undefined;
-}
-
-function getPrimaryRuntimeConfig(): ServerRuntimeConfig {
-  return {
-    nitradoBaseDir: envString("NITRADO_BASE_DIR") || "/games/ni13029176_1/noftp/dayzps/config",
-    settings: {
-      shopRestartTimes: envString("SHOP_RESTART_TIMES") || envString("SERVER_RESTART_TIMES") || "00:00,04:00,08:00,12:00,16:00,20:00",
-      shopRestartTimezone: envString("SHOP_RESTART_TIMEZONE") || "America/Sao_Paulo",
-      dayzMissionDir: envString("DAYZ_MISSION_DIR") || "dayzps_missions/dayzOffline.chernarusplus",
-    },
-    discord: {
-      globalChannelId: envString("DISCORD_CHANNEL_ID"),
-      dailyChannelId: envString("DISCORD_CHANNEL_DAILY_ID"),
-      weeklyChannelId: envString("DISCORD_CHANNEL_WEEKLY_ID"),
-      onlineListChannelId: envString("DISCORD_ONLINE_LIST_CHANNEL_ID"),
-      killfeedChannelId: envString("DISCORD_KILLFEED_CHANNEL_ID"),
-      killStreakChannelId: envString("DISCORD_KILLSTREAK_CHANNEL_ID"),
-      longShotChannelId: envString("DISCORD_LONGSHOT_CHANNEL_ID"),
-      longShotRankingChannelId: envString("DISCORD_LONGSHOT_RANKING_CHANNEL_ID"),
-      streakRankingChannelId: envString("DISCORD_STREAK_RANKING_CHANNEL_ID"),
-      onlineCategoryId: envString("DISCORD_ONLINE_CHANNEL_ID"),
-      matchCategoryId: envString("DISCORD_MATCH_CATEGORY_ID"),
-      memberFeedChannelId: envString("DISCORD_MEMBER_FEED_CHANNEL_ID"),
-      memberFeedEnabled: process.env.DISCORD_MEMBER_FEED_ENABLED !== "false",
-    },
-  };
-}
-
 export function buildManagedServerId(value: unknown) {
-  return String(value || "")
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9_-]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 64);
+  return String(value || "").trim().toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 64);
 }
 
 function normalizeServerId(value: unknown) {
@@ -268,8 +211,7 @@ function normalizeServerId(value: unknown) {
 }
 
 export function normalizeManagedServerName(value: unknown) {
-  const normalized = String(value || "").trim().replace(/\s+/g, " ").slice(0, 80);
-  return normalized || FALLBACK_SERVER_NAME;
+  return String(value || "").trim().replace(/\s+/g, " ").slice(0, 80) || "Servidor";
 }
 
 function normalizeServerOnboardingStatus(value: unknown): ServerOnboardingStatus {
@@ -278,25 +220,30 @@ function normalizeServerOnboardingStatus(value: unknown): ServerOnboardingStatus
   return "draft";
 }
 
-export function getServerScopedSettings(serverId = getPrimaryServerId()): Required<ServerScopedSettings> {
-  const normalizedServerId = normalizeServerId(serverId);
-  const server = getManagedServerById(normalizedServerId);
-  if (!server) {
-    // During module bootstrap the registry has not loaded from the database yet.
-    // The primary Shop compatibility constants need only the legacy primary
-    // configuration at this point; once the registry is initialized, an explicit
-    // server lookup remains mandatory and no tenant may inherit another server.
-    if (normalizedServerId === getPrimaryServerId() && !registryPersistenceStatus.initialized) {
-      const settings = getPrimaryRuntimeConfig().settings || {};
-      return {
-        shopRestartTimes: String(settings.shopRestartTimes || "00:00,04:00,08:00,12:00,16:00,20:00").trim(),
-        shopRestartTimezone: String(settings.shopRestartTimezone || "America/Sao_Paulo").trim(),
-        dayzMissionDir: String(settings.dayzMissionDir || "dayzps_missions/dayzOffline.chernarusplus").trim(),
-        shopDeliveryConfiguredAt: String(settings.shopDeliveryConfiguredAt || "").trim(),
-      };
-    }
-    throw new Error(`Servidor ${normalizedServerId || String(serverId || "").trim()} nao encontrado para resolver configuracoes.`);
-  }
+function cloneServer(server: ManagedServerDescriptor): ManagedServerDescriptor {
+  return {
+    ...server,
+    integrations: { ...server.integrations },
+    runtime: {
+      ...server.runtime,
+      nitradoApiTokenEncrypted: server.runtime.nitradoApiTokenEncrypted ? { ...server.runtime.nitradoApiTokenEncrypted } : undefined,
+      nitradoFtp: server.runtime.nitradoFtp ? { ...server.runtime.nitradoFtp, passwordEncrypted: { ...server.runtime.nitradoFtp.passwordEncrypted } } : undefined,
+      nitradoValidation: server.runtime.nitradoValidation ? { ...server.runtime.nitradoValidation } : undefined,
+      activationPreflight: server.runtime.activationPreflight ? { ...server.runtime.activationPreflight, namespaceRows: { ...server.runtime.activationPreflight.namespaceRows } } : undefined,
+      activation: server.runtime.activation ? { ...server.runtime.activation } : undefined,
+      operations: server.runtime.operations ? { ...server.runtime.operations } : undefined,
+      settings: server.runtime.settings ? { ...server.runtime.settings } : undefined,
+      discord: { ...server.runtime.discord },
+    },
+  };
+}
+
+export function getServerScopedSettings(serverId?: string): Required<ServerScopedSettings> {
+  const requested = normalizeServerId(serverId);
+  const resolved = requested || (persistedServers.length === 1 ? persistedServers[0].id : "");
+  if (!resolved) throw new Error("Contexto de servidor obrigatorio para resolver configuracoes.");
+  const server = getManagedServerById(resolved);
+  if (!server) throw new Error(`Servidor ${resolved} nao encontrado para resolver configuracoes.`);
   const settings = server.runtime.settings || {};
   return {
     shopRestartTimes: String(settings.shopRestartTimes || "00:00,04:00,08:00,12:00,16:00,20:00").trim(),
@@ -307,11 +254,7 @@ export function getServerScopedSettings(serverId = getPrimaryServerId()): Requir
 }
 
 export function getManagedServerActivationConfigSignature(server: Pick<ManagedServerDescriptor, "integrations" | "runtime">) {
-  const payload = {
-    nitradoServiceId: String(server.integrations.nitradoServiceId || "").trim(),
-    nitradoBaseDir: String(server.runtime.nitradoBaseDir || "").trim(),
-  };
-  const serialized = JSON.stringify(payload);
+  const serialized = JSON.stringify({ nitradoServiceId: String(server.integrations.nitradoServiceId || "").trim(), nitradoBaseDir: String(server.runtime.nitradoBaseDir || "").trim() });
   let hash = 2166136261;
   for (let index = 0; index < serialized.length; index += 1) {
     hash ^= serialized.charCodeAt(index);
@@ -331,7 +274,7 @@ export function hasMatchingActivationPreflight(server: Pick<ManagedServerDescrip
   const preflight = server.runtime.activationPreflight;
   const serviceId = String(server.integrations.nitradoServiceId || "").trim();
   const baseDir = String(server.runtime.nitradoBaseDir || "").trim();
-  return Boolean(preflight && preflight.passed === true && preflight.version === "phase11-v1" && serviceId && baseDir && preflight.serviceId === serviceId && preflight.baseDir === baseDir);
+  return Boolean(preflight?.passed === true && preflight.version === "phase11-v1" && serviceId && baseDir && preflight.serviceId === serviceId && preflight.baseDir === baseDir);
 }
 
 export function isManagedServerRuntimePaused(server: Pick<ManagedServerDescriptor, "runtime">) {
@@ -340,7 +283,7 @@ export function isManagedServerRuntimePaused(server: Pick<ManagedServerDescripto
 
 export function hasManagedServerRuntimeActivation(server: Pick<ManagedServerDescriptor, "runtime">) {
   const activation = server.runtime.activation;
-  return Boolean(activation && activation.source === "phase12-admin" && activation.everActivated === true && activation.firstActivatedAt && activation.lastEnabledAt && Number(activation.activationCount || 0) >= 1);
+  return Boolean(activation?.source === "phase12-admin" && activation.everActivated === true && activation.firstActivatedAt && activation.lastEnabledAt && Number(activation.activationCount || 0) >= 1);
 }
 
 export function isServerNamespaceRuntimeSafe() {
@@ -359,156 +302,117 @@ export function listExecutableManagedServers() {
   return listManagedServers().filter((server) => canExecuteManagedServerRuntime(server.id));
 }
 
-export function getPrimaryServerId() {
-  return normalizeServerId(process.env.DEFAULT_SERVER_ID || process.env.SERVER_ID || FALLBACK_SERVER_ID);
-}
-
-export function getPrimaryServerDescriptor(): ManagedServerDescriptor {
-  if (registryPersistenceStatus.initialized && registryPersistenceStatus.tableReady && registryPersistenceStatus.rowsLoaded === 0) {
-    throw new Error("Server registry initialized without rows; refusing primary ENV fallback.");
-  }
-  return {
-    id: getPrimaryServerId(),
-    name: normalizeManagedServerName(process.env.SERVER_DISPLAY_NAME || process.env.SERVER_NAME || FALLBACK_SERVER_NAME),
-    organizationId: getDefaultOrganizationId(),
-    enabled: true,
-    primary: true,
-    runtimeEnabled: true,
-    onboardingStatus: "active",
-    mode: "multi-server-native",
-    integrations: {
-      nitradoServiceId: String(process.env.NITRADO_SERVICE_ID || FALLBACK_NITRADO_SERVICE_ID).trim() || undefined,
-      discordGuildId: String(process.env.DISCORD_SERVER_ID || process.env.DISCORD_GUILD_ID || "").trim() || undefined,
-    },
-    runtime: getPrimaryRuntimeConfig(),
-  };
-}
-
 export function listManagedServers(): ManagedServerDescriptor[] {
-  if (persistedServers.length) return persistedServers.map((server) => ({ ...server, integrations: { ...server.integrations }, runtime: { ...server.runtime, nitradoValidation: server.runtime.nitradoValidation ? { ...server.runtime.nitradoValidation } : undefined, activationPreflight: server.runtime.activationPreflight ? { ...server.runtime.activationPreflight, namespaceRows: { ...server.runtime.activationPreflight.namespaceRows } } : undefined, activation: server.runtime.activation ? { ...server.runtime.activation } : undefined, operations: server.runtime.operations ? { ...server.runtime.operations } : undefined, discord: { ...server.runtime.discord } } }));
-  return [];
+  return persistedServers.map(cloneServer);
 }
 
 export function setPersistedManagedServers(servers: ManagedServerDescriptor[]) {
-  persistedServers = servers.map((server) => ({
-    id: normalizeServerId(server.id),
-    name: normalizeManagedServerName(server.name),
-    organizationId: String(server.organizationId || getDefaultOrganizationId()).trim() || getDefaultOrganizationId(),
-    enabled: server.enabled !== false,
-    primary: Boolean(server.primary),
-    runtimeEnabled: Boolean(server.primary ? true : server.runtimeEnabled),
-    onboardingStatus: server.primary ? "active" : normalizeServerOnboardingStatus(server.onboardingStatus),
-    mode: "multi-server-native",
-    integrations: {
-      nitradoServiceId: String(server.integrations?.nitradoServiceId || "").trim() || undefined,
-      discordGuildId: String(server.integrations?.discordGuildId || "").trim() || undefined,
-    },
-    runtime: {
-      nitradoBaseDir: String(server.runtime?.nitradoBaseDir || "").trim() || undefined,
-      nitradoApiTokenEncrypted: server.runtime?.nitradoApiTokenEncrypted && typeof server.runtime.nitradoApiTokenEncrypted === "object" ? { ...server.runtime.nitradoApiTokenEncrypted } : undefined,
-      nitradoFtp: server.runtime?.nitradoFtp && typeof server.runtime.nitradoFtp === "object" ? {
-        host: String(server.runtime.nitradoFtp.host || "").trim(),
-        port: Number(server.runtime.nitradoFtp.port || 21),
-        user: String(server.runtime.nitradoFtp.user || "").trim(),
-        passwordEncrypted: { ...(server.runtime.nitradoFtp.passwordEncrypted || {}) },
-        root: String(server.runtime.nitradoFtp.root || "").trim() || undefined,
-        secure: server.runtime.nitradoFtp.secure === true,
-      } : undefined,
-      nitradoValidation: server.runtime?.nitradoValidation ? { ...server.runtime.nitradoValidation } : undefined,
-      activationPreflight: server.runtime?.activationPreflight ? { ...server.runtime.activationPreflight, namespaceRows: { ...server.runtime.activationPreflight.namespaceRows } } : undefined,
-      activation: server.runtime?.activation ? { ...server.runtime.activation } : undefined,
-      operations: server.runtime?.operations ? { ...server.runtime.operations } : undefined,
-      settings: server.runtime?.settings ? { ...server.runtime.settings } : undefined,
-      discord: { ...(server.runtime?.discord || {}) },
-    },
-  }));
+  const seen = new Set<string>();
+  persistedServers = servers.map((server) => {
+    const id = normalizeServerId(server.id);
+    if (!id || seen.has(id)) throw new Error(`ID de servidor invalido ou duplicado: ${id || "vazio"}`);
+    seen.add(id);
+    return {
+      id,
+      name: normalizeManagedServerName(server.name),
+      organizationId: String(server.organizationId || getDefaultOrganizationId()).trim() || getDefaultOrganizationId(),
+      enabled: server.enabled !== false,
+      runtimeEnabled: server.runtimeEnabled === true,
+      onboardingStatus: normalizeServerOnboardingStatus(server.onboardingStatus),
+      mode: "multi-server-native",
+      integrations: {
+        nitradoServiceId: String(server.integrations?.nitradoServiceId || "").trim() || undefined,
+        discordGuildId: String(server.integrations?.discordGuildId || "").trim() || undefined,
+      },
+      runtime: {
+        nitradoBaseDir: String(server.runtime?.nitradoBaseDir || "").trim() || undefined,
+        nitradoApiTokenEncrypted: server.runtime?.nitradoApiTokenEncrypted ? { ...server.runtime.nitradoApiTokenEncrypted } : undefined,
+        nitradoFtp: server.runtime?.nitradoFtp ? { ...server.runtime.nitradoFtp, host: String(server.runtime.nitradoFtp.host || "").trim(), user: String(server.runtime.nitradoFtp.user || "").trim(), port: Number(server.runtime.nitradoFtp.port || 21), passwordEncrypted: { ...server.runtime.nitradoFtp.passwordEncrypted } } : undefined,
+        nitradoValidation: server.runtime?.nitradoValidation ? { ...server.runtime.nitradoValidation } : undefined,
+        activationPreflight: server.runtime?.activationPreflight ? { ...server.runtime.activationPreflight, namespaceRows: { ...server.runtime.activationPreflight.namespaceRows } } : undefined,
+        activation: server.runtime?.activation ? { ...server.runtime.activation } : undefined,
+        operations: server.runtime?.operations ? { ...server.runtime.operations } : undefined,
+        settings: server.runtime?.settings ? { ...server.runtime.settings } : undefined,
+        discord: { ...(server.runtime?.discord || {}) },
+      },
+    } satisfies ManagedServerDescriptor;
+  });
 }
 
 export function setServerRegistryPersistenceStatus(status: Partial<ServerRegistryPersistenceStatus>) {
-  registryPersistenceStatus = { ...registryPersistenceStatus, ...status, configDrift: status.configDrift ? { ...(registryPersistenceStatus.configDrift || {}), ...status.configDrift } : registryPersistenceStatus.configDrift };
+  registryPersistenceStatus = {
+    ...registryPersistenceStatus,
+    ...status,
+    configDrift: status.configDrift ? { ...(registryPersistenceStatus.configDrift || {}), ...status.configDrift } : registryPersistenceStatus.configDrift,
+  };
 }
 
 export function setServerNamespacePersistenceStatus(status: Partial<ServerNamespacePersistenceStatus>) {
   namespacePersistenceStatus = { ...namespacePersistenceStatus, ...status };
 }
 
-export function getServerNamespacePersistenceStatus(): ServerNamespacePersistenceStatus {
+export function getServerNamespacePersistenceStatus() {
   return { ...namespacePersistenceStatus };
 }
 
-export function getServerRegistryPersistenceStatus(): ServerRegistryPersistenceStatus {
+export function getServerRegistryPersistenceStatus() {
   return { ...registryPersistenceStatus, configDrift: registryPersistenceStatus.configDrift ? { ...registryPersistenceStatus.configDrift } : undefined };
 }
 
-export function getManagedServerById(serverId: unknown): ManagedServerDescriptor | undefined {
-  const normalized = buildManagedServerId(serverId);
-  if (!normalized) return undefined;
-  return listManagedServers().find((server) => server.id === normalized);
+export function getManagedServerById(serverId: unknown) {
+  const normalized = normalizeServerId(serverId);
+  return normalized ? persistedServers.find((server) => server.id === normalized) : undefined;
 }
 
 export function setServerRuntimeIsolationStatus(status: Partial<ServerRuntimeIsolationStatus>) {
   runtimeIsolationStatus = { ...runtimeIsolationStatus, ...status };
 }
 
-export function getServerRuntimeIsolationStatus(): ServerRuntimeIsolationStatus {
+export function getServerRuntimeIsolationStatus() {
   return { ...runtimeIsolationStatus };
 }
 
 export function resolveServerIdFromDiscordGuildId(guildId: unknown) {
-  const normalizedGuildId = String(guildId || "").trim();
-  if (!normalizedGuildId) return undefined;
-  const server = listManagedServers().find((candidate) => candidate.integrations.discordGuildId === normalizedGuildId);
-  return server?.id;
+  const normalized = String(guildId || "").trim();
+  return persistedServers.find((server) => server.integrations.discordGuildId === normalized)?.id;
 }
 
 export function getServerFoundationDiagnostics() {
   const registry = getServerRegistryPersistenceStatus();
   const namespace = getServerNamespacePersistenceStatus();
   const managedServers = listManagedServers();
-  const managedPrimary = managedServers.find((candidate) => candidate.primary);
-  const bootstrapServer = !registry.initialized ? getPrimaryServerDescriptor() : managedPrimary;
-  const server = managedPrimary || bootstrapServer;
-  const additionalServers = managedServers.filter((candidate) => !candidate.primary);
-  const serverScopedSecretsStored = managedServers.some((candidate) => Boolean(candidate.runtime.nitradoApiTokenEncrypted || candidate.runtime.nitradoFtp?.passwordEncrypted));
+  const serverScopedSecretsStored = managedServers.some((server) => Boolean(server.runtime.nitradoApiTokenEncrypted || server.runtime.nitradoFtp?.passwordEncrypted));
+  const foundation = getOrganizationFoundationDiagnostics();
+  const integrations = getOrganizationIntegrationsDiagnostics();
   return {
-    phase: 17,
-    mode: server?.mode || "multi-server-native",
-    currentServerId: server?.id,
-    currentServerName: server?.name,
+    phase: 18,
+    mode: "multi-server-native",
     managedServers: managedServers.length,
-    additionalServersEnabled: true,
+    activeServers: managedServers.filter((server) => server.enabled && server.runtimeEnabled).length,
     onboarding: {
       registryWritesEnabled: Boolean(registry.enabled && registry.tableReady),
       canCreateDrafts: Boolean(registry.enabled && registry.tableReady),
-      additionalServerRows: additionalServers.length,
-      draftServers: additionalServers.filter((candidate) => candidate.onboardingStatus === "draft").length,
-      configuredServers: additionalServers.filter((candidate) => candidate.onboardingStatus === "configured").length,
-      readyServers: additionalServers.filter((candidate) => candidate.onboardingStatus === "ready").length,
-      runtimeEnabledServers: managedServers.filter((candidate) => candidate.runtimeEnabled).length,
+      draftServers: managedServers.filter((server) => server.onboardingStatus === "draft").length,
+      configuredServers: managedServers.filter((server) => server.onboardingStatus === "configured").length,
+      readyServers: managedServers.filter((server) => server.onboardingStatus === "ready").length,
+      runtimeEnabledServers: managedServers.filter((server) => server.runtimeEnabled).length,
       activationPolicy: "ready-opt-in",
       secretsStoredInRegistry: serverScopedSecretsStored,
       nitradoDiscoveryEnabled: true,
-      nitradoCredentialSource: serverScopedSecretsStored ? "server-scoped-encrypted" : (server ? getOrganizationIntegrationStatus(server.organizationId).credentialSource : "unavailable"),
+      nitradoCredentialSource: serverScopedSecretsStored ? "server-scoped-encrypted" : "organization-scoped",
       discordDiscoveryEnabled: true,
       integrationValidationMode: "on-demand",
       activationPreflightEnabled: true,
       activationEndpointEnabled: true,
       playerPortalContextSwitchingEnabled: true,
-      operationalHardeningEnabled: true,
       multiTenantFoundationEnabled: true,
       organizationAuthorizationEnabled: true,
       organizationCredentialIsolationEnabled: true,
       serverScopedCommerceSettingsEnabled: true,
       serverScopedShopCatalogEnabled: true,
       manualPauseAvailable: true,
-      circuitBreakerMode: "secondary-only-in-memory",
-      circuitBreakerFailureThreshold: 3,
-      circuitBreakerCooldownMinutes: 15,
-      preflightMode: "on-demand",
-      backgroundPollingAdded: false,
-      backgroundRegistryWritesAdded: false,
     },
-    registryPersisted: registry.initialized && registry.tableReady && registry.primarySeeded,
+    registryPersisted: registry.initialized && registry.tableReady,
     persistenceNamespaced: namespace.scopedReadsEnabled && namespace.botStateCompositeKeyReady,
     persistenceTaggedWithServerId: namespace.initialized && namespace.botStateTableReady && namespace.botStateUntaggedRows === 0 && (!namespace.playerStatsTableReady || namespace.playerStatsUntaggedRows === 0),
     parserNamespaced: runtimeIsolationStatus.processingLockNamespaced && Boolean(runtimeIsolationStatus.executionContextNamespaced),
@@ -519,18 +423,17 @@ export function getServerFoundationDiagnostics() {
     namespace,
     runtimeIsolation: getServerRuntimeIsolationStatus(),
     safety: {
-      legacyStateIdsPreserved: true,
-      legacyAdmCursorsPreserved: true,
-      legacyDiscordGuildPreserved: true,
-      legacyNitradoServicePreserved: true,
-      operationalDatabaseWritesAdded: additionalServers.some((candidate) => canExecuteManagedServerRuntime(candidate.id)),
+      legacyStateIdsPreserved: false,
+      legacyAdmCursorsPreserved: false,
+      legacyDiscordGuildPreserved: false,
+      legacyNitradoServicePreserved: false,
+      operationalDatabaseWritesAdded: managedServers.some((server) => canExecuteManagedServerRuntime(server.id)),
       registryMetadataOnly: false,
       activeReadsStillLegacy: !namespace.scopedReadsEnabled,
       activePrimaryKeysPreserved: false,
       compositePrimaryKeysActive: namespace.primaryKeyCutoverComplete,
       serverIdTaggingOnly: false,
       legacyFallbackAvailable: false,
-      primaryCompatibilityFallbackAvailable: !registry.initialized,
       compositeUniqueKeysPrepared: namespace.botStateCompositeKeyReady && (!namespace.playerStatsTableReady || namespace.playerStatsCompositeKeyReady),
       perServerExecutionContext: Boolean(runtimeIsolationStatus.executionContextNamespaced),
       perServerStateCache: Boolean(runtimeIsolationStatus.stateCacheNamespaced),
@@ -541,12 +444,7 @@ export function getServerFoundationDiagnostics() {
       perServerPositionHistory: Boolean(runtimeIsolationStatus.positionHistoryNamespaced),
       perServerAdmParserStorage: Boolean(runtimeIsolationStatus.admParserStorageNamespaced),
       activationReadiness: Boolean(runtimeIsolationStatus.activationReadiness),
-      draftRegistrationAvailable: Boolean(registry.enabled && registry.tableReady),
-      additionalRuntimeActivationBlocked: false,
-      nonPrimaryConfigInheritanceBlocked: true,
-      secretsStoredInRegistry: serverScopedSecretsStored,
       onDemandRegistryWritesOnly: true,
-      backgroundRegistryPollingAdded: false,
       onDemandIntegrationDiscoveryOnly: true,
       nitradoTokenNeverReturnedToBrowser: true,
       activationPreflightGate: true,
@@ -554,8 +452,6 @@ export function getServerFoundationDiagnostics() {
       playerPortalContextSwitching: true,
       perServerOperationalHealth: true,
       manualRuntimePause: true,
-      secondaryCircuitBreaker: true,
-      primaryCircuitBreakerDisabled: true,
       organizationOwnershipRequired: true,
       organizationRbacPrepared: true,
       organizationNitradoCredentialIsolation: true,
@@ -563,15 +459,21 @@ export function getServerFoundationDiagnostics() {
       serverScopedCommerceSettings: true,
       serverScopedShopCatalog: true,
     },
-    tenancy: (() => {
-      const foundation = getOrganizationFoundationDiagnostics();
-      const integrations = getOrganizationIntegrationsDiagnostics();
-      return { ...foundation, phase: 17, integrations, thirdPartyOnboardingReady: Boolean(foundation.selfServiceEnabled && integrations.encryptionConfigured) };
-    })(),
-    integrations: server?.integrations || {},
+    tenancy: { ...foundation, phase: 18, integrations, thirdPartyOnboardingReady: Boolean(foundation.selfServiceEnabled && integrations.encryptionConfigured) },
   };
 }
 
 export function buildFutureServerScopedKey(serverId: string, key: string) {
-  return `${normalizeServerId(serverId)}:${String(key || "").trim()}`;
+  const normalized = normalizeServerId(serverId);
+  if (!normalized) throw new Error("serverId obrigatorio");
+  return `${normalized}:${String(key || "").trim()}`;
+}
+
+export function getOrganizationForServer(serverId: string) {
+  return getManagedServerById(serverId)?.organizationId;
+}
+
+export function getOrganizationIntegrationStatusForServer(serverId: string) {
+  const organizationId = getOrganizationForServer(serverId);
+  return organizationId ? getOrganizationIntegrationStatus(organizationId) : undefined;
 }
