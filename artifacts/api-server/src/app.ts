@@ -18,6 +18,7 @@ import playerPortalRoutes from "./routes/playerPortal";
 import { attachPortalSession } from "./middlewares/portalAuth";
 import { attachAdminSession } from "./middlewares/adminAuth";
 import adminAuthRoutes from "./routes/adminAuth";
+import adminServerContextRoutes from "./routes/adminServerContext";
 import { canOrganizationRole, getManagedOrganizationById, listUserOrganizationMemberships } from "./lib/organizationRegistry";
 import { refreshManagedServerRegistryFromDb } from "./lib/state";
 
@@ -46,9 +47,6 @@ app.use(attachAdminSession);
 app.get("/", (_req, res) => { res.send("ok"); });
 app.use("/api/auth", authRoutes);
 
-// After Discord OAuth returns to the SaaS onboarding, finish the handoff into
-// the real server-management panel. The legacy ?token=... URL is intentionally
-// not used here because it binds access to the old single-server flow.
 app.get("/saas", (req, res, next) => {
   const serverId = String(req.query.server || "").trim();
   const discordConnected = String(req.query.discord || "") === "connected";
@@ -62,19 +60,10 @@ app.use(playerPortalRoutes);
 app.use("/admin", nitradoDiagnosticRoutes);
 app.use("/admin", adminRoutes);
 
-// The browser can arrive here immediately after selecting a Nitrado server,
-// before an admin-server session exists. Keep this page behind the Discord portal
-// session, not the legacy admin-panel server binding middleware.
-//
-// Reconciliation guard: onboarding must reuse a service already registered for
-// the same organization instead of sending it through createManagedServerDraft,
-// which correctly rejects duplicate Service IDs. A service owned by another
-// organization remains blocked for tenant isolation.
 app.post("/admin-panel/onboarding/nitrado/import", async (req, res, next) => {
   try {
     if (!req.portalSession) return next();
-    const membership = listUserOrganizationMemberships(req.portalSession.discordId)
-      .find((item) => canOrganizationRole(item.role, "manage"));
+    const membership = listUserOrganizationMemberships(req.portalSession.discordId).find((item) => canOrganizationRole(item.role, "manage"));
     if (!membership) return next();
     const organization = getManagedOrganizationById(membership.organizationId);
     if (!organization?.active) return next();
@@ -95,10 +84,11 @@ app.post("/admin-panel/onboarding/nitrado/import", async (req, res, next) => {
   }
 });
 
-// Native/server-rendered onboarding submissions land here before the normal
-// onboarding router. This guarantees activation before the tenant panel handoff.
 app.use("/admin-panel", onboardingActivationCompatRoutes);
 app.use("/admin-panel", saasOnboardingRoutes);
+// Server context switching is mounted before the main panel so the selected
+// context cookie is established before adminPanel's server-bound middleware.
+app.use("/admin-panel", adminServerContextRoutes);
 app.use("/admin-panel", adminAuthRoutes);
 app.use("/admin-panel", serverControlPanelRoutes);
 app.use("/admin-panel", nitradoSetupRoutes);
