@@ -218,6 +218,53 @@ export async function getAdminServerAccess(adminUserIdInput: unknown, serverIdIn
   return value ? { ...value } : null;
 }
 
+/**
+ * Migrates a legacy administrator's existing server ownership to the current
+ * workspace created during onboarding. The legacy server_id is used only as
+ * an explicit ownership proof for this one-time migration, never for routing.
+ */
+export async function migrateLegacyAdminServerOwnership(adminUserIdInput: unknown, serverIdInput: unknown, organizationIdInput: unknown) {
+  await ensureAdminUsersSchema();
+  const adminUserId = String(adminUserIdInput || "").trim();
+  const serverId = String(serverIdInput || "").trim();
+  const organizationId = String(organizationIdInput || "").trim();
+  if (!adminUserId || !serverId || !organizationId) return false;
+
+  const rows = await requireSql()`
+    SELECT au.server_id, ms.organization_id
+    FROM admin_users au
+    JOIN managed_servers ms ON ms.id = ${serverId}
+    WHERE au.id = ${adminUserId}
+    LIMIT 1
+  ` as any[];
+  const row = rows[0];
+  const legacyServerId = row?.server_id ? String(row.server_id).trim() : "";
+  const currentOrganizationId = row?.organization_id ? String(row.organization_id).trim() : "";
+  if (!legacyServerId || legacyServerId !== serverId || !currentOrganizationId || currentOrganizationId === organizationId) return false;
+
+  const updated = await requireSql()`
+    UPDATE managed_servers
+    SET organization_id = ${organizationId}, updated_at = NOW()
+    WHERE id = ${serverId} AND organization_id = ${currentOrganizationId}
+    RETURNING id
+  ` as any[];
+  if (!updated.length) return false;
+
+  await requireSql()`
+    UPDATE admin_server_access
+    SET organization_id = ${organizationId}, updated_at = NOW()
+    WHERE admin_user_id = ${adminUserId} AND server_id = ${serverId}
+  `;
+  await requireSql()`
+    INSERT INTO admin_organization_memberships (admin_user_id, organization_id, role, created_at, updated_at)
+    VALUES (${adminUserId}, ${organizationId}, 'owner', NOW(), NOW())
+    ON CONFLICT (admin_user_id, organization_id)
+    DO UPDATE SET role = EXCLUDED.role, updated_at = NOW()
+  `;
+  adminAccessCache.delete(`${adminUserId}:${serverId}`);
+  return true;
+}
+
 export async function grantAdminServerAccess(adminUserIdInput: unknown, serverIdInput: unknown, roleInput: unknown = "owner") {
   await ensureAdminUsersSchema();
   const adminUserId = String(adminUserIdInput || "").trim();
