@@ -6,8 +6,8 @@ import { isOrganizationSecretEncryptionConfigured } from "../lib/organizationInt
 import { canOrganizationRole, getManagedOrganizationById, isSaasSelfServiceEnabled, listUserOrganizationMemberships } from "../lib/organizationRegistry";
 import { getManagedServerById } from "../lib/serverRegistry";
 import { renderSaasOnboarding } from "./saasOnboardingView";
-import { validateNitradoServiceSetup } from "../lib/serverIntegrations";
-import { markManagedServerNitradoValidated, refreshManagedServerRegistryFromDb, setManagedServerRuntimeEnabled } from "../lib/state";
+import { testOrganizationNitradoCredential } from "../lib/serverIntegrations";
+import { markManagedServerNitradoValidated, refreshManagedServerRegistryFromDb, saveOrganizationNitradoCredential, setManagedServerRuntimeEnabled } from "../lib/state";
 import { runManagedServerActivationPreflight } from "../lib/serverPreflight";
 import { requestManagedServerRuntimeCycle } from "../lib/serverRuntimeCoordinator";
 import { ensureAdminUsersSchema } from "../lib/adminUsers";
@@ -40,6 +40,31 @@ router.get("/onboarding", requirePortalAuth, (req, res) => {
   );
 });
 
+// Native HTML fallback for the Nitrado token step. The browser-side flow uses
+// fetch(), but this route guarantees that clicking the button or pressing Enter
+// still performs a real server-side validation if client JS fails to initialize.
+router.post("/onboarding/nitrado/connect", requirePortalAuth, async (req, res) => {
+  try {
+    const portal = session(req);
+    const membership = listUserOrganizationMemberships(portal.discordId)
+      .find((item) => canOrganizationRole(item.role, "manage"));
+    if (!membership) throw new Error("Sua conta não possui uma organização com permissão de gerenciamento.");
+    const organization = getManagedOrganizationById(membership.organizationId);
+    if (!organization?.active) throw new Error("A organização selecionada está inativa.");
+
+    const token = String(req.body?.token || "").trim();
+    if (!token) throw new Error("Cole o Long-life token antes de continuar.");
+    if (token.length > 4096) throw new Error("Token Nitrado inválido.");
+
+    await testOrganizationNitradoCredential(token);
+    await saveOrganizationNitradoCredential(organization.id, token, { source: "saas-onboarding" });
+    return res.redirect("/saas?connected=1");
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return res.status(400).type("html").send(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ADM · Erro</title><style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#090a0c;color:#f7f7f8;font-family:system-ui,sans-serif}.card{width:min(520px,calc(100% - 32px));padding:24px;border:1px solid #292d36;border-radius:16px;background:#111318}.error{margin-top:14px;padding:12px;border-radius:10px;background:#2a1518;color:#ffadb4}.back{display:inline-block;margin-top:16px;color:#fff}</style></head><body><main class="card"><strong>Não foi possível validar o token.</strong><div class="error">${String(message).replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;")}</div><a class="back" href="/saas">Voltar</a></main></body></html>`);
+  }
+});
+
 router.post("/onboarding/activate", requirePortalAuth, async (req, res) => {
   try {
     const server = assertServerManageAccess(req, String(req.body?.serverId || "").trim());
@@ -51,7 +76,7 @@ router.post("/onboarding/activate", requirePortalAuth, async (req, res) => {
     if (!current.runtime.nitradoValidation
       || current.runtime.nitradoValidation.serviceId !== current.integrations.nitradoServiceId
       || current.runtime.nitradoValidation.baseDir !== current.runtime.nitradoBaseDir) {
-      const validation = await validateNitradoServiceSetup(
+      const validation = await (await import("../lib/serverIntegrations")).validateNitradoServiceSetup(
         current.id,
         current.integrations.nitradoServiceId,
         current.runtime.nitradoBaseDir,
