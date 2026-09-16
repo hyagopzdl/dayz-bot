@@ -33,8 +33,7 @@ function getOrganization(req: Request) {
 function assertServerManageAccess(req: Request, serverId: string) {
   const server = getManagedServerById(serverId);
   if (!server) throw new Error("SERVER_NOT_FOUND");
-  const membership = listUserOrganizationMemberships(session(req).discordId)
-    .find((item) => item.organizationId === server.organizationId && canOrganizationRole(item.role, "manage"));
+  const membership = listUserOrganizationMemberships(session(req).discordId).find((item) => item.organizationId === server.organizationId && canOrganizationRole(item.role, "manage"));
   if (!membership) throw new Error("SERVER_FORBIDDEN");
   const organization = getManagedOrganizationById(server.organizationId);
   if (!organization?.active) throw new Error("ORGANIZATION_FORBIDDEN");
@@ -52,15 +51,7 @@ async function nitrado<T>(token: string, path: string): Promise<T> {
 
 function presentService(s: NitradoService) {
   const game = String(s.details?.game || s.type_human || s.type || "").trim();
-  return {
-    id: String(s.id),
-    name: String(s.details?.name || s.username || `Nitrado ${s.id}`).trim(),
-    game,
-    status: String(s.status || "unknown"),
-    slots: Number(s.details?.slots || 0) || null,
-    address: String(s.details?.address || "").trim() || null,
-    dayz: /dayz/i.test(game),
-  };
+  return { id: String(s.id), name: String(s.details?.name || s.username || `Nitrado ${s.id}`).trim(), game, status: String(s.status || "unknown"), slots: Number(s.details?.slots || 0) || null, address: String(s.details?.address || "").trim() || null, dayz: /dayz/i.test(game) };
 }
 
 async function servicesFor(token: string) {
@@ -87,8 +78,6 @@ router.get("/onboarding", requirePortalAuth, (req, res) => {
   res.type("html").send(renderSaasOnboarding(req.portalSession!, isSaasSelfServiceEnabled() && isOrganizationSecretEncryptionConfigured()));
 });
 
-// Server-rendered fallback for the token step. This path is deliberately independent
-// from browser JavaScript so a client-side error cannot leave the user on a blank step.
 router.post("/onboarding/nitrado/connect", requirePortalAuth, async (req, res) => {
   try {
     const organization = getOrganization(req);
@@ -129,8 +118,6 @@ router.post("/onboarding/nitrado/import", requirePortalAuth, async (req, res) =>
     const service = (await servicesFor(token)).find((item) => item.id === serviceId);
     if (!service) throw new Error("Esse serviço não pertence à conta Nitrado conectada.");
     if (!service.dayz) throw new Error("Este serviço não parece ser um servidor DayZ.");
-    const existing = (await refreshManagedServerRegistryFromDb()).find?.(() => false);
-    void existing;
     const detail = await nitrado<{ data?: { gameserver?: any } }>(token, `/services/${encodeURIComponent(serviceId)}/gameservers`);
     const gameserver = detail?.data?.gameserver || {};
     const baseDir = inferBaseDir(gameserver);
