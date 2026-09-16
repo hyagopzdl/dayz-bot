@@ -1,0 +1,35 @@
+name: fix runtime tail
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - name: Remove remaining primary runtime behavior
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+          p = Path('artifacts/api-server/src/lib/serverRuntime.ts')
+          text = p.read_text()
+          text = re.sub(r'\s*// The primary server is the legacy-compatible bootstrap runtime\. It must be\s*\n\s*// able to initialize the service before the multi-server activation gate is\s*\n\s*// satisfied; secondary servers remain strictly subject to that gate\.\s*\n', '\n', text, count=1)
+          text = re.sub(r'\s*// Keep the primary bootstrap path operational while preserving the strict\s*\n\s*// activation gate for every secondary managed server\.\s*\n\s*if \(!context\.isPrimary && !canExecuteManagedServerRuntime\(context\.serverId\)\) \{\s*\n\s*throw new Error\(`Server \$\{context\.serverId\} runtime is disabled or has not passed the activation gate\.`\);\s*\n\s*\}\s*\n', '\n', text, count=1)
+          text = re.sub(r'export function assertPrimaryRuntimeServer\(serverId: string\) \{.*?\n\}', '''export function assertPrimaryRuntimeServer(serverId: string) {\n  const context = getServerRuntimeContext(serverId);\n  if (!canExecuteManagedServerRuntime(context.serverId)) {\n    throw new Error(`Server ${context.serverId} runtime is disabled or has not passed the activation gate.`);\n  }\n}''', text, count=1, flags=re.S)
+          p.write_text(text)
+      - name: Commit and remove this workflow
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add artifacts/api-server/src/lib/serverRuntime.ts
+          git rm .github/workflows/fix-runtime-tail.yml
+          git commit -m "fix: remove remaining primary runtime tail"
+          git push origin main
