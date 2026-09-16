@@ -10,6 +10,7 @@ import nitradoDiagnosticRoutes from "./routes/nitradoDiagnostic";
 import nitradoSetupRoutes from "./routes/nitradoSetup";
 import nitradoSelfServiceCompatRoutes from "./routes/nitradoSelfServiceCompat";
 import saasOnboardingRoutes from "./routes/saasOnboarding";
+import onboardingActivationCompatRoutes from "./routes/onboardingActivationCompat";
 import { logger } from "./lib/logger";
 import { recordNetworkTransfer } from "./lib/networkMetrics";
 import authRoutes from "./routes/auth";
@@ -94,6 +95,10 @@ app.post("/admin-panel/onboarding/nitrado/import", async (req, res, next) => {
   }
 });
 
+// Native/server-rendered onboarding submissions land on /next without running
+// the browser JavaScript that normally calls /onboarding/activate. Intercept that
+// handoff first so an existing tenant server cannot remain Draft / Runtime blocked.
+app.use("/admin-panel", onboardingActivationCompatRoutes);
 app.use("/admin-panel", saasOnboardingRoutes);
 app.use("/admin-panel", adminAuthRoutes);
 app.use("/admin-panel", serverControlPanelRoutes);
