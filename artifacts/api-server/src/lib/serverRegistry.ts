@@ -36,14 +36,12 @@ export type ManagedServerDescriptor = {
   id: string; name: string; organizationId: string; enabled: boolean; runtimeEnabled: boolean;
   onboardingStatus: ServerOnboardingStatus; mode: ServerFoundationMode;
   integrations: { nitradoServiceId?: string; discordGuildId?: string }; runtime: ServerRuntimeConfig;
-  /** @deprecated Transitional read-only bridge for old persisted rows. New code must not use it. */
-  primary?: boolean;
 };
 export type ServerNamespacePersistenceStatus = {
   enabled: boolean; initialized: boolean; botStateTableReady: boolean; playerStatsTableReady: boolean;
   botStateCompositeKeyReady: boolean; playerStatsCompositeKeyReady: boolean; botStatePrimaryKeyReady: boolean;
   playerStatsPrimaryKeyReady: boolean; primaryKeyCutoverComplete: boolean; scopedReadsEnabled: boolean;
-  scopedReadFallbacks: number; lastScopedReadSource?: "server-scoped" | "legacy-fallback" | "legacy" | "server-id-safe-fallback" | "primary-untagged-fallback";
+  scopedReadFallbacks: number; lastScopedReadSource?: "server-scoped";
   botStateTaggedRows: number; botStateUntaggedRows: number; playerStatsTaggedRows: number; playerStatsUntaggedRows: number;
   lastCheckedAt?: string; lastError?: string;
 };
@@ -52,8 +50,6 @@ export type ServerRegistryPersistenceStatus = {
   draftRows?: number; configuredRows?: number; readyRows?: number; runtimeEnabledRows?: number;
   lastLoadedAt?: string; lastError?: string;
   configDrift?: { name?: boolean; nitradoServiceId?: boolean; discordGuildId?: boolean };
-  /** @deprecated Transitional bridge while the persistence migration is completed. */
-  primarySeeded?: boolean;
 };
 export type ServerRuntimeIsolationStatus = {
   initialized: boolean; contextServerId?: string; nitradoRoutingNamespaced: boolean; discordRoutingNamespaced: boolean;
@@ -63,8 +59,6 @@ export type ServerRuntimeIsolationStatus = {
   persistenceRuntimeNamespaced?: boolean; positionHistoryNamespaced?: boolean; admParserStorageNamespaced?: boolean;
   activationReadiness?: boolean; discordLoopGuardsNamespaced?: boolean; mapSchedulersContextualized?: boolean;
   contextRuns?: number; contextFallbacks?: number; lastContextServerId?: string;
-  primaryLegacyAdmStoragePreserved?: boolean;
-  ftpPrimaryGuarded?: boolean;
 };
 
 let persistedServers: ManagedServerDescriptor[] = [];
@@ -152,20 +146,6 @@ export function canExecuteManagedServerRuntime(serverId: unknown) {
 }
 export function listExecutableManagedServers() { return listManagedServers().filter((server) => canExecuteManagedServerRuntime(server.id)); }
 
-/** Transitional bootstrap bridge used only by the legacy state migration. It does not select a production tenant. */
-export function getPrimaryServerId() {
-  return normalizeServerId(process.env.SERVER_ID || process.env.DEFAULT_SERVER_ID || "bootstrap");
-}
-export function getPrimaryServerDescriptor(): ManagedServerDescriptor {
-  const id = getPrimaryServerId();
-  return {
-    id, name: normalizeManagedServerName(process.env.SERVER_DISPLAY_NAME || process.env.SERVER_NAME || id), organizationId: getDefaultOrganizationId(),
-    enabled: true, runtimeEnabled: false, onboardingStatus: "draft", mode: "multi-server-native", primary: true,
-    integrations: { nitradoServiceId: String(process.env.NITRADO_SERVICE_ID || "").trim() || undefined, discordGuildId: String(process.env.DISCORD_SERVER_ID || process.env.DISCORD_GUILD_ID || "").trim() || undefined },
-    runtime: { nitradoBaseDir: String(process.env.NITRADO_BASE_DIR || "").trim() || undefined, settings: {}, discord: {} },
-  };
-}
-
 export function listManagedServers() { return persistedServers.map(cloneServer); }
 export function setPersistedManagedServers(servers: ManagedServerDescriptor[]) {
   const seen = new Set<string>();
@@ -229,7 +209,7 @@ export function getServerFoundationDiagnostics() {
     safety: {
       legacyStateIdsPreserved: false, legacyAdmCursorsPreserved: false, legacyDiscordGuildPreserved: false, legacyNitradoServicePreserved: false,
       operationalDatabaseWritesAdded: servers.some((server) => canExecuteManagedServerRuntime(server.id)), registryMetadataOnly: false,
-      activeReadsStillLegacy: !namespace.scopedReadsEnabled, activePrimaryKeysPreserved: false, compositePrimaryKeysActive: namespace.primaryKeyCutoverComplete,
+      activeReadsStillLegacy: !namespace.scopedReadsEnabled, compositePrimaryKeysActive: namespace.primaryKeyCutoverComplete,
       serverIdTaggingOnly: false, legacyFallbackAvailable: false, compositeUniqueKeysPrepared: namespace.botStateCompositeKeyReady && (!namespace.playerStatsTableReady || namespace.playerStatsCompositeKeyReady),
       perServerExecutionContext: Boolean(runtimeIsolationStatus.executionContextNamespaced), perServerStateCache: Boolean(runtimeIsolationStatus.stateCacheNamespaced),
       centralizedScheduler: Boolean(runtimeIsolationStatus.schedulerCentralized), perServerAdmStrategy: Boolean(runtimeIsolationStatus.admStrategyNamespaced),
