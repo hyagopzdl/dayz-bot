@@ -72,8 +72,6 @@ export async function ensureAdminUsersSchema() {
       )
     `;
 
-    // Phase 17A: admin_users.server_id becomes only the currently selected
-    // compatibility server. Authorization lives in additive membership tables.
     await db`
       CREATE TABLE IF NOT EXISTS admin_organization_memberships (
         admin_user_id TEXT NOT NULL,
@@ -100,32 +98,9 @@ export async function ensureAdminUsersSchema() {
     await db`CREATE INDEX IF NOT EXISTS admin_server_access_server_idx ON admin_server_access (server_id, admin_user_id)`;
     await db`CREATE INDEX IF NOT EXISTS admin_server_access_org_idx ON admin_server_access (organization_id, admin_user_id)`;
 
-    const seeds = [
-      { id: "admin1", username: "admin1", serverId: "pz-deathmatch" },
-      { id: "admin2", username: "admin2", serverId: "pz-survival" },
-    ];
-    for (const seed of seeds) {
-      await db`
-        INSERT INTO admin_users (id, username, password_hash, server_id, active)
-        VALUES (${seed.id}, ${seed.username}, ${hashPassword("admin")}, ${seed.serverId}, TRUE)
-        ON CONFLICT (username) DO NOTHING
-      `;
-    }
-
-    // Repair only the temporary test accounts if an older build cleared the
-    // selected server because the in-memory registry had not loaded yet.
-    for (const seed of seeds) {
-      await db`
-        UPDATE admin_users
-        SET server_id = ${seed.serverId}, updated_at = NOW()
-        WHERE username = ${seed.username}
-          AND (server_id IS NULL OR BTRIM(server_id) = '')
-          AND EXISTS (SELECT 1 FROM managed_servers WHERE id = ${seed.serverId})
-      `;
-    }
-
-    // Safe additive backfill: every legacy selected server becomes explicit
-    // organization membership + server access. No existing ownership is moved.
+    // Existing administrator accounts are preserved, but the old hard-coded
+    // server assignments are no longer created or repaired. Authorization is
+    // derived from persisted organization/server access instead.
     await db`
       INSERT INTO admin_organization_memberships (admin_user_id, organization_id, role, created_at, updated_at)
       SELECT au.id, ms.organization_id, 'owner', NOW(), NOW()
