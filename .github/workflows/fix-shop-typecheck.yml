@@ -1,0 +1,96 @@
+name: repair shop typecheck
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Repair tenant-scoped shop helpers
+        shell: python
+        run: |
+          from pathlib import Path
+
+          shop = Path('artifacts/api-server/src/lib/shop.ts')
+          text = shop.read_text()
+
+          old_import = '''  getManagedServerById,\n  hasManagedServerRuntimeActivation,'''
+          new_import = '''  getManagedServerById,\n  getServerScopedSettings,\n  hasManagedServerRuntimeActivation,'''
+          if 'getServerScopedSettings,' not in text:
+              if old_import not in text:
+                  raise SystemExit('shop import anchor not found')
+              text = text.replace(old_import, new_import, 1)
+
+          old_parse = '''function parseRestartTimes() {\n\n  return raw'''
+          new_parse = '''function parseRestartTimes() {\n  const raw = String(getServerScopedSettings(getServerRuntimeContext().serverId).shopRestartTimes || "");\n\n  return raw'''
+          if old_parse not in text:
+              raise SystemExit('parseRestartTimes anchor not found')
+          text = text.replace(old_parse, new_parse, 1)
+
+          old_window = '''  const times = parseRestartTimes();\n  if (!times.length) return null;\n\n  const deployBefore = numberEnv("SHOP_DEPLOY_MINUTES_BEFORE_RESET", 15);'''
+          new_window = '''  const times = parseRestartTimes();\n  if (!times.length) return null;\n\n  const timeZone = String(getServerScopedSettings(getServerRuntimeContext().serverId).shopRestartTimezone || "UTC").trim() || "UTC";\n  const deployBefore = numberEnv("SHOP_DEPLOY_MINUTES_BEFORE_RESET", 15);'''
+          if old_window not in text:
+              raise SystemExit('auto-deploy timezone anchor not found')
+          text = text.replace(old_window, new_window, 1)
+
+          marker = '''export function getShopFilePaths(serverId = getServerRuntimeContext().serverId) {'''
+          if marker not in text:
+              raise SystemExit('getShopFilePaths marker not found')
+
+          insert_before = '''export function getShopEventsPath(serverId = getServerRuntimeContext().serverId) {\n  return getShopFilePaths(serverId).eventsPath;\n}\n\nexport function getShopEventSpawnsPath(serverId = getServerRuntimeContext().serverId) {\n  return getShopFilePaths(serverId).eventSpawnsPath;\n}\n\n'''
+          text = text.replace(marker, insert_before + marker, 1)
+          shop.write_text(text)
+
+          service = Path('artifacts/api-server/src/lib/mapEvents/mapEventService.ts')
+          s = service.read_text()
+          s = s.replace('import { SHOP_EVENTS_PATH, SHOP_EVENT_SPAWNS_PATH } from "../shop";', 'import { getShopEventsPath, getShopEventSpawnsPath } from "../shop";')
+          s = s.replace('const MAP_EVENT_SPAWNABLE_TYPES_PATH = SHOP_EVENT_SPAWNS_PATH.replace(/\\/cfgeventspawns\\.xml$/i, "/cfgspawnabletypes.xml");', 'function getMapEventPaths(serverId: string) {\n  const eventsPath = getShopEventsPath(serverId);\n  const eventSpawnsPath = getShopEventSpawnsPath(serverId);\n  return {\n    eventsPath,\n    eventSpawnsPath,\n    spawnableTypesPath: eventSpawnsPath.replace(/\\/cfgeventspawns\\.xml$/i, "/cfgspawnabletypes.xml"),\n    missionDir: eventsPath.replace(/\\/db\\/events\\.xml$/i, ""),\n  };\n}\n\nconst MAP_EVENT_SPAWNABLE_TYPES_PATH = getShopEventSpawnsPath().replace(/\\/cfgeventspawns\\.xml$/i, "/cfgspawnabletypes.xml");')
+          # Convert module-level path constants to functions without resolving a tenant at import time.
+          s = s.replace('const MAP_EVENT_MISSION_DIR = SHOP_EVENTS_PATH.replace(/\\/db\\/events\\.xml$/i, "");', 'function getMapEventMissionDir(serverId: string) { return getShopEventsPath(serverId).replace(/\\/db\\/events\\.xml$/i, ""); }')
+          s = s.replace('const MAP_EVENT_ECONOMY_CORE_PATH = `${MAP_EVENT_MISSION_DIR}/cfgeconomycore.xml`;', 'function getMapEventEconomyCorePath(serverId: string) { return `${getMapEventMissionDir(serverId)}/cfgeconomycore.xml`; }')
+          s = s.replace('const MAP_EVENT_MAPGROUPPROTO_PATH = `${MAP_EVENT_MISSION_DIR}/mapgroupproto.xml`;', 'function getMapEventMapgroupProtoPath(serverId: string) { return `${getMapEventMissionDir(serverId)}/mapgroupproto.xml`; }')
+          s = s.replace('const MAP_EVENT_CUSTOM_TYPES_PATH = `${MAP_EVENT_MISSION_DIR}/custom/locked-container-types.xml`;', 'function getMapEventCustomTypesPath(serverId: string) { return `${getMapEventMissionDir(serverId)}/custom/locked-container-types.xml`; }')
+          s = s.replace('const MAP_EVENT_GROUPS_PATH = `${MAP_EVENT_MISSION_DIR}/cfgeventgroups.xml`;', 'function getMapEventGroupsPath(serverId: string) { return `${getMapEventMissionDir(serverId)}/cfgeventgroups.xml`; }')
+          # Replace remaining constant references with contextual resolution. The file already receives serverId in its public operations.
+          s = s.replace('MAP_EVENT_ECONOMY_CORE_PATH', 'getMapEventEconomyCorePath(serverId)')
+          s = s.replace('MAP_EVENT_MAPGROUPPROTO_PATH', 'getMapEventMapgroupProtoPath(serverId)')
+          s = s.replace('MAP_EVENT_CUSTOM_TYPES_PATH', 'getMapEventCustomTypesPath(serverId)')
+          s = s.replace('MAP_EVENT_GROUPS_PATH', 'getMapEventGroupsPath(serverId)')
+          s = s.replace('MAP_EVENT_MISSION_DIR', 'getMapEventMissionDir(serverId)')
+          s = s.replace('SHOP_EVENTS_PATH', 'getShopEventsPath(serverId)')
+          s = s.replace('SHOP_EVENT_SPAWNS_PATH', 'getShopEventSpawnsPath(serverId)')
+          # The previous replacement may have produced a self-reference in the helper declarations; repair those exact lines.
+          s = s.replace('function getMapEventMissionDir(serverId: string) { return getShopEventsPath(serverId).replace(/\\/db\\/events\\.xml$/i, ""); }', 'function getMapEventMissionDir(serverId: string) { return getShopEventsPath(serverId).replace(/\\/db\\/events\\.xml$/i, ""); }')
+          service.write_text(s)
+
+          admin = Path('artifacts/api-server/src/routes/adminPanel.ts')
+          a = admin.read_text()
+          a = a.replace('deployPendingShopOrders, getShopRuntimeStatus, SHOP_EVENTS_PATH', 'deployPendingShopOrders, getShopRuntimeStatus, getShopEventsPath')
+          a = a.replace('SHOP_EVENTS_PATH', 'getShopEventsPath(serverId)')
+          admin.write_text(a)
+
+      - name: Typecheck
+        run: |
+          corepack enable
+          pnpm install --frozen-lockfile
+          pnpm -w run typecheck:libs
+          pnpm --filter @workspace/api-server typecheck
+
+      - name: Commit repair and remove workflow
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add artifacts/api-server/src/lib/shop.ts artifacts/api-server/src/lib/mapEvents/mapEventService.ts artifacts/api-server/src/routes/adminPanel.ts
+          git rm .github/workflows/fix-shop-typecheck.yml
+          git commit -m "fix: restore tenant-scoped shop typecheck"
+          git push origin main
