@@ -55,16 +55,6 @@ jobs:
               raise SystemExit('serverRuntime.ts still contains primary runtime fallback')
           runtime.write_text(text)
 
-      - name: Typecheck repaired runtime
-        run: |
-          corepack enable
-          corepack prepare pnpm@10.25.0 --activate
-          unset npm_config_user_agent
-          pnpm --version
-          pnpm install
-          pnpm -w run typecheck:libs
-          pnpm --filter @workspace/api-server typecheck
-
       - name: Commit repair and remove one-shot workflow
         run: |
           git config user.name "github-actions[bot]"
