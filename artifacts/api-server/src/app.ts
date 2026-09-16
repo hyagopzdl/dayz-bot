@@ -19,6 +19,7 @@ import { attachPortalSession } from "./middlewares/portalAuth";
 import { attachAdminSession } from "./middlewares/adminAuth";
 import adminAuthRoutes from "./routes/adminAuth";
 import adminServerContextRoutes from "./routes/adminServerContext";
+import testDatabaseResetRoutes from "./routes/testDatabaseReset";
 import { canOrganizationRole, getManagedOrganizationById, listUserOrganizationMemberships } from "./lib/organizationRegistry";
 import { refreshManagedServerRegistryFromDb } from "./lib/state";
 
@@ -92,6 +93,7 @@ app.post("/admin-panel/onboarding/nitrado/import", async (req, res, next) => {
   }
 });
 
+app.use("/admin-panel/test", testDatabaseResetRoutes);
 app.use("/admin-panel", onboardingActivationCompatRoutes);
 app.use("/admin-panel", saasOnboardingRoutes);
 app.use("/admin-panel", adminServerContextRoutes);
