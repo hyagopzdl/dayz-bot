@@ -1,12 +1,9 @@
 name: repair shop typecheck
-
 on:
   push:
     branches: [main]
-
 permissions:
   contents: write
-
 jobs:
   fix:
     runs-on: ubuntu-latest
@@ -14,149 +11,19 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 2
-
-      - name: Repair shop and map-event context model
+      - name: Repair shop exports and validate
         shell: python
         run: |
           from pathlib import Path
-          import re
-
-          def replace_once(text: str, pattern: str, replacement: str, label: str):
-              updated, count = re.subn(pattern, replacement, text, count=1, flags=re.S)
-              if count != 1:
-                  raise SystemExit(f"{label}: expected exactly one match, got {count}")
-              return updated
-
-          # shop.ts: restart configuration must be resolved from the active
-          # server context at execution time, never from an import-time value.
-          shop_path = Path("artifacts/api-server/src/lib/shop.ts")
-          shop = shop_path.read_text()
-
-          shop = replace_once(
-              shop,
-              r"function parseRestartTimes\(\) \{.*?\n\}",
-              '''function parseRestartTimes() {
-            const serverId = getServerRuntimeContext().serverId;
-            const raw = String(getManagedServerById(serverId)?.runtime.settings?.shopRestartTimes || "00:00,04:00,08:00,12:00,16:00,20:00");
-
-            return raw
-              .split(",")
-              .map((value: string) => value.trim())
-              .filter(Boolean)
-              .map((value: string) => {
-                const [hourRaw, minuteRaw = "0"] = value.split(":");
-                const hour = Number(hourRaw);
-                const minute = Number(minuteRaw);
-                if (!Number.isInteger(hour) || !Number.isInteger(minute) || hour < 0 || hour > 23 || minute < 0 || minute > 59) {
-                  throw new Error(`Invalid SHOP_RESTART_TIMES entry: ${value}`);
-                }
-                return { label: `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`, minutes: hour * 60 + minute };
-              })
-              .sort((a, b) => a.minutes - b.minutes);
-          }''',
-              "shop.parseRestartTimes",
-          )
-
-          shop = replace_once(
-              shop,
-              r"const times = parseRestartTimes\(\);\n\s*if \(!times\.length\) return null;\n\s*\n\s*const deployBefore",
-              '''const times = parseRestartTimes();
-            if (!times.length) return null;
-
-            const serverId = getServerRuntimeContext().serverId;
-            const timeZone = String(getManagedServerById(serverId)?.runtime.settings?.shopRestartTimezone || "UTC").trim() || "UTC";
-
-            const deployBefore''',
-              "shop.getActiveAutoDeployWindow timezone",
-          )
-
-          shop_path.write_text(shop)
-
-          # mapEventService.ts: every DayZ filesystem path is a function of
-          # the active server context. Do not capture a server path at module
-          # import time and do not invent a serverId variable inside helpers.
-          map_path = Path("artifacts/api-server/src/lib/mapEvents/mapEventService.ts")
-          m = map_path.read_text()
-
-          m = replace_once(
-              m,
-              r'import \{ SHOP_EVENTS_PATH, SHOP_EVENT_SPAWNS_PATH \} from "\.\./shop";\n.*?const AIRDROP_MILITARY_GROUP_NAME',
-              '''import { getShopEventsPath, getShopEventSpawnsPath } from "../shop";
-          import { getMapEventPresets } from "./mapEventPresets";
-          import {
-            hasMapEventBlock,
-            injectMapEventIntoEventSpawnsXml,
-            injectMapEventIntoEventsXml,
-            injectMapEventIntoSpawnableTypesXml,
-            removeMapEventBlocks,
-            resolveMapEventRequest,
-          } from "./mapEventXml";
-          import type { MapEventCleanupResult, MapEventDeployResult, MapEventInjectRequest } from "./mapEventTypes";
-
-          function getMapEventSpawnableTypesPath() {
-            return getShopEventSpawnsPath().replace(/\\/cfgeventspawns\\.xml$/i, "/cfgspawnabletypes.xml");
-          }
-
-          function getMapEventMissionDir() {
-            return getShopEventsPath().replace(/\\/db\\/events\\.xml$/i, "");
-          }
-
-          function getMapEventEconomyCorePath() {
-            return `${getMapEventMissionDir()}/cfgeconomycore.xml`;
-          }
-
-          function getMapEventMapgroupProtoPath() {
-            return `${getMapEventMissionDir()}/mapgroupproto.xml`;
-          }
-
-          function getMapEventCustomTypesPath() {
-            return `${getMapEventMissionDir()}/custom/locked-container-types.xml`;
-          }
-
-          function getMapEventGroupsPath() {
-            return `${getMapEventMissionDir()}/cfgeventgroups.xml`;
-          }
-
-          const AIRDROP_MILITARY_GROUP_NAME''',
-              "mapEventService path declarations",
-          )
-
-          replacements = [
-              ("MAP_EVENT_SPAWNABLE_TYPES_PATH", "getMapEventSpawnableTypesPath()"),
-              ("MAP_EVENT_ECONOMY_CORE_PATH", "getMapEventEconomyCorePath()"),
-              ("MAP_EVENT_MAPGROUPPROTO_PATH", "getMapEventMapgroupProtoPath()"),
-              ("MAP_EVENT_CUSTOM_TYPES_PATH", "getMapEventCustomTypesPath()"),
-              ("MAP_EVENT_GROUPS_PATH", "getMapEventGroupsPath()"),
-              ("MAP_EVENT_MISSION_DIR", "getMapEventMissionDir()"),
-              ("SHOP_EVENTS_PATH", "getShopEventsPath()"),
-              ("SHOP_EVENT_SPAWNS_PATH", "getShopEventSpawnsPath()"),
-          ]
-          for old, new in replacements:
-              m = m.replace(old, new)
-
-          map_path.write_text(m)
-
-          # adminPanel.ts: spawn-zone path is also runtime-contextual. A
-          # module-level path would either throw during import or bind the
-          # wrong server. Resolve it only when a request is executing.
-          admin_path = Path("artifacts/api-server/src/routes/adminPanel.ts")
-          a = admin_path.read_text()
-          a = a.replace(
-              "deployPendingShopOrders, getShopRuntimeStatus, SHOP_EVENTS_PATH",
-              "deployPendingShopOrders, getShopRuntimeStatus, getShopEventsPath",
-              1,
-          )
-          a = replace_once(
-              a,
-              r"const SPAWN_ZONE_FILE_PATH = .*?;",
-              '''function getSpawnZoneFilePath(serverId = getActiveServerId()) {
-            return getShopEventsPath(serverId).replace(/\\/db\\/events\\.xml$/i, "/cfgplayerspawnpoints.xml");
-          }''',
-              "adminPanel spawn-zone path",
-          )
-          a = a.replace("SPAWN_ZONE_FILE_PATH", "getSpawnZoneFilePath()")
-          admin_path.write_text(a)
-
+          path = Path("artifacts/api-server/src/lib/shop.ts")
+          text = path.read_text()
+          marker = "export function getShopFilePaths(serverId = getServerRuntimeContext().serverId) {"
+          if "export function getShopEventsPath(" not in text:
+              idx = text.index(marker)
+              end = text.index("\n}\n", idx) + 3
+              block = '''\nexport function getShopEventsPath(serverId = getServerRuntimeContext().serverId) {\n  return getShopFilePaths(serverId).eventsPath;\n}\n\nexport function getShopEventSpawnsPath(serverId = getServerRuntimeContext().serverId) {\n  return getShopFilePaths(serverId).eventSpawnsPath;\n}\n'''
+              text = text[:end] + block + text[end:]
+              path.write_text(text)
       - name: Validate full workspace
         run: |
           corepack enable
@@ -165,13 +32,12 @@ jobs:
           pnpm install
           pnpm -w run typecheck:libs
           pnpm --filter @workspace/api-server typecheck
-
       - name: Commit repair and remove workflow
-        shell: bash
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add artifacts/api-server/src/lib/shop.ts artifacts/api-server/src/lib/mapEvents/mapEventService.ts artifacts/api-server/src/routes/adminPanel.ts
+          git add artifacts/api-server/src/lib/shop.ts .github/workflows/fix-shop-typecheck.yml
+          git commit -m "fix: export server-scoped shop paths" || exit 0
           git rm .github/workflows/fix-shop-typecheck.yml
-          git commit -m "fix: complete runtime-scoped shop paths"
+          git commit -m "chore: remove temporary shop repair workflow"
           git push origin main
