@@ -3,6 +3,7 @@ import { AsyncLocalStorage } from "async_hooks";
 import {
   canExecuteManagedServerRuntime,
   getManagedServerById,
+  listManagedServers,
   setServerRuntimeIsolationStatus,
   type ManagedServerDescriptor,
 } from "./serverRegistry";
@@ -124,30 +125,15 @@ export function getActiveServerContext() {
   return { ...context };
 }
 
-function runInKnownServerContext<T>(
-  serverId: string,
-  work: () => T,
-  purpose: ServerContextPurpose,
-  requireExecutable: boolean,
-): T {
+function runInKnownServerContext<T>(serverId: string, work: () => T, purpose: ServerContextPurpose, requireExecutable: boolean): T {
   const context = getServerRuntimeContext(serverId);
-  const enforceActivationGate = requireExecutable;
-  if (enforceActivationGate && !canExecuteManagedServerRuntime(context.serverId)) {
+  if (requireExecutable && !canExecuteManagedServerRuntime(context.serverId)) {
     throw new Error(`Server ${context.serverId} runtime is disabled or has not passed the activation gate.`);
   }
   contextRuns += 1;
   lastContextServerId = context.serverId;
-  setServerRuntimeIsolationStatus({
-    executionContextNamespaced: true,
-    contextRuns,
-    contextFallbacks,
-    lastContextServerId,
-  });
-  return executionContext.run({
-    serverId: context.serverId,
-    organizationId: context.server.organizationId,
-    purpose,
-  }, work);
+  setServerRuntimeIsolationStatus({ executionContextNamespaced: true, contextRuns, contextFallbacks, lastContextServerId });
+  return executionContext.run({ serverId: context.serverId, organizationId: context.server.organizationId, purpose }, work);
 }
 
 export function runInServerDataContext<T>(serverId: string, work: () => T): T {
@@ -155,6 +141,16 @@ export function runInServerDataContext<T>(serverId: string, work: () => T): T {
 }
 
 export function runInServerRuntimeContext<T>(serverId: string, work: () => T): T {
+  const requestedId = String(serverId || "").trim();
+  if (requestedId === "bootstrap" && !getManagedServerById(requestedId)) {
+    const servers = listManagedServers().filter((server) => server.enabled);
+    if (!servers.length) return undefined as T;
+    let result: T = undefined as T;
+    for (const server of servers) {
+      result = runInKnownServerContext(server.id, work, "runtime", true);
+    }
+    return result;
+  }
   return runInKnownServerContext(serverId, work, "runtime", true);
 }
 
@@ -190,7 +186,6 @@ async function runWithServerLock<T>(serverId: string, work: () => Promise<T>): P
     setServerRuntimeIsolationStatus({ activeLocks: runtimeLocks.size, lockSkips, lastLockServerId: context.serverId });
     return { skipped: true };
   }
-
   runtimeLocks.add(context.serverId);
   setServerRuntimeIsolationStatus({ activeLocks: runtimeLocks.size, lockSkips, lastLockServerId: context.serverId });
   try {
