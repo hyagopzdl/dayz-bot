@@ -43,8 +43,18 @@ export async function ensureAdminUsersSchema() {
     await db`CREATE TABLE IF NOT EXISTS admin_server_access (admin_user_id TEXT NOT NULL, server_id TEXT NOT NULL, organization_id TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'viewer' CHECK (role IN ('owner','admin','moderator','viewer')), created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), PRIMARY KEY (admin_user_id, server_id))`;
     await db`CREATE INDEX IF NOT EXISTS admin_server_access_server_idx ON admin_server_access (server_id, admin_user_id)`;
     await db`CREATE INDEX IF NOT EXISTS admin_server_access_org_idx ON admin_server_access (organization_id, admin_user_id)`;
-    await db`INSERT INTO admin_organization_memberships (admin_user_id, organization_id, role, created_at, updated_at) SELECT au.id, ms.organization_id, 'owner', NOW(), NOW() FROM admin_users au JOIN managed_servers ms ON ms.id = au.server_id WHERE au.active = TRUE AND au.server_id IS NOT NULL AND BTRIM(au.server_id) <> '' ON CONFLICT (admin_user_id, organization_id) DO NOTHING`;
-    await db`INSERT INTO admin_server_access (admin_user_id, server_id, organization_id, role, created_at, updated_at) SELECT au.id, ms.id, ms.organization_id, 'owner', NOW(), NOW() FROM admin_users au JOIN managed_servers ms ON ms.id = au.server_id WHERE au.active = TRUE AND au.server_id IS NOT NULL AND BTRIM(au.server_id) <> '' ON CONFLICT (admin_user_id, server_id) DO NOTHING`;
+
+    // managed_servers is created by the server-registry layer. Admin authentication
+    // must remain usable before onboarding creates the first managed server.
+    try {
+      await db`INSERT INTO admin_organization_memberships (admin_user_id, organization_id, role, created_at, updated_at) SELECT au.id, ms.organization_id, 'owner', NOW(), NOW() FROM admin_users au JOIN managed_servers ms ON ms.id = au.server_id WHERE au.active = TRUE AND au.server_id IS NOT NULL AND BTRIM(au.server_id) <> '' ON CONFLICT (admin_user_id, organization_id) DO NOTHING`;
+      await db`INSERT INTO admin_server_access (admin_user_id, server_id, organization_id, role, created_at, updated_at) SELECT au.id, ms.id, ms.organization_id, 'owner', NOW(), NOW() FROM admin_users au JOIN managed_servers ms ON ms.id = au.server_id WHERE au.active = TRUE AND au.server_id IS NOT NULL AND BTRIM(au.server_id) <> '' ON CONFLICT (admin_user_id, server_id) DO NOTHING`;
+    } catch (error) {
+      // A clean database can legitimately have no managed_servers table yet.
+      // Do not make admin login/onboarding depend on that unrelated table.
+      const message = error instanceof Error ? error.message : String(error);
+      if (!/managed_servers|relation .* does not exist/i.test(message)) throw error;
+    }
   })().catch((error) => { schemaPromise = null; throw error; });
   return schemaPromise;
 }
