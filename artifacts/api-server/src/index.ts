@@ -1,7 +1,6 @@
 import app from "./app";
 import { logger } from "./lib/logger";
 import { startDiscordBot } from "./lib/discordBot";
-import { cleanupRetiredServerRecords } from "./lib/serverRegistryCleanup";
 import { flushExecutableManagedServerStates, startManagedServerRuntimeScheduler } from "./lib/serverRuntimeCoordinator";
 
 function formatMb(bytes: number) { return `${(bytes / 1024 / 1024).toFixed(1)} MB`; }
@@ -43,7 +42,6 @@ function startServer(port: number) {
 
     setImmediate(() => {
       logMemory("post-listen-before-discord");
-      void cleanupRetiredServerRecords().catch((err) => console.error("❌ erro no cleanup de registry legado:", err));
       try {
         console.log("🚀 iniciando bot do Discord multi-tenant...");
         void startDiscordBot().catch((err) => { console.error("❌ erro assíncrono ao iniciar Discord:", err); logMemory("discord-start-failed"); });
