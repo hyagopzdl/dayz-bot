@@ -55,16 +55,12 @@ jobs:
           service = Path('artifacts/api-server/src/lib/mapEvents/mapEventService.ts')
           s = service.read_text()
           s = s.replace('import { SHOP_EVENTS_PATH, SHOP_EVENT_SPAWNS_PATH } from "../shop";', 'import { getShopEventsPath, getShopEventSpawnsPath } from "../shop";')
-
-          # Remove import-time tenant resolution. Every path is resolved only inside
-          # an operation that already has an explicit serverId.
           s = s.replace('const MAP_EVENT_SPAWNABLE_TYPES_PATH = SHOP_EVENT_SPAWNS_PATH.replace(/\\/cfgeventspawns\\.xml$/i, "/cfgspawnabletypes.xml");', 'function getMapEventSpawnableTypesPath(serverId: string) { return getShopEventSpawnsPath(serverId).replace(/\\/cfgeventspawns\\.xml$/i, "/cfgspawnabletypes.xml"); }')
           s = s.replace('const MAP_EVENT_MISSION_DIR = SHOP_EVENTS_PATH.replace(/\\/db\\/events\\.xml$/i, "");', 'function getMapEventMissionDir(serverId: string) { return getShopEventsPath(serverId).replace(/\\/db\\/events\\.xml$/i, ""); }')
           s = s.replace('const MAP_EVENT_ECONOMY_CORE_PATH = `${MAP_EVENT_MISSION_DIR}/cfgeconomycore.xml`;', 'function getMapEventEconomyCorePath(serverId: string) { return `${getMapEventMissionDir(serverId)}/cfgeconomycore.xml`; }')
           s = s.replace('const MAP_EVENT_MAPGROUPPROTO_PATH = `${MAP_EVENT_MISSION_DIR}/mapgroupproto.xml`;', 'function getMapEventMapgroupProtoPath(serverId: string) { return `${getMapEventMissionDir(serverId)}/mapgroupproto.xml`; }')
           s = s.replace('const MAP_EVENT_CUSTOM_TYPES_PATH = `${MAP_EVENT_MISSION_DIR}/custom/locked-container-types.xml`;', 'function getMapEventCustomTypesPath(serverId: string) { return `${getMapEventMissionDir(serverId)}/custom/locked-container-types.xml`; }')
           s = s.replace('const MAP_EVENT_GROUPS_PATH = `${MAP_EVENT_MISSION_DIR}/cfgeventgroups.xml`;', 'function getMapEventGroupsPath(serverId: string) { return `${getMapEventMissionDir(serverId)}/cfgeventgroups.xml`; }')
-
           s = s.replace('MAP_EVENT_SPAWNABLE_TYPES_PATH', 'getMapEventSpawnableTypesPath(serverId)')
           s = s.replace('MAP_EVENT_ECONOMY_CORE_PATH', 'getMapEventEconomyCorePath(serverId)')
           s = s.replace('MAP_EVENT_MAPGROUPPROTO_PATH', 'getMapEventMapgroupProtoPath(serverId)')
@@ -83,8 +79,10 @@ jobs:
 
       - name: Typecheck
         run: |
+          corepack enable
           corepack prepare pnpm@10.25.0 --activate
           unset npm_config_user_agent
+          pnpm --version
           pnpm install
           pnpm -w run typecheck:libs
           pnpm --filter @workspace/api-server typecheck
