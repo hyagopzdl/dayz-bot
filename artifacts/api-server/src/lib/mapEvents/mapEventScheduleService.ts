@@ -4,7 +4,7 @@ import postgres from "postgres";
 import type { MapEventInjectRequest, MapEventPresetId } from "./mapEventTypes";
 import { findMapEventPreset } from "./mapEventPresets";
 import { injectMapEventNow } from "./mapEventService";
-import { getPrimaryServerId, listExecutableManagedServers } from "../serverRegistry";
+import { listExecutableManagedServers } from "../serverRegistry";
 import { getActiveServerId, runInServerRuntimeContext } from "../serverRuntime";
 
 export type ScheduledMapEventRecurrence = "none" | "daily" | "weekly" | "monthly";
@@ -39,7 +39,6 @@ const schedulerRunningServers = new Set<string>();
 const legacyImportChecked = new Set<string>();
 
 function getLegacyScheduleFile(serverId: string) {
-  if (serverId === getPrimaryServerId()) return LEGACY_SCHEDULE_FILE;
   return path.resolve(process.cwd(), "map-events-schedules", `${serverId}.json`);
 }
 
