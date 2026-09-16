@@ -36,6 +36,8 @@ export type ManagedServerDescriptor = {
   id: string; name: string; organizationId: string; enabled: boolean; runtimeEnabled: boolean;
   onboardingStatus: ServerOnboardingStatus; mode: ServerFoundationMode;
   integrations: { nitradoServiceId?: string; discordGuildId?: string }; runtime: ServerRuntimeConfig;
+  /** @deprecated Persistence no longer creates or selects a primary server. */
+  primary?: boolean;
 };
 export type ServerNamespacePersistenceStatus = {
   enabled: boolean; initialized: boolean; botStateTableReady: boolean; playerStatsTableReady: boolean;
@@ -50,6 +52,8 @@ export type ServerRegistryPersistenceStatus = {
   draftRows?: number; configuredRows?: number; readyRows?: number; runtimeEnabledRows?: number;
   lastLoadedAt?: string; lastError?: string;
   configDrift?: { name?: boolean; nitradoServiceId?: boolean; discordGuildId?: boolean };
+  /** @deprecated No longer seeded; retained for persisted diagnostic compatibility. */
+  primarySeeded?: boolean;
 };
 export type ServerRuntimeIsolationStatus = {
   initialized: boolean; contextServerId?: string; nitradoRoutingNamespaced: boolean; discordRoutingNamespaced: boolean;
@@ -146,9 +150,9 @@ export function canExecuteManagedServerRuntime(serverId: unknown) {
 }
 export function listExecutableManagedServers() { return listManagedServers().filter((server) => canExecuteManagedServerRuntime(server.id)); }
 
-/** @deprecated Legacy API surface retained only to keep older callers compiling. It never creates or selects a server. */
+/** @deprecated No runtime fallback; retained until all historical callers are migrated. */
 export function getPrimaryServerId() { return ""; }
-/** @deprecated Legacy API surface retained only to keep older callers compiling. Production code must resolve a managed server first. */
+/** @deprecated Never returns a synthetic server. Historical callers must stop using this API. */
 export function getPrimaryServerDescriptor(): ManagedServerDescriptor { throw new Error("Primary server fallback has been removed; resolve a managed server context first."); }
 
 export function listManagedServers() { return persistedServers.map(cloneServer); }
