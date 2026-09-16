@@ -56,34 +56,29 @@ function startServer(port: number) {
 
     const primaryServerId = getPrimaryServerId();
 
-    // Keep registry migrations and secret hydration serialized. These operations
-    // are database/bootstrap work and must not overlap the first runtime cycle.
+    // Keep all database bootstrap work serialized before starting Discord.
+    // Discord's ready handler calls getStateAsync(); starting it before
+    // reconciliation allowed two cold state initializations to overlap and
+    // temporarily materialize multiple copies of the primary state in memory.
     try {
       await normalizeManagedServerRuntimeConfig();
       await migratePrimaryNitradoCredentialToServerScope();
       await hydrateServerNitradoSecretsFromDb();
+
+      // Reconciliation can initialize/read runtime state as part of activation
+      // checks, so it must complete before Discord is allowed to call getStateAsync.
+      await reconcileManagedServerRuntimeActivation();
     } catch (err) {
-      console.error("❌ unable to prepare server-scoped Nitrado registry:", err);
+      console.error("❌ unable to prepare server-scoped registry/runtime startup:", err);
     }
 
-    // The Discord control plane starts independently. It is responsible for its
-    // own lazy state initialization; the HTTP boot path must not initialize the
-    // same primary state a second time just to prepare the first runtime cycle.
+    // Start Discord only after the DB/registry bootstrap and reconciliation are
+    // complete. This prevents concurrent cold state loads during Render boot.
     try {
       console.log("🚀 iniciando bot do Discord multi-tenant...");
       void startDiscordBot(primaryServerId);
     } catch (err) {
       console.error("❌ erro ao iniciar Discord:", err);
-    }
-
-    // Reconciliation only updates persisted runtime flags. Do not execute a full
-    // ADM download/parser cycle during boot: the centralized scheduler will run
-    // the first cycle after startup. This prevents two expensive initialization
-    // paths from competing for memory/CPU immediately after a Render deploy.
-    try {
-      await reconcileManagedServerRuntimeActivation();
-    } catch (err) {
-      console.error("❌ erro reconciliando runtimes no startup:", err);
     }
 
     // One centralized scheduler for every tenant. There is intentionally no
