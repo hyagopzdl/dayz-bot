@@ -98,9 +98,6 @@ export async function ensureAdminUsersSchema() {
     await db`CREATE INDEX IF NOT EXISTS admin_server_access_server_idx ON admin_server_access (server_id, admin_user_id)`;
     await db`CREATE INDEX IF NOT EXISTS admin_server_access_org_idx ON admin_server_access (organization_id, admin_user_id)`;
 
-    // Existing administrator accounts are preserved, but the old hard-coded
-    // server assignments are no longer created or repaired. Authorization is
-    // derived from persisted organization/server access instead.
     await db`
       INSERT INTO admin_organization_memberships (admin_user_id, organization_id, role, created_at, updated_at)
       SELECT au.id, ms.organization_id, 'owner', NOW(), NOW()
@@ -219,11 +216,12 @@ export async function getAdminServerAccess(adminUserIdInput: unknown, serverIdIn
 }
 
 /**
- * Migrates a legacy administrator's existing server ownership to the current
- * workspace created during onboarding. The legacy server_id is used only as
- * an explicit ownership proof for this one-time migration, never for routing.
+ * Transfers a managed server to the workspace that successfully discovered the
+ * same Nitrado service. Discovery/validation is performed by the onboarding
+ * route before this function is called, so legacy admin_users.server_id is not
+ * used as an ownership proof or routing source.
  */
-export async function migrateLegacyAdminServerOwnership(adminUserIdInput: unknown, serverIdInput: unknown, organizationIdInput: unknown) {
+export async function transferManagedServerOwnership(adminUserIdInput: unknown, serverIdInput: unknown, organizationIdInput: unknown) {
   await ensureAdminUsersSchema();
   const adminUserId = String(adminUserIdInput || "").trim();
   const serverId = String(serverIdInput || "").trim();
@@ -231,29 +229,25 @@ export async function migrateLegacyAdminServerOwnership(adminUserIdInput: unknow
   if (!adminUserId || !serverId || !organizationId) return false;
 
   const rows = await requireSql()`
-    SELECT au.server_id, ms.organization_id
-    FROM admin_users au
-    JOIN managed_servers ms ON ms.id = ${serverId}
-    WHERE au.id = ${adminUserId}
+    SELECT id, organization_id
+    FROM managed_servers
+    WHERE id = ${serverId}
     LIMIT 1
   ` as any[];
-  const row = rows[0];
-  const legacyServerId = row?.server_id ? String(row.server_id).trim() : "";
-  const currentOrganizationId = row?.organization_id ? String(row.organization_id).trim() : "";
-  if (!legacyServerId || legacyServerId !== serverId || !currentOrganizationId || currentOrganizationId === organizationId) return false;
+  const server = rows[0];
+  if (!server) return false;
+  const currentOrganizationId = String(server.organization_id || "").trim();
+  if (!currentOrganizationId || currentOrganizationId === organizationId) return false;
 
-  const updated = await requireSql()`
+  await requireSql()`
     UPDATE managed_servers
     SET organization_id = ${organizationId}, updated_at = NOW()
     WHERE id = ${serverId} AND organization_id = ${currentOrganizationId}
-    RETURNING id
-  ` as any[];
-  if (!updated.length) return false;
+  `;
 
   await requireSql()`
-    UPDATE admin_server_access
-    SET organization_id = ${organizationId}, updated_at = NOW()
-    WHERE admin_user_id = ${adminUserId} AND server_id = ${serverId}
+    DELETE FROM admin_server_access
+    WHERE server_id = ${serverId}
   `;
   await requireSql()`
     INSERT INTO admin_organization_memberships (admin_user_id, organization_id, role, created_at, updated_at)
@@ -261,7 +255,7 @@ export async function migrateLegacyAdminServerOwnership(adminUserIdInput: unknow
     ON CONFLICT (admin_user_id, organization_id)
     DO UPDATE SET role = EXCLUDED.role, updated_at = NOW()
   `;
-  adminAccessCache.delete(`${adminUserId}:${serverId}`);
+  await grantAdminServerAccess(adminUserId, serverId, "owner");
   return true;
 }
 
