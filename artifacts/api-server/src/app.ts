@@ -9,6 +9,7 @@ import serverControlPanelRoutes from "./routes/serverControlPanel";
 import nitradoDiagnosticRoutes from "./routes/nitradoDiagnostic";
 import nitradoSetupRoutes from "./routes/nitradoSetup";
 import nitradoSelfServiceCompatRoutes from "./routes/nitradoSelfServiceCompat";
+import saasOnboardingRoutes from "./routes/saasOnboarding";
 import { logger } from "./lib/logger";
 import { recordNetworkTransfer } from "./lib/networkMetrics";
 import authRoutes from "./routes/auth";
@@ -44,11 +45,12 @@ app.use("/api/auth", authRoutes);
 app.use(playerPortalRoutes);
 app.use("/admin", nitradoDiagnosticRoutes);
 app.use("/admin", adminRoutes);
+// The browser can arrive here immediately after selecting a Nitrado server,
+// before an admin-server session exists. Keep this page behind the Discord portal
+// session, not the legacy admin-panel server binding middleware.
+app.use("/admin-panel", saasOnboardingRoutes);
 app.use("/admin-panel", adminAuthRoutes);
 app.use("/admin-panel", serverControlPanelRoutes);
-// Self-service Nitrado routes must run before the legacy admin-panel guard that
-// expects a server-bound admin session. Organization members can discover and
-// validate their own Nitrado services before a managed_server exists.
 app.use("/admin-panel", nitradoSetupRoutes);
 app.use("/admin-panel", nitradoSelfServiceCompatRoutes);
 app.use("/admin-panel", adminPanelRoutes);
