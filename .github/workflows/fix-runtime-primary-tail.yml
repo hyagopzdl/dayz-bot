@@ -1,0 +1,37 @@
+name: fix runtime primary tail
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - name: Remove primary-only runtime branches
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+          p = Path('artifacts/api-server/src/lib/serverRuntime.ts')
+          text = p.read_text()
+          text = re.sub(r'(?m)^\s*//.*primary.*$\n', '', text, flags=re.I)
+          text = text.replace('if (!context.isPrimary && !canExecuteManagedServerRuntime(context.serverId)) {', 'if (!canExecuteManagedServerRuntime(context.serverId)) {')
+          text = re.sub(r'export function assertPrimaryRuntimeServer\(serverId: string\) \{.*?\n\}', '''export function assertPrimaryRuntimeServer(serverId: string) {\n  const context = getServerRuntimeContext(serverId);\n  if (!canExecuteManagedServerRuntime(context.serverId)) {\n    throw new Error(`Server ${context.serverId} runtime is disabled or has not passed the activation gate.`);\n  }\n}''', text, count=1, flags=re.S)
+          if 'context.isPrimary' in text or 'primaryId' in text:
+              raise SystemExit('primary runtime branch still present')
+          p.write_text(text)
+      - name: Commit and remove workflow
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add artifacts/api-server/src/lib/serverRuntime.ts
+          git rm .github/workflows/fix-runtime-primary-tail.yml
+          git commit -m "fix: remove final primary runtime branches"
+          git push origin main
