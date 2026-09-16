@@ -203,6 +203,9 @@ async function runWithServerLock<T>(serverId: string, work: () => Promise<T>): P
 
 export async function runWithServerRuntimeLock<T>(serverId: string, work: () => Promise<T>): Promise<{ skipped: boolean; value?: T }> {
   const context = getServerRuntimeContext(serverId);
+  if (!canExecuteManagedServerRuntime(context.serverId)) {
+    throw new Error(`Server ${context.serverId} runtime is disabled or has not passed the activation gate.`);
+  }
   return runWithServerLock(context.serverId, work);
 }
 
