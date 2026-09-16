@@ -41,6 +41,10 @@ export async function normalizeManagedServerRuntimeConfig() {
  * organization credential is used only as the source for this migration; the
  * runtime resolver remains server-scoped and never borrows another server's
  * credential.
+ *
+ * Startup memory is intentionally bounded: the registry query does not select
+ * runtime_config for every server. Large JSONB values are read one server at a
+ * time so a single cold boot cannot materialize the entire registry payload.
  */
 export async function migratePrimaryNitradoCredentialToServerScope() {
   const sql = createSql();
@@ -48,7 +52,7 @@ export async function migratePrimaryNitradoCredentialToServerScope() {
 
   try {
     const rows = await sql`
-      SELECT id, organization_id, runtime_config
+      SELECT id, organization_id
       FROM managed_servers
       ORDER BY created_at ASC NULLS FIRST, id ASC
     `;
@@ -61,7 +65,13 @@ export async function migratePrimaryNitradoCredentialToServerScope() {
       const credential = getOrganizationNitradoCredential(organizationId);
       if (!credential.token) continue;
 
-      const runtimeConfig = row.runtime_config;
+      const configRows = await sql`
+        SELECT runtime_config
+        FROM managed_servers
+        WHERE id = ${serverId}
+        LIMIT 1
+      `;
+      const runtimeConfig = (configRows as any[])[0]?.runtime_config;
       if (
         runtimeConfig
         && typeof runtimeConfig === "object"
@@ -159,31 +169,35 @@ export async function ensureServerScopedNitradoCredential(serverIdInput: string)
  * serverRegistry deliberately strips secrets from its row mapper. Hydrate only
  * the encrypted containers needed by the server-scoped Nitrado resolver after
  * the registry has loaded. Plaintext credentials never enter the descriptor.
+ *
+ * Read runtime_config one server at a time. The previous implementation loaded
+ * every JSONB value into an array and then duplicated those objects into a Map
+ * before cloning the complete registry, which could push a 512 MB Render
+ * instance over its limit when a legacy row was large.
  */
 export async function hydrateServerNitradoSecretsFromDb() {
   const sql = createSql();
   if (!sql) return;
 
   try {
-    const rows = await sql`
-      SELECT id, runtime_config
-      FROM managed_servers
-      WHERE runtime_config IS NOT NULL
-    `;
-    const byId = new Map<string, Record<string, unknown>>();
-    for (const row of rows as any[]) {
-      const runtime = row.runtime_config;
-      if (runtime && typeof runtime === "object" && !Array.isArray(runtime)) {
-        byId.set(String(row.id || "").trim(), runtime as Record<string, unknown>);
-      }
-    }
+    const hydrated = listManagedServers().map((server) => server);
 
-    const hydrated = listManagedServers().map((server) => {
-      const runtimeConfig = byId.get(server.id);
-      if (!runtimeConfig) return server;
+    for (let index = 0; index < hydrated.length; index += 1) {
+      const server = hydrated[index];
+      const rows = await sql`
+        SELECT runtime_config
+        FROM managed_servers
+        WHERE id = ${server.id}
+        LIMIT 1
+      `;
+      const runtimeConfig = (rows as any[])[0]?.runtime_config;
+      if (!runtimeConfig || typeof runtimeConfig !== "object" || Array.isArray(runtimeConfig)) continue;
+
       const token = runtimeConfig.nitradoApiTokenEncrypted;
       const ftp = runtimeConfig.nitradoFtp;
-      return {
+      if (!token && !ftp) continue;
+
+      hydrated[index] = {
         ...server,
         runtime: {
           ...server.runtime,
@@ -195,7 +209,7 @@ export async function hydrateServerNitradoSecretsFromDb() {
             : server.runtime.nitradoFtp,
         },
       };
-    });
+    }
 
     setPersistedManagedServers(hydrated);
   } finally {
