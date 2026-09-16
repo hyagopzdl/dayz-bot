@@ -64,6 +64,7 @@ export type ServerRuntimeIsolationStatus = {
   activationReadiness?: boolean; discordLoopGuardsNamespaced?: boolean; mapSchedulersContextualized?: boolean;
   contextRuns?: number; contextFallbacks?: number; lastContextServerId?: string;
   primaryLegacyAdmStoragePreserved?: boolean;
+  ftpPrimaryGuarded?: boolean;
 };
 
 let persistedServers: ManagedServerDescriptor[] = [];
@@ -206,6 +207,7 @@ export function getServerFoundationDiagnostics() {
   return {
     phase: 18, mode: "multi-server-native", managedServers: servers.length,
     activeServers: servers.filter((server) => server.enabled && server.runtimeEnabled).length,
+    additionalServersEnabled: true,
     onboarding: {
       registryWritesEnabled: Boolean(registry.enabled && registry.tableReady), canCreateDrafts: Boolean(registry.enabled && registry.tableReady),
       draftServers: servers.filter((server) => server.onboardingStatus === "draft").length,
