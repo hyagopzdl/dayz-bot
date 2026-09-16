@@ -11,19 +11,92 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 2
-      - name: Repair shop exports and validate
+      - name: Repair server-scoped paths and shop settings
         shell: python
         run: |
           from pathlib import Path
-          path = Path("artifacts/api-server/src/lib/shop.ts")
-          text = path.read_text()
+          import re
+
+          shop = Path("artifacts/api-server/src/lib/shop.ts")
+          text = shop.read_text()
+
           marker = "export function getShopFilePaths(serverId = getServerRuntimeContext().serverId) {"
           if "export function getShopEventsPath(" not in text:
               idx = text.index(marker)
               end = text.index("\n}\n", idx) + 3
               block = '''\nexport function getShopEventsPath(serverId = getServerRuntimeContext().serverId) {\n  return getShopFilePaths(serverId).eventsPath;\n}\n\nexport function getShopEventSpawnsPath(serverId = getServerRuntimeContext().serverId) {\n  return getShopFilePaths(serverId).eventSpawnsPath;\n}\n'''
               text = text[:end] + block + text[end:]
-              path.write_text(text)
+
+          old = '''function parseRestartTimes() {\n\n  return raw'''
+          new = '''function parseRestartTimes() {\n  const raw = String(\n    getServerScopedSettings(getServerRuntimeContext().serverId).shopRestartTimes || ""\n  );\n\n  return raw'''
+          if old in text:
+              text = text.replace(old, new, 1)
+          elif "function parseRestartTimes()" in text and "const raw = String(" not in text[text.index("function parseRestartTimes()"):text.index("function parseRestartTimes()") + 500]:
+              raise SystemExit("parseRestartTimes shape changed; refusing unsafe repair")
+
+          old = "  const local = getLocalDateParts(now, timeZone);"
+          new = '''  const timeZone = String(\n    getServerScopedSettings(getServerRuntimeContext().serverId).shopRestartTimezone || "UTC"\n  ).trim() || "UTC";\n  const local = getLocalDateParts(now, timeZone);'''
+          if old in text:
+              text = text.replace(old, new, 1)
+          shop.write_text(text)
+
+          mp = Path("artifacts/api-server/src/lib/mapEvents/mapEventService.ts")
+          text = mp.read_text()
+          text = text.replace(
+              'import { SHOP_EVENTS_PATH, SHOP_EVENT_SPAWNS_PATH } from "../shop";',
+              'import { getShopEventsPath, getShopEventSpawnsPath } from "../shop";'
+          )
+          text = text.replace(
+              'const MAP_EVENT_SPAWNABLE_TYPES_PATH = SHOP_EVENT_SPAWNS_PATH.replace(/\\/cfgeventspawns\\.xml$/i, "/cfgspawnabletypes.xml");',
+              'function getMapEventSpawnableTypesPath() {\n  return getShopEventSpawnsPath().replace(/\\/cfgeventspawns\\.xml$/i, "/cfgspawnabletypes.xml");\n}'
+          )
+          text = text.replace(
+              'const MAP_EVENT_MISSION_DIR = SHOP_EVENTS_PATH.replace(/\\/db\\/events\\.xml$/i, "");',
+              'function getMapEventMissionDir() {\n  return getShopEventsPath().replace(/\\/db\\/events\\.xml$/i, "");\n}'
+          )
+          text = text.replace(
+              'const MAP_EVENT_ECONOMY_CORE_PATH = `${MAP_EVENT_MISSION_DIR}/cfgeconomycore.xml`;',
+              'function getMapEventEconomyCorePath() {\n  return `${getMapEventMissionDir()}/cfgeconomycore.xml`;\n}'
+          )
+          text = text.replace(
+              'const MAP_EVENT_MAPGROUPPROTO_PATH = `${MAP_EVENT_MISSION_DIR}/mapgroupproto.xml`;',
+              'function getMapEventMapgroupProtoPath() {\n  return `${getMapEventMissionDir()}/mapgroupproto.xml`;\n}'
+          )
+          text = text.replace(
+              'const MAP_EVENT_CUSTOM_TYPES_PATH = `${MAP_EVENT_MISSION_DIR}/custom/locked-container-types.xml`;',
+              'function getMapEventCustomTypesPath() {\n  return `${getMapEventMissionDir()}/custom/locked-container-types.xml`;\n}'
+          )
+          text = text.replace(
+              'const MAP_EVENT_GROUPS_PATH = `${MAP_EVENT_MISSION_DIR}/cfgeventgroups.xml`;',
+              'function getMapEventGroupsPath() {\n  return `${getMapEventMissionDir()}/cfgeventgroups.xml`;\n}'
+          )
+          replacements = {
+              'MAP_EVENT_SPAWNABLE_TYPES_PATH': 'getMapEventSpawnableTypesPath()',
+              'MAP_EVENT_MISSION_DIR': 'getMapEventMissionDir()',
+              'MAP_EVENT_ECONOMY_CORE_PATH': 'getMapEventEconomyCorePath()',
+              'MAP_EVENT_MAPGROUPPROTO_PATH': 'getMapEventMapgroupProtoPath()',
+              'MAP_EVENT_CUSTOM_TYPES_PATH': 'getMapEventCustomTypesPath()',
+              'MAP_EVENT_GROUPS_PATH': 'getMapEventGroupsPath()',
+          }
+          for old_name, new_name in replacements.items():
+              text = re.sub(rf'\\b{old_name}\\b', new_name, text)
+          mp.write_text(text)
+
+          admin = Path("artifacts/api-server/src/routes/adminPanel.ts")
+          text = admin.read_text()
+          text = text.replace(
+              'import { deployPendingShopOrders, getShopRuntimeStatus, SHOP_EVENTS_PATH } from "../lib/shop";',
+              'import { deployPendingShopOrders, getShopRuntimeStatus, getShopEventsPath, getShopEventSpawnsPath } from "../lib/shop";'
+          )
+          text = text.replace(
+              'const SPAWN_ZONE_FILE_PATH = SHOP_EVENTS_PATH.replace(/\\/db\\/events\\.xml$/i, "/cfgplayerspawnpoints.xml");',
+              'function getSpawnZoneFilePath() {\n  return getShopEventsPath().replace(/\\/db\\/events\\.xml$/i, "/cfgplayerspawnpoints.xml");\n}'
+          )
+          text = re.sub(r'\\bSPAWN_ZONE_FILE_PATH\\b', 'getSpawnZoneFilePath()', text)
+          text = re.sub(r'\\bSHOP_EVENTS_PATH\\b', 'getShopEventsPath()', text)
+          admin.write_text(text)
+
+          print("Applied server-scoped shop/map-event path repairs.")
       - name: Validate full workspace
         run: |
           corepack enable
@@ -36,8 +109,8 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add artifacts/api-server/src/lib/shop.ts .github/workflows/fix-shop-typecheck.yml
-          git commit -m "fix: export server-scoped shop paths" || exit 0
+          git add artifacts/api-server/src/lib/shop.ts artifacts/api-server/src/lib/mapEvents/mapEventService.ts artifacts/api-server/src/routes/adminPanel.ts .github/workflows/fix-shop-typecheck.yml
+          git commit -m "fix: repair server-scoped shop paths"
           git rm .github/workflows/fix-shop-typecheck.yml
           git commit -m "chore: remove temporary shop repair workflow"
           git push origin main
