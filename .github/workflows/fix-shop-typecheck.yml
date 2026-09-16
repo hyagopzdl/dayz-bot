@@ -15,60 +15,98 @@ jobs:
         with:
           fetch-depth: 2
 
-      - name: Repair tenant-scoped shop helpers
+      - name: Repair shop server scoping
         shell: python
         run: |
           from pathlib import Path
+          import re
 
           shop = Path('artifacts/api-server/src/lib/shop.ts')
           text = shop.read_text()
 
-          if 'getServerScopedSettings,' not in text:
-              old_import = '''  getManagedServerById,\n  hasManagedServerRuntimeActivation,'''
-              new_import = '''  getManagedServerById,\n  getServerScopedSettings,\n  hasManagedServerRuntimeActivation,'''
-              if old_import not in text:
-                  raise SystemExit('shop import anchor not found')
-              text = text.replace(old_import, new_import, 1)
+          if 'getServerScopedSettings' not in text:
+              text = text.replace('  getManagedServerById,\n', '  getManagedServerById,\n  getServerScopedSettings,\n', 1)
 
-          old_parse = '''function parseRestartTimes() {\n\n  return raw'''
-          new_parse = '''function parseRestartTimes() {\n  const raw = String(getServerScopedSettings(getServerRuntimeContext().serverId).shopRestartTimes || "");\n\n  return raw'''
-          if old_parse in text:
-              text = text.replace(old_parse, new_parse, 1)
-          elif 'const raw = String(getServerScopedSettings(getServerRuntimeContext().serverId).shopRestartTimes' not in text:
-              raise SystemExit('parseRestartTimes repair anchor not found')
+          text = re.sub(
+              r'function parseRestartTimes\(\) \{.*?\n\}',
+              '''function parseRestartTimes() {
+            const raw = String(getServerScopedSettings(getServerRuntimeContext().serverId).shopRestartTimes || "");
 
-          old_window = '''  const times = parseRestartTimes();\n  if (!times.length) return null;\n\n  const deployBefore = numberEnv("SHOP_DEPLOY_MINUTES_BEFORE_RESET", 15);'''
-          new_window = '''  const times = parseRestartTimes();\n  if (!times.length) return null;\n\n  const timeZone = String(getServerScopedSettings(getServerRuntimeContext().serverId).shopRestartTimezone || "UTC").trim() || "UTC";\n  const deployBefore = numberEnv("SHOP_DEPLOY_MINUTES_BEFORE_RESET", 15);'''
-          if old_window in text:
-              text = text.replace(old_window, new_window, 1)
-          elif 'getServerScopedSettings(getServerRuntimeContext().serverId).shopRestartTimezone' not in text:
-              raise SystemExit('auto-deploy timezone repair anchor not found')
+            return raw
+              .split(",")
+              .map((value) => value.trim())
+              .filter(Boolean)
+              .map((value) => {
+                const [hourRaw, minuteRaw = "0"] = value.split(":");
+                const hour = Number(hourRaw);
+                const minute = Number(minuteRaw);
+                if (!Number.isInteger(hour) || !Number.isInteger(minute) || hour < 0 || hour > 23 || minute < 0 || minute > 59) {
+                  throw new Error(`Invalid SHOP_RESTART_TIMES entry: ${value}`);
+                }
+                return { label: `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`, minutes: hour * 60 + minute };
+              })
+              .sort((a, b) => a.minutes - b.minutes);
+          }''',
+              text, count=1, flags=re.S
+          )
 
-          marker = '''export function getShopFilePaths(serverId = getServerRuntimeContext().serverId) {'''
-          if marker not in text:
-              raise SystemExit('getShopFilePaths marker not found')
+          if 'const timeZone = String(getServerScopedSettings' not in text:
+              text = text.replace(
+                  '  const times = parseRestartTimes();\n  if (!times.length) return null;\n\n',
+                  '  const times = parseRestartTimes();\n  if (!times.length) return null;\n\n  const timeZone = String(getServerScopedSettings(getServerRuntimeContext().serverId).shopRestartTimezone || "UTC").trim() || "UTC";\n',
+                  1
+              )
+
+          marker = 'export function getShopFilePaths(serverId = getServerRuntimeContext().serverId) {'
           if 'export function getShopEventsPath(' not in text:
-              helpers = '''export function getShopEventsPath(serverId = getServerRuntimeContext().serverId) {\n  return getShopFilePaths(serverId).eventsPath;\n}\n\nexport function getShopEventSpawnsPath(serverId = getServerRuntimeContext().serverId) {\n  return getShopFilePaths(serverId).eventSpawnsPath;\n}\n\n'''
-              text = text.replace(marker, helpers + marker, 1)
+              text = text.replace(marker, '''export function getShopEventsPath(serverId = getServerRuntimeContext().serverId) {
+            return getShopFilePaths(serverId).eventsPath;
+          }
+
+          export function getShopEventSpawnsPath(serverId = getServerRuntimeContext().serverId) {
+            return getShopFilePaths(serverId).eventSpawnsPath;
+          }
+
+          ''' + marker, 1)
           shop.write_text(text)
 
           service = Path('artifacts/api-server/src/lib/mapEvents/mapEventService.ts')
           s = service.read_text()
-          s = s.replace('import { SHOP_EVENTS_PATH, SHOP_EVENT_SPAWNS_PATH } from "../shop";', 'import { getShopEventsPath, getShopEventSpawnsPath } from "../shop";')
-          s = s.replace('const MAP_EVENT_SPAWNABLE_TYPES_PATH = SHOP_EVENT_SPAWNS_PATH.replace(/\\/cfgeventspawns\\.xml$/i, "/cfgspawnabletypes.xml");', 'function getMapEventSpawnableTypesPath(serverId: string) { return getShopEventSpawnsPath(serverId).replace(/\\/cfgeventspawns\\.xml$/i, "/cfgspawnabletypes.xml"); }')
-          s = s.replace('const MAP_EVENT_MISSION_DIR = SHOP_EVENTS_PATH.replace(/\\/db\\/events\\.xml$/i, "");', 'function getMapEventMissionDir(serverId: string) { return getShopEventsPath(serverId).replace(/\\/db\\/events\\.xml$/i, ""); }')
-          s = s.replace('const MAP_EVENT_ECONOMY_CORE_PATH = `${MAP_EVENT_MISSION_DIR}/cfgeconomycore.xml`;', 'function getMapEventEconomyCorePath(serverId: string) { return `${getMapEventMissionDir(serverId)}/cfgeconomycore.xml`; }')
-          s = s.replace('const MAP_EVENT_MAPGROUPPROTO_PATH = `${MAP_EVENT_MISSION_DIR}/mapgroupproto.xml`;', 'function getMapEventMapgroupProtoPath(serverId: string) { return `${getMapEventMissionDir(serverId)}/mapgroupproto.xml`; }')
-          s = s.replace('const MAP_EVENT_CUSTOM_TYPES_PATH = `${MAP_EVENT_MISSION_DIR}/custom/locked-container-types.xml`;', 'function getMapEventCustomTypesPath(serverId: string) { return `${getMapEventMissionDir(serverId)}/custom/locked-container-types.xml`; }')
-          s = s.replace('const MAP_EVENT_GROUPS_PATH = `${MAP_EVENT_MISSION_DIR}/cfgeventgroups.xml`;', 'function getMapEventGroupsPath(serverId: string) { return `${getMapEventMissionDir(serverId)}/cfgeventgroups.xml`; }')
-          s = s.replace('MAP_EVENT_SPAWNABLE_TYPES_PATH', 'getMapEventSpawnableTypesPath(serverId)')
-          s = s.replace('MAP_EVENT_ECONOMY_CORE_PATH', 'getMapEventEconomyCorePath(serverId)')
-          s = s.replace('MAP_EVENT_MAPGROUPPROTO_PATH', 'getMapEventMapgroupProtoPath(serverId)')
-          s = s.replace('MAP_EVENT_CUSTOM_TYPES_PATH', 'getMapEventCustomTypesPath(serverId)')
-          s = s.replace('MAP_EVENT_GROUPS_PATH', 'getMapEventGroupsPath(serverId)')
-          s = s.replace('MAP_EVENT_MISSION_DIR', 'getMapEventMissionDir(serverId)')
-          s = s.replace('SHOP_EVENTS_PATH', 'getShopEventsPath(serverId)')
-          s = s.replace('SHOP_EVENT_SPAWNS_PATH', 'getShopEventSpawnsPath(serverId)')
+          s = re.sub(
+              r'import \{ SHOP_EVENTS_PATH, SHOP_EVENT_SPAWNS_PATH \} from "\.\./shop";\n.*?const AIRDROP_MILITARY_GROUP_NAME',
+              '''import { getShopEventsPath, getShopEventSpawnsPath } from "../shop";
+          import { getMapEventPresets } from "./mapEventPresets";
+          import {
+            hasMapEventBlock,
+            injectMapEventIntoEventSpawnsXml,
+            injectMapEventIntoEventsXml,
+            injectMapEventIntoSpawnableTypesXml,
+            removeMapEventBlocks,
+            resolveMapEventRequest,
+          } from "./mapEventXml";
+          import type { MapEventCleanupResult, MapEventDeployResult, MapEventInjectRequest } from "./mapEventTypes";
+
+          function getMapEventSpawnableTypesPath(serverId: string) { return getShopEventSpawnsPath(serverId).replace(/\\/cfgeventspawns\\.xml$/i, "/cfgspawnabletypes.xml"); }
+          function getMapEventMissionDir(serverId: string) { return getShopEventsPath(serverId).replace(/\\/db\\/events\\.xml$/i, ""); }
+          function getMapEventEconomyCorePath(serverId: string) { return `${getMapEventMissionDir(serverId)}/cfgeconomycore.xml`; }
+          function getMapEventMapgroupProtoPath(serverId: string) { return `${getMapEventMissionDir(serverId)}/mapgroupproto.xml`; }
+          function getMapEventCustomTypesPath(serverId: string) { return `${getMapEventMissionDir(serverId)}/custom/locked-container-types.xml`; }
+          function getMapEventGroupsPath(serverId: string) { return `${getMapEventMissionDir(serverId)}/cfgeventgroups.xml`; }
+
+          const AIRDROP_MILITARY_GROUP_NAME''',
+              s, count=1, flags=re.S
+          )
+          for old, new in [
+              ('MAP_EVENT_SPAWNABLE_TYPES_PATH', 'getMapEventSpawnableTypesPath(serverId)'),
+              ('MAP_EVENT_ECONOMY_CORE_PATH', 'getMapEventEconomyCorePath(serverId)'),
+              ('MAP_EVENT_MAPGROUPPROTO_PATH', 'getMapEventMapgroupProtoPath(serverId)'),
+              ('MAP_EVENT_CUSTOM_TYPES_PATH', 'getMapEventCustomTypesPath(serverId)'),
+              ('MAP_EVENT_GROUPS_PATH', 'getMapEventGroupsPath(serverId)'),
+              ('MAP_EVENT_MISSION_DIR', 'getMapEventMissionDir(serverId)'),
+              ('SHOP_EVENTS_PATH', 'getShopEventsPath(serverId)'),
+              ('SHOP_EVENT_SPAWNS_PATH', 'getShopEventSpawnsPath(serverId)'),
+          ]:
+              s = s.replace(old, new)
           service.write_text(s)
 
           admin = Path('artifacts/api-server/src/routes/adminPanel.ts')
@@ -82,7 +120,6 @@ jobs:
           corepack enable
           corepack prepare pnpm@10.25.0 --activate
           unset npm_config_user_agent
-          pnpm --version
           pnpm install
           pnpm -w run typecheck:libs
           pnpm --filter @workspace/api-server typecheck
