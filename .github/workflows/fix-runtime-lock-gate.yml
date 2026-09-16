@@ -1,0 +1,35 @@
+name: fix runtime lock gate
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - name: Restore runtime gate
+        shell: python
+        run: |
+          from pathlib import Path
+          p = Path('artifacts/api-server/src/lib/serverRuntime.ts')
+          text = p.read_text()
+          old = '''export async function runWithServerRuntimeLock<T>(serverId: string, work: () => Promise<T>): Promise<{ skipped: boolean; value?: T }> {\n  const context = getServerRuntimeContext(serverId);\n  return runWithServerLock(context.serverId, work);\n}'''
+          new = '''export async function runWithServerRuntimeLock<T>(serverId: string, work: () => Promise<T>): Promise<{ skipped: boolean; value?: T }> {\n  const context = getServerRuntimeContext(serverId);\n  if (!canExecuteManagedServerRuntime(context.serverId)) {\n    throw new Error(`Server ${context.serverId} runtime is disabled or has not passed the activation gate.`);\n  }\n  return runWithServerLock(context.serverId, work);\n}'''
+          if old not in text:
+              raise SystemExit('expected runtime lock implementation not found')
+          p.write_text(text.replace(old, new, 1))
+      - name: Commit and remove workflow
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add artifacts/api-server/src/lib/serverRuntime.ts
+          git rm .github/workflows/fix-runtime-lock-gate.yml
+          git commit -m "fix: enforce runtime gate for every managed server"
+          git push origin main
