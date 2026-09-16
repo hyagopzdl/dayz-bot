@@ -8,6 +8,7 @@ import adminPanelRoutes from "./routes/adminPanel";
 import serverControlPanelRoutes from "./routes/serverControlPanel";
 import nitradoDiagnosticRoutes from "./routes/nitradoDiagnostic";
 import nitradoSetupRoutes from "./routes/nitradoSetup";
+import nitradoSelfServiceCompatRoutes from "./routes/nitradoSelfServiceCompat";
 import { logger } from "./lib/logger";
 import { recordNetworkTransfer } from "./lib/networkMetrics";
 import authRoutes from "./routes/auth";
@@ -18,35 +19,20 @@ import adminAuthRoutes from "./routes/adminAuth";
 
 const app: Express = express();
 
-app.use(
-  pinoHttp({
-    logger,
-    serializers: {
-      req(req) { return { id: req.id, method: req.method, url: req.url?.split("?")[0] }; },
-      res(res) { return { statusCode: res.statusCode }; },
-    },
-  }),
-);
-
+app.use(pinoHttp({ logger, serializers: {
+  req(req) { return { id: req.id, method: req.method, url: req.url?.split("?")[0] }; },
+  res(res) { return { statusCode: res.statusCode }; },
+} }));
 app.set("trust proxy", 1);
 app.use(cors());
-
 app.use((req, res, next) => {
   let responseBytes = 0;
   const originalWrite = res.write.bind(res);
   const originalEnd = res.end.bind(res);
-  (res as any).write = (chunk: any, ...args: any[]) => {
-    if (chunk) responseBytes += Buffer.isBuffer(chunk) ? chunk.length : Buffer.byteLength(String(chunk));
-    return (originalWrite as any)(chunk, ...args);
-  };
-  (res as any).end = (chunk?: any, ...args: any[]) => {
-    if (chunk) responseBytes += Buffer.isBuffer(chunk) ? chunk.length : Buffer.byteLength(String(chunk));
-    recordNetworkTransfer({ service: "http-responses", operation: `${req.method} ${req.path || req.url.split("?")[0]}`, direction: "http-response", bytes: responseBytes, ok: res.statusCode < 500 });
-    return (originalEnd as any)(chunk, ...args);
-  };
+  (res as any).write = (chunk: any, ...args: any[]) => { if (chunk) responseBytes += Buffer.isBuffer(chunk) ? chunk.length : Buffer.byteLength(String(chunk)); return (originalWrite as any)(chunk, ...args); };
+  (res as any).end = (chunk?: any, ...args: any[]) => { if (chunk) responseBytes += Buffer.isBuffer(chunk) ? chunk.length : Buffer.byteLength(String(chunk)); recordNetworkTransfer({ service: "http-responses", operation: `${req.method} ${req.path || req.url.split("?")[0]}`, direction: "http-response", bytes: responseBytes, ok: res.statusCode < 500 }); return (originalEnd as any)(chunk, ...args); };
   next();
 });
-
 app.use(cookieParser());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -56,16 +42,15 @@ app.use(attachAdminSession);
 app.get("/", (_req, res) => { res.send("ok"); });
 app.use("/api/auth", authRoutes);
 app.use(playerPortalRoutes);
-
 app.use("/admin", nitradoDiagnosticRoutes);
 app.use("/admin", adminRoutes);
 app.use("/admin-panel", adminAuthRoutes);
 app.use("/admin-panel", serverControlPanelRoutes);
-// Token-first Nitrado setup is mounted before the legacy onboarding routes so the
-// new first-access flow is available without changing the existing admin panel.
+// Self-service Nitrado routes must run before the legacy admin-panel guard that
+// expects a server-bound admin session. Organization members can discover and
+// validate their own Nitrado services before a managed_server exists.
 app.use("/admin-panel", nitradoSetupRoutes);
+app.use("/admin-panel", nitradoSelfServiceCompatRoutes);
 app.use("/admin-panel", adminPanelRoutes);
-
 app.use("/api", router);
-
 export default app;
