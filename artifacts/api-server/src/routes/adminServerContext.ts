@@ -1,23 +1,37 @@
 import { Router } from "express";
 import { createAdminSession, setAdminSessionCookie } from "../auth/adminSession";
-import { getAdminServerAccess } from "../lib/adminUsers";
+import { getAdminServerAccess, listAdminServerAccess } from "../lib/adminUsers";
 import { getManagedServerById, listManagedServers } from "../lib/serverRegistry";
 
 const router = Router();
 
 /**
- * Switches the active server context for the authenticated admin session.
- * The selected server is still authorized against the admin's persisted access,
- * so changing the UI context can never grant cross-tenant access.
+ * Returns only servers explicitly granted to the authenticated admin.
+ * Organization membership alone is not enough to expose a server in the
+ * selector: the server access row is the final authorization boundary.
  */
 router.get("/context", async (req, res) => {
   const session = req.adminSession;
-  if (!session) return res.redirect("/admin-panel/login");
+  if (!session) return res.status(401).json({ error: "ADMIN_AUTH_REQUIRED" });
 
-  const servers = listManagedServers().filter((server) => server.enabled);
+  const accessRows = await listAdminServerAccess(session.adminUserId);
+  const accessByServerId = new Map(accessRows.map((access) => [access.serverId, access]));
+  const servers = listManagedServers().filter((server) => {
+    if (!server.enabled) return false;
+    const access = accessByServerId.get(server.id);
+    return Boolean(access && access.organizationId === server.organizationId);
+  });
+
   return res.json({
     activeServerId: session.serverId,
-    servers: servers.map((server) => ({ id: server.id, name: server.name, organizationId: server.organizationId, runtimeEnabled: server.runtimeEnabled })),
+    servers: servers.map((server) => ({
+      id: server.id,
+      name: server.name,
+      organizationId: server.organizationId,
+      runtimeEnabled: server.runtimeEnabled,
+      onboardingStatus: server.onboardingStatus,
+      role: accessByServerId.get(server.id)?.role || "viewer",
+    })),
   });
 });
 
