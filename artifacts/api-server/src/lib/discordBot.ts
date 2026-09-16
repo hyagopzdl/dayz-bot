@@ -6,7 +6,8 @@ import { createDiscordFeedRuntime } from "./discord/modules/feeds/runtime";
 import { registerInteractionHandlers } from "./discord/interactions";
 import { registerSecondaryManagedServerInteractions } from "./discord/secondaryInteractions";
 import { registerMemberFeed } from "./discord/modules/memberFeed";
-import { applyServiceSettingsToCommandSettings } from "./serviceSettings";
+import { applyServiceSettingsToCommandSettings, DEFAULT_SERVICE_SETTINGS } from "./serviceSettings";
+import { normalizeDiscordCommandSettings } from "./discord/commandSettings";
 import { getPrimaryServerId, listManagedServers } from "./serverRegistry";
 import { getServerRuntimeContext } from "./serverRuntime";
 
@@ -21,23 +22,36 @@ export function getDiscordClient() {
 export { registerKillStreakFromKill } from "./discord/modules/killstreak/service";
 
 export async function syncDiscordCommandsForManagedServer(serverId: string) {
-  const scope = serverId === getPrimaryServerId() ? "full" : "core";
-  let settings: ReturnType<typeof applyServiceSettingsToCommandSettings> | undefined;
+  const primary = serverId === getPrimaryServerId();
+  const scope = primary ? "full" : "core";
+  let settings: ReturnType<typeof applyServiceSettingsToCommandSettings>;
 
-  // Phase 17B: command settings are data-plane state and do not require the
-  // Nitrado runtime activation gate. Every bound guild can therefore use its
-  // identity/economy/core command surface during onboarding or runtime pauses.
-  const stateAccess = createDiscordStateAccess(serverId);
-  const commandState = await stateAccess.getState();
-  settings = applyServiceSettingsToCommandSettings(
-    commandState.discordCommandSettings,
-    commandState.serviceSettings,
-  );
+  if (primary) {
+    // The primary command surface may legitimately depend on persisted service
+    // settings, so it is the only command-registration path allowed to hydrate
+    // primary state during Discord boot.
+    const stateAccess = createDiscordStateAccess(serverId);
+    const commandState = await stateAccess.getState();
+    settings = applyServiceSettingsToCommandSettings(
+      commandState.discordCommandSettings,
+      commandState.serviceSettings,
+    );
+  } else {
+    // Secondary command registration is control-plane work. It must not force a
+    // full tenant state hydration for every guild during a single Discord ready
+    // event. Commands use safe defaults at registration time; the interaction
+    // handler loads the tenant state only when an interaction actually needs it.
+    settings = applyServiceSettingsToCommandSettings(
+      normalizeDiscordCommandSettings({}),
+      DEFAULT_SERVICE_SETTINGS,
+    );
+  }
 
   await registerDiscordCommands(client, settings, serverId, scope);
-  if (client.isReady?.() && serverId !== getPrimaryServerId()) {
-    await ensureManagedServerFeedRuntime(serverId);
-  }
+
+  // Feed runtimes are data-plane work and are owned by the centralized runtime
+  // scheduler. Do not create/update a secondary feed during command registration.
+  if (client.isReady?.() && !primary) return;
 }
 
 async function ensureManagedServerFeedRuntime(serverId: string) {
@@ -101,8 +115,9 @@ async function syncSecondaryManagedServerCommands() {
   const servers = listManagedServers().filter((server) => !server.primary && server.enabled && server.integrations.discordGuildId);
   for (const server of servers) {
     try {
+      // Registration is intentionally state-free. A tenant is hydrated only when
+      // a real command or runtime cycle needs its data.
       await syncDiscordCommandsForManagedServer(server.id);
-      await ensureManagedServerFeedRuntime(server.id);
     } catch (error) {
       console.error(`❌ erro sincronizando comandos Discord [${server.id}]:`, error);
     }
@@ -133,21 +148,10 @@ export async function startDiscordBot(serverId = getPrimaryServerId()) {
   client.once("ready", async () => {
     console.log(`🤖 Discord conectado para ${runtime.server.name} (${serverId})`);
 
-    // Register the secondary interaction router before any primary feed/channel
-    // initialization. A failure while resolving the primary runtime must never
-    // leave another connected guild with slash commands but no handler.
     registerSecondaryManagedServerInteractions(client);
-
-    // Slash commands are an integration/onboarding concern, not a gameplay
-    // runtime-readiness concern. Any enabled managed server with a bound guild
-    // must receive its command surface after every bot restart.
     await syncSecondaryManagedServerCommands();
     registerManagedServerMemberFeeds();
 
-    // The global Discord client may remain connected while this server is
-    // disabled, but no primary-server commands, feeds, interactions, or state
-    // reads may be initialized. This is the server master switch: enabled
-    // secondary servers continue to operate through the shared client.
     const primaryServer = listManagedServers().find((server) => server.id === serverId);
     if (primaryServer && !primaryServer.enabled) {
       console.log(`⏸️ Discord runtime do servidor desativado; mantendo apenas o cliente global [${serverId}]`);
