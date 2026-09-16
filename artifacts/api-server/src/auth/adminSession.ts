@@ -22,9 +22,13 @@ function encode(value: unknown) { const payload = Buffer.from(JSON.stringify(val
 function decode<T>(token: string): T | null {
   const [payload, signature] = token.split(".");
   if (!payload || !signature) return null;
-  const a = Buffer.from(signature); const b = Buffer.from(sign(payload));
-  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
-  try { return JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as T; } catch { return null; }
+  try {
+    const a = Buffer.from(signature); const b = Buffer.from(sign(payload));
+    if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
+    return JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as T;
+  } catch {
+    return null;
+  }
 }
 function secure(req: Request) { return req.secure || req.headers["x-forwarded-proto"] === "https" || process.env.NODE_ENV === "production"; }
 
