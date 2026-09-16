@@ -44,6 +44,19 @@ app.use(attachPortalSession);
 app.use(attachAdminSession);
 app.get("/", (_req, res) => { res.send("ok"); });
 app.use("/api/auth", authRoutes);
+
+// After Discord OAuth returns to the SaaS onboarding, finish the handoff into
+// the real server-management panel. The legacy ?token=... URL is intentionally
+// not used here because it binds access to the old single-server flow.
+app.get("/saas", (req, res, next) => {
+  const serverId = String(req.query.server || "").trim();
+  const discordConnected = String(req.query.discord || "") === "connected";
+  if (req.portalSession && discordConnected && serverId) {
+    return res.redirect(`/admin-panel/onboarding/panel?serverId=${encodeURIComponent(serverId)}`);
+  }
+  return next();
+});
+
 app.use(playerPortalRoutes);
 app.use("/admin", nitradoDiagnosticRoutes);
 app.use("/admin", adminRoutes);
