@@ -25,7 +25,7 @@ export function getServerRuntimeContext(serverId?: string) {
   if (!descriptor) throw new Error(`Unknown managed server: ${targetId}`);
   const staggerOffsetMs = (stableHash(descriptor.id) % 10) * 30_000;
   setServerRuntimeIsolationStatus({ initialized: true, contextServerId: descriptor.id, nitradoRoutingNamespaced: Boolean(descriptor.integrations.nitradoServiceId && descriptor.runtime.nitradoBaseDir), discordRoutingNamespaced: true, processingLockNamespaced: true, staggerOffsetMs, activeLocks: runtimeLocks.size, lockSkips, executionContextNamespaced: true, contextRuns, contextFallbacks, lastContextServerId, stateCacheNamespaced: true, schedulerCentralized: true, admStrategyNamespaced: true, admParserStorageNamespaced: true, persistenceRuntimeNamespaced: true, positionHistoryNamespaced: true, discordLoopGuardsNamespaced: true, mapSchedulersContextualized: true, activationReadiness: true, lastError: undefined });
-  return { server: descriptor, serverId: descriptor.id, staggerOffsetMs, nitrado: { serviceId: descriptor.integrations.nitradoServiceId, baseDir: descriptor.runtime.nitradoBaseDir }, discord: { guildId: descriptor.integrations.discordGuildId, ...descriptor.runtime.discord }, storage: getAdmStoragePaths(descriptor) };
+  return { server: descriptor, serverId: descriptor.id, isPrimary: false, staggerOffsetMs, nitrado: { serviceId: descriptor.integrations.nitradoServiceId, baseDir: descriptor.runtime.nitradoBaseDir }, discord: { guildId: descriptor.integrations.discordGuildId, ...descriptor.runtime.discord }, storage: getAdmStoragePaths(descriptor) };
 }
 
 function getAdmStoragePaths(descriptor: ManagedServerDescriptor) {
@@ -38,7 +38,7 @@ export function getServerStoragePlan(serverId: string) {
   const descriptor = getManagedServerById(targetId);
   if (!descriptor) throw new Error(`Unknown managed server: ${targetId}`);
   const storage = getAdmStoragePaths(descriptor);
-  return { serverId: descriptor.id, admLogDir: storage.logDir, admManifestFile: storage.manifestFile, stateFile: path.resolve(process.cwd(), "state_servers", descriptor.id, "state.json") };
+  return { serverId: descriptor.id, isPrimary: false, admLogDir: storage.logDir, admManifestFile: storage.manifestFile, stateFile: path.resolve(process.cwd(), "state_servers", descriptor.id, "state.json") };
 }
 
 export function getActiveServerId() {
