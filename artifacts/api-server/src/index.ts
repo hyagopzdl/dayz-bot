@@ -1,17 +1,15 @@
 import app from "./app";
 import { logger } from "./lib/logger";
-import { setAdmDownloadMode } from "./lib/nitradoDownloader";
 import { startDiscordBot } from "./lib/discordBot";
-import { getStateAsync } from "./lib/state";
-import { initializeShopCatalog } from "./lib/shopCatalog";
-import { normalizeServiceSettings } from "./lib/serviceSettings";
 import { getPrimaryServerId } from "./lib/serverRegistry";
-import { getServerRuntimeContext, runInServerDataContext, runInServerRuntimeContext } from "./lib/serverRuntime";
-import { migratePrimaryNitradoCredentialToServerScope, hydrateServerNitradoSecretsFromDb, normalizeManagedServerRuntimeConfig } from "./lib/serverNitradoMigration";
+import {
+  hydrateServerNitradoSecretsFromDb,
+  migratePrimaryNitradoCredentialToServerScope,
+  normalizeManagedServerRuntimeConfig,
+} from "./lib/serverNitradoMigration";
 import {
   flushExecutableManagedServerStates,
   reconcileManagedServerRuntimeActivation,
-  runManagedServerRuntimeBatch,
   startManagedServerRuntimeScheduler,
 } from "./lib/serverRuntimeCoordinator";
 
@@ -33,11 +31,11 @@ function installStateFlushHooks() {
   }
 
   process.once("SIGTERM", () => {
-    flushAndExit("SIGTERM");
+    void flushAndExit("SIGTERM");
   });
 
   process.once("SIGINT", () => {
-    flushAndExit("SIGINT");
+    void flushAndExit("SIGINT");
   });
 }
 
@@ -54,58 +52,23 @@ function startServer(port: number) {
   const server = app.listen(port, HOST, async () => {
     console.log("🌐 SERVER ONLINE");
     console.log(`🚀 Running on http://${HOST}:${port}`);
-
     logger.info({ port }, "Server listening");
+
     const primaryServerId = getPrimaryServerId();
 
-    // Registry normalization/migration is deliberately isolated from ADM mode.
-    // A failure here must not change the download mode or make one server inherit
-    // another server's credentials. The runtime readiness gate will keep affected
-    // servers out of execution until their scoped configuration is valid.
+    // Keep registry migrations and secret hydration serialized. These operations
+    // are database/bootstrap work and must not overlap the first runtime cycle.
     try {
       await normalizeManagedServerRuntimeConfig();
       await migratePrimaryNitradoCredentialToServerScope();
+      await hydrateServerNitradoSecretsFromDb();
     } catch (err) {
       console.error("❌ unable to prepare server-scoped Nitrado registry:", err);
     }
 
-    let state: Awaited<ReturnType<typeof getStateAsync>> | undefined;
-    try {
-      state = await runInServerRuntimeContext(primaryServerId, () => getStateAsync());
-      const runtime = getServerRuntimeContext(primaryServerId);
-      console.log(`🧭 runtime isolado: ${runtime.server.name} (${runtime.serverId})`);
-    } catch (err) {
-      console.error("❌ unable to initialize ADM state:", err);
-    }
-
-    // Secret hydration is registry infrastructure, not an ADM mode decision.
-    // Keep it separate so a credential-hydration problem cannot silently switch
-    // the entire service to shadow mode or affect another tenant.
-    try {
-      await hydrateServerNitradoSecretsFromDb();
-    } catch (err) {
-      console.error("❌ unable to hydrate server-scoped Nitrado secrets:", err);
-    }
-
-    if (state) {
-      try {
-        const settings = normalizeServiceSettings(state.serviceSettings);
-        setAdmDownloadMode(settings.admDownloadMode);
-        console.log(`📥 ADM download mode: ${settings.admDownloadMode}`);
-      } catch (err) {
-        console.error("❌ unable to resolve ADM download mode; keeping configured mode:", err);
-      }
-    }
-
-    try {
-      await runInServerDataContext(primaryServerId, () => initializeShopCatalog());
-      console.log("🛒 shop catalog loaded from Neon");
-    } catch (err) {
-      console.error("❌ shop catalog unavailable:", err);
-    }
-
-    // Phase 17B: Discord is a control/interaction plane and must never wait for
-    // a potentially large ADM download. Start it independently from game runtime.
+    // The Discord control plane starts independently. It is responsible for its
+    // own lazy state initialization; the HTTP boot path must not initialize the
+    // same primary state a second time just to prepare the first runtime cycle.
     try {
       console.log("🚀 iniciando bot do Discord multi-tenant...");
       void startDiscordBot(primaryServerId);
@@ -113,14 +76,20 @@ function startServer(port: number) {
       console.error("❌ erro ao iniciar Discord:", err);
     }
 
-    // One centralized scheduler for every tenant. Reconcile newly-onboarded,
-    // validated servers into their first runtime activation, then process the
-    // complete executable registry sequentially (no timer/poller per tenant).
-    await reconcileManagedServerRuntimeActivation();
+    // Reconciliation only updates persisted runtime flags. Do not execute a full
+    // ADM download/parser cycle during boot: the centralized scheduler will run
+    // the first cycle after startup. This prevents two expensive initialization
+    // paths from competing for memory/CPU immediately after a Render deploy.
+    try {
+      await reconcileManagedServerRuntimeActivation();
+    } catch (err) {
+      console.error("❌ erro reconciliando runtimes no startup:", err);
+    }
+
+    // One centralized scheduler for every tenant. There is intentionally no
+    // immediate startup batch here. The first cycle is handled by the scheduler,
+    // keeping startup memory bounded and avoiding an activation/deploy burst.
     startManagedServerRuntimeScheduler();
-    runManagedServerRuntimeBatch("startup").catch((err) => {
-      console.error("❌ erro iniciando runtimes multi-tenant:", err);
-    });
   });
 
   server.on("error", (err: any) => {
