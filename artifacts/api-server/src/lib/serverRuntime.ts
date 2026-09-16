@@ -131,9 +131,6 @@ function runInKnownServerContext<T>(
   requireExecutable: boolean,
 ): T {
   const context = getServerRuntimeContext(serverId);
-  // The primary server is the legacy-compatible bootstrap runtime. It must be
-  // able to initialize the service before the multi-server activation gate is
-  // satisfied; secondary servers remain strictly subject to that gate.
   const enforceActivationGate = requireExecutable;
   if (enforceActivationGate && !canExecuteManagedServerRuntime(context.serverId)) {
     throw new Error(`Server ${context.serverId} runtime is disabled or has not passed the activation gate.`);
@@ -206,11 +203,6 @@ async function runWithServerLock<T>(serverId: string, work: () => Promise<T>): P
 
 export async function runWithServerRuntimeLock<T>(serverId: string, work: () => Promise<T>): Promise<{ skipped: boolean; value?: T }> {
   const context = getServerRuntimeContext(serverId);
-  // Keep the primary bootstrap path operational while preserving the strict
-  // activation gate for every secondary managed server.
-  if (!context.isPrimary && !canExecuteManagedServerRuntime(context.serverId)) {
-    throw new Error(`Server ${context.serverId} runtime is disabled or has not passed the activation gate.`);
-  }
   return runWithServerLock(context.serverId, work);
 }
 
@@ -220,7 +212,8 @@ export async function runWithServerMaintenanceLock<T>(serverId: string, work: ()
 }
 
 export function assertPrimaryRuntimeServer(serverId: string) {
-  if (serverId !== primaryId) {
-    throw new Error(`Legacy FTP/Discord state access remains primary-only during Phase 14 operational hardening (${serverId}).`);
+  const context = getServerRuntimeContext(serverId);
+  if (!canExecuteManagedServerRuntime(context.serverId)) {
+    throw new Error(`Server ${context.serverId} runtime is disabled or has not passed the activation gate.`);
   }
 }
