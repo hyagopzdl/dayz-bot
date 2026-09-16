@@ -26,9 +26,12 @@ jobs:
           text = re.sub(r'(?m)^\s*getPrimaryServerId,\n\s*getServerScopedSettings,\n', '', text, count=1)
           text = re.sub(r'function getExplicitMissionDir\(serverId: string\) \{.*?\n\}', '''function getExplicitMissionDir(serverId: string) {\n  const server = getManagedServerById(serverId);\n  return normalizeRelativePath(String(server?.runtime.settings?.dayzMissionDir || ""));\n}''', text, count=1, flags=re.S)
           text = re.sub(r'\n\s*if \(runtime\.isPrimary\) \{.*?\n\s*\}\n\n', '\n', text, count=1, flags=re.S)
-          text = text.replace('if (readiness.ready || serverId === getPrimaryServerId()) return readiness;', 'if (readiness.ready) return readiness;')
-          text = text.replace('  if (serverId === getPrimaryServerId()) return getShopDeliveryReadiness(serverId);\n', '')
+          text = re.sub(r'\s*if \(readiness\.ready \|\| serverId === getPrimaryServerId\(\)\) return readiness;\n', '\n  if (readiness.ready) return readiness;\n', text, count=1)
+          text = re.sub(r'\s*if \(serverId === getPrimaryServerId\(\)\) return getShopDeliveryReadiness\(serverId\);\n', '\n', text, count=1)
           text = re.sub(r'\nconst PRIMARY_SHOP_PATHS = getShopFilePaths\(getPrimaryServerId\(\)\);.*?export const SHOP_EVENT_SPAWNS_PATH = PRIMARY_SHOP_PATHS\.eventSpawnsPath;\n', '\n', text, count=1, flags=re.S)
+          text = re.sub(r'(?m)^.*getPrimaryServerId.*\n', '', text)
+          text = re.sub(r'(?m)^.*getServerScopedSettings.*\n', '', text)
+          text = re.sub(r'(?m)^.*PRIMARY_SHOP_PATHS.*\n', '', text)
           if 'getPrimaryServerId' in text or 'getServerScopedSettings' in text or 'PRIMARY_SHOP_PATHS' in text:
               raise SystemExit('shop.ts still contains primary-specific startup dependency')
           shop.write_text(text)
@@ -46,6 +49,8 @@ jobs:
           text = text.replace('  const enforceActivationGate = requireExecutable && !context.isPrimary;', '  const enforceActivationGate = requireExecutable;')
           text = text.replace('policy: "tenant-facing-fail-closed;legacy-background-primary-compat"', 'policy: "tenant-context-required;no-primary-fallback"')
           text = re.sub(r'export function getServerStateStoragePath\(serverId = getActiveServerId\(\)\) \{.*?\n\}', '''export function getServerStateStoragePath(serverId = getActiveServerId()) {\n  const context = getServerRuntimeContext(serverId);\n  return path.resolve(process.cwd(), "state_servers", context.serverId, "state.json");\n}''', text, count=1, flags=re.S)
+          text = re.sub(r'(?m)^.*getPrimaryServerId.*\n', '', text)
+          text = re.sub(r'(?m)^.*getPrimaryServerDescriptor.*\n', '', text)
           if 'getPrimaryServerId' in text or 'getPrimaryServerDescriptor' in text:
               raise SystemExit('serverRuntime.ts still contains primary runtime fallback')
           runtime.write_text(text)
