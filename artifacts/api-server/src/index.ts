@@ -1,7 +1,6 @@
 import app from "./app";
 import { logger } from "./lib/logger";
 import { startDiscordBot } from "./lib/discordBot";
-import { getPrimaryServerId } from "./lib/serverRegistry";
 import {
   flushExecutableManagedServerStates,
   startManagedServerRuntimeScheduler,
@@ -34,8 +33,6 @@ function installProcessDiagnostics() {
   process.on("uncaughtException", (error) => {
     console.error("💥 UNCAUGHT EXCEPTION", error);
     logMemory("uncaught-exception");
-    // Let Render restart the process after a fatal exception instead of keeping
-    // a potentially corrupted runtime alive.
     process.exitCode = 1;
   });
 
@@ -89,22 +86,14 @@ function startServer(port: number) {
     logger.info({ port }, "Server listening");
     logMemory("http-listening");
 
-    const primaryServerId = getPrimaryServerId();
-
-    // Production boot must be cheap and deterministic. Database migrations,
-    // registry hydration, Nitrado discovery and runtime activation are NOT boot
-    // work. They are request/runtime work and must never be allowed to make the
-    // HTTP process miss its resource budget during a deploy.
-    //
-    // The previous boot path executed all of those operations before Discord,
-    // which meant one Render restart could trigger several DB scans, registry
-    // materializations and state initializations at once. That is exactly the
-    // wrong lifecycle boundary for a memory-constrained web service.
+    // Boot is intentionally independent from tenant state. The HTTP process
+    // becomes healthy first; Discord and periodic server execution discover
+    // their server contexts from the persisted registry.
     setImmediate(() => {
       logMemory("post-listen-before-discord");
       try {
         console.log("🚀 iniciando bot do Discord multi-tenant...");
-        void startDiscordBot(primaryServerId).catch((err) => {
+        void startDiscordBot().catch((err) => {
           console.error("❌ erro assíncrono ao iniciar Discord:", err);
           logMemory("discord-start-failed");
         });
@@ -114,9 +103,9 @@ function startServer(port: number) {
       }
     });
 
-    // The scheduler is deliberately started independently of boot. It remains
-    // the single owner of periodic tenant runtime execution and will only touch
-    // state after the process is already healthy and serving HTTP.
+    // The scheduler is the single owner of periodic tenant runtime execution.
+    // It works from the same persisted server registry as the HTTP/Discord
+    // layers, so every server follows the same lifecycle.
     startManagedServerRuntimeScheduler();
     logMemory("scheduler-started");
   });
