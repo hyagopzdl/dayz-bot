@@ -1,13 +1,12 @@
 import { downloadADM, setAdmDownloadMode } from "./nitradoDownloader";
 import { getLeaderboard } from "./parser";
-import { flushServerRuntimePendingStateAsync, getStateAsync, saveStateAsync } from "./state";
+import { flushServerRuntimePendingStateAsync, getStateAsync, saveStateAsync, setManagedServerRuntimeEnabled } from "./state";
 import { isShopServiceEnabled, normalizeServiceSettings } from "./serviceSettings";
 import { autoDeployPendingShopOrdersIfNeeded, getShopResetMonitorPersistenceKey, pollShopResetStatusAndAutoClear } from "./shop";
 import { getPlaytimeRewardConfig, processPlaytimeRewards } from "./discord/modules/economy/rewards";
 import { refreshDiscordFeedsForManagedServer } from "./discordBot";
 import {
   getManagedServerById,
-  getPrimaryServerId,
   hasManagedServerRuntimeActivation,
   hasMatchingActivationPreflight,
   hasMatchingManagedServerNitradoValidation,
@@ -15,26 +14,17 @@ import {
   listManagedServers,
   type ManagedServerDescriptor,
 } from "./serverRegistry";
-import {
-  recordMainCycleCompleted,
-  recordMainCycleSkippedOverlap,
-  recordMainCycleStarted,
-} from "./runtimeMetrics";
+import { recordMainCycleCompleted, recordMainCycleSkippedOverlap, recordMainCycleStarted } from "./runtimeMetrics";
 import { runManagedServerActivationPreflight } from "./serverPreflight";
 import { hydrateKnownServerPlayers, scheduleTenantCommerceMirror } from "./tenantCommerceStore";
-import { setManagedServerRuntimeEnabled } from "./state";
-import {
-  runInServerMaintenanceContext,
-  runInServerRuntimeContext,
-  runWithServerRuntimeLock,
-} from "./serverRuntime";
+import { runInServerMaintenanceContext, runInServerRuntimeContext, runWithServerRuntimeLock } from "./serverRuntime";
 
 const RUNTIME_CYCLE_INTERVAL_MS = 5 * 60 * 1000;
-const SECONDARY_CIRCUIT_FAILURE_THRESHOLD = 3;
-const SECONDARY_CIRCUIT_COOLDOWN_MS = 15 * 60 * 1000;
+const CIRCUIT_FAILURE_THRESHOLD = 3;
+const CIRCUIT_COOLDOWN_MS = 15 * 60 * 1000;
 const RUNTIME_STALE_AFTER_MS = 12 * 60 * 1000;
 
-type RuntimeCycleReason = "startup" | "scheduler" | "activation" | "manual";
+type RuntimeCycleReason = "scheduler" | "activation" | "manual";
 
 type ServerRuntimeCycleStatus = {
   serverId: string;
@@ -97,17 +87,15 @@ function recordCycleFailure(serverId: string, error?: unknown) {
   const status = getStatus(serverId);
   status.consecutiveFailures += 1;
   if (error) status.lastError = error instanceof Error ? error.message : String(error);
-  if (serverId === getPrimaryServerId()) return;
-  if (status.consecutiveFailures < SECONDARY_CIRCUIT_FAILURE_THRESHOLD) return;
+  if (status.consecutiveFailures < CIRCUIT_FAILURE_THRESHOLD) return;
 
   const now = Date.now();
   status.circuitState = "open";
   status.circuitOpenedAt = new Date(now).toISOString();
-  status.circuitRetryAt = new Date(now + SECONDARY_CIRCUIT_COOLDOWN_MS).toISOString();
+  status.circuitRetryAt = new Date(now + CIRCUIT_COOLDOWN_MS).toISOString();
 }
 
 function shouldSkipForCircuit(serverId: string, forceCircuitProbe = false) {
-  if (serverId === getPrimaryServerId()) return false;
   const status = getStatus(serverId);
   if (status.circuitState !== "open") return false;
   const retryAt = status.circuitRetryAt ? Date.parse(status.circuitRetryAt) : 0;
@@ -142,111 +130,98 @@ export async function runManagedServerRuntimeCycle(
   let locked: { skipped: boolean; value?: unknown };
   try {
     locked = await runWithServerRuntimeLock(serverId, async () => runInServerRuntimeContext(serverId, async () => {
-    const startedAt = new Date().toISOString();
-    const cycleStarted = Date.now();
-    let downloadDurationMs = 0;
-    let parserDurationMs = 0;
-    let downloadOk = true;
-    let parserOk = true;
+      const startedAt = new Date().toISOString();
+      const cycleStarted = Date.now();
+      let downloadDurationMs = 0;
+      let parserDurationMs = 0;
+      let downloadOk = true;
+      let parserOk = true;
 
-    status.lastReason = reason;
-    status.lastStartedAt = startedAt;
-    status.lastError = undefined;
-    recordMainCycleStarted(serverId);
-    console.log(`🔁 LOOP PRINCIPAL [${serverId}] (${reason})`);
+      status.lastReason = reason;
+      status.lastStartedAt = startedAt;
+      status.lastError = undefined;
+      recordMainCycleStarted(serverId);
+      console.log(`🔁 LOOP PRINCIPAL [${serverId}] (${reason})`);
 
-    // Loading the server-scoped state first initializes a brand-new namespace
-    // without touching the primary and gives each runtime its own ADM strategy.
-    const state = await getStateAsync();
-    await hydrateKnownServerPlayers(serverId).catch((err) => console.error(`❌ known players hydrate failed [${serverId}]`, err));
-    scheduleTenantCommerceMirror(state, serverId);
-    const settings = normalizeServiceSettings(state.serviceSettings);
-    setAdmDownloadMode(settings.admDownloadMode, serverId);
-
-    const downloadStarted = Date.now();
-    try {
-      await downloadADM(serverId);
-    } catch (err) {
-      downloadOk = false;
-      status.lastError = err instanceof Error ? err.message : String(err);
-      console.error(`❌ erro download [${serverId}]:`, err);
-    } finally {
-      downloadDurationMs = Date.now() - downloadStarted;
-    }
-
-    const parserStarted = Date.now();
-    try {
-      console.log(`🔥 PARSER AUTOMÁTICO [${serverId}]`);
-      await getLeaderboard();
+      const state = await getStateAsync();
+      await hydrateKnownServerPlayers(serverId).catch((err) => console.error(`❌ known players hydrate failed [${serverId}]`, err));
       scheduleTenantCommerceMirror(state, serverId);
+      const settings = normalizeServiceSettings(state.serviceSettings);
+      setAdmDownloadMode(settings.admDownloadMode, serverId);
 
-      // Feed refresh piggybacks on the centralized ADM cycle. This keeps
-      // rankings/online/killfeed isolated per server without one timer per tenant.
+      const downloadStarted = Date.now();
       try {
-        await refreshDiscordFeedsForManagedServer(serverId);
-      } catch (discordFeedError) {
-        console.error(`❌ erro atualizando feeds Discord [${serverId}]:`, discordFeedError);
+        await downloadADM(serverId);
+      } catch (err) {
+        downloadOk = false;
+        status.lastError = err instanceof Error ? err.message : String(err);
+        console.error(`❌ erro download [${serverId}]:`, err);
+      } finally {
+        downloadDurationMs = Date.now() - downloadStarted;
       }
 
-      // Phase 17D: identical housekeeping for every tenant. No primary-only timers.
-      if (isShopServiceEnabled(state)) {
+      const parserStarted = Date.now();
+      try {
+        console.log(`🔥 PARSER AUTOMÁTICO [${serverId}]`);
+        await getLeaderboard();
+        scheduleTenantCommerceMirror(state, serverId);
+
         try {
-          const deployResult = await autoDeployPendingShopOrdersIfNeeded(state);
-          const resetKeyBefore = getShopResetMonitorPersistenceKey(state);
-          const clearResult = await pollShopResetStatusAndAutoClear(state);
-          const resetChanged = resetKeyBefore !== getShopResetMonitorPersistenceKey(state);
-          if (deployResult || clearResult || resetChanged) {
-            await saveStateAsync(state, `phase17d:shop-housekeeping:${serverId}`);
-          }
-        } catch (shopError) {
-          console.error(`❌ erro no housekeeping da shop [${serverId}]:`, shopError);
+          await refreshDiscordFeedsForManagedServer(serverId);
+        } catch (discordFeedError) {
+          console.error(`❌ erro atualizando feeds Discord [${serverId}]:`, discordFeedError);
         }
-      }
 
-      const rewardConfig = getPlaytimeRewardConfig();
-      if (rewardConfig.enabled) {
-        const now = Date.now();
-        const intervalMs = Math.max(1, rewardConfig.tickMinutes) * 60_000;
-        const lastTick = rewardLastTick.get(serverId) || 0;
-        if (now - lastTick >= intervalMs) {
-          rewardLastTick.set(serverId, now);
+        if (isShopServiceEnabled(state)) {
           try {
-            const rewards = processPlaytimeRewards(state, rewardConfig);
-            if (rewards.changed) await saveStateAsync(state, `phase17d:economy-rewards:${serverId}`);
-          } catch (rewardError) {
-            console.error(`❌ erro nos rewards de economia [${serverId}]:`, rewardError);
+            const deployResult = await autoDeployPendingShopOrdersIfNeeded(state);
+            const resetKeyBefore = getShopResetMonitorPersistenceKey(state);
+            const clearResult = await pollShopResetStatusAndAutoClear(state);
+            const resetChanged = resetKeyBefore !== getShopResetMonitorPersistenceKey(state);
+            if (deployResult || clearResult || resetChanged) {
+              await saveStateAsync(state, `runtime:shop-housekeeping:${serverId}`);
+            }
+          } catch (shopError) {
+            console.error(`❌ erro no housekeeping da shop [${serverId}]:`, shopError);
           }
         }
+
+        const rewardConfig = getPlaytimeRewardConfig();
+        if (rewardConfig.enabled) {
+          const now = Date.now();
+          const intervalMs = Math.max(1, rewardConfig.tickMinutes) * 60_000;
+          const lastTick = rewardLastTick.get(serverId) || 0;
+          if (now - lastTick >= intervalMs) {
+            rewardLastTick.set(serverId, now);
+            try {
+              const rewards = processPlaytimeRewards(state, rewardConfig);
+              if (rewards.changed) await saveStateAsync(state, `runtime:economy-rewards:${serverId}`);
+            } catch (rewardError) {
+              console.error(`❌ erro nos rewards de economia [${serverId}]:`, rewardError);
+            }
+          }
+        }
+      } catch (err) {
+        parserOk = false;
+        status.lastError = err instanceof Error ? err.message : String(err);
+        console.error(`❌ erro parser [${serverId}]:`, err);
+      } finally {
+        parserDurationMs = Date.now() - parserStarted;
+        const finishedAt = new Date().toISOString();
+        const durationMs = Date.now() - cycleStarted;
+        status.cycles += 1;
+        if (!downloadOk || !parserOk) status.failures += 1;
+        status.lastFinishedAt = finishedAt;
+        status.lastDurationMs = durationMs;
+        status.lastDownloadDurationMs = downloadDurationMs;
+        status.lastParserDurationMs = parserDurationMs;
+        status.lastDownloadOk = downloadOk;
+        status.lastParserOk = parserOk;
+        recordMainCycleCompleted({ startedAt, finishedAt, durationMs, downloadDurationMs, parserDurationMs, downloadOk, parserOk }, serverId);
+        if (downloadOk && parserOk) closeCircuit(status);
+        else recordCycleFailure(serverId, status.lastError);
       }
-    } catch (err) {
-      parserOk = false;
-      status.lastError = err instanceof Error ? err.message : String(err);
-      console.error(`❌ erro parser [${serverId}]:`, err);
-    } finally {
-      parserDurationMs = Date.now() - parserStarted;
-      const finishedAt = new Date().toISOString();
-      const durationMs = Date.now() - cycleStarted;
-      status.cycles += 1;
-      if (!downloadOk || !parserOk) status.failures += 1;
-      status.lastFinishedAt = finishedAt;
-      status.lastDurationMs = durationMs;
-      status.lastDownloadDurationMs = downloadDurationMs;
-      status.lastParserDurationMs = parserDurationMs;
-      status.lastDownloadOk = downloadOk;
-      status.lastParserOk = parserOk;
-      recordMainCycleCompleted({
-        startedAt,
-        finishedAt,
-        durationMs,
-        downloadDurationMs,
-        parserDurationMs,
-        downloadOk,
-        parserOk,
-      }, serverId);
-      if (downloadOk && parserOk) closeCircuit(status);
-      else recordCycleFailure(serverId, status.lastError);
-    }
-  }));
+    }));
   } catch (err) {
     status.cycles += 1;
     status.failures += 1;
@@ -264,14 +239,9 @@ export async function runManagedServerRuntimeCycle(
   return { skipped: locked.skipped };
 }
 
-
 export async function reconcileManagedServerRuntimeActivation() {
-  // Phase 17B turns a validated tenant server into a first-class runtime without
-  // requiring a hidden manual Phase-11/12 workflow. We only auto-enable servers
-  // that have never been explicitly disabled. A previous lastDisabledAt remains
-  // an operator decision and is never overridden on boot.
   const candidates = listManagedServers().filter((server: ManagedServerDescriptor) => {
-    if (server.primary || !server.enabled || server.runtime.operations?.paused === true) return false;
+    if (!server.enabled || server.runtime.operations?.paused === true) return false;
     if (server.runtimeEnabled) return false;
     if (!hasMatchingManagedServerNitradoValidation(server)) return false;
     if (server.runtime.activation?.lastDisabledAt) return false;
@@ -295,7 +265,7 @@ export async function reconcileManagedServerRuntimeActivation() {
 
       if (!hasManagedServerRuntimeActivation(server) || !server.runtimeEnabled) {
         await setManagedServerRuntimeEnabled(server.id, true);
-        console.log(`✅ runtime multi-tenant ativado automaticamente [${server.id}]`);
+        console.log(`✅ runtime ativado automaticamente [${server.id}]`);
       }
     } catch (error) {
       console.error(`❌ falha reconciliando runtime [${candidate.id}]:`, error);
@@ -303,22 +273,11 @@ export async function reconcileManagedServerRuntimeActivation() {
   }
 }
 
-export async function runManagedServerRuntimeBatch(
-  reason: RuntimeCycleReason = "scheduler",
-  options: { includePrimary?: boolean } = {},
-) {
-  // One coordinator, one registry snapshot. Servers run sequentially so adding a
-  // runtime does not create concurrent Nitrado bursts or an independent poller.
-  // Startup may run the PZ first and then start secondary runtimes in the
-  // background so a large first secondary download never delays the PZ Discord.
-  const includePrimary = options.includePrimary !== false;
+export async function runManagedServerRuntimeBatch(reason: RuntimeCycleReason = "scheduler") {
+  // A single sequential queue prevents a growing number of linked servers from
+  // producing concurrent Nitrado/FTP/DB bursts. Every server follows the same path.
   const executable: ManagedServerDescriptor[] = listExecutableManagedServers()
-    .filter((server: ManagedServerDescriptor) => includePrimary || server.id !== getPrimaryServerId())
-    .sort((a: ManagedServerDescriptor, b: ManagedServerDescriptor) => {
-    if (a.id === getPrimaryServerId()) return -1;
-    if (b.id === getPrimaryServerId()) return 1;
-    return a.id.localeCompare(b.id);
-  });
+    .sort((a: ManagedServerDescriptor, b: ManagedServerDescriptor) => a.id.localeCompare(b.id));
 
   for (const server of executable) {
     try {
@@ -326,8 +285,6 @@ export async function runManagedServerRuntimeBatch(
     } catch (err) {
       const status = getStatus(server.id);
       status.lastError = err instanceof Error ? err.message : String(err);
-      // A secondary failure must never prevent the coordinator from moving on
-      // or affect the primary runtime on the next scheduler tick.
       console.error(`❌ erro fatal no ciclo [${server.id}]:`, err);
     }
   }
@@ -359,9 +316,6 @@ export function requestManagedServerRuntimeCycle(
 }
 
 export async function flushExecutableManagedServerStates() {
-  // Flush every registry row that is still marked runtime-enabled, even if a
-  // safety gate became unhealthy after its last successful cycle. Maintenance
-  // context is scoped but does not authorize new ADM/Nitrado work.
   for (const server of listManagedServers().filter((candidate: ManagedServerDescriptor) => candidate.runtimeEnabled)) {
     try {
       await runInServerMaintenanceContext(server.id, () => flushServerRuntimePendingStateAsync());
@@ -380,9 +334,8 @@ export function getManagedServerRuntimeCoordinatorDiagnostics() {
     intervalMs: RUNTIME_CYCLE_INTERVAL_MS,
     healthPolicy: {
       staleAfterMs: RUNTIME_STALE_AFTER_MS,
-      secondaryCircuitFailureThreshold: SECONDARY_CIRCUIT_FAILURE_THRESHOLD,
-      secondaryCircuitCooldownMs: SECONDARY_CIRCUIT_COOLDOWN_MS,
-      primaryCircuitBreakerEnabled: false,
+      circuitFailureThreshold: CIRCUIT_FAILURE_THRESHOLD,
+      circuitCooldownMs: CIRCUIT_COOLDOWN_MS,
       backgroundHealthPollingAdded: false,
     },
     schedulerRunning: Boolean(schedulerTimer),
@@ -402,14 +355,13 @@ export function getManagedServerRuntimeCoordinatorDiagnostics() {
         }),
         serverId: server.id,
         serverName: server.name,
-        primary: server.primary,
         runtimeEnabled: server.runtimeEnabled,
         paused: server.runtime.operations?.paused === true,
         executable: executableIds.has(server.id),
         health: (() => {
           if (!server.runtimeEnabled) return "stopped";
           if (server.runtime.operations?.paused === true) return "paused";
-          if (!server.primary && status?.circuitState === "open") return "circuit-open";
+          if (status?.circuitState === "open") return "circuit-open";
           if (!executableIds.has(server.id)) return "blocked";
           if (!status?.lastFinishedAt) return "starting";
           if (status.consecutiveFailures > 0) return "degraded";
