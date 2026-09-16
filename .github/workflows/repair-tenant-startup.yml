@@ -9,7 +9,6 @@ permissions:
 
 jobs:
   repair:
-    if: github.event.head_commit.message != 'chore: repair tenant startup context'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -23,70 +22,29 @@ jobs:
 
           shop = Path('artifacts/api-server/src/lib/shop.ts')
           text = shop.read_text()
-
-          text = text.replace(
-              '  getManagedServerById,\n  getPrimaryServerId,\n  getServerScopedSettings,\n',
-              '  getManagedServerById,\n',
-          )
-          text = text.replace(
-              '''function getExplicitMissionDir(serverId: string) {\n  if (serverId === getPrimaryServerId()) {\n    return normalizeRelativePath(getServerScopedSettings(serverId).dayzMissionDir);\n  }\n  const server = getManagedServerById(serverId);\n  return normalizeRelativePath(String(server?.runtime.settings?.dayzMissionDir || ""));\n}\n''',
-              '''function getExplicitMissionDir(serverId: string) {\n  const server = getManagedServerById(serverId);\n  return normalizeRelativePath(String(server?.runtime.settings?.dayzMissionDir || ""));\n}\n''',
-          )
-          text = text.replace(
-              '''  if (runtime.isPrimary) {\n    return missionDir\n      ? { ready: true, serverId: runtime.serverId, transport: "legacy-ftp", missionDir }\n      : { ready: false, serverId: runtime.serverId, transport: "legacy-ftp", reason: "Shop delivery is blocked because the primary mission path is missing." };\n  }\n\n''',
-              '',
-          )
-          text = text.replace(
-              '  if (readiness.ready || serverId === getPrimaryServerId()) return readiness;\n',
-              '  if (readiness.ready) return readiness;\n',
-          )
-          text = text.replace(
-              '  if (serverId === getPrimaryServerId()) return getShopDeliveryReadiness(serverId);\n',
-              '',
-          )
-          text = text.replace(
-              '''const PRIMARY_SHOP_PATHS = getShopFilePaths(getPrimaryServerId());\n// Kept for primary-only admin/map-event compatibility. Runtime shop operations\n// use getShopFilePaths() so secondary servers never inherit the PZ mission path.\nexport const SHOP_EVENTS_PATH = PRIMARY_SHOP_PATHS.eventsPath;\nexport const SHOP_EVENT_SPAWNS_PATH = PRIMARY_SHOP_PATHS.eventSpawnsPath;\n\n\n''',
-              '',
-          )
+          text = text.replace('  getManagedServerById,\n  getPrimaryServerId,\n  getServerScopedSettings,\n', '  getManagedServerById,\n')
+          text = text.replace('''function getExplicitMissionDir(serverId: string) {\n  if (serverId === getPrimaryServerId()) {\n    return normalizeRelativePath(getServerScopedSettings(serverId).dayzMissionDir);\n  }\n  const server = getManagedServerById(serverId);\n  return normalizeRelativePath(String(server?.runtime.settings?.dayzMissionDir || ""));\n}\n''', '''function getExplicitMissionDir(serverId: string) {\n  const server = getManagedServerById(serverId);\n  return normalizeRelativePath(String(server?.runtime.settings?.dayzMissionDir || ""));\n}\n''')
+          text = text.replace('''  if (runtime.isPrimary) {\n    return missionDir\n      ? { ready: true, serverId: runtime.serverId, transport: "legacy-ftp", missionDir }\n      : { ready: false, serverId: runtime.serverId, transport: "legacy-ftp", reason: "Shop delivery is blocked because the primary mission path is missing." };\n  }\n\n''', '')
+          text = text.replace('  if (readiness.ready || serverId === getPrimaryServerId()) return readiness;\n', '  if (readiness.ready) return readiness;\n')
+          text = text.replace('  if (serverId === getPrimaryServerId()) return getShopDeliveryReadiness(serverId);\n', '')
+          text = text.replace('''const PRIMARY_SHOP_PATHS = getShopFilePaths(getPrimaryServerId());\n// Kept for primary-only admin/map-event compatibility. Runtime shop operations\n// use getShopFilePaths() so secondary servers never inherit the PZ mission path.\nexport const SHOP_EVENTS_PATH = PRIMARY_SHOP_PATHS.eventsPath;\nexport const SHOP_EVENT_SPAWNS_PATH = PRIMARY_SHOP_PATHS.eventSpawnsPath;\n\n\n''', '')
           if 'getPrimaryServerId' in text or 'getServerScopedSettings' in text or 'PRIMARY_SHOP_PATHS' in text:
               raise SystemExit('shop.ts still contains forbidden import-time primary dependency')
           shop.write_text(text)
 
           runtime = Path('artifacts/api-server/src/lib/serverRuntime.ts')
           text = runtime.read_text()
-          text = text.replace(
-              '''  getManagedServerById,\n  getPrimaryServerDescriptor,\n  getPrimaryServerId,\n  setServerRuntimeIsolationStatus,\n''',
-              '''  getManagedServerById,\n  setServerRuntimeIsolationStatus,\n''',
-          )
-          text = text.replace(
-              '  const targetId = String(serverId || executionContext.getStore()?.serverId || getPrimaryServerId()).trim();\n  const descriptor = getManagedServerById(targetId) || (targetId === getPrimaryServerId() ? getPrimaryServerDescriptor() : undefined);\n  if (!descriptor) throw new Error(`Unknown managed server: ${targetId}`);\n\n  const isPrimary = descriptor.id === getPrimaryServerId();\n  const staggerOffsetMs = isPrimary ? 0 : (stableHash(descriptor.id) % 10) * 30_000;\n',
-              '  const targetId = String(serverId || executionContext.getStore()?.serverId || "").trim();\n  if (!targetId) throw new Error("TENANT_CONTEXT_REQUIRED");\n  const descriptor = getManagedServerById(targetId);\n  if (!descriptor) throw new Error(`Unknown managed server: ${targetId}`);\n\n  const staggerOffsetMs = (stableHash(descriptor.id) % 10) * 30_000;\n',
-          )
+          text = text.replace('''  getManagedServerById,\n  getPrimaryServerDescriptor,\n  getPrimaryServerId,\n  setServerRuntimeIsolationStatus,\n''', '''  getManagedServerById,\n  setServerRuntimeIsolationStatus,\n''')
+          text = text.replace('''  const targetId = String(serverId || executionContext.getStore()?.serverId || getPrimaryServerId()).trim();\n  const descriptor = getManagedServerById(targetId) || (targetId === getPrimaryServerId() ? getPrimaryServerDescriptor() : undefined);\n  if (!descriptor) throw new Error(`Unknown managed server: ${targetId}`);\n\n  const isPrimary = descriptor.id === getPrimaryServerId();\n  const staggerOffsetMs = isPrimary ? 0 : (stableHash(descriptor.id) % 10) * 30_000;\n''', '''  const targetId = String(serverId || executionContext.getStore()?.serverId || "").trim();\n  if (!targetId) throw new Error("TENANT_CONTEXT_REQUIRED");\n  const descriptor = getManagedServerById(targetId);\n  if (!descriptor) throw new Error(`Unknown managed server: ${targetId}`);\n\n  const staggerOffsetMs = (stableHash(descriptor.id) % 10) * 30_000;\n''')
           text = text.replace('    primaryLegacyAdmStoragePreserved: true,\n', '')
           text = text.replace('    ftpPrimaryGuarded: true,\n', '')
           text = text.replace('    isPrimary,\n', '    isPrimary: false,\n')
-          text = text.replace(
-              '''function getAdmStoragePaths(descriptor: ManagedServerDescriptor) {\n  const isPrimary = descriptor.id === getPrimaryServerId();\n  if (isPrimary) {\n    return {\n      logDir: path.resolve(process.cwd(), LEGACY_LOG_DIR_NAME),\n      manifestFile: path.resolve(process.cwd(), LEGACY_MANIFEST_NAME),\n      legacyPreserved: true,\n    };\n  }\n  const root = path.resolve(process.cwd(), "adm_servers", descriptor.id);\n''',
-              '''function getAdmStoragePaths(descriptor: ManagedServerDescriptor) {\n  const root = path.resolve(process.cwd(), "adm_servers", descriptor.id);\n''',
-          )
-          text = text.replace('    legacyPreserved: false,\n', '    legacyPreserved: false,\n')
-          text = text.replace(
-              '''  const descriptor = getManagedServerById(targetId) || (targetId === getPrimaryServerId() ? getPrimaryServerDescriptor() : undefined);\n  if (!descriptor) throw new Error(`Unknown managed server: ${targetId}`);\n  const storage = getAdmStoragePaths(descriptor);\n  const isPrimary = descriptor.id === getPrimaryServerId();\n  return {\n    serverId: descriptor.id,\n    isPrimary,\n    admLogDir: storage.logDir,\n    admManifestFile: storage.manifestFile,\n    stateFile: isPrimary\n      ? path.resolve(process.cwd(), "state.json")\n      : path.resolve(process.cwd(), "state_servers", descriptor.id, "state.json"),\n  };\n''',
-              '''  const descriptor = getManagedServerById(targetId);\n  if (!descriptor) throw new Error(`Unknown managed server: ${targetId}`);\n  const storage = getAdmStoragePaths(descriptor);\n  return {\n    serverId: descriptor.id,\n    isPrimary: false,\n    admLogDir: storage.logDir,\n    admManifestFile: storage.manifestFile,\n    stateFile: path.resolve(process.cwd(), "state_servers", descriptor.id, "state.json"),\n  };\n''',
-          )
-          text = text.replace(
-              '''export function getActiveServerId() {\n  const active = executionContext.getStore()?.serverId;\n  if (active) return active;\n  contextFallbacks += 1;\n  return getPrimaryServerId();\n}\n''',
-              '''export function getActiveServerId() {\n  const active = executionContext.getStore()?.serverId;\n  if (active) return active;\n  contextFallbacks += 1;\n  throw new Error("TENANT_CONTEXT_REQUIRED");\n}\n''',
-          )
-          text = text.replace(
-              '''  // The primary server is the legacy-compatible bootstrap runtime. It must be\n  // able to initialize the service before the multi-server activation gate is\n  // satisfied; secondary servers remain strictly subject to that gate.\n  const enforceActivationGate = requireExecutable && !context.isPrimary;\n''',
-              '''  const enforceActivationGate = requireExecutable;\n''',
-          )
+          text = text.replace('''function getAdmStoragePaths(descriptor: ManagedServerDescriptor) {\n  const isPrimary = descriptor.id === getPrimaryServerId();\n  if (isPrimary) {\n    return {\n      logDir: path.resolve(process.cwd(), LEGACY_LOG_DIR_NAME),\n      manifestFile: path.resolve(process.cwd(), LEGACY_MANIFEST_NAME),\n      legacyPreserved: true,\n    };\n  }\n  const root = path.resolve(process.cwd(), "adm_servers", descriptor.id);\n''', '''function getAdmStoragePaths(descriptor: ManagedServerDescriptor) {\n  const root = path.resolve(process.cwd(), "adm_servers", descriptor.id);\n''')
+          text = text.replace('''  const descriptor = getManagedServerById(targetId) || (targetId === getPrimaryServerId() ? getPrimaryServerDescriptor() : undefined);\n  if (!descriptor) throw new Error(`Unknown managed server: ${targetId}`);\n  const storage = getAdmStoragePaths(descriptor);\n  const isPrimary = descriptor.id === getPrimaryServerId();\n  return {\n    serverId: descriptor.id,\n    isPrimary,\n    admLogDir: storage.logDir,\n    admManifestFile: storage.manifestFile,\n    stateFile: isPrimary\n      ? path.resolve(process.cwd(), "state.json")\n      : path.resolve(process.cwd(), "state_servers", descriptor.id, "state.json"),\n  };\n''', '''  const descriptor = getManagedServerById(targetId);\n  if (!descriptor) throw new Error(`Unknown managed server: ${targetId}`);\n  const storage = getAdmStoragePaths(descriptor);\n  return {\n    serverId: descriptor.id,\n    isPrimary: false,\n    admLogDir: storage.logDir,\n    admManifestFile: storage.manifestFile,\n    stateFile: path.resolve(process.cwd(), "state_servers", descriptor.id, "state.json"),\n  };\n''')
+          text = text.replace('''export function getActiveServerId() {\n  const active = executionContext.getStore()?.serverId;\n  if (active) return active;\n  contextFallbacks += 1;\n  return getPrimaryServerId();\n}\n''', '''export function getActiveServerId() {\n  const active = executionContext.getStore()?.serverId;\n  if (active) return active;\n  contextFallbacks += 1;\n  throw new Error("TENANT_CONTEXT_REQUIRED");\n}\n''')
+          text = text.replace('''  // The primary server is the legacy-compatible bootstrap runtime. It must be\n  // able to initialize the service before the multi-server activation gate is\n  // satisfied; secondary servers remain strictly subject to that gate.\n  const enforceActivationGate = requireExecutable && !context.isPrimary;\n''', '''  const enforceActivationGate = requireExecutable;\n''')
           text = text.replace('    legacyPrimaryFallbacks: contextFallbacks,\n    policy: "tenant-facing-fail-closed;legacy-background-primary-compat",\n', '    legacyPrimaryFallbacks: contextFallbacks,\n    policy: "tenant-context-required;no-primary-fallback",\n')
-          text = text.replace(
-              '''export function getServerStateStoragePath(serverId = getActiveServerId()) {\n  const context = getServerRuntimeContext(serverId);\n  if (context.isPrimary) return path.resolve(process.cwd(), "state.json");\n  return path.resolve(process.cwd(), "state_servers", context.serverId, "state.json");\n}\n''',
-              '''export function getServerStateStoragePath(serverId = getActiveServerId()) {\n  const context = getServerRuntimeContext(serverId);\n  return path.resolve(process.cwd(), "state_servers", context.serverId, "state.json");\n}\n''',
-          )
+          text = text.replace('''export function getServerStateStoragePath(serverId = getActiveServerId()) {\n  const context = getServerRuntimeContext(serverId);\n  if (context.isPrimary) return path.resolve(process.cwd(), "state.json");\n  return path.resolve(process.cwd(), "state_servers", context.serverId, "state.json");\n}\n''', '''export function getServerStateStoragePath(serverId = getActiveServerId()) {\n  const context = getServerRuntimeContext(serverId);\n  return path.resolve(process.cwd(), "state_servers", context.serverId, "state.json");\n}\n''')
           if 'getPrimaryServerId' in text or 'getPrimaryServerDescriptor' in text:
               raise SystemExit('serverRuntime.ts still contains primary runtime fallback')
           runtime.write_text(text)
