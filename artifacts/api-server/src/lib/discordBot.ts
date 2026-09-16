@@ -8,12 +8,13 @@ import { registerSecondaryManagedServerInteractions } from "./discord/secondaryI
 import { registerMemberFeed } from "./discord/modules/memberFeed";
 import { applyServiceSettingsToCommandSettings, DEFAULT_SERVICE_SETTINGS } from "./serviceSettings";
 import { normalizeDiscordCommandSettings } from "./discord/commandSettings";
-import { getPrimaryServerId, listManagedServers } from "./serverRegistry";
+import { listManagedServers } from "./serverRegistry";
 import { getServerRuntimeContext } from "./serverRuntime";
 
 const client = createDiscordClient();
 const managedFeedRuntimes = new Map<string, ReturnType<typeof createDiscordFeedRuntime>>();
 const registeredMemberFeedServers = new Set<string>();
+const registeredInteractionServers = new Set<string>();
 
 export function getDiscordClient() {
   return client;
@@ -21,42 +22,28 @@ export function getDiscordClient() {
 
 export { registerKillStreakFromKill } from "./discord/modules/killstreak/service";
 
+/**
+ * Command registration is deliberately state-free. Every server has the same
+ * command surface and tenant state is hydrated only when a real interaction or
+ * runtime cycle needs it. This keeps Discord READY cheap as the number of
+ * linked servers grows.
+ */
 export async function syncDiscordCommandsForManagedServer(serverId: string) {
-  const primary = serverId === getPrimaryServerId();
-  const scope = primary ? "full" : "core";
-  let settings: ReturnType<typeof applyServiceSettingsToCommandSettings>;
+  const server = listManagedServers().find((item) => item.id === serverId);
+  if (!server?.enabled || !server.integrations.discordGuildId) return false;
 
-  if (primary) {
-    // The primary command surface may legitimately depend on persisted service
-    // settings, so it is the only command-registration path allowed to hydrate
-    // primary state during Discord boot.
-    const stateAccess = createDiscordStateAccess(serverId);
-    const commandState = await stateAccess.getState();
-    settings = applyServiceSettingsToCommandSettings(
-      commandState.discordCommandSettings,
-      commandState.serviceSettings,
-    );
-  } else {
-    // Secondary command registration is control-plane work. It must not force a
-    // full tenant state hydration for every guild during a single Discord ready
-    // event. Commands use safe defaults at registration time; the interaction
-    // handler loads the tenant state only when an interaction actually needs it.
-    settings = applyServiceSettingsToCommandSettings(
-      normalizeDiscordCommandSettings({}),
-      DEFAULT_SERVICE_SETTINGS,
-    );
-  }
+  const settings = applyServiceSettingsToCommandSettings(
+    normalizeDiscordCommandSettings({}),
+    DEFAULT_SERVICE_SETTINGS,
+  );
 
-  await registerDiscordCommands(client, settings, serverId, scope);
-
-  // Feed runtimes are data-plane work and are owned by the centralized runtime
-  // scheduler. Do not create/update a secondary feed during command registration.
-  if (client.isReady?.() && !primary) return;
+  await registerDiscordCommands(client, settings, serverId, "core");
+  return true;
 }
 
 async function ensureManagedServerFeedRuntime(serverId: string) {
-  if (serverId === getPrimaryServerId()) return managedFeedRuntimes.get(serverId);
   if (managedFeedRuntimes.has(serverId)) return managedFeedRuntimes.get(serverId);
+
   const server = listManagedServers().find((item) => item.id === serverId);
   if (!server?.enabled || !server.integrations.discordGuildId) return undefined;
 
@@ -80,105 +67,45 @@ async function ensureManagedServerFeedRuntime(serverId: string) {
       saveState: stateAccess.saveState,
       saveRuntimeState: stateAccess.saveRuntimeState,
     });
+
     managedFeedRuntimes.set(serverId, feeds);
+
     const memberConfig = getServerRuntimeContext(serverId).discord;
     if (!registeredMemberFeedServers.has(serverId) && memberConfig.memberFeedEnabled !== false && memberConfig.memberFeedChannelId) {
       registerMemberFeed(client, serverId);
       registeredMemberFeedServers.add(serverId);
     }
-    await feeds.updateLeaderboard();
-    console.log(`✅ Discord feed runtime server-scoped ativo [${serverId}]`);
+
+    console.log(`✅ Discord feed runtime preparado [${serverId}]`);
     return feeds;
   } catch (error) {
-    // Channels are optional during onboarding. Commands remain available and the
-    // feed runtime will be retried by command sync / the next runtime cycle.
-    console.log(`ℹ️ Discord feed runtime aguardando canais [${serverId}]`, error instanceof Error ? error.message : String(error));
+    console.log(
+      `ℹ️ Discord feed runtime aguardando canais [${serverId}]`,
+      error instanceof Error ? error.message : String(error),
+    );
     return undefined;
   }
 }
 
 export async function refreshDiscordFeedsForManagedServer(serverId: string) {
   if (!client.isReady?.()) return false;
-  if (serverId === getPrimaryServerId()) {
-    const feeds = managedFeedRuntimes.get(serverId);
-    if (!feeds) return false;
-    await feeds.updateLeaderboard();
-    return true;
-  }
   const feeds = managedFeedRuntimes.get(serverId) || await ensureManagedServerFeedRuntime(serverId);
   if (!feeds) return false;
   await feeds.updateLeaderboard();
   return true;
 }
 
-async function syncSecondaryManagedServerCommands() {
-  const servers = listManagedServers().filter((server) => !server.primary && server.enabled && server.integrations.discordGuildId);
-  for (const server of servers) {
-    try {
-      // Registration is intentionally state-free. A tenant is hydrated only when
-      // a real command or runtime cycle needs its data.
-      await syncDiscordCommandsForManagedServer(server.id);
-    } catch (error) {
-      console.error(`❌ erro sincronizando comandos Discord [${server.id}]:`, error);
-    }
-  }
-}
+async function registerManagedServerInteractions(serverId: string) {
+  if (registeredInteractionServers.has(serverId)) return;
 
-function registerManagedServerMemberFeeds() {
-  for (const server of listManagedServers().filter((item) => item.enabled && item.integrations.discordGuildId)) {
-    if (registeredMemberFeedServers.has(server.id)) continue;
-    const memberConfig = getServerRuntimeContext(server.id).discord;
-    if (memberConfig.memberFeedEnabled === false || !memberConfig.memberFeedChannelId) continue;
-    try {
-      registerMemberFeed(client, server.id);
-      registeredMemberFeedServers.add(server.id);
-    } catch (error) {
-      console.error(`❌ erro inicializando member feed [${server.id}]:`, error);
-    }
-  }
-}
+  const server = listManagedServers().find((item) => item.id === serverId);
+  if (!server?.enabled || !server.integrations.discordGuildId) return;
 
-export async function startDiscordBot(serverId = getPrimaryServerId()) {
-  const runtime = getServerRuntimeContext(serverId);
-  if (!process.env.DISCORD_TOKEN) {
-    console.error("❌ DISCORD_TOKEN não definido");
-    return;
-  }
-
-  client.once("ready", async () => {
-    console.log(`🤖 Discord conectado para ${runtime.server.name} (${serverId})`);
-
-    registerSecondaryManagedServerInteractions(client);
-    await syncSecondaryManagedServerCommands();
-    registerManagedServerMemberFeeds();
-
-    const primaryServer = listManagedServers().find((server) => server.id === serverId);
-    if (primaryServer && !primaryServer.enabled) {
-      console.log(`⏸️ Discord runtime do servidor desativado; mantendo apenas o cliente global [${serverId}]`);
-      return;
-    }
-
+  try {
     const channels = await resolveDiscordChannels(client, serverId);
     const stateAccess = createDiscordStateAccess(serverId);
-
-    const feeds = createDiscordFeedRuntime({
-      serverId,
-      client,
-      categoryId: channels.categoryId,
-      globalChannel: channels.globalChannel,
-      dailyChannel: channels.dailyChannel,
-      weeklyChannel: channels.weeklyChannel,
-      onlineListChannel: channels.onlineListChannel,
-      killfeedChannel: channels.killfeedChannel,
-      killStreakChannel: channels.killStreakChannel,
-      longShotChannel: channels.longShotChannel,
-      longShotRankingChannel: channels.longShotRankingChannel,
-      streakRankingChannel: channels.streakRankingChannel,
-      getState: stateAccess.getState,
-      saveState: stateAccess.saveState,
-      saveRuntimeState: stateAccess.saveRuntimeState,
-    });
-    managedFeedRuntimes.set(serverId, feeds);
+    const feeds = await ensureManagedServerFeedRuntime(serverId);
+    if (!feeds) return;
 
     registerInteractionHandlers({
       client,
@@ -206,8 +133,62 @@ export async function startDiscordBot(serverId = getPrimaryServerId()) {
       createLongShotEmptyEmbed: feeds.createLongShotEmptyEmbed,
     });
 
-    await syncDiscordCommandsForManagedServer(serverId);
-    await feeds.updateLeaderboard();
+    registeredInteractionServers.add(serverId);
+  } catch (error) {
+    console.log(
+      `ℹ️ interações Discord aguardando configuração [${serverId}]`,
+      error instanceof Error ? error.message : String(error),
+    );
+  }
+}
+
+async function syncAllManagedServers() {
+  const servers = listManagedServers().filter(
+    (server) => server.enabled && server.integrations.discordGuildId,
+  );
+
+  for (const server of servers) {
+    try {
+      // Keep READY bounded: registration uses persisted configuration only.
+      // State-heavy feed updates belong to the runtime scheduler.
+      await syncDiscordCommandsForManagedServer(server.id);
+      await registerManagedServerInteractions(server.id);
+    } catch (error) {
+      console.error(`❌ erro inicializando Discord [${server.id}]:`, error);
+    }
+  }
+}
+
+function registerManagedServerMemberFeeds() {
+  for (const server of listManagedServers().filter((item) => item.enabled && item.integrations.discordGuildId)) {
+    if (registeredMemberFeedServers.has(server.id)) continue;
+    const memberConfig = getServerRuntimeContext(server.id).discord;
+    if (memberConfig.memberFeedEnabled === false || !memberConfig.memberFeedChannelId) continue;
+    try {
+      registerMemberFeed(client, server.id);
+      registeredMemberFeedServers.add(server.id);
+    } catch (error) {
+      console.error(`❌ erro inicializando member feed [${server.id}]:`, error);
+    }
+  }
+}
+
+export async function startDiscordBot() {
+  if (!process.env.DISCORD_TOKEN) {
+    console.error("❌ DISCORD_TOKEN não definido");
+    return;
+  }
+
+  if (client.isReady?.()) return;
+
+  client.once("ready", async () => {
+    console.log("🤖 Discord conectado; inicializando servidores vinculados...");
+
+    registerSecondaryManagedServerInteractions(client);
+    registerManagedServerMemberFeeds();
+    await syncAllManagedServers();
+
+    console.log(`✅ Discord multi-tenant pronto (${listManagedServers().length} servidores registrados)`);
   });
 
   try {
