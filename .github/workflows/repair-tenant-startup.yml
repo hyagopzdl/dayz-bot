@@ -57,8 +57,9 @@ jobs:
 
       - name: Typecheck repaired runtime
         run: |
-          corepack enable
-          pnpm install --frozen-lockfile
+          corepack prepare pnpm@10.25.0 --activate
+          unset npm_config_user_agent
+          pnpm install
           pnpm -w run typecheck:libs
           pnpm --filter @workspace/api-server typecheck
 
