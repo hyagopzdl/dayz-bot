@@ -69,7 +69,7 @@ router.post("/onboarding/activate", requirePortalAuth, async (req, res) => {
         throw new Error(failures.length ? failures.join(" ") : "O servidor não passou nas verificações de ativação.");
       }
       current = await setManagedServerRuntimeEnabled(current.id, true);
-      requestManagedServerRuntimeCycle(current.id, "onboarding-activation");
+      requestManagedServerRuntimeCycle(current.id, "activation");
     }
 
     await refreshManagedServerRegistryFromDb();
@@ -93,10 +93,8 @@ router.post("/onboarding/activate", requirePortalAuth, async (req, res) => {
 router.get("/onboarding/discord", requirePortalAuth, (req, res) => {
   try {
     const server = assertServerManageAccess(req, String(req.query.serverId || "").trim());
-    // A stale compatibility admin session must never override the portal owner
-    // during the SaaS Discord installation flow.
     clearAdminSessionCookie(req, res);
-    res.redirect(`/api/auth/discord/connect?serverId=${encodeURIComponent(server.id)}`);
+    return res.redirect(`/api/auth/discord/connect?serverId=${encodeURIComponent(server.id)}`);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return res.status(message === "SERVER_FORBIDDEN" || message === "ORGANIZATION_FORBIDDEN" ? 403 : 400).send(message);
@@ -142,7 +140,7 @@ router.get("/onboarding/panel", requirePortalAuth, async (req, res) => {
       username,
       serverId: server.id,
     }));
-    res.redirect("/admin-panel");
+    return res.redirect("/admin-panel");
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return res.status(message === "SERVER_FORBIDDEN" || message === "ORGANIZATION_FORBIDDEN" ? 403 : 400).send(message);
