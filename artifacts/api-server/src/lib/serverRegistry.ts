@@ -41,7 +41,7 @@ export type ServerNamespacePersistenceStatus = {
   enabled: boolean; initialized: boolean; botStateTableReady: boolean; playerStatsTableReady: boolean;
   botStateCompositeKeyReady: boolean; playerStatsCompositeKeyReady: boolean; botStatePrimaryKeyReady: boolean;
   playerStatsPrimaryKeyReady: boolean; primaryKeyCutoverComplete: boolean; scopedReadsEnabled: boolean;
-  scopedReadFallbacks: number; lastScopedReadSource?: "server-scoped";
+  scopedReadFallbacks: number; lastScopedReadSource?: "server-scoped" | "legacy-fallback" | "legacy" | "server-id-safe-fallback" | "primary-untagged-fallback";
   botStateTaggedRows: number; botStateUntaggedRows: number; playerStatsTaggedRows: number; playerStatsUntaggedRows: number;
   lastCheckedAt?: string; lastError?: string;
 };
@@ -145,6 +145,11 @@ export function canExecuteManagedServerRuntime(serverId: unknown) {
   const server = getManagedServerById(serverId); return Boolean(server && server.enabled && server.runtimeEnabled && server.onboardingStatus === "ready" && hasMatchingManagedServerNitradoValidation(server) && hasMatchingActivationPreflight(server) && hasManagedServerRuntimeActivation(server) && !isManagedServerRuntimePaused(server) && isServerNamespaceRuntimeSafe());
 }
 export function listExecutableManagedServers() { return listManagedServers().filter((server) => canExecuteManagedServerRuntime(server.id)); }
+
+/** @deprecated Legacy API surface retained only to keep older callers compiling. It never creates or selects a server. */
+export function getPrimaryServerId() { return ""; }
+/** @deprecated Legacy API surface retained only to keep older callers compiling. Production code must resolve a managed server first. */
+export function getPrimaryServerDescriptor(): ManagedServerDescriptor { throw new Error("Primary server fallback has been removed; resolve a managed server context first."); }
 
 export function listManagedServers() { return persistedServers.map(cloneServer); }
 export function setPersistedManagedServers(servers: ManagedServerDescriptor[]) {
