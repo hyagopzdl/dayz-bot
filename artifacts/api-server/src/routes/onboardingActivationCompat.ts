@@ -5,7 +5,6 @@ import { getManagedServerById } from "../lib/serverRegistry";
 import { markManagedServerNitradoValidated, refreshManagedServerRegistryFromDb, setManagedServerRuntimeEnabled } from "../lib/state";
 import { validateNitradoServiceSetup } from "../lib/serverIntegrations";
 import { runManagedServerActivationPreflight } from "../lib/serverPreflight";
-import { requestManagedServerRuntimeCycle } from "../lib/serverRuntimeCoordinator";
 
 const router = Router();
 
@@ -48,8 +47,10 @@ router.get("/onboarding/nitrado/activate-and-continue", requirePortalAuth, async
           .slice(0, 3);
         throw new Error(failures.length ? failures.join(" ") : "O servidor não passou nas verificações de ativação.");
       }
+      // Enable the runtime, but do not launch an extra immediate parser/download
+      // from the onboarding request. The centralized scheduler is responsible for
+      // the next runtime cycle, preventing an activation-time memory/CPU spike.
       server = await setManagedServerRuntimeEnabled(server.id, true);
-      requestManagedServerRuntimeCycle(server.id, "activation");
     }
 
     await refreshManagedServerRegistryFromDb();
