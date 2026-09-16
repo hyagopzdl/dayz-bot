@@ -13,8 +13,6 @@ import { systems } from "./systems";
 import { getServerRuntimeContext } from "./serverRuntime";
 import {
   getManagedServerById,
-  getPrimaryServerId,
-  getServerScopedSettings,
   hasManagedServerRuntimeActivation,
   hasMatchingActivationPreflight,
   hasMatchingManagedServerNitradoValidation,
@@ -61,9 +59,6 @@ export type ShopDeliveryReadiness = {
 };
 
 function getExplicitMissionDir(serverId: string) {
-  if (serverId === getPrimaryServerId()) {
-    return normalizeRelativePath(getServerScopedSettings(serverId).dayzMissionDir);
-  }
   const server = getManagedServerById(serverId);
   return normalizeRelativePath(String(server?.runtime.settings?.dayzMissionDir || ""));
 }
@@ -71,12 +66,6 @@ function getExplicitMissionDir(serverId: string) {
 export function getShopDeliveryReadiness(serverId = getServerRuntimeContext().serverId): ShopDeliveryReadiness {
   const runtime = getServerRuntimeContext(serverId);
   const missionDir = getExplicitMissionDir(runtime.serverId);
-  if (runtime.isPrimary) {
-    return missionDir
-      ? { ready: true, serverId: runtime.serverId, transport: "legacy-ftp", missionDir }
-      : { ready: false, serverId: runtime.serverId, transport: "legacy-ftp", reason: "Shop delivery is blocked because the primary mission path is missing." };
-  }
-
   const server = getManagedServerById(runtime.serverId);
   if (!server) return { ready: false, serverId: runtime.serverId, transport: "nitrado-file-server", reason: "Shop delivery is blocked because this managed server is unavailable." };
   if (!server.runtimeEnabled || !hasManagedServerRuntimeActivation(server)) {
@@ -114,7 +103,7 @@ const shopDeliveryDiscoveryCooldown = new Map<string, number>();
 
 export async function ensureShopDeliveryConfiguration(serverId = getServerRuntimeContext().serverId): Promise<ShopDeliveryReadiness> {
   let readiness = getShopDeliveryReadiness(serverId);
-  if (readiness.ready || serverId === getPrimaryServerId()) return readiness;
+  if (readiness.ready) return readiness;
 
   const server = getManagedServerById(serverId);
   if (!server) return readiness;
@@ -186,7 +175,6 @@ export async function ensureShopDeliveryConfiguration(serverId = getServerRuntim
 }
 
 async function repairShopDeliveryRouting(serverId = getServerRuntimeContext().serverId) {
-  if (serverId === getPrimaryServerId()) return getShopDeliveryReadiness(serverId);
   const discovered = await discoverNitradoShopDeliveryRouting(serverId);
   if (!discovered.baseDir || !discovered.missionDir) {
     throw new Error(`SHOP DELIVERY ROUTING REPAIR FAILED: no valid mission/filesystem route found for ${serverId}.`);
@@ -212,11 +200,6 @@ export function getShopFilePaths(serverId = getServerRuntimeContext().serverId) 
   };
 }
 
-const PRIMARY_SHOP_PATHS = getShopFilePaths(getPrimaryServerId());
-// Kept for primary-only admin/map-event compatibility. Runtime shop operations
-// use getShopFilePaths() so secondary servers never inherit the PZ mission path.
-export const SHOP_EVENTS_PATH = PRIMARY_SHOP_PATHS.eventsPath;
-export const SHOP_EVENT_SPAWNS_PATH = PRIMARY_SHOP_PATHS.eventSpawnsPath;
 
 
 function hasShopBotBlock(xml: string) {
@@ -784,7 +767,6 @@ export async function deployPendingShopOrders(state: AppState) {
     ]);
   } catch (firstError) {
     const serverId = getServerRuntimeContext().serverId;
-    if (serverId === getPrimaryServerId()) throw firstError;
     console.warn(`[shop-delivery][${serverId}] configured XML route failed; rediscovering before one retry: ${firstError instanceof Error ? firstError.message : String(firstError)}`);
     const repaired = await repairShopDeliveryRouting(serverId);
     if (!repaired.ready) throw firstError;
@@ -1129,7 +1111,6 @@ export async function tryAutoClearShopAfterAdmReset(
 }
 
 function parseRestartTimes() {
-  const raw = getServerScopedSettings(getServerRuntimeContext().serverId).shopRestartTimes;
 
   return raw
     .split(",")
@@ -1207,7 +1188,6 @@ function getActiveAutoDeployWindow(
   const times = parseRestartTimes();
   if (!times.length) return null;
 
-  const timeZone = getServerScopedSettings(getServerRuntimeContext().serverId).shopRestartTimezone;
   const deployBefore = numberEnv("SHOP_DEPLOY_MINUTES_BEFORE_RESET", 15);
   const deployGraceAfter = numberEnv("SHOP_DEPLOY_GRACE_MINUTES_AFTER_SCHEDULE", 15);
   const freezeMinutes = numberEnv("SHOP_DEPLOY_FREEZE_MINUTES", 2);

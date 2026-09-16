@@ -3,8 +3,6 @@ import { AsyncLocalStorage } from "async_hooks";
 import {
   canExecuteManagedServerRuntime,
   getManagedServerById,
-  getPrimaryServerDescriptor,
-  getPrimaryServerId,
   setServerRuntimeIsolationStatus,
   type ManagedServerDescriptor,
 } from "./serverRegistry";
@@ -30,19 +28,18 @@ function stableHash(value: string) {
 }
 
 export function getServerRuntimeContext(serverId?: string) {
-  const targetId = String(serverId || executionContext.getStore()?.serverId || getPrimaryServerId()).trim();
-  const descriptor = getManagedServerById(targetId) || (targetId === getPrimaryServerId() ? getPrimaryServerDescriptor() : undefined);
+  const targetId = String(serverId || executionContext.getStore()?.serverId || "").trim();
+  if (!targetId) throw new Error("TENANT_CONTEXT_REQUIRED");
+  const descriptor = getManagedServerById(targetId);
   if (!descriptor) throw new Error(`Unknown managed server: ${targetId}`);
 
-  const isPrimary = descriptor.id === getPrimaryServerId();
-  const staggerOffsetMs = isPrimary ? 0 : (stableHash(descriptor.id) % 10) * 30_000;
+  const staggerOffsetMs = (stableHash(descriptor.id) % 10) * 30_000;
   setServerRuntimeIsolationStatus({
     initialized: true,
     contextServerId: descriptor.id,
     nitradoRoutingNamespaced: Boolean(descriptor.integrations.nitradoServiceId && descriptor.runtime.nitradoBaseDir),
     discordRoutingNamespaced: true,
     processingLockNamespaced: true,
-    primaryLegacyAdmStoragePreserved: true,
     staggerOffsetMs,
     activeLocks: runtimeLocks.size,
     lockSkips,
@@ -56,7 +53,6 @@ export function getServerRuntimeContext(serverId?: string) {
     admParserStorageNamespaced: true,
     persistenceRuntimeNamespaced: true,
     positionHistoryNamespaced: true,
-    ftpPrimaryGuarded: true,
     discordLoopGuardsNamespaced: true,
     mapSchedulersContextualized: true,
     activationReadiness: true,
@@ -66,7 +62,7 @@ export function getServerRuntimeContext(serverId?: string) {
   return {
     server: descriptor,
     serverId: descriptor.id,
-    isPrimary,
+    isPrimary: false,
     staggerOffsetMs,
     nitrado: {
       serviceId: descriptor.integrations.nitradoServiceId,
@@ -81,14 +77,6 @@ export function getServerRuntimeContext(serverId?: string) {
 }
 
 function getAdmStoragePaths(descriptor: ManagedServerDescriptor) {
-  const isPrimary = descriptor.id === getPrimaryServerId();
-  if (isPrimary) {
-    return {
-      logDir: path.resolve(process.cwd(), LEGACY_LOG_DIR_NAME),
-      manifestFile: path.resolve(process.cwd(), LEGACY_MANIFEST_NAME),
-      legacyPreserved: true,
-    };
-  }
   const root = path.resolve(process.cwd(), "adm_servers", descriptor.id);
   return {
     logDir: path.join(root, "logs"),
@@ -99,18 +87,15 @@ function getAdmStoragePaths(descriptor: ManagedServerDescriptor) {
 
 export function getServerStoragePlan(serverId: string) {
   const targetId = String(serverId || "").trim();
-  const descriptor = getManagedServerById(targetId) || (targetId === getPrimaryServerId() ? getPrimaryServerDescriptor() : undefined);
+  const descriptor = getManagedServerById(targetId);
   if (!descriptor) throw new Error(`Unknown managed server: ${targetId}`);
   const storage = getAdmStoragePaths(descriptor);
-  const isPrimary = descriptor.id === getPrimaryServerId();
   return {
     serverId: descriptor.id,
-    isPrimary,
+    isPrimary: false,
     admLogDir: storage.logDir,
     admManifestFile: storage.manifestFile,
-    stateFile: isPrimary
-      ? path.resolve(process.cwd(), "state.json")
-      : path.resolve(process.cwd(), "state_servers", descriptor.id, "state.json"),
+    stateFile: path.resolve(process.cwd(), "state_servers", descriptor.id, "state.json"),
   };
 }
 
@@ -118,7 +103,7 @@ export function getActiveServerId() {
   const active = executionContext.getStore()?.serverId;
   if (active) return active;
   contextFallbacks += 1;
-  return getPrimaryServerId();
+  throw new Error("TENANT_CONTEXT_REQUIRED");
 }
 
 export function requireActiveServerId() {
@@ -149,7 +134,7 @@ function runInKnownServerContext<T>(
   // The primary server is the legacy-compatible bootstrap runtime. It must be
   // able to initialize the service before the multi-server activation gate is
   // satisfied; secondary servers remain strictly subject to that gate.
-  const enforceActivationGate = requireExecutable && !context.isPrimary;
+  const enforceActivationGate = requireExecutable;
   if (enforceActivationGate && !canExecuteManagedServerRuntime(context.serverId)) {
     throw new Error(`Server ${context.serverId} runtime is disabled or has not passed the activation gate.`);
   }
@@ -188,13 +173,12 @@ export function getTenantContextDiagnostics() {
     activeOrganizationId: active?.organizationId,
     purpose: active?.purpose,
     legacyPrimaryFallbacks: contextFallbacks,
-    policy: "tenant-facing-fail-closed;legacy-background-primary-compat",
+    policy: "tenant-context-required;no-primary-fallback",
   };
 }
 
 export function getServerStateStoragePath(serverId = getActiveServerId()) {
   const context = getServerRuntimeContext(serverId);
-  if (context.isPrimary) return path.resolve(process.cwd(), "state.json");
   return path.resolve(process.cwd(), "state_servers", context.serverId, "state.json");
 }
 
@@ -236,7 +220,6 @@ export async function runWithServerMaintenanceLock<T>(serverId: string, work: ()
 }
 
 export function assertPrimaryRuntimeServer(serverId: string) {
-  const primaryId = getPrimaryServerId();
   if (serverId !== primaryId) {
     throw new Error(`Legacy FTP/Discord state access remains primary-only during Phase 14 operational hardening (${serverId}).`);
   }
