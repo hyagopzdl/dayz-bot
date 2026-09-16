@@ -24,30 +24,16 @@ function esc(value: unknown) { const entities: Record<string,string>={"&":"&amp;
 function orgIdFor(username: string) { return `org-${buildManagedServerId(username)}`; }
 async function resolveManagedServer(serverId: unknown) { const sid=String(serverId||"").trim(); if(!sid)return undefined; let server=getManagedServerById(sid); if(server)return server; await refreshManagedServerRegistryFromDb(); return getManagedServerById(sid); }
 
-/**
- * Resolve the authenticated admin against the current multi-server registry.
- * The legacy admin_users.server_id column is intentionally not used for routing.
- * Existing access is preferred; if the user has an organization membership, all
- * currently enabled servers in that organization become available. In a fresh
- * single-organization deployment, authenticated legacy admins are migrated to
- * the sole current organization without resurrecting any old server identity.
- */
 async function resolveCurrentAdminServerIds(adminUserId: string) {
   const managedServers = listManagedServers().filter((server) => server.enabled);
   if (!managedServers.length) return [];
-
   const currentById = new Map(managedServers.map((server) => [server.id, server]));
   const access = await listAdminServerAccess(adminUserId);
-  const currentAccess = access
-    .map((entry) => currentById.get(entry.serverId))
-    .filter((server): server is NonNullable<typeof server> => Boolean(server));
-
+  const currentAccess = access.map((entry) => currentById.get(entry.serverId)).filter((server): server is NonNullable<typeof server> => Boolean(server));
   if (currentAccess.length) return currentAccess.map((server) => server.id);
-
   const memberships = await listAdminOrganizationMemberships(adminUserId);
   const membershipByOrg = new Map(memberships.map((membership) => [membership.organizationId, membership]));
   const memberServers = managedServers.filter((server) => membershipByOrg.has(server.organizationId));
-
   if (memberServers.length) {
     for (const server of memberServers) {
       const membership = membershipByOrg.get(server.organizationId);
@@ -55,14 +41,10 @@ async function resolveCurrentAdminServerIds(adminUserId: string) {
     }
     return memberServers.map((server) => server.id);
   }
-
   const organizationIds = [...new Set(managedServers.map((server) => server.organizationId))];
   if (organizationIds.length !== 1) return [];
-
   const soleOrganizationServers = managedServers.filter((server) => server.organizationId === organizationIds[0]);
-  for (const server of soleOrganizationServers) {
-    await grantAdminServerAccess(adminUserId, server.id, "owner");
-  }
+  for (const server of soleOrganizationServers) await grantAdminServerAccess(adminUserId, server.id, "owner");
   return soleOrganizationServers.map((server) => server.id);
 }
 
@@ -75,7 +57,24 @@ function discordPage(serverId:string,connected=false,error=""){const server=getM
 router.get("/login", async (req,res)=>{if(req.adminSession){const sid=req.adminSession.serverId;if(sid&&await resolveManagedServer(sid)){res.redirect("/admin-panel");return;}res.redirect("/admin-panel/setup");return;}res.type("html").send(loginPage(String(req.query.error||"")));});
 router.post("/auth/login",async(req,res)=>{try{const user=await authenticateAdminUser(req.body?.username,req.body?.password);if(!user){res.status(401).type("html").send(loginPage("Usuário ou senha inválidos."));return;}clearLegacyPanelCookie(res);const serverIds=await resolveCurrentAdminServerIds(user.id);const sid=serverIds[0]||null;setAdminSessionCookie(req,res,createAdminSession({adminUserId:user.id,username:user.username,serverId:sid}));res.redirect(sid?"/admin-panel":"/admin-panel/setup");}catch(e){res.status(503).type("html").send(loginPage(e instanceof Error?e.message:String(e)));}});
 router.post("/auth/logout",(req,res)=>{clearAdminSessionCookie(req,res);clearLegacyPanelCookie(res);res.redirect("/admin-panel/login");});
-router.get("/setup",async(req,res)=>{if(!req.adminSession){res.redirect("/admin-panel/login");return;}const fresh=await getAdminUserById(req.adminSession.adminUserId);if(!fresh){clearAdminSessionCookie(req,res);res.redirect("/admin-panel/login");return;}const serverIds=await resolveCurrentAdminServerIds(fresh.id);const currentSessionServerId=req.adminSession.serverId&&serverIds.includes(req.adminSession.serverId)?req.adminSession.serverId:null;const validServerId=currentSessionServerId||serverIds[0]||null;if(validServerId!==req.adminSession.serverId)setAdminSessionCookie(req,res,createAdminSession({adminUserId:fresh.id,username:fresh.username,serverId:validServerId}));if(validServerId){res.type("html").send(discordPage(validServerId,req.query.discord==="connected",String(req.query.error||"")));return;}res.type("html").send(setupTokenPage(String(req.query.error||"")));});
+router.get("/setup",async(req,res)=>{
+  if(!req.adminSession){res.redirect("/admin-panel/login");return;}
+  const fresh=await getAdminUserById(req.adminSession.adminUserId);
+  if(!fresh){clearAdminSessionCookie(req,res);res.redirect("/admin-panel/login");return;}
+  // A fresh admin with no selected server is intentionally allowed to enter the
+  // onboarding flow. Do not resolve the server registry here: there may be no
+  // managed server yet, and onboarding itself is responsible for creating it.
+  const sessionServerId=String(req.adminSession.serverId||"").trim();
+  if(!sessionServerId){res.type("html").send(setupTokenPage(String(req.query.error||"")));return;}
+  const server=await resolveManagedServer(sessionServerId);
+  if(!server){
+    setAdminSessionCookie(req,res,createAdminSession({adminUserId:fresh.id,username:fresh.username,serverId:null}));
+    res.type("html").send(setupTokenPage("O servidor desta sessão não está mais disponível. Vamos iniciar o onboarding novamente."));
+    return;
+  }
+  res.type("html").send(discordPage(server.id,req.query.discord==="connected",String(req.query.error||"")));
+});
 router.post("/setup/nitrado",async(req,res)=>{if(!req.adminSession){res.redirect("/admin-panel/login");return;}try{const token=String(req.body?.token||"").trim();if(!token)throw new Error("Informe o token da Nitrado.");const oid=orgIdFor(req.adminSession.username);const org=await createManagedOrganization({id:oid,name:`${req.adminSession.username} Workspace`});if(!org)throw new Error("Não foi possível preparar seu workspace.");await saveOrganizationNitradoCredential(oid,token,{source:"admin-onboarding-discovery"});const result=await discoverOrganizationNitradoServices(oid);res.type("html").send(setupServicesPage(result.services));}catch(e){res.status(400).type("html").send(setupTokenPage(e instanceof Error?e.message:String(e)));}});
 router.post("/setup/server",async(req,res)=>{if(!req.adminSession){res.redirect("/admin-panel/login");return;}try{const serviceId=String(req.body?.serviceId||"").trim();if(!/^\d+$/.test(serviceId))throw new Error("Selecione um servidor.");const oid=orgIdFor(req.adminSession.username);const credential=getOrganizationNitradoCredential(oid);if(!credential.token)throw new Error("Conecte sua conta Nitrado novamente.");const discovery=await discoverOrganizationNitradoServices(oid);const selected=discovery.services.find(s=>s.id===serviceId);if(!selected)throw new Error("Este servidor não está disponível para a conta Nitrado conectada.");let server=listManagedServers().find(s=>String(s.integrations.nitradoServiceId||"")===serviceId);if(server){const existingAccess=await getAdminServerAccess(req.adminSession.adminUserId,server.id);if(!existingAccess&&server.organizationId!==oid){const migrated=await migrateLegacyAdminServerOwnership(req.adminSession.adminUserId,server.id,oid);if(migrated){await refreshManagedServerRegistryFromDb();server=getManagedServerById(server.id)||server;}}if(!existingAccess&&server.organizationId!==oid)throw new Error("Este servidor já pertence a outro workspace.");await saveOrganizationNitradoCredential(server.organizationId,credential.token,{source:"admin-onboarding-existing-server-recovery"});}else{const desiredId=buildManagedServerId(selected.name)||`dayz-${serviceId}`;server=getManagedServerById(desiredId);if(server&&String(server.integrations.nitradoServiceId||"")!==serviceId)server=undefined;if(!server){server=await createManagedServerDraft({id:desiredId,name:selected.name,organizationId:oid,nitradoServiceId:serviceId,nitradoBaseDir:selected.detectedBaseDir});}}if(!server)throw new Error("Não foi possível preparar o servidor selecionado.");if(!selected.assignedServerId){const validation=await validateNitradoServiceSetup(server.id,serviceId,selected.detectedBaseDir);server=await markManagedServerNitradoValidated(server.id,validation);}server=await resolveManagedServer(server.id)||server;if(!server.runtimeEnabled&&!server.runtime.activation?.lastDisabledAt){const preflight=await runManagedServerActivationPreflight(server.id);if(!preflight.passed)throw new Error("O servidor foi conectado, mas o runtime não passou nas verificações de isolamento. Revise o preflight antes de continuar.");server=await setManagedServerRuntimeEnabled(server.id,true);requestManagedServerRuntimeCycle(server.id,"activation");}const updated=await assignAdminUserServer(req.adminSession.adminUserId,server.id);if(!updated)throw new Error("Não foi possível vincular o admin ao servidor.");setAdminSessionCookie(req,res,createAdminSession({adminUserId:updated.id,username:updated.username,serverId:updated.serverId}));res.redirect("/admin-panel/setup");}catch(e){try{const result=await discoverOrganizationNitradoServices(orgIdFor(req.adminSession.username));res.status(400).type("html").send(setupServicesPage(result.services,e instanceof Error?e.message:String(e)));}catch{res.status(400).type("html").send(setupTokenPage(e instanceof Error?e.message:String(e)));}}});
+
 export default router;
