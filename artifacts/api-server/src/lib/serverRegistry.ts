@@ -43,7 +43,7 @@ export type ServerNamespacePersistenceStatus = {
   enabled: boolean; initialized: boolean; botStateTableReady: boolean; playerStatsTableReady: boolean;
   botStateCompositeKeyReady: boolean; playerStatsCompositeKeyReady: boolean; botStatePrimaryKeyReady: boolean;
   playerStatsPrimaryKeyReady: boolean; primaryKeyCutoverComplete: boolean; scopedReadsEnabled: boolean;
-  scopedReadFallbacks: number; lastScopedReadSource?: "server-scoped" | "legacy-fallback" | "legacy" | "server-id-safe-fallback";
+  scopedReadFallbacks: number; lastScopedReadSource?: "server-scoped" | "legacy-fallback" | "legacy" | "server-id-safe-fallback" | "primary-untagged-fallback";
   botStateTaggedRows: number; botStateUntaggedRows: number; playerStatsTaggedRows: number; playerStatsUntaggedRows: number;
   lastCheckedAt?: string; lastError?: string;
 };
@@ -63,6 +63,7 @@ export type ServerRuntimeIsolationStatus = {
   persistenceRuntimeNamespaced?: boolean; positionHistoryNamespaced?: boolean; admParserStorageNamespaced?: boolean;
   activationReadiness?: boolean; discordLoopGuardsNamespaced?: boolean; mapSchedulersContextualized?: boolean;
   contextRuns?: number; contextFallbacks?: number; lastContextServerId?: string;
+  primaryLegacyAdmStoragePreserved?: boolean;
 };
 
 let persistedServers: ManagedServerDescriptor[] = [];
@@ -213,7 +214,8 @@ export function getServerFoundationDiagnostics() {
       runtimeEnabledServers: servers.filter((server) => server.runtimeEnabled).length, activationPolicy: "ready-opt-in",
       secretsStoredInRegistry: secrets, nitradoDiscoveryEnabled: true, nitradoCredentialSource: secrets ? "server-scoped-encrypted" : "organization-scoped",
       discordDiscoveryEnabled: true, integrationValidationMode: "on-demand", activationPreflightEnabled: true, activationEndpointEnabled: true,
-      playerPortalContextSwitchingEnabled: true, multiTenantFoundationEnabled: true, organizationAuthorizationEnabled: true,
+      playerPortalContextSwitchingEnabled: true, additionalServersEnabled: true, operationalHardeningEnabled: true,
+      multiTenantFoundationEnabled: true, organizationAuthorizationEnabled: true,
       organizationCredentialIsolationEnabled: true, serverScopedCommerceSettingsEnabled: true, serverScopedShopCatalogEnabled: true, manualPauseAvailable: true,
     },
     registryPersisted: registry.initialized && registry.tableReady,
