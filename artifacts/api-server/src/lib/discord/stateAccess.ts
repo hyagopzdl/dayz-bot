@@ -1,19 +1,18 @@
-import { getStateAsync, saveDiscordRuntimeStateOnlyAsync, saveDiscordStateAsync } from "../state";
+import { getStateAsync, saveDiscordRuntimeStateOnlyAsync, saveDiscordStateAsync, type AppState } from "../state";
 import { ensureBotState } from "./state";
 import { getManagedServerById, getPrimaryServerId } from "../serverRegistry";
 import { getServerRuntimeContext, runInServerDataContext } from "../serverRuntime";
 
+// Discord creates several state-access objects during startup (feeds, command
+// registration and interactions). Keep one in-flight hydration per server so
+// those paths can never materialize the same large AppState concurrently.
+const stateHydrationPromises = new Map<string, Promise<AppState>>();
+
 export function createDiscordStateAccess(serverId = getPrimaryServerId()) {
-  // Resolve through the runtime boundary instead of reading the registry map
-  // directly. During primary bootstrap the registry may not have hydrated yet,
-  // while secondary servers must still resolve to an explicit managed server.
   const runtime = getServerRuntimeContext(serverId);
   const resolvedServerId = runtime.serverId;
 
   function assertDiscordServiceEnabled() {
-    // The master switch can change after this state-access object is created.
-    // Always read the current registry row instead of trusting the bootstrap
-    // snapshot captured above.
     const currentServer = getManagedServerById(resolvedServerId);
     if (currentServer && !currentServer.enabled) {
       throw new Error(`SERVER_DISABLED:${resolvedServerId}`);
@@ -22,21 +21,32 @@ export function createDiscordStateAccess(serverId = getPrimaryServerId()) {
 
   async function getState() {
     assertDiscordServiceEnabled();
-    const state = ensureBotState(await runInServerDataContext(resolvedServerId, () => getStateAsync()));
 
-    console.log("📊 Discord lendo state:", {
-      serverId: resolvedServerId,
-      global: Object.keys(state.players || {}).length,
-      daily: Object.keys(state.dailyPlayers || {}).length,
-      weekly: Object.keys(state.weeklyPlayers || {}).length,
-      online: Object.keys(state.onlinePlayers || {}).length,
-      killfeed: (state.killFeedEvents || []).length,
-      killStreakEvents: (state.killStreakEvents || []).length,
-      longShotEvents: (state.longShotEvents || []).length,
-      messages: Object.keys(state.discordMessageIds || {}).length,
+    const existing = stateHydrationPromises.get(resolvedServerId);
+    if (existing) return existing;
+
+    const hydration = runInServerDataContext(resolvedServerId, async () => {
+      const state = ensureBotState(await getStateAsync());
+      console.log("📊 Discord lendo state:", {
+        serverId: resolvedServerId,
+        global: Object.keys(state.players || {}).length,
+        daily: Object.keys(state.dailyPlayers || {}).length,
+        weekly: Object.keys(state.weeklyPlayers || {}).length,
+        online: Object.keys(state.onlinePlayers || {}).length,
+        killfeed: (state.killFeedEvents || []).length,
+        killStreakEvents: (state.killStreakEvents || []).length,
+        longShotEvents: (state.longShotEvents || []).length,
+        messages: Object.keys(state.discordMessageIds || {}).length,
+      });
+      return state;
     });
 
-    return state;
+    stateHydrationPromises.set(resolvedServerId, hydration);
+    try {
+      return await hydration;
+    } finally {
+      stateHydrationPromises.delete(resolvedServerId);
+    }
   }
 
   async function saveState(state: any) {
