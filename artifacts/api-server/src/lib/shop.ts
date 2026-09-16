@@ -200,6 +200,14 @@ export function getShopFilePaths(serverId = getServerRuntimeContext().serverId) 
   };
 }
 
+export function getShopEventsPath(serverId = getServerRuntimeContext().serverId) {
+  return getShopFilePaths(serverId).eventsPath;
+}
+
+export function getShopEventSpawnsPath(serverId = getServerRuntimeContext().serverId) {
+  return getShopFilePaths(serverId).eventSpawnsPath;
+}
+
 
 
 function hasShopBotBlock(xml: string) {
@@ -1111,6 +1119,9 @@ export async function tryAutoClearShopAfterAdmReset(
 }
 
 function parseRestartTimes() {
+  const raw = String(
+    getManagedServerById(getServerRuntimeContext().serverId)?.runtime.settings?.shopRestartTimes || ""
+  );
 
   return raw
     .split(",")
@@ -1191,6 +1202,9 @@ function getActiveAutoDeployWindow(
   const deployBefore = numberEnv("SHOP_DEPLOY_MINUTES_BEFORE_RESET", 15);
   const deployGraceAfter = numberEnv("SHOP_DEPLOY_GRACE_MINUTES_AFTER_SCHEDULE", 15);
   const freezeMinutes = numberEnv("SHOP_DEPLOY_FREEZE_MINUTES", 2);
+  const timeZone = String(
+    getManagedServerById(getServerRuntimeContext().serverId)?.runtime.settings?.shopRestartTimezone || "UTC"
+  ).trim() || "UTC";
   const local = getLocalDateParts(now, timeZone);
 
   for (const restart of times) {

@@ -1,5 +1,5 @@
 import { downloadTextFile, uploadTextFile } from "../nitradoFtp";
-import { SHOP_EVENTS_PATH, SHOP_EVENT_SPAWNS_PATH } from "../shop";
+import { getShopEventsPath, getShopEventSpawnsPath } from "../shop";
 import { getMapEventPresets } from "./mapEventPresets";
 import {
   hasMapEventBlock,
@@ -11,13 +11,25 @@ import {
 } from "./mapEventXml";
 import type { MapEventCleanupResult, MapEventDeployResult, MapEventInjectRequest } from "./mapEventTypes";
 
-const MAP_EVENT_SPAWNABLE_TYPES_PATH = SHOP_EVENT_SPAWNS_PATH.replace(/\/cfgeventspawns\.xml$/i, "/cfgspawnabletypes.xml");
+function resolveMapEventSpawnableTypesPath() {
+  return getShopEventSpawnsPath().replace(/\/cfgeventspawns\.xml$/i, "/cfgspawnabletypes.xml");
+}
 
-const MAP_EVENT_MISSION_DIR = SHOP_EVENTS_PATH.replace(/\/db\/events\.xml$/i, "");
-const MAP_EVENT_ECONOMY_CORE_PATH = `${MAP_EVENT_MISSION_DIR}/cfgeconomycore.xml`;
-const MAP_EVENT_MAPGROUPPROTO_PATH = `${MAP_EVENT_MISSION_DIR}/mapgroupproto.xml`;
-const MAP_EVENT_CUSTOM_TYPES_PATH = `${MAP_EVENT_MISSION_DIR}/custom/locked-container-types.xml`;
-const MAP_EVENT_GROUPS_PATH = `${MAP_EVENT_MISSION_DIR}/cfgeventgroups.xml`;
+function resolveMapEventMissionDir() {
+  return getShopEventsPath().replace(/\/db\/events\.xml$/i, "");
+}
+function resolveMapEventEconomyCorePath() {
+  return `${resolveMapEventMissionDir()}/cfgeconomycore.xml`;
+}
+function resolveMapEventMapgroupProtoPath() {
+  return `${resolveMapEventMissionDir()}/mapgroupproto.xml`;
+}
+function resolveMapEventCustomTypesPath() {
+  return `${resolveMapEventMissionDir()}/custom/locked-container-types.xml`;
+}
+function resolveMapEventGroupsPath() {
+  return `${resolveMapEventMissionDir()}/cfgeventgroups.xml`;
+}
 const AIRDROP_MILITARY_GROUP_NAME = "Panel_Airdrop_Military";
 const LOCKED_CONTAINER_TYPES_FILE = "locked-container-types.xml";
 const LOCKED_CONTAINER_FTP_DOWNLOAD_TIMEOUT_MS = 45000;
@@ -358,13 +370,13 @@ function hasAirdropMilitaryGroup(xml: string) {
 }
 
 async function checkAirdropMilitarySetupUnlocked() {
-  const eventGroupsXml = await tryDownloadTextFile(MAP_EVENT_GROUPS_PATH);
+  const eventGroupsXml = await tryDownloadTextFile(resolveMapEventGroupsPath());
   const checks = [
-    { key: "eventGroup:airdropMilitary", label: `cfgeventgroups.xml tem ${AIRDROP_MILITARY_GROUP_NAME}`, ok: hasAirdropMilitaryGroup(eventGroupsXml), path: MAP_EVENT_GROUPS_PATH },
+    { key: "eventGroup:airdropMilitary", label: `cfgeventgroups.xml tem ${AIRDROP_MILITARY_GROUP_NAME}`, ok: hasAirdropMilitaryGroup(eventGroupsXml), path: resolveMapEventGroupsPath() },
   ];
   const missing = checks.filter((check) => !check.ok).length;
   const status = missing === 0 ? "installed" : "not_installed";
-  return { ok: true as const, status, installed: status === "installed", missing, total: checks.length, checkedAt: new Date().toISOString(), checks, paths: [MAP_EVENT_GROUPS_PATH] };
+  return { ok: true as const, status, installed: status === "installed", missing, total: checks.length, checkedAt: new Date().toISOString(), checks, paths: [resolveMapEventGroupsPath()] };
 }
 
 export async function checkAirdropMilitarySetupNow() {
@@ -372,10 +384,10 @@ export async function checkAirdropMilitarySetupNow() {
 }
 
 async function ensureAirdropMilitarySetupUnlocked() {
-  const eventGroupsXml = await tryDownloadTextFile(MAP_EVENT_GROUPS_PATH);
+  const eventGroupsXml = await tryDownloadTextFile(resolveMapEventGroupsPath());
   const nextEventGroupsXml = injectAirdropMilitaryGroup(eventGroupsXml);
-  if (nextEventGroupsXml !== eventGroupsXml) await uploadLockedContainerTextFile(MAP_EVENT_GROUPS_PATH, nextEventGroupsXml);
-  return { ok: true as const, paths: [MAP_EVENT_GROUPS_PATH], changedEventGroups: nextEventGroupsXml !== eventGroupsXml };
+  if (nextEventGroupsXml !== eventGroupsXml) await uploadLockedContainerTextFile(resolveMapEventGroupsPath(), nextEventGroupsXml);
+  return { ok: true as const, paths: [resolveMapEventGroupsPath()], changedEventGroups: nextEventGroupsXml !== eventGroupsXml };
 }
 
 export async function ensureAirdropMilitarySetupNow() {
@@ -383,10 +395,10 @@ export async function ensureAirdropMilitarySetupNow() {
 }
 
 async function uninstallAirdropMilitarySetupUnlocked() {
-  const eventGroupsXml = await downloadLockedContainerTextFile(MAP_EVENT_GROUPS_PATH);
+  const eventGroupsXml = await downloadLockedContainerTextFile(resolveMapEventGroupsPath());
   const nextEventGroupsXml = removeAirdropMilitaryGroup(eventGroupsXml);
-  if (nextEventGroupsXml !== eventGroupsXml) await uploadLockedContainerTextFile(MAP_EVENT_GROUPS_PATH, nextEventGroupsXml);
-  return { ok: true as const, paths: [MAP_EVENT_GROUPS_PATH], changedEventGroups: nextEventGroupsXml !== eventGroupsXml };
+  if (nextEventGroupsXml !== eventGroupsXml) await uploadLockedContainerTextFile(resolveMapEventGroupsPath(), nextEventGroupsXml);
+  return { ok: true as const, paths: [resolveMapEventGroupsPath()], changedEventGroups: nextEventGroupsXml !== eventGroupsXml };
 }
 
 export async function uninstallAirdropMilitarySetupNow() {
@@ -394,18 +406,18 @@ export async function uninstallAirdropMilitarySetupNow() {
 }
 
 async function checkLockedContainerSetupUnlocked() {
-  const economyCoreXml = await tryDownloadTextFile(MAP_EVENT_ECONOMY_CORE_PATH);
-  const mapGroupProtoXml = await tryDownloadTextFile(MAP_EVENT_MAPGROUPPROTO_PATH);
-  const customTypesXml = await tryDownloadTextFile(MAP_EVENT_CUSTOM_TYPES_PATH);
+  const economyCoreXml = await tryDownloadTextFile(resolveMapEventEconomyCorePath());
+  const mapGroupProtoXml = await tryDownloadTextFile(resolveMapEventMapgroupProtoPath());
+  const customTypesXml = await tryDownloadTextFile(resolveMapEventCustomTypesPath());
 
   const checks = [
-    { key: "economyCoreRegistration", label: `cfgeconomycore.xml registra custom/${LOCKED_CONTAINER_TYPES_FILE}`, ok: hasFileRegistration(economyCoreXml), path: MAP_EVENT_ECONOMY_CORE_PATH },
-    { key: "customTypesFile", label: `custom/${LOCKED_CONTAINER_TYPES_FILE} existe`, ok: /<types[\s>]/i.test(customTypesXml), path: MAP_EVENT_CUSTOM_TYPES_PATH },
-    ...LOCKED_CONTAINER_DEFINITIONS.map((def) => ({ key: `mapGroup:${def.className}`, label: `mapgroupproto.xml tem ${def.className} usando somente ${def.usages.join(", ")}`, ok: hasManagedOrMatchingGroup(mapGroupProtoXml, def), path: MAP_EVENT_MAPGROUPPROTO_PATH })),
-    ...LOCKED_CONTAINER_DEFINITIONS.map((def) => ({ key: `mapGroupDuplicate:${def.className}`, label: `mapgroupproto.xml não tem grupo duplicado para ${def.className}`, ok: !hasDuplicateGroupsForClass(mapGroupProtoXml, def.className), path: MAP_EVENT_MAPGROUPPROTO_PATH })),
+    { key: "economyCoreRegistration", label: `cfgeconomycore.xml registra custom/${LOCKED_CONTAINER_TYPES_FILE}`, ok: hasFileRegistration(economyCoreXml), path: resolveMapEventEconomyCorePath() },
+    { key: "customTypesFile", label: `custom/${LOCKED_CONTAINER_TYPES_FILE} existe`, ok: /<types[\s>]/i.test(customTypesXml), path: resolveMapEventCustomTypesPath() },
+    ...LOCKED_CONTAINER_DEFINITIONS.map((def) => ({ key: `mapGroup:${def.className}`, label: `mapgroupproto.xml tem ${def.className} usando somente ${def.usages.join(", ")}`, ok: hasManagedOrMatchingGroup(mapGroupProtoXml, def), path: resolveMapEventMapgroupProtoPath() })),
+    ...LOCKED_CONTAINER_DEFINITIONS.map((def) => ({ key: `mapGroupDuplicate:${def.className}`, label: `mapgroupproto.xml não tem grupo duplicado para ${def.className}`, ok: !hasDuplicateGroupsForClass(mapGroupProtoXml, def.className), path: resolveMapEventMapgroupProtoPath() })),
     ...LOCKED_CONTAINER_DEFINITIONS.flatMap((def) => [
-      { key: `type:${def.className}`, label: `${def.className} declarado no types custom`, ok: customTypesXml.includes(`type name="${def.className}"`) || customTypesXml.includes(`type name='${def.className}'`), path: MAP_EVENT_CUSTOM_TYPES_PATH },
-      { key: `type:${def.keyClassName}`, label: `${def.keyClassName} declarado no types custom`, ok: customTypesXml.includes(`type name="${def.keyClassName}"`) || customTypesXml.includes(`type name='${def.keyClassName}'`), path: MAP_EVENT_CUSTOM_TYPES_PATH },
+      { key: `type:${def.className}`, label: `${def.className} declarado no types custom`, ok: customTypesXml.includes(`type name="${def.className}"`) || customTypesXml.includes(`type name='${def.className}'`), path: resolveMapEventCustomTypesPath() },
+      { key: `type:${def.keyClassName}`, label: `${def.keyClassName} declarado no types custom`, ok: customTypesXml.includes(`type name="${def.keyClassName}"`) || customTypesXml.includes(`type name='${def.keyClassName}'`), path: resolveMapEventCustomTypesPath() },
     ]),
   ];
 
@@ -421,7 +433,7 @@ async function checkLockedContainerSetupUnlocked() {
     total: checks.length,
     checkedAt: new Date().toISOString(),
     checks,
-    paths: [MAP_EVENT_ECONOMY_CORE_PATH, MAP_EVENT_CUSTOM_TYPES_PATH, MAP_EVENT_MAPGROUPPROTO_PATH],
+    paths: [resolveMapEventEconomyCorePath(), resolveMapEventCustomTypesPath(), resolveMapEventMapgroupProtoPath()],
   };
 }
 
@@ -430,19 +442,19 @@ export async function checkLockedContainerSetupNow() {
 }
 
 async function ensureLockedContainerSetupUnlocked() {
-  const economyCoreXml = await downloadLockedContainerTextFile(MAP_EVENT_ECONOMY_CORE_PATH);
-  const mapGroupProtoXml = await downloadLockedContainerTextFile(MAP_EVENT_MAPGROUPPROTO_PATH);
+  const economyCoreXml = await downloadLockedContainerTextFile(resolveMapEventEconomyCorePath());
+  const mapGroupProtoXml = await downloadLockedContainerTextFile(resolveMapEventMapgroupProtoPath());
 
   const nextEconomyCoreXml = injectCustomTypesRegistration(economyCoreXml);
   const nextMapGroupProtoXml = injectLockedContainerMapGroups(mapGroupProtoXml);
 
-  if (nextEconomyCoreXml !== economyCoreXml) await uploadLockedContainerTextFile(MAP_EVENT_ECONOMY_CORE_PATH, nextEconomyCoreXml);
-  await uploadLockedContainerTextFile(MAP_EVENT_CUSTOM_TYPES_PATH, LOCKED_CONTAINER_TYPES_XML);
-  if (nextMapGroupProtoXml !== mapGroupProtoXml) await uploadLockedContainerTextFile(MAP_EVENT_MAPGROUPPROTO_PATH, nextMapGroupProtoXml);
+  if (nextEconomyCoreXml !== economyCoreXml) await uploadLockedContainerTextFile(resolveMapEventEconomyCorePath(), nextEconomyCoreXml);
+  await uploadLockedContainerTextFile(resolveMapEventCustomTypesPath(), LOCKED_CONTAINER_TYPES_XML);
+  if (nextMapGroupProtoXml !== mapGroupProtoXml) await uploadLockedContainerTextFile(resolveMapEventMapgroupProtoPath(), nextMapGroupProtoXml);
 
   return {
     ok: true as const,
-    paths: [MAP_EVENT_ECONOMY_CORE_PATH, MAP_EVENT_CUSTOM_TYPES_PATH, MAP_EVENT_MAPGROUPPROTO_PATH],
+    paths: [resolveMapEventEconomyCorePath(), resolveMapEventCustomTypesPath(), resolveMapEventMapgroupProtoPath()],
     changedEconomyCore: nextEconomyCoreXml !== economyCoreXml,
     changedMapGroupProto: nextMapGroupProtoXml !== mapGroupProtoXml,
   };
@@ -453,20 +465,20 @@ export async function ensureLockedContainerSetupNow() {
 }
 
 async function uninstallLockedContainerSetupUnlocked() {
-  const economyCoreXml = await downloadLockedContainerTextFile(MAP_EVENT_ECONOMY_CORE_PATH);
-  const mapGroupProtoXml = await downloadLockedContainerTextFile(MAP_EVENT_MAPGROUPPROTO_PATH);
+  const economyCoreXml = await downloadLockedContainerTextFile(resolveMapEventEconomyCorePath());
+  const mapGroupProtoXml = await downloadLockedContainerTextFile(resolveMapEventMapgroupProtoPath());
 
   const nextEconomyCoreXml = removeCustomTypesRegistration(economyCoreXml);
   const nextMapGroupProtoXml = removeLockedContainerMapGroups(mapGroupProtoXml);
   const emptyTypesXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<types>\n</types>\n`;
 
-  if (nextEconomyCoreXml !== economyCoreXml) await uploadLockedContainerTextFile(MAP_EVENT_ECONOMY_CORE_PATH, nextEconomyCoreXml);
-  await uploadLockedContainerTextFile(MAP_EVENT_CUSTOM_TYPES_PATH, emptyTypesXml);
-  if (nextMapGroupProtoXml !== mapGroupProtoXml) await uploadLockedContainerTextFile(MAP_EVENT_MAPGROUPPROTO_PATH, nextMapGroupProtoXml);
+  if (nextEconomyCoreXml !== economyCoreXml) await uploadLockedContainerTextFile(resolveMapEventEconomyCorePath(), nextEconomyCoreXml);
+  await uploadLockedContainerTextFile(resolveMapEventCustomTypesPath(), emptyTypesXml);
+  if (nextMapGroupProtoXml !== mapGroupProtoXml) await uploadLockedContainerTextFile(resolveMapEventMapgroupProtoPath(), nextMapGroupProtoXml);
 
   return {
     ok: true as const,
-    paths: [MAP_EVENT_ECONOMY_CORE_PATH, MAP_EVENT_CUSTOM_TYPES_PATH, MAP_EVENT_MAPGROUPPROTO_PATH],
+    paths: [resolveMapEventEconomyCorePath(), resolveMapEventCustomTypesPath(), resolveMapEventMapgroupProtoPath()],
     changedEconomyCore: nextEconomyCoreXml !== economyCoreXml,
     changedMapGroupProto: nextMapGroupProtoXml !== mapGroupProtoXml,
   };
@@ -486,9 +498,9 @@ export async function injectMapEventNow(input: MapEventInjectRequest): Promise<M
   const shouldUseSpawnableTypes = event.lootMode === "guaranteed_container";
 
   const [eventsXml, eventSpawnsXml, spawnableTypesXml] = await Promise.all([
-    downloadTextFile(SHOP_EVENTS_PATH),
-    downloadTextFile(SHOP_EVENT_SPAWNS_PATH),
-    shouldUseSpawnableTypes ? downloadTextFile(MAP_EVENT_SPAWNABLE_TYPES_PATH) : Promise.resolve(""),
+    downloadTextFile(getShopEventsPath()),
+    downloadTextFile(getShopEventSpawnsPath()),
+    shouldUseSpawnableTypes ? downloadTextFile(resolveMapEventSpawnableTypesPath()) : Promise.resolve(""),
   ]);
 
   const nextEventsXml = injectMapEventIntoEventsXml(eventsXml, event);
@@ -506,8 +518,8 @@ export async function injectMapEventNow(input: MapEventInjectRequest): Promise<M
   }
 
   const uploads = [
-    uploadTextFile(SHOP_EVENTS_PATH, nextEventsXml),
-    uploadTextFile(SHOP_EVENT_SPAWNS_PATH, nextEventSpawnsXml),
+    uploadTextFile(getShopEventsPath(), nextEventsXml),
+    uploadTextFile(getShopEventSpawnsPath(), nextEventSpawnsXml),
   ];
 
   if (shouldUseSpawnableTypes) {
@@ -515,14 +527,14 @@ export async function injectMapEventNow(input: MapEventInjectRequest): Promise<M
       throw new Error("Falha ao gerar cfgspawnabletypes.xml do loot garantido.");
     }
 
-    uploads.push(uploadTextFile(MAP_EVENT_SPAWNABLE_TYPES_PATH, nextSpawnableTypesXml));
+    uploads.push(uploadTextFile(resolveMapEventSpawnableTypesPath(), nextSpawnableTypesXml));
   }
 
   await Promise.all(uploads);
 
   const path = shouldUseSpawnableTypes
-    ? `${SHOP_EVENTS_PATH} + ${SHOP_EVENT_SPAWNS_PATH} + ${MAP_EVENT_SPAWNABLE_TYPES_PATH}`
-    : `${SHOP_EVENTS_PATH} + ${SHOP_EVENT_SPAWNS_PATH}`;
+    ? `${getShopEventsPath()} + ${getShopEventSpawnsPath()} + ${resolveMapEventSpawnableTypesPath()}`
+    : `${getShopEventsPath()} + ${getShopEventSpawnsPath()}`;
 
   return {
     ok: true,
@@ -536,9 +548,9 @@ export async function injectMapEventNow(input: MapEventInjectRequest): Promise<M
 
 export async function cleanupMapEventsNow(): Promise<MapEventCleanupResult> {
   const [eventsXml, eventSpawnsXml, spawnableTypesXml] = await Promise.all([
-    downloadTextFile(SHOP_EVENTS_PATH),
-    downloadTextFile(SHOP_EVENT_SPAWNS_PATH),
-    downloadTextFile(MAP_EVENT_SPAWNABLE_TYPES_PATH),
+    downloadTextFile(getShopEventsPath()),
+    downloadTextFile(getShopEventSpawnsPath()),
+    downloadTextFile(resolveMapEventSpawnableTypesPath()),
   ]);
 
   const clearedEventsXml = hasMapEventBlock(eventsXml);
@@ -546,9 +558,9 @@ export async function cleanupMapEventsNow(): Promise<MapEventCleanupResult> {
   const clearedSpawnableTypesXml = hasMapEventBlock(spawnableTypesXml);
 
   await Promise.all([
-    uploadTextFile(SHOP_EVENTS_PATH, removeMapEventBlocks(eventsXml)),
-    uploadTextFile(SHOP_EVENT_SPAWNS_PATH, removeMapEventBlocks(eventSpawnsXml)),
-    uploadTextFile(MAP_EVENT_SPAWNABLE_TYPES_PATH, removeMapEventBlocks(spawnableTypesXml)),
+    uploadTextFile(getShopEventsPath(), removeMapEventBlocks(eventsXml)),
+    uploadTextFile(getShopEventSpawnsPath(), removeMapEventBlocks(eventSpawnsXml)),
+    uploadTextFile(resolveMapEventSpawnableTypesPath(), removeMapEventBlocks(spawnableTypesXml)),
   ]);
 
   return {
@@ -556,6 +568,6 @@ export async function cleanupMapEventsNow(): Promise<MapEventCleanupResult> {
     clearedEventsXml,
     clearedEventSpawnsXml,
     clearedSpawnableTypesXml,
-    path: `${SHOP_EVENTS_PATH} + ${SHOP_EVENT_SPAWNS_PATH} + ${MAP_EVENT_SPAWNABLE_TYPES_PATH}`,
+    path: `${getShopEventsPath()} + ${getShopEventSpawnsPath()} + ${resolveMapEventSpawnableTypesPath()}`,
   };
 }

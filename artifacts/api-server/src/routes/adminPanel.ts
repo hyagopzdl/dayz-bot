@@ -4,7 +4,7 @@ import crypto from "crypto";
 import sharp from "sharp";
 import { Router, type Request, type Response } from "express";
 import { Routes } from "discord.js";
-import { deployPendingShopOrders, getShopRuntimeStatus, SHOP_EVENTS_PATH } from "../lib/shop";
+import { deployPendingShopOrders, getShopRuntimeStatus, getShopEventsPath } from "../lib/shop";
 import {
   checkAirdropMilitarySetupNow,
   checkLockedContainerSetupNow,
@@ -239,7 +239,9 @@ type MapRotationActivePollPayload = { id: string; channelId: string; messageId: 
 type MapRotationAutomationPayload = { lastPollWindowId?: string; lastCloseWindowId?: string; lastCheckedAt?: string; lastAction?: string; lastError?: string; currentWindowId?: string; currentWindowOpenAt?: string; currentWindowCloseAt?: string; nextWindowOpenAt?: string; nextWindowCloseAt?: string; activePollClosesAt?: string; activePollOverdueByMs?: number; nextRecurringPollAt?: string; recurringPollDurationMs?: number; lastRecurringPollAt?: string; lastCategoryUpdateAt?: string; lastCategoryName?: string; lastDeletedPollMessageId?: string; lastDeletedPollAt?: string; lastMissingPollMessageId?: string; lastMissingPollAt?: string; schedulerIntervalMs?: number };
 type MapRotationPayload = { zones: SpawnZonePayload[]; currentZoneId?: string; nextZoneId?: string; voteHistory: any[]; settings: MapRotationSettingsPayload; activePoll?: MapRotationActivePollPayload; automation?: MapRotationAutomationPayload; updatedAt: string };
 
-const SPAWN_ZONE_FILE_PATH = SHOP_EVENTS_PATH.replace(/\/db\/events\.xml$/i, "/cfgplayerspawnpoints.xml");
+function resolveSpawnZoneFilePath() {
+  return getShopEventsPath().replace(/\/db\/events\.xml$/i, "/cfgplayerspawnpoints.xml");
+}
 
 const SPAWN_ZONE_COLORS = ["#e11d48", "#3b82f6", "#22c55e", "#f59e0b", "#8b5cf6", "#ec4899", "#06b6d4", "#f97316"];
 const SPAWN_ZONE_WORLD_SIZE = 15360;
@@ -364,7 +366,7 @@ function normalizeMapRotationSettings(value: unknown): MapRotationSettingsPayloa
     applyOnNextRestart: input.applyOnNextRestart === true,
     tiePolicy: ["manual", "keep_current", "random"].includes(String(input.tiePolicy || "")) ? String(input.tiePolicy) : "manual",
     minVotes: Number.isFinite(minVotes) && minVotes > 0 ? Math.floor(minVotes) : 0,
-    spawnFilePath: String(input.spawnFilePath || SPAWN_ZONE_FILE_PATH).trim() || SPAWN_ZONE_FILE_PATH,
+    spawnFilePath: String(input.spawnFilePath || resolveSpawnZoneFilePath()).trim() || resolveSpawnZoneFilePath(),
     mapVoteWelcomeMessageId: String(input.mapVoteWelcomeMessageId || "").trim(),
   };
 }
@@ -961,7 +963,7 @@ async function postSpawnZonePollResult(settings: MapRotationSettingsPayload, con
 
 async function applySpawnZoneToServer(rotation: MapRotationPayload, zone: SpawnZonePayload, source: string, totalVotes = 0) {
   const settings = normalizeMapRotationSettings(rotation.settings);
-  const filePath = settings.spawnFilePath || SPAWN_ZONE_FILE_PATH;
+  const filePath = settings.spawnFilePath || resolveSpawnZoneFilePath();
   const currentXml = await downloadTextFile(filePath);
   const nextXml = replaceFreshSpawnPointsXml(currentXml, zone);
   await uploadTextFile(filePath, nextXml);
