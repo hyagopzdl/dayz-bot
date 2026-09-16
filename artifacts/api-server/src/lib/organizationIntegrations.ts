@@ -34,8 +34,6 @@ function integrationKey(organizationId: string, provider: OrganizationIntegratio
 
 function getEncryptionKey() {
   const raw = String(process.env.ADM_SECRETS_KEY || "").trim();
-  // The app derives a fixed AES-256 key, but still requires enough source
-  // entropy so a short human password cannot silently become a tenant-secret key.
   if (raw.length < 32) return null;
   return crypto.createHash("sha256").update(raw, "utf8").digest();
 }
@@ -83,6 +81,19 @@ export function setPersistedOrganizationIntegrations(nextRecords: OrganizationIn
   }
 }
 
+export function upsertOrganizationIntegrationRecord(record: OrganizationIntegrationRecord) {
+  if (!record.organizationId || record.provider !== "nitrado") return;
+  records.set(integrationKey(record.organizationId, record.provider), {
+    ...record,
+    metadata: { ...(record.metadata || {}) },
+  });
+}
+
+export function deactivateOrganizationIntegration(organizationId: string, provider: OrganizationIntegrationProvider) {
+  const current = records.get(integrationKey(organizationId, provider));
+  if (current) records.set(integrationKey(organizationId, provider), { ...current, active: false, updatedAt: new Date().toISOString() });
+}
+
 export function getOrganizationIntegrationRecord(
   organizationId: string,
   provider: OrganizationIntegrationProvider,
@@ -95,14 +106,11 @@ export function getOrganizationNitradoCredential(organizationId: string) {
   const record = records.get(integrationKey(organizationId, "nitrado"));
   if (record?.active) {
     return {
-    token: decryptEncryptedSecret(record),
+      token: decryptEncryptedSecret(record),
       source: "organization-secret" as const,
     };
   }
 
-  // Transitional compatibility is intentionally limited to the organization
-  // that owns the existing production servers. Other tenants can never inherit
-  // the platform environment token.
   if (organizationId === getDefaultOrganizationId()) {
     const token = String(process.env.NITRADO_TOKEN || "").trim();
     if (token) return { token, source: "environment-fallback" as const };
