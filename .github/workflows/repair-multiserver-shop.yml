@@ -1,0 +1,103 @@
+name: Repair multi-server shop paths
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  repair:
+    if: github.actor == 'hyagopzdl' && !contains(github.event.head_commit.message, '[skip-repair]')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Repair source
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          shop = Path('artifacts/api-server/src/lib/shop.ts')
+          text = shop.read_text()
+
+          # Restore the missing scoped settings reads using the managed-server
+          # runtime as the single source of truth.
+          text = text.replace(
+              'getServerScopedSettings(getServerRuntimeContext().serverId).shopRestartTimes',
+              'getManagedServerById(getServerRuntimeContext().serverId)?.runtime.settings?.shopRestartTimes'
+          )
+          text = text.replace(
+              'getServerScopedSettings(getServerRuntimeContext().serverId).shopRestartTimezone',
+              'getManagedServerById(getServerRuntimeContext().serverId)?.runtime.settings?.shopRestartTimezone'
+          )
+
+          # The exported paths are functions, never module-level tenant state.
+          marker = 'export function getShopFilePaths(serverId = getServerRuntimeContext().serverId) {'
+          if 'export function getShopEventsPath(' not in text:
+              idx = text.index(marker)
+              end = text.index('\n}\n', idx) + 3
+              text = text[:end] + '''\nexport function getShopEventsPath(serverId = getServerRuntimeContext().serverId) {\n  return getShopFilePaths(serverId).eventsPath;\n}\n\nexport function getShopEventSpawnsPath(serverId = getServerRuntimeContext().serverId) {\n  return getShopFilePaths(serverId).eventSpawnsPath;\n}\n''' + text[end:]
+
+          shop.write_text(text)
+
+          mp = Path('artifacts/api-server/src/lib/mapEvents/mapEventService.ts')
+          text = mp.read_text()
+          text = text.replace(
+              'import { SHOP_EVENTS_PATH, SHOP_EVENT_SPAWNS_PATH } from "../shop";',
+              'import { getShopEventsPath, getShopEventSpawnsPath } from "../shop";'
+          )
+          # Replace every remaining legacy constant reference, including
+          # references below the first repair block that the previous script missed.
+          text = re.sub(r'\bSHOP_EVENTS_PATH\b', 'getShopEventsPath()', text)
+          text = re.sub(r'\bSHOP_EVENT_SPAWNS_PATH\b', 'getShopEventSpawnsPath()', text)
+          text = re.sub(r'\bMAP_EVENT_SPAWNABLE_TYPES_PATH\b', 'resolveMapEventSpawnableTypesPath()', text)
+          text = re.sub(r'\bMAP_EVENT_MISSION_DIR\b', 'resolveMapEventMissionDir()', text)
+          text = re.sub(r'\bMAP_EVENT_ECONOMY_CORE_PATH\b', 'resolveMapEventEconomyCorePath()', text)
+          text = re.sub(r'\bMAP_EVENT_MAPGROUPPROTO_PATH\b', 'resolveMapEventMapgroupProtoPath()', text)
+          text = re.sub(r'\bMAP_EVENT_CUSTOM_TYPES_PATH\b', 'resolveMapEventCustomTypesPath()', text)
+          text = re.sub(r'\bMAP_EVENT_GROUPS_PATH\b', 'resolveMapEventGroupsPath()', text)
+          mp.write_text(text)
+
+          admin = Path('artifacts/api-server/src/routes/adminPanel.ts')
+          text = admin.read_text()
+          text = text.replace(
+              'import { deployPendingShopOrders, getShopRuntimeStatus, SHOP_EVENTS_PATH } from "../lib/shop";',
+              'import { deployPendingShopOrders, getShopRuntimeStatus, getShopEventsPath } from "../lib/shop";'
+          )
+          text = re.sub(r'\bSPAWN_ZONE_FILE_PATH\b', 'getSpawnZoneFilePath()', text)
+          text = re.sub(r'\bSHOP_EVENTS_PATH\b', 'getShopEventsPath()', text)
+          if 'function getSpawnZoneFilePath()' not in text:
+              marker = 'const SPAWN_ZONE_FILE_PATH = getShopEventsPath().replace(/\\/db\\/events\\.xml$/i, "/cfgplayerspawnpoints.xml");'
+              if marker in text:
+                  text = text.replace(marker, 'function getSpawnZoneFilePath() {\n  return getShopEventsPath().replace(/\\/db\\/events\\.xml$/i, "/cfgplayerspawnpoints.xml");\n}')
+          admin.write_text(text)
+          PY
+
+      - name: Validate
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.25.0 --activate
+          unset npm_config_user_agent
+          pnpm install
+          pnpm -w run typecheck:libs
+          pnpm --filter @workspace/api-server typecheck
+
+      - name: Commit repair and remove workflow
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add artifacts/api-server/src/lib/shop.ts artifacts/api-server/src/lib/mapEvents/mapEventService.ts artifacts/api-server/src/routes/adminPanel.ts
+          if git diff --cached --quiet; then
+            echo 'No source changes required.'
+            git rm -f .github/workflows/repair-multiserver-shop.yml
+            git commit -m 'chore: remove temporary multi-server repair workflow [skip-repair]'
+          else
+            git commit -m 'fix: repair remaining multi-server shop paths [skip-repair]'
+            git rm -f .github/workflows/repair-multiserver-shop.yml
+            git commit -m 'chore: remove temporary multi-server repair workflow [skip-repair]'
+          fi
+          git push
