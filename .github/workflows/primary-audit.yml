@@ -3,6 +3,8 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+permissions:
+  contents: write
 jobs:
   audit:
     runs-on: ubuntu-latest
@@ -10,14 +12,20 @@ jobs:
       - uses: actions/checkout@v4
       - name: Audit legacy primary references
         run: |
-          set +e
-          echo '=== PRIMARY DESCRIPTOR ==='
-          rg -n -C 2 'getPrimaryServerDescriptor|Primary server fallback has been removed' . --glob '!node_modules/**' || true
-          echo '=== PRIMARY ID ==='
-          rg -n -C 1 'getPrimaryServerId' . --glob '!node_modules/**' || true
-          echo '=== PRIMARY FLAGS ==='
-          rg -n -C 1 'primary_server|\.primary\b|isPrimary' artifacts/api-server/src --glob '*.ts' || true
-          echo '=== LEGACY BOOT HELPERS ==='
-          rg -n -C 2 'ensurePrimaryServerRegistryMetadata|reloadManagedServerRegistryFromDb' artifacts/api-server/src --glob '*.ts' || true
-          echo '=== ONBOARDING ==='
-          rg -n -C 3 'nitrado/connect|saveOrganizationNitradoCredential|createManagedServerDraft' artifacts/api-server/src --glob '*.ts' || true
+          {
+            echo '=== PRIMARY DESCRIPTOR ==='
+            rg -n -C 2 'getPrimaryServerDescriptor|Primary server fallback has been removed' . --glob '!node_modules/**' || true
+            echo '=== PRIMARY ID ==='
+            rg -n -C 1 'getPrimaryServerId' . --glob '!node_modules/**' || true
+            echo '=== PRIMARY FLAGS ==='
+            rg -n -C 1 'primary_server|\.primary\b|isPrimary' artifacts/api-server/src --glob '*.ts' || true
+            echo '=== LEGACY BOOT HELPERS ==='
+            rg -n -C 2 'ensurePrimaryServerRegistryMetadata|reloadManagedServerRegistryFromDb' artifacts/api-server/src --glob '*.ts' || true
+            echo '=== ONBOARDING ==='
+            rg -n -C 3 'nitrado/connect|saveOrganizationNitradoCredential|createManagedServerDraft' artifacts/api-server/src --glob '*.ts' || true
+          } > PRIMARY_AUDIT.txt
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add PRIMARY_AUDIT.txt
+          git commit -m 'chore: primary reference audit report' || true
+          git push
