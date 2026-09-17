@@ -8,9 +8,17 @@ jobs:
   clean:
     if: github.event.head_commit.message != 'chore: finalize Neon connection cleanup'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - name: Harden every postgres.js client
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.25.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Harden postgres.js clients
         shell: bash
         run: |
           set -euo pipefail
@@ -29,36 +37,25 @@ jobs:
               text = path.read_text()
               if old not in text:
                   raise SystemExit(f'expected postgres client pattern not found in {path}')
-              text = text.replace(old, new, 1)
-              path.write_text(text)
-
-          # The root db package is already bounded, but also recycle its single
-          # client periodically so a deployment cannot pin Neon compute forever.
-          path = Path('lib/db/src/index.ts')
-          text = path.read_text()
-          old_pool = '''  max: 1,\n  idleTimeoutMillis: 30_000,\n  connectionTimeoutMillis: 10_000,\n  allowExitOnIdle: true,'''
-          new_pool = '''  max: 1,\n  idleTimeoutMillis: 30_000,\n  connectionTimeoutMillis: 10_000,\n  allowExitOnIdle: true,\n  maxLifetimeSeconds: 1800,'''
-          if old_pool in text:
-              text = text.replace(old_pool, new_pool, 1)
-          path.write_text(text)
+              path.write_text(text.replace(old, new, 1))
           PY
 
       - name: Verify source and typecheck
         shell: bash
         run: |
           set -euo pipefail
-          grep -RIn --include='*.ts' 'postgres(process.env.DATABASE_URL' artifacts/api-server/src/lib lib/db/src
-          corepack pnpm install --no-frozen-lockfile --ignore-scripts
-          corepack pnpm run typecheck
+          grep -RIn --include='*.ts' -A7 'postgres(process.env.DATABASE_URL' artifacts/api-server/src/lib
+          pnpm install --frozen-lockfile
+          pnpm --filter @workspace/api-server typecheck
 
-      - name: Commit hardened clients and remove one-time workflow
+      - name: Commit hardened clients and remove audit workflows
         shell: bash
         run: |
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           rm -f .github/workflows/one-time-neon-connection-clean.yml .github/workflows/neon-audit.yml
-          git add artifacts/api-server/src/lib/state.ts artifacts/api-server/src/lib/tenantCommerceStore.ts lib/db/src/index.ts .github/workflows/one-time-neon-connection-clean.yml .github/workflows/neon-audit.yml
+          git add artifacts/api-server/src/lib/state.ts artifacts/api-server/src/lib/tenantCommerceStore.ts .github/workflows/one-time-neon-connection-clean.yml .github/workflows/neon-audit.yml
           git diff --cached --quiet && exit 0
           git commit -m 'chore: finalize Neon connection cleanup'
           git push
