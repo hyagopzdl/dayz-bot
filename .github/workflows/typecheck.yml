@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   typecheck:
@@ -16,31 +16,6 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - name: Apply one-time postgres typing fix
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          import re
-          p=Path('artifacts/api-server/src/lib/state.ts')
-          s=p.read_text()
-          marker='const sql = process.env.DATABASE_URL\n  ? postgres(process.env.DATABASE_URL, {\n      ssl: "require",\n      max: 1,\n    })\n  : null;'
-          helper='''const sql = process.env.DATABASE_URL\n  ? postgres(process.env.DATABASE_URL, {\n      ssl: "require",\n      max: 1,\n    })\n  : null;\n\nfunction getSql(): postgres.Sql {\n  if (!sql) throw new Error("DATABASE_URL is not configured.");\n  return sql;\n}'''
-          if marker in s and 'function getSql(): postgres.Sql' not in s:
-              s=s.replace(marker, helper, 1)
-          s=re.sub(r'(?<![A-Za-z0-9_])sql`', 'getSql()`', s)
-          p.write_text(s)
-
-          t=Path('artifacts/api-server/tsconfig.json')
-          ts=t.read_text()
-          ts=ts.replace(',\n    "strictNullChecks": false,\n    "strictPropertyInitialization": false', '')
-          ts=ts.replace(',\n    "strictNullChecks": false', '')
-          t.write_text(ts)
-          PY
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add artifacts/api-server/src/lib/state.ts artifacts/api-server/tsconfig.json
-          git commit -m 'fix: make postgres state access type-safe' || true
-          git push
       - uses: pnpm/action-setup@v4
         with:
           version: 10.25.0
