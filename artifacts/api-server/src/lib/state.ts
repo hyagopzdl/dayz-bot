@@ -663,7 +663,7 @@ async function reloadOrganizationRegistryFromDb() {
   });
 }
 
-async function ensureManagedServerRegistryMetadata() {
+export async function ensureManagedServerRegistryMetadata() {
   if (!sql) {
     setOrganizationRegistryPersistenceStatus({ enabled: false, initialized: true });
     setPersistedOrganizations([getDefaultOrganizationDescriptor()], []);
