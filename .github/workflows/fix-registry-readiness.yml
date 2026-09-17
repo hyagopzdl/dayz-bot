@@ -1,0 +1,71 @@
+name: Fix registry readiness
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch registry readiness guards
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          p = Path('artifacts/api-server/src/lib/state.ts')
+          s = p.read_text()
+          marker = '\n\nexport type PlayerPositionHistoryEventType'
+          assert marker in s
+          helper = '''
+
+async function ensureManagedServerRegistryReady() {
+  await ensureManagedServerRegistryMetadata();
+  if (!sql) {
+    throw new Error("Server registry is unavailable: DATABASE_URL is not configured.");
+  }
+
+  // The registry readiness flag is process-local diagnostic state. It can be stale
+  // after an early startup race or a previous metadata bootstrap failure. The
+  // database itself is the source of truth for whether managed_servers exists.
+  const rows = await sql`
+    SELECT to_regclass('public.managed_servers') IS NOT NULL AS ready
+  `;
+  const ready = Boolean((rows as any[])[0]?.ready);
+  if (!ready) {
+    const diagnostic = getServerRegistryPersistenceStatus().lastError;
+    throw new Error(diagnostic
+      ? `Server registry is unavailable: managed_servers is not ready (${diagnostic}).`
+      : "Server registry is unavailable: managed_servers table does not exist.");
+  }
+
+  setServerRegistryPersistenceStatus({
+    enabled: true,
+    initialized: true,
+    tableReady: true,
+    lastError: undefined,
+  });
+}
+'''
+          s = s.replace(marker, helper + marker, 1)
+
+          # Every server-registry mutator must validate the real DB table, not a
+          # cached process flag that can remain false after a transient startup race.
+          pattern = re.compile(r'await ensureManagedServerRegistryMetadata\(\);\n\s*if \(!sql \|\| !getServerRegistryPersistenceStatus\(\)\.tableReady\) \{\n\s*throw new Error\("Server registry is unavailable\. DATABASE_URL and managed_servers must be ready\."\);\n\s*\}')
+          s, count1 = pattern.subn('await ensureManagedServerRegistryReady();', s)
+          pattern2 = re.compile(r'await ensureManagedServerRegistryMetadata\(\);\n\s*if \(!sql \|\| !getServerRegistryPersistenceStatus\(\)\.tableReady\) throw new Error\("Server registry is unavailable\."\);')
+          s, count2 = pattern2.subn('await ensureManagedServerRegistryReady();', s)
+          assert count1 + count2 >= 1, 'No registry readiness guards were replaced'
+          p.write_text(s)
+          print('replaced guards:', count1 + count2)
+          PY
+      - name: Verify source
+        run: |
+          ! grep -Rni 'Server registry is unavailable. DATABASE_URL and managed_servers must be ready.' artifacts/api-server/src --include='*.ts'
+      - name: Commit
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add artifacts/api-server/src/lib/state.ts
+          git commit -m 'fix: validate managed server registry against database'
+          git push
