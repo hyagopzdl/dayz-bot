@@ -2,7 +2,6 @@ import {
   canExecuteManagedServerRuntime,
   getManagedServerActivationConfigSignature,
   getManagedServerById,
-  getPrimaryServerDescriptor,
   getPrimaryServerId,
   getServerFoundationDiagnostics,
   listManagedServers,
@@ -64,10 +63,6 @@ function pushCheck(
 
 function normalizeLocalPath(value: string) {
   return String(value || "").replace(/\\/g, "/").replace(/\/{2,}/g, "/");
-}
-
-function isSamePath(a: string, b: string) {
-  return normalizeLocalPath(a) === normalizeLocalPath(b);
 }
 
 const DISCORD_CHANNEL_EXPECTATIONS: Array<{
@@ -169,7 +164,6 @@ export async function runManagedServerActivationPreflight(serverIdInput: string)
   }
 
   const foundation = getServerFoundationDiagnostics();
-  const primary = getPrimaryServerDescriptor();
   const allServers = listManagedServers();
 
   const runtimeGateSafe = !server.runtimeEnabled
@@ -224,10 +218,6 @@ export async function runManagedServerActivationPreflight(serverIdInput: string)
   let validationRecovered = false;
   let validationRecoveryError = "";
 
-  // Phase 11 hotfix: a successful Phase 10 validation can be persisted while an
-  // adapter/frontend still surfaces only the Configured metadata. Reconcile that
-  // state fail-closed by revalidating the exact Service ID + base dir on demand.
-  // This does not start a runtime or download an ADM file.
   if (!nitradoMetadataValid && serviceId && baseDir && uniqueRouting) {
     try {
       prefetchedNitradoValidation = await validateNitradoServiceSetup(server.id, serviceId, baseDir);
@@ -263,40 +253,26 @@ export async function runManagedServerActivationPreflight(serverIdInput: string)
     : `Existe uma integracao reutilizada por outro servidor${duplicateService ? ` (Nitrado: ${duplicateService.name})` : ""}${duplicateGuild ? ` (Discord: ${duplicateGuild.name})` : ""}.`);
 
   const targetStorage = getServerStoragePlan(server.id);
-  const primaryStorage = getServerStoragePlan(primary.id);
   const targetAdmLogDir = normalizeLocalPath(targetStorage.admLogDir);
   const targetManifest = normalizeLocalPath(targetStorage.admManifestFile);
   const targetState = normalizeLocalPath(targetStorage.stateFile);
   const admNamespaceMarker = `/adm_servers/${server.id}/`;
   const stateNamespaceMarker = `/state_servers/${server.id}/`;
   const storageIsolated = !targetStorage.isPrimary
-    && !isSamePath(targetStorage.admLogDir, primaryStorage.admLogDir)
-    && !isSamePath(targetStorage.admManifestFile, primaryStorage.admManifestFile)
-    && !isSamePath(targetStorage.stateFile, primaryStorage.stateFile)
     && targetAdmLogDir.includes(admNamespaceMarker)
     && targetManifest.includes(admNamespaceMarker)
     && targetState.includes(stateNamespaceMarker);
   pushCheck(checks, "storage-plan", "Local storage plan", storageIsolated ? "pass" : "fail", storageIsolated
-    ? "ADM cache, manifest e compat state apontam para paths exclusivos do servidor novo; o storage legado do PZ permanece separado."
-    : "Um dos paths planejados coincide com o storage do PZ ou saiu do namespace esperado.", {
+    ? "ADM cache, manifest e state apontam para paths exclusivos do servidor cadastrado."
+    : "Um dos paths planejados saiu do namespace esperado do servidor cadastrado.", {
       admLogDir: targetStorage.admLogDir,
       admManifestFile: targetStorage.admManifestFile,
       stateFile: targetStorage.stateFile,
     });
 
-  const samePrimaryBaseDir = Boolean(baseDir && primary.runtime.nitradoBaseDir && baseDir === text(primary.runtime.nitradoBaseDir));
-  pushCheck(checks, "nitrado-path-ownership", "Nitrado path ownership", samePrimaryBaseDir ? "fail" : "pass", samePrimaryBaseDir
-    ? "O novo servidor esta usando exatamente o mesmo Nitrado base dir do PZ. Corrija antes da ativacao."
-    : "O base dir do servidor novo nao reutiliza o caminho configurado no PZ.");
-
   let namespaceRows = { botState: 0, playerStats: 0, positionHistory: 0 };
   try {
     namespaceRows = await inspectManagedServerNamespaceRows(server.id);
-    // Phase 17B: data-context access may legitimately create server-scoped rows
-    // before the first ADM runtime activation (onboarding, Discord link, portal,
-    // config). Row existence is therefore not evidence of cross-tenant leakage.
-    // The isolation foundation above already proves composite PKs + scoped reads;
-    // preflight records the rows for diagnostics but does not require emptiness.
     const firstActivation = !server.runtime.activation?.everActivated;
     pushCheck(checks, "namespace-owned", "Database namespace", "pass", firstActivation
       ? `Namespace exclusivo do servidor confirmado antes da primeira ativacao (${namespaceRows.botState}/${namespaceRows.playerStats}/${namespaceRows.positionHistory}). Rows de onboarding podem ser reutilizadas com seguranca.`
@@ -304,6 +280,11 @@ export async function runManagedServerActivationPreflight(serverIdInput: string)
   } catch (error) {
     pushCheck(checks, "namespace-owned", "Database namespace", "fail", error instanceof Error ? error.message : String(error));
   }
+
+  const samePrimaryBaseDir = Boolean(baseDir && foundation.legacyPrimaryBaseDir && baseDir === text(foundation.legacyPrimaryBaseDir));
+  pushCheck(checks, "nitrado-path-ownership", "Nitrado path ownership", samePrimaryBaseDir ? "fail" : "pass", samePrimaryBaseDir
+    ? "O novo servidor esta usando exatamente o mesmo Nitrado base dir do servidor legado. Corrija antes da ativacao."
+    : "O base dir do servidor novo nao reutiliza o caminho do servidor legado.");
 
   if (nitradoMetadataValid && uniqueRouting && !samePrimaryBaseDir) {
     try {
