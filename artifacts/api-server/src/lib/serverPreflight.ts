@@ -1,5 +1,4 @@
 import {
-  canExecuteManagedServerRuntime,
   getManagedServerActivationConfigSignature,
   getManagedServerById,
   getServerFoundationDiagnostics,
@@ -72,7 +71,7 @@ export async function runManagedServerActivationPreflight(serverIdInput: string)
     return { serverId, passed: false, checkedAt, ready: false, warningCount: 0, failureCount: 1, checks, runtimeActivationBlocked: false, activationEndpointAvailable: true };
   }
 
-  const foundation = getServerFoundationDiagnostics(); const allServers = listManagedServers();
+  let foundation = getServerFoundationDiagnostics(); const allServers = listManagedServers();
   const runtimeGateSafe = !server.runtimeEnabled && foundation.additionalServersEnabled === true && foundation.onboarding?.activationEndpointEnabled === true;
   pushCheck(checks, "runtime-gate", "Runtime gate", runtimeGateSafe ? "pass" : "fail", runtimeGateSafe ? "O servidor alvo continua parado; a Fase 12 permite ativacao somente depois deste gate." : "O servidor alvo ja esta executando ou o activation gate da Fase 12 nao esta disponivel.", { runtimeEnabled: server.runtimeEnabled, runtimeRows: Number(foundation.onboarding?.runtimeEnabledServers || 0), additionalServersEnabled: foundation.additionalServersEnabled });
 
@@ -102,7 +101,11 @@ export async function runManagedServerActivationPreflight(serverIdInput: string)
 
   let namespaceRows = { botState: 0, playerStats: 0, positionHistory: 0 };
   try {
-    namespaceRows = await inspectManagedServerNamespaceRows(server.id); const firstActivation = !server.runtime.activation?.everActivated;
+    namespaceRows = await inspectManagedServerNamespaceRows(server.id);
+    // Namespace inspection initializes/refreshes the live isolation diagnostics. Re-read
+    // the foundation after that I/O so the gate never evaluates a stale startup snapshot.
+    foundation = getServerFoundationDiagnostics();
+    const firstActivation = !server.runtime.activation?.everActivated;
     pushCheck(checks, "namespace-owned", "Database namespace", "pass", firstActivation ? `Namespace exclusivo do servidor confirmado antes da primeira ativacao (${namespaceRows.botState}/${namespaceRows.playerStats}/${namespaceRows.positionHistory}). Rows de onboarding podem ser reutilizadas com seguranca.` : "O servidor ja foi ativado anteriormente; as rows existentes permanecem no proprio namespace.", namespaceRows);
   } catch (error) { pushCheck(checks, "namespace-owned", "Database namespace", "fail", error instanceof Error ? error.message : String(error)); }
 
