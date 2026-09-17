@@ -25,6 +25,10 @@ function orgIdFor(username: string) { return `org-${buildManagedServerId(usernam
 async function resolveManagedServer(serverId: unknown) { const sid=String(serverId||"").trim(); if(!sid)return undefined; let server=getManagedServerById(sid); if(server)return server; await refreshManagedServerRegistryFromDb(); return getManagedServerById(sid); }
 
 async function resolveCurrentAdminServerIds(adminUserId: string) {
+  // The registry is an in-memory runtime cache. A fresh browser login can hit
+  // a new Render instance where that cache has not been hydrated yet. Always
+  // hydrate it from the persisted DB before resolving the user's access.
+  await refreshManagedServerRegistryFromDb();
   const managedServers = listManagedServers().filter((server) => server.enabled);
   if (!managedServers.length) return [];
   const currentById = new Map(managedServers.map((server) => [server.id, server]));
