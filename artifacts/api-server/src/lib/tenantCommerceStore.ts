@@ -91,13 +91,13 @@ async function ensureSchema() {
       payload JSONB NOT NULL,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       PRIMARY KEY (server_id, id)
-    )`;
+    );`;
   })().catch((err) => { schemaReady = null; throw err; });
   await schemaReady;
 }
 
 export async function hydrateKnownServerPlayers(serverId = getActiveServerId()) {
-  if (!sql) return;
+  if (!sql || knownPlayersByServer.has(serverId)) return;
   await ensureSchema();
   const rows = await sql`SELECT gamertag_normalized, gamertag FROM server_players WHERE server_id = ${serverId}` as any[];
   const map = new Map<string, string>();
@@ -126,8 +126,17 @@ async function mirrorSnapshot(serverId: string, snap: any) {
     if (!chunk.length) continue;
     await sql`INSERT INTO server_players ${sql(chunk, "server_id", "gamertag_normalized", "gamertag", "last_online_at")}
       ON CONFLICT (server_id, gamertag_normalized) DO UPDATE SET
-        gamertag = EXCLUDED.gamertag, last_seen_at = NOW(),
-        last_online_at = COALESCE(EXCLUDED.last_online_at, server_players.last_online_at)`;
+        gamertag = EXCLUDED.gamertag,
+        last_seen_at = CASE
+          WHEN server_players.gamertag IS DISTINCT FROM EXCLUDED.gamertag
+            OR server_players.last_seen_at <= NOW() - INTERVAL '15 minutes'
+          THEN NOW()
+          ELSE server_players.last_seen_at
+        END,
+        last_online_at = COALESCE(EXCLUDED.last_online_at, server_players.last_online_at)
+      WHERE server_players.gamertag IS DISTINCT FROM EXCLUDED.gamertag
+         OR server_players.last_seen_at <= NOW() - INTERVAL '15 minutes'
+         OR (EXCLUDED.last_online_at IS NOT NULL AND server_players.last_online_at IS NULL)`;
   }
   for (const [key, name] of observed) known.set(key, name);
   knownPlayersByServer.set(serverId, known);
