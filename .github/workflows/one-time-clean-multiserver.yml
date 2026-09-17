@@ -94,7 +94,6 @@ jobs:
           s = s.replace('  getPrimaryServerDescriptor,\n', '').replace('  getPrimaryServerId,\n', '')
           s = s.replace('getPrimaryServerId()', 'getActiveServerId()')
           s = s.replace('getPrimaryServerDescriptor()', 'requireManagedServer(getActiveServerId())')
-          s = s.replace('  getActiveServerId,', '  getActiveServerId,')
           s = s.replace('  type ServerScopedSettings,\n', '  type ServerScopedSettings,\n  requireManagedServer,\n')
           s = re.sub(r'(?m)^\s*await ensurePrimaryServerRegistryMetadata\(\);\s*$', '', s)
           s = re.sub(r'(?m)^\s*primary:\s*[^,]+,\s*$', '', s)
@@ -109,6 +108,7 @@ jobs:
               text = text.replace('getPrimaryServerId()', 'getActiveServerId()')
               text = text.replace('getPrimaryServerDescriptor()', 'requireManagedServer(getActiveServerId())')
               text = re.sub(r'\bserver\.primary\b', 'false', text)
+              text = re.sub(r'\bcandidate\.primary\b', 'false', text)
               text = re.sub(r'\bprimary\.id\b', 'server.id', text)
               text = re.sub(r'\bprimary\.runtime\b', 'server.runtime', text)
               text = re.sub(r'\bprimary\.name\b', 'server.name', text)
@@ -118,10 +118,8 @@ jobs:
               text = re.sub(r'\bprimaryServerId\b', 'activeServerId', text)
               text = text.replace('primaryServer', 'activeServer')
               if text != original:
-                  # Remove primary helper names from imports.
                   text = re.sub(r'\s*getPrimaryServerId,?', '', text)
                   text = re.sub(r'\s*getPrimaryServerDescriptor,?', '', text)
-                  # Ensure active context + explicit descriptor helper are imported.
                   needs_active = 'getActiveServerId()' in text or 'requireManagedServer(' in text
                   if needs_active:
                       if 'from "./serverRuntime"' in text:
@@ -131,21 +129,17 @@ jobs:
                       elif 'from "../../serverRuntime"' in text:
                           text = re.sub(r'import \{([^}]*)\} from "\.\./\.\./serverRuntime";', lambda m: 'import {' + (m.group(1).rstrip() + ', ' if m.group(1).strip() else '') + 'getActiveServerId } from "../../serverRuntime";', text, count=1)
                       else:
-                          prefix = 'import { getActiveServerId } from "./serverRuntime";\n' if 'lib/' in str(file) and file.parent.name == 'lib' else None
                           if str(file).endswith('/discord/channels.ts') or str(file).endswith('/discord/commands.ts') or str(file).endswith('/discord/stateAccess.ts'):
                               prefix = 'import { getActiveServerId } from "../serverRuntime";\n'
                           elif '/discord/modules/' in str(file):
                               prefix = 'import { getActiveServerId } from "../../serverRuntime";\n'
                           elif '/routes/' in str(file):
                               prefix = 'import { getActiveServerId } from "../lib/serverRuntime";\n'
-                          elif str(file).endswith('/lib/state.ts'):
-                              prefix = 'import { getActiveServerId } from "./serverRuntime";\n'
                           else:
                               prefix = 'import { getActiveServerId } from "./serverRuntime";\n'
-                          if prefix and 'getActiveServerId' not in text.split('\n', 15).__str__():
+                          if 'getActiveServerId' not in text.split('\n', 15).__str__():
                               text = prefix + text
                   if 'requireManagedServer(' in text:
-                      # Add helper to existing serverRegistry import where possible.
                       if 'from "./serverRegistry"' in text:
                           text = re.sub(r'import \{([^}]*)\} from "\./serverRegistry";', lambda m: 'import {' + (m.group(1).rstrip() + ', ' if m.group(1).strip() else '') + 'requireManagedServer } from "./serverRegistry";', text, count=1)
                       elif 'from "../serverRegistry"' in text:
@@ -158,7 +152,7 @@ jobs:
 
       - name: Verify no primary runtime helpers remain
         run: |
-          if grep -RInE 'getPrimaryServer(Id|Descriptor)\(|\.primary\b|ensurePrimaryServerRegistryMetadata\(' artifacts/api-server/src --include='*.ts'; then
+          if grep -RInE 'getPrimaryServer(Id|Descriptor)\(|ensurePrimaryServerRegistryMetadata\(|\b(server|candidate)\.primary\b' artifacts/api-server/src --include='*.ts'; then
             echo 'Legacy primary runtime references remain.'
             exit 1
           fi
