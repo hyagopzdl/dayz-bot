@@ -41,20 +41,10 @@ function normalizeFtpPath(value: string, rootValue = "") {
   return root ? `${root}/${cleanPath}` : cleanPath;
 }
 
-/**
- * Legacy Shop and Map Events modules still carry a few mission-relative paths
- * that are built from the primary server configuration at module load time.
- * The transport is the last safe boundary where those paths can be resolved
- * against the active managed server without rewriting large legacy modules.
- *
- * Only paths rooted at the primary mission directory are rewritten. Other
- * paths are left untouched, so unrelated FTP files retain their existing
- * semantics. The server credential is still resolved independently by
- * getServerNitradoConfig(serverId).
- */
+/** Resolve mission-relative paths against the active managed server only. */
 function resolveServerScopedFilePath(filePath: string, serverId: string) {
   const cleanPath = String(filePath || "")
-    .replace(/\/g, "/")
+    .replace(/\\/g, "/")
     .replace(/^\/+/, "")
     .replace(/\/+/g, "/");
 
@@ -63,7 +53,7 @@ function resolveServerScopedFilePath(filePath: string, serverId: string) {
   const serverMissionDir = String(
     getServerScopedSettings(serverId).dayzMissionDir || "",
   )
-    .replace(/\/g, "/")
+    .replace(/\\/g, "/")
     .replace(/^\/+|\/+$/g, "");
 
   return serverMissionDir && cleanPath.startsWith(`${serverMissionDir}/`)
