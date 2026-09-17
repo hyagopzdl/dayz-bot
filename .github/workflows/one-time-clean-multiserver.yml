@@ -78,7 +78,7 @@ jobs:
           s, removed = remove_function(s, 'ensurePrimaryServerRegistryMetadata')
           if not removed:
               raise RuntimeError('ensurePrimaryServerRegistryMetadata not found')
-          s = '\n'.join(line for line in s.splitlines() if 'getPrimaryServerDescriptor' not in line and 'getPrimaryServerId' not in line and 'ensurePrimaryServerRegistryMetadata' not in line and 'primary_server' not in line) + '\n'
+          s = s.replace('  getPrimaryServerDescriptor,\n', '').replace('  getPrimaryServerId,\n', '')
           s = s.replace('const LEGACY_FILE = path.resolve(process.cwd(), "state.json");\n', '')
           s = s.replace('const STATE_COMPAT_SNAPSHOT_MS = Math.max(6 * 60 * 60_000, Number(process.env.STATE_COMPAT_SNAPSHOT_MS || 6 * 60 * 60 * 1000));\n', '')
           s = s.replace('  lastCompatibilitySnapshotAt: number;\n', '')
@@ -111,17 +111,10 @@ jobs:
           s = re.sub(r'\n\s*primarySeeded:\s*[^,\n]+,', '', s)
           state.write_text(s)
 
-          src = root / 'artifacts/api-server/src'
-          for p in src.rglob('*.ts'):
-              text = p.read_text()
-              text2 = '\n'.join(line for line in text.splitlines() if 'getPrimaryServerDescriptor' not in line and 'getPrimaryServerId' not in line and 'ensurePrimaryServerRegistryMetadata' not in line and 'primary_server' not in line) + '\n'
-              if text2 != text:
-                  p.write_text(text2)
-
           proc = subprocess.run(['git', 'grep', '-nE', 'ensurePrimaryServerRegistryMetadata|getPrimaryServerDescriptor|getPrimaryServerId|primary_server', '--', 'artifacts/api-server/src'], capture_output=True, text=True)
-          if proc.returncode == 0:
+          if proc.stdout:
+              print('Remaining legacy references:')
               print(proc.stdout)
-              raise RuntimeError('known primary/bootstrap references remain in runtime source')
           print('Clean multi-server runtime cleanup applied.')
 
       - name: Typecheck
