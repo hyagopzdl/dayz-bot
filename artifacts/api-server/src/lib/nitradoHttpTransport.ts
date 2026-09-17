@@ -94,14 +94,19 @@ function routeDayzUploadPath(url: string) {
     const missionMatch = requestedPath.match(/(?:^|\/)(dayzps_missions\/.*)$/i);
     if (!missionMatch) return url;
 
-    // runtime.nitradoBaseDir points at .../dayzps/config. The File Server API
-    // path for DayZ mission files is rooted one level above /config, at the
-    // actual game root (.../dayzps). Appending dayzps_missions directly to the
-    // config directory produced .../dayzps/config/dayzps_missions, which does
-    // not exist and is exactly what Nitrado reported as the 500 error.
-    const gameRoot = configuredBaseDir.replace(/\/config$/i, "");
+    // DayZ console mission files are exposed by Nitrado in the noftp server
+    // root, as /games/<account>/noftp/dayzps_missions/..., not below the
+    // /dayzps/config directory stored in nitradoBaseDir. The previous router
+    // incorrectly appended the mission directory to .../noftp/dayzps, which
+    // produced .../noftp/dayzps/dayzps_missions and Nitrado correctly returned
+    // "Destination directory doesn't not exist (anymore?)".
+    const noFtpMarker = "/noftp/";
+    const noFtpIndex = configuredBaseDir.indexOf(noFtpMarker);
+    if (noFtpIndex === -1) return url;
+
+    const noFtpRoot = configuredBaseDir.slice(0, noFtpIndex + noFtpMarker.length - 1);
     const relativeMissionPath = missionMatch[1];
-    const canonicalPath = `${gameRoot}/${relativeMissionPath}`;
+    const canonicalPath = `${noFtpRoot}/${relativeMissionPath}`;
     if (requestedPath === canonicalPath.replace(/^\/+/, "")) return url;
 
     parsed.searchParams.set("path", canonicalPath);
@@ -109,7 +114,7 @@ function routeDayzUploadPath(url: string) {
       serverId: server.id,
       serviceId,
       configuredBaseDir,
-      gameRoot,
+      noFtpRoot,
       requestedPath,
       canonicalPath,
     });
