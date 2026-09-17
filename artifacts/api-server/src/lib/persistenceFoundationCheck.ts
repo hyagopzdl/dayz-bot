@@ -15,6 +15,18 @@ const sql = process.env.DATABASE_URL
   ? postgres(process.env.DATABASE_URL, { ssl: "require", max: 1, idle_timeout: 10 })
   : null;
 
+function parsePostgresTextArray(value: unknown): string[] {
+  if (Array.isArray(value)) return value.map(String);
+  if (typeof value !== "string") return [];
+  const trimmed = value.trim();
+  if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) return [];
+  return trimmed
+    .slice(1, -1)
+    .split(",")
+    .map((item) => item.trim().replace(/^"|"$/g, ""))
+    .filter(Boolean);
+}
+
 export async function inspectLivePersistenceFoundation(serverId: string): Promise<LivePersistenceFoundationCheck> {
   if (!sql) throw new Error("DATABASE_URL nao esta configurada.");
 
@@ -50,8 +62,8 @@ export async function inspectLivePersistenceFoundation(serverId: string): Promis
   `;
 
   const row = (rows as any[])[0] || {};
-  const botStatePk = Array.isArray(row.bot_state_pk) ? row.bot_state_pk.map(String).join(",") : "";
-  const playerStatsPk = Array.isArray(row.player_stats_pk) ? row.player_stats_pk.map(String).join(",") : "";
+  const botStatePk = parsePostgresTextArray(row.bot_state_pk).join(",");
+  const playerStatsPk = parsePostgresTextArray(row.player_stats_pk).join(",");
   const result: LivePersistenceFoundationCheck = {
     registryPersisted: Boolean(row.registry_persisted),
     botStateTableReady: Boolean(row.bot_state_table_ready),
