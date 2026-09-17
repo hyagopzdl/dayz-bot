@@ -1,5 +1,6 @@
 import { Router, type Request } from "express";
 import {
+  debugNitradoListRaw,
   getNitradoGameserverStatus,
   listNitradoDirectory,
 } from "../lib/nitradoDownloader";
@@ -15,14 +16,6 @@ import {
 
 const router = Router();
 
-// These are registry IDs, not Nitrado service IDs. The service ID is read from
-// each descriptor so the diagnostic exercises the exact same per-server routing
-// used by the production runtime.
-const TARGET_SERVERS = [
-  { id: "pz-deathmatch", serviceId: "19149785", label: "deathmatch" },
-  { id: "pz-survival", serviceId: "19791331", label: "survival" },
-] as const;
-
 function getAdminToken(req: Request) {
   const queryToken = typeof req.query?.token === "string" ? req.query.token : "";
   const headerToken = typeof req.headers["x-admin-token"] === "string" ? req.headers["x-admin-token"] : "";
@@ -32,7 +25,6 @@ function getAdminToken(req: Request) {
     .map((part) => part.trim())
     .find((part) => part.startsWith("shop_admin_token="))
     ?.slice("shop_admin_token=".length) || "";
-
   return queryToken || headerToken || decodeURIComponent(cookieToken);
 }
 
@@ -42,12 +34,10 @@ function requireDiagnosticAdmin(req: Request, res: any) {
     res.status(503).json({ error: "ADMIN_TOKEN_NOT_CONFIGURED" });
     return false;
   }
-
   if (getAdminToken(req) !== configuredToken) {
     res.status(401).json({ error: "UNAUTHORIZED" });
     return false;
   }
-
   return true;
 }
 
@@ -68,9 +58,7 @@ async function safeCall<T>(fn: () => Promise<T>) {
 
 function descriptorSnapshot(serverId: string) {
   const descriptor = getManagedServerById(serverId);
-
   if (!descriptor) return null;
-
   const integration = getOrganizationIntegrationStatus(descriptor.organizationId);
   return {
     id: descriptor.id,
@@ -86,56 +74,97 @@ function descriptorSnapshot(serverId: string) {
     credentialSource: integration.credentialSource,
     credentialConfigured: integration.configured,
     encryptedAtRest: integration.encryptedAtRest,
-    validation: descriptor.runtime.nitradoValidation
-      ? {
-          serviceId: descriptor.runtime.nitradoValidation.serviceId,
-          baseDir: descriptor.runtime.nitradoValidation.baseDir,
-          validatedAt: descriptor.runtime.nitradoValidation.validatedAt,
-        }
-      : null,
   };
 }
 
-async function diagnoseServer(serverId: string, expectedServiceId: string, label: string) {
+function normalize(value: string) {
+  return String(value || "").replace(/\\/g, "/").replace(/\/+$/g, "");
+}
+
+function absolute(value: string) {
+  const normalized = normalize(value).replace(/^\/+/, "");
+  return normalized ? `/${normalized}` : "/";
+}
+
+function gameRootFromBaseDir(baseDir: string) {
+  return normalize(baseDir).replace(/\/config$/i, "") || "/";
+}
+
+function missionDirectoryFromBaseDir(baseDir: string, missionDir: string) {
+  const root = absolute(baseDir);
+  return root === "/" ? absolute(missionDir) : `${root}/${normalize(missionDir)}`;
+}
+
+async function inspectDirectory(serverId: string, directory: string) {
+  const raw = await safeCall(() => debugNitradoListRaw(directory, serverId));
+  const parsed = raw.ok
+    ? (() => {
+        try {
+          const json = JSON.parse(raw.data.text) as any;
+          return {
+            dataKeys: json?.data && typeof json.data === "object" ? Object.keys(json.data) : [],
+            entries: Array.isArray(json?.data?.entries)
+              ? json.data.entries.map((entry: any) => ({
+                  name: typeof entry?.name === "string" ? entry.name : null,
+                  type: typeof entry?.type === "string" ? entry.type : null,
+                  path: typeof entry?.path === "string" ? entry.path : null,
+                  size: typeof entry?.size === "number" ? entry.size : null,
+                  modified: typeof entry?.modified === "string" ? entry.modified : null,
+                }))
+              : [],
+          };
+        } catch {
+          return null;
+        }
+      })()
+    : null;
+
+  return {
+    requestedDirectory: directory || "/",
+    raw: raw.ok
+      ? {
+          status: raw.data.status,
+          statusText: raw.data.statusText,
+          entriesCount: raw.data.entriesCount,
+          text: raw.data.text,
+        }
+      : { error: raw.error },
+    parsed,
+  };
+}
+
+async function diagnoseServer(serverId: string) {
   const descriptor = descriptorSnapshot(serverId);
-  if (!descriptor) {
-    return {
-      serverId,
-      expectedServiceId,
-      label,
-      descriptor: null,
-      error: "SERVER_NOT_REGISTERED",
-    };
-  }
+  if (!descriptor) return { serverId, descriptor: null, error: "SERVER_NOT_REGISTERED" };
 
-  const missionDir = String(descriptor.dayzMissionDir || "dayzps_missions/dayzOffline.chernarusplus")
-    .replace(/^\/+|\/+$/g, "");
-  const directories = [
-    "",
-    "dayzps_missions",
-    missionDir,
-    `${missionDir}/db`,
-  ];
+  const baseDir = absolute(String(descriptor.baseDir || ""));
+  const missionDir = normalize(String(descriptor.dayzMissionDir || "dayzps_missions/dayzOffline.chernarusplus"));
+  const roots = Array.from(new Set([
+    "/",
+    baseDir,
+    gameRootFromBaseDir(baseDir),
+    baseDir ? `${baseDir}/dayzps_missions` : "",
+    missionDirectoryFromBaseDir(baseDir, missionDir),
+    `${missionDirectoryFromBaseDir(baseDir, missionDir)}/db`,
+  ].filter(Boolean)));
 
-  const listing = {} as Record<string, unknown>;
-  for (const dir of directories) {
-    listing[dir || "/"] = await safeCall(() => listNitradoDirectory(dir, serverId));
+  console.log("🔬 NITRADO FILE SERVER ROOT DIAGNOSTIC", { serverId, roots });
+
+  const directories: Record<string, unknown> = {};
+  for (const root of roots) {
+    directories[root] = await inspectDirectory(serverId, root);
   }
 
   const status = await safeCall(() => getNitradoGameserverStatus(serverId));
-
   return {
     serverId,
-    expectedServiceId,
-    label,
     descriptor,
-    status: status.ok
-      ? { ok: true, value: status.data.status }
-      : { ok: false, error: status.error },
-    listing,
+    status: status.ok ? { ok: true, value: status.data.status } : { ok: false, error: status.error },
+    roots,
+    directories,
     uploadProbe: {
-      supported: false,
-      reason: "Upload token probing is intentionally disabled in diagnostics; production upload uses the same File Server API path and form encoding without uploading a file.",
+      performed: false,
+      reason: "Read-only diagnostic. No upload token or file upload is attempted.",
     },
   };
 }
@@ -144,29 +173,25 @@ router.get("/nitrado-diagnostic", async (req, res) => {
   if (!requireDiagnosticAdmin(req, res)) return;
 
   const startedAt = Date.now();
+  const managedServers = listManagedServers();
   const servers = [];
-
-  for (const target of TARGET_SERVERS) {
-    servers.push(await diagnoseServer(target.id, target.serviceId, target.label));
-  }
+  for (const server of managedServers) servers.push(await diagnoseServer(server.id));
 
   res.json({
-    diagnostic: "nitrado-file-server-v2",
+    diagnostic: "nitrado-file-server-root-inspection-v3",
     generatedAt: new Date().toISOString(),
     durationMs: Date.now() - startedAt,
-    targetServers: TARGET_SERVERS,
     activeServerId: getActiveServerId(),
     activeServer: descriptorSnapshot(getActiveServerId()),
-    managedServers: listManagedServers().map((server) => descriptorSnapshot(server.id)),
+    managedServerCount: managedServers.length,
+    servers,
     registry: getServerRegistryPersistenceStatus(),
     namespace: getServerNamespacePersistenceStatus(),
     isolation: getServerRuntimeIsolationStatus(),
-    servers,
     interpretation: {
-      listSuccessMeans: "Nitrado accepted the service credential and resolved the requested directory for the File Server list endpoint.",
-      uploadPath: "Production upload token requests use POST form parameters path and file; this diagnostic does not perform a file upload.",
-      credentialWarning: "credentialSource=environment-fallback means both servers in the default organization currently inherit the single Render NITRADO_TOKEN. A per-organization secret is preferred for production isolation.",
-      usefulComparison: "Compare Deathmatch 19149785 with Survival 19791331 directory listings and credential source before changing any Render secret or Shop path.",
+      purpose: "Expose the actual read-only file_server/list payload for every currently managed server before changing any production upload path.",
+      important: "The entries.path values returned by Nitrado are the source of truth for the next upload-path change.",
+      noUpload: "This endpoint never requests an upload token and never writes a file.",
     },
   });
 });
