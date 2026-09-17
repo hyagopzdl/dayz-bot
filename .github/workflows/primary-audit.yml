@@ -1,0 +1,23 @@
+name: Primary Reference Audit
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Audit legacy primary references
+        run: |
+          set +e
+          echo '=== PRIMARY DESCRIPTOR ==='
+          rg -n -C 2 'getPrimaryServerDescriptor|Primary server fallback has been removed' . --glob '!node_modules/**' || true
+          echo '=== PRIMARY ID ==='
+          rg -n -C 1 'getPrimaryServerId' . --glob '!node_modules/**' || true
+          echo '=== PRIMARY FLAGS ==='
+          rg -n -C 1 'primary_server|\.primary\b|isPrimary' artifacts/api-server/src --glob '*.ts' || true
+          echo '=== LEGACY BOOT HELPERS ==='
+          rg -n -C 2 'ensurePrimaryServerRegistryMetadata|reloadManagedServerRegistryFromDb' artifacts/api-server/src --glob '*.ts' || true
+          echo '=== ONBOARDING ==='
+          rg -n -C 3 'nitrado/connect|saveOrganizationNitradoCredential|createManagedServerDraft' artifacts/api-server/src --glob '*.ts' || true
