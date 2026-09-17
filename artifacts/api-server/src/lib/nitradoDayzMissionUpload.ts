@@ -7,8 +7,12 @@ const resolvedDirectoryCache = new Map<string, { directory: string; expiresAt: n
 function normalize(value: string) {
   return String(value || "")
     .replace(/\\/g, "/")
-    .replace(/^\/+/, "")
     .replace(/\/+$/g, "");
+}
+
+function absolutePath(value: string) {
+  const normalized = normalize(value).replace(/^\/+/, "");
+  return normalized ? `/${normalized}` : "";
 }
 
 function getConfiguredRoot(serverId: string) {
@@ -16,12 +20,18 @@ function getConfiguredRoot(serverId: string) {
     .replace(/\\/g, "/")
     .replace(/\/+$/g, "");
   if (!baseDir) return "";
-  return baseDir.startsWith("/") ? baseDir : `/${baseDir}`;
+  return absolutePath(baseDir);
 }
 
 function basename(value: string) {
   const normalized = normalize(value);
   return normalized.split("/").pop() || "";
+}
+
+function dirname(value: string) {
+  const normalized = normalize(value).replace(/^\/+/, "");
+  const index = normalized.lastIndexOf("/");
+  return index > 0 ? `/${normalized.slice(0, index)}` : "/";
 }
 
 function getServiceId(serverId: string) {
@@ -42,109 +52,99 @@ async function nitradoRequest(url: string, serverId: string, init: RequestInit =
   return response;
 }
 
-async function listDirectory(directory: string, serverId: string): Promise<any[]> {
+async function listDirectory(directory: string | undefined, serverId: string, search?: string): Promise<any[]> {
   const serviceId = getServiceId(serverId);
-  const normalized = normalize(directory);
-  const url = `https://api.nitrado.net/services/${serviceId}/gameservers/file_server/list?dir=${encodeURIComponent(normalized)}`;
+  const params = new URLSearchParams();
+  if (directory) params.set("dir", normalize(directory).replace(/^\/+/, ""));
+  if (search) params.set("search", search);
+  const url = `https://api.nitrado.net/services/${serviceId}/gameservers/file_server/list?${params.toString()}`;
   const response = await nitradoRequest(url, serverId);
   const json = await response.json() as any;
   return Array.isArray(json?.data?.entries) ? json.data.entries : [];
 }
 
 function entryPath(entry: any) {
-  return typeof entry?.path === "string" ? normalize(entry.path) : "";
+  return typeof entry?.path === "string" ? absolutePath(entry.path) : "";
 }
 
-function findChild(entries: any[], name: string) {
-  const target = normalize(name).toLowerCase();
-  return entries.find((entry) => basename(entryPath(entry)).toLowerCase() === target);
+function isFileEntry(entry: any) {
+  return !entry?.type || String(entry.type).toLowerCase() === "file";
 }
 
 async function discoverMissionDirectory(relativeDirectory: string, serverId: string) {
-  const normalizedRelative = normalize(relativeDirectory);
+  const normalizedRelative = normalize(relativeDirectory).replace(/^\/+/, "");
   const configuredRoot = getConfiguredRoot(serverId);
   if (!configuredRoot) throw new Error(`Nitrado baseDir nao pode ser resolvido para o servidor ${serverId}.`);
 
   const cached = resolvedDirectoryCache.get(serverId);
   if (cached && cached.expiresAt > Date.now()) return cached.directory;
 
-  // The persisted Nitrado baseDir is the validated configuration root for the
-  // server. Do not strip /config and invent a different filesystem root.
-  const absoluteDirectory = `${configuredRoot}/${normalizedRelative}`;
+  // Nitrado's File Server API supports recursive search. Use the actual file
+  // that we are about to replace as the source of truth instead of guessing
+  // whether the DayZ mission lives below /config, /noftp or another root.
   try {
-    const entries = await listDirectory(absoluteDirectory, serverId);
-    if (entries.length > 0) {
+    const matches = await listDirectory(undefined, serverId, "events.xml");
+    const eventFile = matches.find((entry) =>
+      isFileEntry(entry) && basename(entryPath(entry)).toLowerCase() === "events.xml",
+    );
+    if (eventFile) {
+      const discoveredFile = entryPath(eventFile);
+      const discoveredDirectory = dirname(discoveredFile);
+      console.log("✅ NITRADO DAYZ MISSION DIRECTORY DISCOVERED", {
+        serverId,
+        requestedDirectory: normalizedRelative,
+        directory: discoveredDirectory,
+        source: "file-server-search",
+        matchedFile: discoveredFile,
+      });
       resolvedDirectoryCache.set(serverId, {
-        directory: absoluteDirectory,
+        directory: discoveredDirectory,
         expiresAt: Date.now() + DIRECTORY_CACHE_TTL_MS,
       });
-      console.log("✅ NITRADO DAYZ MISSION DIRECTORY CONFIRMED", {
-        serverId,
-        directory: absoluteDirectory,
-        entries: entries.length,
-        source: "configured-baseDir",
-      });
-      return absoluteDirectory;
+      return discoveredDirectory;
     }
 
-    console.warn("⚠️ NITRADO DAYZ DIRECTORY LIST EMPTY", {
+    console.warn("⚠️ NITRADO DAYZ MISSION SEARCH DID NOT FIND events.xml", {
       serverId,
-      directory: absoluteDirectory,
+      requestedDirectory: normalizedRelative,
+      configuredRoot,
+      matches: matches.length,
+    });
+  } catch (searchError) {
+    console.warn("⚠️ NITRADO DAYZ MISSION SEARCH FAILED", {
+      serverId,
+      requestedDirectory: normalizedRelative,
+      error: searchError instanceof Error ? searchError.message : String(searchError),
+    });
+  }
+
+  // Keep the validated baseDir as a conservative fallback, but only accept it
+  // when the target directory actually contains files. Do not walk children
+  // from an empty directory and manufacture a path from assumptions.
+  const configuredDirectory = `${configuredRoot}/${normalizedRelative}`;
+  const entries = await listDirectory(configuredDirectory, serverId);
+  if (entries.length > 0) {
+    resolvedDirectoryCache.set(serverId, {
+      directory: configuredDirectory,
+      expiresAt: Date.now() + DIRECTORY_CACHE_TTL_MS,
+    });
+    console.log("✅ NITRADO DAYZ MISSION DIRECTORY CONFIRMED", {
+      serverId,
+      directory: configuredDirectory,
+      entries: entries.length,
       source: "configured-baseDir",
     });
-  } catch (directError) {
-    console.warn("⚠️ NITRADO DAYZ CONFIGURED DIRECTORY CHECK FAILED", {
-      serverId,
-      directory: absoluteDirectory,
-      error: directError instanceof Error ? directError.message : String(directError),
-    });
+    return configuredDirectory;
   }
 
-  // If the configured root does not expose the target directory, discover the
-  // actual path from the file-server hierarchy instead of guessing /noftp or
-  // /ftproot variants. The returned entry.path becomes the canonical path.
-  const parts = normalizedRelative.split("/").filter(Boolean);
-  let current = configuredRoot;
-  for (const part of parts) {
-    const entries = await listDirectory(current, serverId);
-    const child = findChild(entries, part);
-    if (!child) {
-      throw new Error(`Nitrado directory not found while resolving ${normalizedRelative}: parent=${current} child=${part}`);
-    }
-    const discovered = entryPath(child);
-    current = discovered
-      ? (discovered.startsWith("games/") || discovered.startsWith("/games/")
-        ? `/${discovered.replace(/^\/+/, "")}`
-        : `${current}/${part}`)
-      : `${current}/${part}`;
-    console.log("🧭 NITRADO DAYZ DIRECTORY DISCOVERY", {
-      serverId,
-      parent: current,
-      child: part,
-      discoveredPath: discovered || null,
-    });
-  }
-
-  const finalEntries = await listDirectory(current, serverId);
-  if (finalEntries.length === 0) {
-    throw new Error(`Nitrado directory resolved but is empty: ${current}`);
-  }
-
-  resolvedDirectoryCache.set(serverId, {
-    directory: current,
-    expiresAt: Date.now() + DIRECTORY_CACHE_TTL_MS,
-  });
-  console.log("✅ NITRADO DAYZ MISSION DIRECTORY RESOLVED", {
-    serverId,
-    directory: current,
-    entries: finalEntries.length,
-    requestedDirectory: normalizedRelative,
-  });
-  return current;
+  throw new Error(
+    `Nitrado DayZ mission directory could not be discovered for ${normalizedRelative}. ` +
+    `File Server search did not find events.xml and configured baseDir was empty: ${configuredDirectory}`,
+  );
 }
 
 export async function uploadDayzMissionTextFile(filePath: string, content: string, serverId: string) {
-  const normalizedFilePath = normalize(filePath);
+  const normalizedFilePath = normalize(filePath).replace(/^\/+/, "");
   const match = normalizedFilePath.match(/^(.*)\/([^/]+)$/);
   if (!match) throw new Error(`Invalid DayZ mission file path: ${filePath}`);
   const relativeDirectory = match[1];
@@ -154,7 +154,10 @@ export async function uploadDayzMissionTextFile(filePath: string, content: strin
   }
 
   const directory = await discoverMissionDirectory(relativeDirectory, serverId);
-  const uploadPath = normalize(directory);
+  // Preserve the absolute filesystem path returned by Nitrado. The official
+  // NitrAPI client passes the path directly to uploadToken(), including the
+  // leading slash when the file-server entry contains one.
+  const uploadPath = absolutePath(directory);
   const serviceId = getServiceId(serverId);
   const tokenUrl = `https://api.nitrado.net/services/${serviceId}/gameservers/file_server/upload`;
   const form = new URLSearchParams({ path: uploadPath, file });
