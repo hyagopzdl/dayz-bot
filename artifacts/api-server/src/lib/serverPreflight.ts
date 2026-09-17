@@ -169,10 +169,24 @@ export async function runManagedServerActivationPreflight(serverIdInput: string)
 
   await validateOptionalDiscord(server, checks);
 
-  const failures = checks.filter((check) => check.status === "fail"); const warnings = checks.filter((check) => check.status === "warning");
-  const passed = failures.length === 0;
-  const ready = passed;
-  const result = { serverId, passed, checkedAt, ready, warningCount: warnings.length, failureCount: failures.length, checks, runtimeActivationBlocked: !passed, activationEndpointAvailable: true, server };
-  try { await markManagedServerActivationPreflightReady(server.id, passed, checkedAt); } catch { /* diagnostics must not block the preflight result */ }
-  return result;
+  const failureCount = checks.filter((check) => check.status === "fail").length;
+  const warningCount = checks.filter((check) => check.status === "warning").length;
+  const passed = failureCount === 0;
+  let readyServer: ManagedServerDescriptor | undefined;
+  if (passed) {
+    const preflight: ServerActivationPreflight = {
+      version: "phase11-v1",
+      source: "phase11-on-demand",
+      checkedAt,
+      passed: true,
+      configurationSignature: getManagedServerActivationConfigSignature(server),
+      serviceId,
+      baseDir,
+      discordGuildId: text(server.integrations.discordGuildId) || undefined,
+      namespaceRows,
+      warningCount,
+    };
+    readyServer = await markManagedServerActivationPreflightReady(server.id, preflight);
+  }
+  return { serverId, passed, checkedAt, ready: passed, warningCount, failureCount, checks, runtimeActivationBlocked: !passed, activationEndpointAvailable: true, server: readyServer || getManagedServerById(server.id) };
 }
