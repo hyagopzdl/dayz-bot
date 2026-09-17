@@ -1,5 +1,5 @@
 import { ChannelType, PermissionFlagsBits } from "discord.js";
-import { getDiscordClient } from "./discordBot";
+import { getDiscordClient, getDiscordGatewayDiagnostics } from "./discordBot";
 import { recordNetworkTransfer } from "./networkMetrics";
 import { getManagedServerById, listManagedServers } from "./serverRegistry";
 import { getOrganizationIntegrationStatus, getOrganizationNitradoCredential } from "./organizationIntegrations";
@@ -31,6 +31,23 @@ export async function discoverNitradoShopDeliveryRouting(serverId: string): Prom
 async function discoverNitradoMissionDirFor(serverId: string, serviceIdInput: unknown, baseDirInput: unknown): Promise<string | undefined> { const serviceId = String(serviceIdInput || "").trim(); const baseDir = String(baseDirInput || "").trim(); if (!serviceId) return undefined; const server = assertOnboardingServer(serverId); const serviceMatches = String(server.integrations.nitradoServiceId || server.runtime.nitradoValidation?.serviceId || "").trim() === serviceId; if (serviceMatches) { const discovered = await discoverNitradoShopDeliveryRouting(serverId); return discovered.missionDir; } if (!baseDir) return undefined; return undefined; }
 export async function discoverNitradoMissionDir(serverId: string): Promise<string | undefined> { return (await discoverNitradoShopDeliveryRouting(serverId)).missionDir; }
 export async function validateNitradoServiceSetup(serverId: string, serviceIdInput: unknown, baseDirInput: unknown) { assertOnboardingServer(serverId); const serviceId = String(serviceIdInput || "").trim(); if (!/^\d+$/.test(serviceId)) throw new Error("Selecione um Nitrado Service ID valido."); const details = await nitradoOnboardingJson(`/services/${encodeURIComponent(serviceId)}/gameservers`, serverId); const detectedBaseDir = detectNitradoBaseDir(details); const baseDir = String(baseDirInput || detectedBaseDir || "").trim().replace(/\\/g, "/").replace(/\/+$/g, ""); if (!baseDir) throw new Error("Nao foi possivel detectar o base dir automaticamente. Informe o caminho do config e tente validar novamente."); if (!/\/noftp\/(?:dayzps|dayzxb)\/config$/i.test(baseDir)) throw new Error("O base dir precisa apontar para o diretorio config de um servidor DayZ (dayzps ou dayzxb)."); const listJson = await nitradoOnboardingJson(`/services/${encodeURIComponent(serviceId)}/gameservers/file_server/list?dir=${encodeURIComponent(baseDir)}`, serverId); const entries = Array.isArray(listJson?.data?.entries) ? listJson.data.entries : []; const admFilesFound = entries.filter((entry: any) => String(entry?.path || "").toUpperCase().endsWith(".ADM")).length; const gameText = collectObjectStrings(details).join(" "); const missionDir = await discoverNitradoMissionDirFor(serverId, serviceId, baseDir); return { serviceId, baseDir, missionDir, detectedBaseDir, looksLikeDayz: /dayz/i.test(gameText), admFilesFound, validatedAt: new Date().toISOString() }; }
-export async function listDiscordGuildOptions(serverId: string, requesterDiscordId?: string) { const server = assertOnboardingServer(serverId); const client = getDiscordClient(); if (!client.isReady()) return { ready: false, guilds: [] as DiscordGuildOption[], message: "Discord bot ainda nao esta conectado." }; const guilds = client.guilds.cache.map((guild) => ({ id: guild.id, name: guild.name, memberCount: guild.memberCount, iconUrl: guild.iconURL() || undefined })).filter((guild) => { if (!requesterDiscordId) return true; const member = client.guilds.cache.get(guild.id)?.members.cache.get(requesterDiscordId); return Boolean(member?.permissions.has(PermissionFlagsBits.ManageGuild)); }); return { serverId: server.id, guilds }; }
+export async function listDiscordGuildOptions(serverId: string, requesterDiscordId?: string) {
+  const server = assertOnboardingServer(serverId);
+  const client = getDiscordClient();
+  const diagnostics = getDiscordGatewayDiagnostics();
+  if (!diagnostics.ready || !client.isReady()) {
+    return {
+      ready: false,
+      guilds: [] as DiscordGuildOption[],
+      message: diagnostics.lastLoginError || "Discord bot ainda nao esta conectado.",
+    };
+  }
+  const guilds = client.guilds.cache.map((guild) => ({ id: guild.id, name: guild.name, memberCount: guild.memberCount, iconUrl: guild.iconURL() || undefined })).filter((guild) => {
+    if (!requesterDiscordId) return true;
+    const member = client.guilds.cache.get(guild.id)?.members.cache.get(requesterDiscordId);
+    return Boolean(member?.permissions.has(PermissionFlagsBits.ManageGuild));
+  });
+  return { serverId: server.id, ready: true as const, guilds };
+}
 export async function listDiscordChannelOptions(serverId: string, guildIdInput: unknown) { const server = assertOnboardingServer(serverId); const guildId = String(guildIdInput || "").trim(); if (!guildId) throw new Error("Selecione um Discord server valido."); const client = getDiscordClient(); const guild = client.guilds.cache.get(guildId); if (!guild) throw new Error("Discord server nao encontrado pelo bot."); const channels: DiscordChannelOption[] = []; guild.channels.cache.forEach((channel) => { if (channel.type === ChannelType.GuildCategory) channels.push({ id: channel.id, name: channel.name, type: "category" }); else if (channel.type === ChannelType.GuildText) channels.push({ id: channel.id, name: channel.name, type: "text", parentId: channel.parentId || undefined }); }); return { serverId: server.id, guildId, channels }; }
 export async function listDiscordGuildChannels(serverId: string, guildIdInput: unknown, _requesterDiscordId?: string) { return listDiscordChannelOptions(serverId, guildIdInput); }
