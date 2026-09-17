@@ -125,7 +125,7 @@ jobs:
           print('Clean multi-server runtime cleanup applied.')
 
       - name: Typecheck
-        run: corepack pnpm install --no-frozen-lockfile && corepack pnpm run typecheck
+        run: corepack pnpm install --no-frozen-lockfile --ignore-scripts && corepack pnpm run typecheck
 
       - name: Commit cleanup and remove one-time workflow
         run: |
