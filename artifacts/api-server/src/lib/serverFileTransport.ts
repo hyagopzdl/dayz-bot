@@ -2,7 +2,7 @@ import {
   downloadNitradoTextFile,
   uploadNitradoTextFile,
 } from "./nitradoDownloader";
-import { uploadTextFile as uploadTextFileViaFtp } from "./nitradoFtp";
+import { uploadShopTextFileViaFtp } from "./nitradoFtpUpload";
 import { getServerRuntimeContext } from "./serverRuntime";
 
 export async function downloadServerTextFile(filePath: string) {
@@ -26,7 +26,7 @@ export async function uploadServerTextFile(filePath: string, content: string) {
   }
 
   try {
-    await uploadTextFileViaFtp(filePath, content);
+    await uploadShopTextFileViaFtp(filePath, content, runtime.serverId);
     console.log(
       `[nitrado-upload][${runtime.serverId}] FTP fallback upload succeeded for ${filePath}.`,
     );
