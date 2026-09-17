@@ -2,6 +2,7 @@ import { Router, type Request } from "express";
 import { debugNitradoListRaw, getNitradoGameserverStatus } from "../lib/nitradoDownloader";
 import { getActiveServerId } from "../lib/serverRuntime";
 import { getManagedServerById, getServerRuntimeIsolationStatus, getServerRegistryPersistenceStatus, getServerNamespacePersistenceStatus, listManagedServers } from "../lib/serverRegistry";
+import { getOrganizationIntegrationStatus, getOrganizationNitradoCredential } from "../lib/organizationIntegrations";
 
 const router = Router();
 
@@ -98,6 +99,12 @@ async function diagnoseServer(serverId: string) {
   const status = await safeCall(() => getNitradoGameserverStatus(serverId));
   return {
     serverId, descriptor,
+    integration: {
+      configured: integrationStatus.configured,
+      credentialSource: integrationStatus.credentialSource,
+      encryptedAtRest: integrationStatus.encryptedAtRest,
+      credentialCheck: credentialCheck.ok ? credentialCheck.data : { error: credentialCheck.error },
+    },
     status: status.ok ? { ok: true, value: status.data.status } : { ok: false, error: status.error },
     roots, directories,
     uploadProbe: { performed: false, reason: "Read-only diagnostic. No upload token or file upload is attempted." },
