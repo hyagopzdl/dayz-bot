@@ -37,9 +37,7 @@ jobs:
           git add artifacts/api-server/src/lib/state.ts
           git commit -m 'fix: make managed server registry readiness database authoritative' || true
           git push || true
-      - run: pnpm/action-setup@v4
-        shell: bash
-        run: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v4
         with:
           version: 10.25.0
       - uses: actions/setup-node@v4
