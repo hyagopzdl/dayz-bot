@@ -10,7 +10,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: |
-          git fetch --no-tags --depth=2 origin main
+          git fetch --no-tags --unshallow origin
           git checkout 420d494a7c3206afbea86784f70a2e345632dbb7 -- artifacts/api-server/src/routes/adminPanel.ts
           python3 - <<'PY'
           from pathlib import Path
