@@ -2670,7 +2670,6 @@ export async function createManagedOrganization(input: { id?: unknown; name?: un
 }
 
 export async function saveOrganizationNitradoCredential(organizationIdInput: unknown, tokenInput: unknown, metadata: Record<string, unknown> = {}) {
-  await ensurePrimaryServerRegistryMetadata();
   if (!sql) throw new Error("Organization integration registry is unavailable.");
   const organizationId = buildOrganizationId(organizationIdInput);
   if (!organizationId || !getManagedOrganizationById(organizationId)) throw new Error("Organization nao encontrada.");
