@@ -16,31 +16,30 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - name: Apply registry readiness patch
+      - name: Apply one-time postgres typing fix
         run: |
           python3 - <<'PY'
           from pathlib import Path
           import re
           p=Path('artifacts/api-server/src/lib/state.ts')
           s=p.read_text()
-          marker='\n\nexport type PlayerPositionHistoryEventType'
-          if 'async function ensureManagedServerRegistryReady()' not in s:
-              helper='''\n\nasync function ensureManagedServerRegistryReady() {\n  await ensureManagedServerRegistryMetadata();\n  const db = sql;\n  if (!db) throw new Error("Server registry is unavailable: DATABASE_URL is not configured.");\n  const rows = await db`SELECT to_regclass('public.managed_servers') IS NOT NULL AS ready`;\n  if (!Boolean((rows as any[])[0]?.ready)) {\n    const diagnostic = getServerRegistryPersistenceStatus().lastError;\n    throw new Error(diagnostic ? `Server registry is unavailable: managed_servers is not ready (${diagnostic}).` : "Server registry is unavailable: managed_servers table does not exist.");\n  }\n  setServerRegistryPersistenceStatus({ enabled: true, initialized: true, tableReady: true, lastError: undefined });\n}\n'''
-              assert marker in s
-              s=s.replace(marker,helper+marker,1)
-          else:
-              s=s.replace('  if (!sql) throw new Error("Server registry is unavailable: DATABASE_URL is not configured.");\n  const rows = await sql`SELECT to_regclass(\'public.managed_servers\') IS NOT NULL AS ready`;', '  const db = sql;\n  if (!db) throw new Error("Server registry is unavailable: DATABASE_URL is not configured.");\n  const rows = await db`SELECT to_regclass(\'public.managed_servers\') IS NOT NULL AS ready`;', 1)
-          p1=re.compile(r'await ensureManagedServerRegistryMetadata\(\);\n\s*if \(!sql \|\| !getServerRegistryPersistenceStatus\(\)\.tableReady\) \{\n\s*throw new Error\("Server registry is unavailable\. DATABASE_URL and managed_servers must be ready\."\);\n\s*\}')
-          s,n1=p1.subn('await ensureManagedServerRegistryReady();',s)
-          p2=re.compile(r'await ensureManagedServerRegistryMetadata\(\);\n\s*if \(!sql \|\| !getServerRegistryPersistenceStatus\(\)\.tableReady\) throw new Error\("Server registry is unavailable\."\);')
-          s,n2=p2.subn('await ensureManagedServerRegistryReady();',s)
-          print('registry guards replaced',n1+n2)
+          marker='const sql = process.env.DATABASE_URL\n  ? postgres(process.env.DATABASE_URL, {\n      ssl: "require",\n      max: 1,\n    })\n  : null;'
+          helper='''const sql = process.env.DATABASE_URL\n  ? postgres(process.env.DATABASE_URL, {\n      ssl: "require",\n      max: 1,\n    })\n  : null;\n\nfunction getSql(): postgres.Sql {\n  if (!sql) throw new Error("DATABASE_URL is not configured.");\n  return sql;\n}'''
+          if marker in s and 'function getSql(): postgres.Sql' not in s:
+              s=s.replace(marker, helper, 1)
+          s=re.sub(r'(?<![A-Za-z0-9_])sql`', 'getSql()`', s)
           p.write_text(s)
+
+          t=Path('artifacts/api-server/tsconfig.json')
+          ts=t.read_text()
+          ts=ts.replace(',\n    "strictNullChecks": false,\n    "strictPropertyInitialization": false', '')
+          ts=ts.replace(',\n    "strictNullChecks": false', '')
+          t.write_text(ts)
           PY
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add artifacts/api-server/src/lib/state.ts
-          git commit -m 'fix: make managed server registry readiness database authoritative' || true
+          git add artifacts/api-server/src/lib/state.ts artifacts/api-server/tsconfig.json
+          git commit -m 'fix: make postgres state access type-safe' || true
           git push
       - uses: pnpm/action-setup@v4
         with:
