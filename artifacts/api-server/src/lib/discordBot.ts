@@ -15,6 +15,28 @@ const client = createDiscordClient();
 const managedFeedRuntimes = new Map<string, ReturnType<typeof createDiscordFeedRuntime>>();
 const registeredMemberFeedServers = new Set<string>();
 const registeredInteractionServers = new Set<string>();
+let discordLoginInFlight: Promise<unknown> | null = null;
+
+function getDiscordToken() {
+  const token = String(process.env.DISCORD_TOKEN || "").trim();
+  return token;
+}
+
+function describeDiscordError(error: unknown) {
+  if (error instanceof Error) return `${error.name}: ${error.message}`;
+  return String(error);
+}
+
+client.on("error", (error) => console.error("❌ Discord client error:", describeDiscordError(error)));
+client.on("shardError", (error, shardId) => console.error(`❌ Discord shard error [${shardId}]:`, describeDiscordError(error)));
+client.on("warn", (message) => console.warn("⚠️ Discord warning:", message));
+client.on("invalidated", () => console.error("❌ Discord session invalidated; Gateway authentication/session was rejected."));
+client.on("disconnect", (event) => console.warn("⚠️ Discord Gateway disconnected:", event));
+client.on("debug", (message) => {
+  if (/4014|privileged|intent|invalid token|authentication|session/i.test(message)) {
+    console.warn("🔎 Discord Gateway diagnostic:", message);
+  }
+});
 
 export function getDiscordClient() {
   return client;
@@ -174,27 +196,45 @@ function registerManagedServerMemberFeeds() {
 }
 
 export async function startDiscordBot() {
-  if (!process.env.DISCORD_TOKEN) {
-    console.error("❌ DISCORD_TOKEN não definido");
+  const token = getDiscordToken();
+  if (!token) {
+    console.error("❌ DISCORD_TOKEN não definido; OAuth do Discord não substitui o token do bot Gateway.");
     return;
   }
 
   if (client.isReady?.()) return;
+  if (discordLoginInFlight) return discordLoginInFlight;
 
   client.once("ready", async () => {
-    console.log("🤖 Discord conectado; inicializando servidores vinculados...");
+    console.log("🤖 Discord conectado; inicializando servidores vinculados...", {
+      botUserId: client.user?.id || null,
+      botUsername: client.user?.username || null,
+      applicationId: client.application?.id || null,
+      oauthClientId: process.env.DISCORD_OAUTH_CLIENT_ID || process.env.DISCORD_CLIENT_ID || null,
+    });
 
-    registerSecondaryManagedServerInteractions(client);
-    registerManagedServerMemberFeeds();
-    await syncAllManagedServers();
-
-    console.log(`✅ Discord multi-tenant pronto (${listManagedServers().length} servidores registrados)`);
+    try {
+      registerSecondaryManagedServerInteractions(client);
+      registerManagedServerMemberFeeds();
+      await syncAllManagedServers();
+      console.log(`✅ Discord multi-tenant pronto (${listManagedServers().length} servidores registrados)`);
+    } catch (error) {
+      console.error("❌ erro inicializando recursos Discord após READY:", describeDiscordError(error));
+    }
   });
 
-  try {
-    await client.login(process.env.DISCORD_TOKEN);
-    console.log("✅ login Discord OK");
-  } catch (err) {
-    console.error("❌ erro ao logar no Discord:", err);
-  }
+  discordLoginInFlight = (async () => {
+    try {
+      console.log("🔐 iniciando login Discord Gateway...");
+      await client.login(token);
+      console.log("✅ login Discord OK; aguardando READY...");
+    } catch (error) {
+      console.error("❌ erro ao logar no Discord:", describeDiscordError(error));
+      throw error;
+    } finally {
+      discordLoginInFlight = null;
+    }
+  })();
+
+  return discordLoginInFlight;
 }
