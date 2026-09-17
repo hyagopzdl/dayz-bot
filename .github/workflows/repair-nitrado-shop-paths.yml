@@ -1,0 +1,169 @@
+name: Repair server-scoped Nitrado Shop paths
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Restore server-scoped Nitrado path resolution
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+
+          downloader = Path('artifacts/api-server/src/lib/nitradoDownloader.ts')
+          text = downloader.read_text()
+
+          old = '''function buildUploadPathCandidates(pathValue: string) {
+            // IMPORTANT: the File Server upload API expects the logical directory shown
+            // by Nitrado's File Browser. Do not translate it into /games/.../noftp or
+            // /games/.../ftproot. Those are internal filesystem representations and are
+            // not the canonical upload destination. Also avoid a trailing slash: Nitrado
+            // has been returning "Destination directory doesn't exist" for that form.
+            return withDayzMissionFolderVariants(pathValue);
+          }'''
+
+          new = '''function buildUploadPathCandidates(pathValue: string, serverId = getActiveServerId()) {
+            const logicalVariants = withDayzMissionFolderVariants(pathValue);
+            const noFtpRoot = getNoFtpRootFromAdmBaseDir(serverId);
+            const ftpRoot = getFtpRootFromAdmBaseDir(serverId);
+            const candidates: string[] = [];
+
+            for (const variant of logicalVariants) {
+              // Keep the logical File Browser namespace first. This is the canonical
+              // form and avoids changing behavior for servers where Nitrado accepts it.
+              candidates.push(variant);
+
+              // The legacy single-server implementation also resolved the same logical
+              // mission path against the server's actual noftp/ftproot roots. Restore
+              // those candidates, but derive them from the requested server only.
+              if (noFtpRoot) candidates.push(`${noFtpRoot}/${variant}`);
+              if (ftpRoot) candidates.push(`${ftpRoot}/${variant}`);
+            }
+
+            return uniqueStrings(candidates);
+          }'''
+
+          if old not in text:
+              raise SystemExit('nitradoDownloader.ts: expected buildUploadPathCandidates block not found')
+          text = text.replace(old, new, 1)
+          text = text.replace('const pathCandidates = buildUploadPathCandidates(path);', 'const pathCandidates = buildUploadPathCandidates(path, serverId);', 1)
+          downloader.write_text(text)
+
+          ftp_upload = Path('artifacts/api-server/src/lib/nitradoFtpUpload.ts')
+          text = ftp_upload.read_text()
+
+          marker = '''function candidateDirectories(filePath: string, configuredRoot?: string, missionDir?: string) {
+            const { directory } = splitPath(filePath);
+            const cleanRoot = normalizePath(configuredRoot || "");
+            const candidates = [directory];
+            if (cleanRoot) candidates.push(`${cleanRoot}/${directory}`);
+            if (missionDir) {
+              const mission = normalizePath(missionDir);
+              if (directory === mission || directory.startsWith(`${mission}/`)) {
+                candidates.push(directory);
+              }
+            }
+            return Array.from(new Set(candidates.filter(Boolean)));
+          }'''
+
+          replacement = '''function deriveNitradoFilesystemRoot(baseDir: string, namespace: "noftp" | "ftproot") {
+            const normalized = String(baseDir || "").replace(/\\\\/g, "/");
+            const match = normalized.match(/^(\\/games\\/[^/]+)\\/(?:noftp|ftproot)(?:\\/|$)/i);
+            return match?.[1] ? `${match[1]}/${namespace}` : "";
+          }
+
+          function candidateDirectories(
+            filePath: string,
+            configuredRoot?: string,
+            missionDir?: string,
+            baseDir?: string,
+          ) {
+            const { directory } = splitPath(filePath);
+            const cleanRoot = normalizePath(configuredRoot || "");
+            const noFtpRoot = deriveNitradoFilesystemRoot(baseDir || "", "noftp");
+            const ftpRoot = deriveNitradoFilesystemRoot(baseDir || "", "ftproot");
+            const candidates = [directory];
+
+            if (cleanRoot) candidates.push(`${cleanRoot}/${directory}`);
+            if (noFtpRoot) candidates.push(`${noFtpRoot}/${directory}`);
+            if (ftpRoot) candidates.push(`${ftpRoot}/${directory}`);
+
+            if (missionDir) {
+              const mission = normalizePath(missionDir);
+              if (directory === mission || directory.startsWith(`${mission}/`)) {
+                candidates.push(directory);
+              }
+            }
+
+            return Array.from(new Set(candidates.filter(Boolean)));
+          }'''
+
+          if marker not in text:
+              raise SystemExit('nitradoFtpUpload.ts: expected candidateDirectories block not found')
+          text = text.replace(marker, replacement, 1)
+          text = text.replace(
+              'const { host, port, user, password, root } = config.ftp;\n  const { file } = splitPath(filePath);\n  const missionDir = getServerScopedSettings(serverId).dayzMissionDir;\n  const directories = candidateDirectories(filePath, root, missionDir);',
+              'const { host, port, user, password, root } = config.ftp;\n  const { file } = splitPath(filePath);\n  const missionDir = getServerScopedSettings(serverId).dayzMissionDir;\n  const directories = candidateDirectories(filePath, root, missionDir, config.baseDir);',
+              1,
+          )
+          ftp_upload.write_text(text)
+
+          ftp = Path('artifacts/api-server/src/lib/nitradoFtp.ts')
+          text = ftp.read_text()
+
+          text = text.replace(
+              'import { getPrimaryServerId, getServerScopedSettings } from "./serverRegistry";',
+              'import { getServerScopedSettings } from "./serverRegistry";',
+              1,
+          )
+
+          pattern = re.compile(r'function resolveServerScopedFilePath\(filePath: string, serverId: string\) \{.*?\n\}\n\nfunction parsePasvEndpoint', re.S)
+          replacement = '''function resolveServerScopedFilePath(filePath: string, serverId: string) {
+            const cleanPath = String(filePath || "")
+              .replace(/\\\\/g, "/")
+              .replace(/^\\/+/, "")
+              .replace(/\\/+/g, "/");
+
+            if (!cleanPath) return cleanPath;
+
+            const serverMissionDir = String(
+              getServerScopedSettings(serverId).dayzMissionDir || "",
+            )
+              .replace(/\\\\/g, "/")
+              .replace(/^\\/+|\\/+$/g, "");
+
+            return serverMissionDir && cleanPath.startsWith(`${serverMissionDir}/`)
+              ? cleanPath
+              : cleanPath;
+          }
+
+          function parsePasvEndpoint'''
+          text, count = pattern.subn(replacement, text, count=1)
+          if count != 1:
+              raise SystemExit('nitradoFtp.ts: expected legacy primary-server resolver not found')
+          ftp.write_text(text)
+
+          workflow = Path('.github/workflows/repair-nitrado-shop-paths.yml')
+          workflow.unlink()
+
+      - name: Commit repair
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add artifacts/api-server/src/lib/nitradoDownloader.ts artifacts/api-server/src/lib/nitradoFtpUpload.ts artifacts/api-server/src/lib/nitradoFtp.ts .github/workflows/repair-nitrado-shop-paths.yml
+          git diff --cached --quiet && exit 0
+          git commit -m 'fix(nitrado): restore server-scoped filesystem upload paths'
+          git push
