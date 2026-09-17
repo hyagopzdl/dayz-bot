@@ -71,30 +71,45 @@ function acquireSlot() {
 function routeDayzUploadPath(url: string) {
   try {
     const parsed = new URL(url);
-    if (parsed.pathname !== "/services/" + parsed.pathname.split("/")[2] + "/gameservers/file_server/upload") return url;
+    const parts = parsed.pathname.split("/").filter(Boolean);
+    if (parts.length !== 4 || parts[0] !== "services" || parts[2] !== "gameservers" || parts[3] !== "file_server") return url;
 
-    const serviceId = parsed.pathname.split("/")[2];
+    const serviceId = parts[1];
+    if (!serviceId || !parsed.pathname.endsWith("/upload")) return url;
+
     const server = listManagedServers().find(
       (candidate) => String(candidate.integrations.nitradoServiceId || "").trim() === serviceId,
     );
     if (!server) return url;
 
-    const baseDir = String(server.runtime.nitradoBaseDir || "").trim().replace(/\\/g, "/").replace(/\/+$/g, "");
-    if (!baseDir) return url;
+    const configuredBaseDir = String(server.runtime.nitradoBaseDir || "")
+      .trim()
+      .replace(/\\/g, "/")
+      .replace(/\/+$/g, "");
+    if (!configuredBaseDir) return url;
 
-    const requestedPath = String(parsed.searchParams.get("path") || "").replace(/\\/g, "/").replace(/^\/+/, "");
+    const requestedPath = String(parsed.searchParams.get("path") || "")
+      .replace(/\\/g, "/")
+      .replace(/^\/+/, "");
     const missionMatch = requestedPath.match(/(?:^|\/)(dayzps_missions\/.*)$/i);
     if (!missionMatch) return url;
 
+    // runtime.nitradoBaseDir points at .../dayzps/config. The File Server API
+    // path for DayZ mission files is rooted one level above /config, at the
+    // actual game root (.../dayzps). Appending dayzps_missions directly to the
+    // config directory produced .../dayzps/config/dayzps_missions, which does
+    // not exist and is exactly what Nitrado reported as the 500 error.
+    const gameRoot = configuredBaseDir.replace(/\/config$/i, "");
     const relativeMissionPath = missionMatch[1];
-    const canonicalPath = `${baseDir}/${relativeMissionPath}`;
+    const canonicalPath = `${gameRoot}/${relativeMissionPath}`;
     if (requestedPath === canonicalPath.replace(/^\/+/, "")) return url;
 
     parsed.searchParams.set("path", canonicalPath);
     console.log("🧭 NITRADO DAYZ UPLOAD ROUTE", {
       serverId: server.id,
       serviceId,
-      configuredBaseDir: baseDir,
+      configuredBaseDir,
+      gameRoot,
       requestedPath,
       canonicalPath,
     });
