@@ -12,8 +12,21 @@ jobs:
       - run: |
           git fetch --no-tags --depth=2 origin main
           git checkout 420d494a7c3206afbea86784f70a2e345632dbb7 -- artifacts/api-server/src/routes/adminPanel.ts
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('artifacts/api-server/src/routes/adminPanel.ts')
+          s=p.read_text()
+          s=s.replace('getManagedServerById, getPrimaryServerDescriptor, getPrimaryServerId, getServerFoundationDiagnostics, listManagedServers', 'getManagedServerById, getServerFoundationDiagnostics, listExecutableManagedServers, listManagedServers')
+          s=s.replace('return requireOrganizationAccess(req, res, getPrimaryServerDescriptor().organizationId, resolvedCapability);', 'const server = getManagedServerById(getActiveServerId());\n  if (!server) { res.status(403).json({ error: "SERVER_CONTEXT_REQUIRED" }); return false; }\n  return requireOrganizationAccess(req, res, server.organizationId, resolvedCapability);')
+          s=s.replace('return getManagedServerById(req.adminSession.serverId)?.organizationId || getPrimaryServerDescriptor().organizationId;\n  }\n  return getPrimaryServerDescriptor().organizationId;', 'return getManagedServerById(req.adminSession.serverId)?.organizationId || "";\n  }\n  return req.portalSession ? listUserOrganizationMemberships(req.portalSession.discordId)[0]?.organizationId || "" : "";')
+          s=s.replace('  const primaryServerId = getPrimaryServerId();\n  const run = () => runInServerRuntimeContext(primaryServerId, () =>\n    runSpawnZoneAutomationNow().catch((err) => console.error("spawn zones automation failed", err)),\n  );', '  const run = () => Promise.all(listExecutableManagedServers().map((server) => runInServerRuntimeContext(server.id, () => runSpawnZoneAutomationNow().catch((err) => console.error(`spawn zones automation failed [${server.id}]`, err)))));')
+          s=s.replace('getActiveServerId() === getPrimaryServerId() ? "full" : "core"', '"full"')
+          s=s.replace('const server = getManagedServerById(getActiveServerId()) || getPrimaryServerDescriptor();\n  res.json({ server, foundation: foundationForRequest(req) });', 'const server = getManagedServerById(getActiveServerId());\n  if (!server) return res.status(404).json({ error: "SERVER_CONTEXT_REQUIRED" });\n  res.json({ server, foundation: foundationForRequest(req) });')
+          s=s.replace('const serverDescriptor = getManagedServerById(getActiveServerId()) || getPrimaryServerDescriptor();', 'const serverDescriptor = getManagedServerById(getActiveServerId());\n    if (!serverDescriptor) return res.status(404).json({ error: "SERVER_CONTEXT_REQUIRED" });')
+          p.write_text(s)
+          PY
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add artifacts/api-server/src/routes/adminPanel.ts
-          git commit -m 'fix: restore admin panel after targeted edit error'
+          git commit -m 'fix: remove admin primary server fallbacks'
           git push
