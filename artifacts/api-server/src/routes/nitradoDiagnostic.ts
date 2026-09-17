@@ -1,5 +1,5 @@
 import { Router, type Request } from "express";
-import { debugNitradoListRaw, getNitradoGameserverStatus } from "../lib/nitradoDownloader";
+import { debugNitradoListRaw, getNitradoFileServerBookmarks, getNitradoGameserverStatus } from "../lib/nitradoDownloader";
 import { getActiveServerId } from "../lib/serverRuntime";
 import { getManagedServerById, getServerRuntimeIsolationStatus, getServerRegistryPersistenceStatus, getServerNamespacePersistenceStatus, listManagedServers } from "../lib/serverRegistry";
 import { getOrganizationIntegrationStatus, getOrganizationNitradoCredential } from "../lib/organizationIntegrations";
@@ -102,6 +102,7 @@ async function diagnoseServer(serverId: string) {
     return { source: credential.source, tokenAvailable: Boolean(String(credential.token || "").trim()) };
   });
   const status = await safeCall(() => getNitradoGameserverStatus(serverId));
+  const bookmarks = await safeCall(() => getNitradoFileServerBookmarks(serverId));
   return {
     serverId, descriptor,
     integration: {
@@ -111,6 +112,7 @@ async function diagnoseServer(serverId: string) {
       credentialCheck: credentialCheck.ok ? credentialCheck.data : { error: credentialCheck.error },
     },
     status: status.ok ? { ok: true, value: status.data.status } : { ok: false, error: status.error },
+    bookmarks: bookmarks.ok ? bookmarks.data : { error: bookmarks.error },
     roots, directories,
     uploadProbe: { performed: false, reason: "Read-only diagnostic. No upload token or file upload is attempted." },
   };
@@ -136,6 +138,7 @@ router.get("/nitrado-diagnostic", async (req, res) => {
         purpose: "Expose the actual read-only file_server/list payload for every currently managed server before changing production upload behavior.",
         important: "The Nitrado web interface path /dayzps_missions/dayzOffline.chernarusplus is included directly in this comparison.",
         noUpload: "This endpoint never requests an upload token and never writes a file.",
+        bookmarks: "The File Server bookmarks are included because they are Nitrado-provided canonical navigation roots and can resolve the logical-to-physical path without guessing.",
         tenantContext: "This infrastructure diagnostic does not require request tenant context; it reads only the persisted managed-server registry and Nitrado File Server API.",
       },
     });
