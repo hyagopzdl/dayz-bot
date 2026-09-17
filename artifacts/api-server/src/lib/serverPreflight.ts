@@ -2,7 +2,6 @@ import {
   canExecuteManagedServerRuntime,
   getManagedServerActivationConfigSignature,
   getManagedServerById,
-  getPrimaryServerId,
   getServerFoundationDiagnostics,
   listManagedServers,
   type ManagedServerDescriptor,
@@ -67,18 +66,15 @@ async function validateOptionalDiscord(server: ManagedServerDescriptor, checks: 
 
 export async function runManagedServerActivationPreflight(serverIdInput: string): Promise<ServerActivationPreflightResult> {
   const serverId = text(serverIdInput); const checkedAt = new Date().toISOString(); const checks: ServerActivationPreflightCheck[] = [];
-  const primaryId = getPrimaryServerId(); let server = getManagedServerById(serverId);
-  if (!server || server.id === primaryId || server.primary) {
-    pushCheck(checks, "registry", "Server registry", "fail", server ? "O servidor primario nao usa o activation preflight de servidores adicionais." : `Servidor ${serverId || "desconhecido"} nao encontrado.`);
+  let server = getManagedServerById(serverId);
+  if (!server) {
+    pushCheck(checks, "registry", "Server registry", "fail", `Servidor ${serverId || "desconhecido"} nao encontrado.`);
     return { serverId, passed: false, checkedAt, ready: false, warningCount: 0, failureCount: 1, checks, runtimeActivationBlocked: false, activationEndpointAvailable: true };
   }
 
   const foundation = getServerFoundationDiagnostics(); const allServers = listManagedServers();
-  const runtimeGateSafe = !server.runtimeEnabled && !canExecuteManagedServerRuntime(server.id) && foundation.additionalServersEnabled === true && foundation.onboarding?.activationEndpointEnabled === true;
-  pushCheck(checks, "runtime-gate", "Runtime gate", runtimeGateSafe ? "pass" : "fail", runtimeGateSafe ? "O servidor alvo continua parado; a Fase 12 permite ativacao somente depois deste gate." : "O servidor alvo ja esta executando ou o activation gate da Fase 12 nao esta disponivel. Desative antes de revalidar.", { runtimeEnabled: server.runtimeEnabled, runtimeRows: Number(foundation.onboarding?.runtimeEnabledServers || 0), additionalServersEnabled: foundation.additionalServersEnabled });
-
-  const databaseFoundationSafe = Boolean(foundation.registryPersisted && foundation.persistenceNamespaced && foundation.persistenceTaggedWithServerId && foundation.safety?.compositePrimaryKeysActive && foundation.safety?.perServerStateCache && foundation.safety?.perServerPersistenceRuntime && foundation.safety?.perServerPositionHistory && foundation.safety?.perServerAdmParserStorage && foundation.safety?.centralizedScheduler);
-  pushCheck(checks, "database-foundation", "Isolation foundation", databaseFoundationSafe ? "pass" : "fail", databaseFoundationSafe ? "PKs, scoped persistence, caches, parser storage e scheduler permanecem preparados para isolamento por servidor." : "A fundacao multi-server perdeu uma ou mais garantias obrigatorias.");
+  const runtimeGateSafe = !server.runtimeEnabled && foundation.additionalServersEnabled === true && foundation.onboarding?.activationEndpointEnabled === true;
+  pushCheck(checks, "runtime-gate", "Runtime gate", runtimeGateSafe ? "pass" : "fail", runtimeGateSafe ? "O servidor alvo continua parado; a Fase 12 permite ativacao somente depois deste gate." : "O servidor alvo ja esta executando ou o activation gate da Fase 12 nao esta disponivel.", { runtimeEnabled: server.runtimeEnabled, runtimeRows: Number(foundation.onboarding?.runtimeEnabledServers || 0), additionalServersEnabled: foundation.additionalServersEnabled });
 
   const targetServerId = server.id; const configuredDiscordGuildId = text(server.integrations.discordGuildId); let serviceId = text(server.integrations.nitradoServiceId); let baseDir = text(server.runtime.nitradoBaseDir);
   const duplicateService = serviceId ? allServers.find((candidate: ManagedServerDescriptor) => candidate.id !== targetServerId && text(candidate.integrations.nitradoServiceId) === serviceId) : undefined;
@@ -109,6 +105,10 @@ export async function runManagedServerActivationPreflight(serverIdInput: string)
     namespaceRows = await inspectManagedServerNamespaceRows(server.id); const firstActivation = !server.runtime.activation?.everActivated;
     pushCheck(checks, "namespace-owned", "Database namespace", "pass", firstActivation ? `Namespace exclusivo do servidor confirmado antes da primeira ativacao (${namespaceRows.botState}/${namespaceRows.playerStats}/${namespaceRows.positionHistory}). Rows de onboarding podem ser reutilizadas com seguranca.` : "O servidor ja foi ativado anteriormente; as rows existentes permanecem no proprio namespace.", namespaceRows);
   } catch (error) { pushCheck(checks, "namespace-owned", "Database namespace", "fail", error instanceof Error ? error.message : String(error)); }
+
+  const namespace = foundation.namespace;
+  const databaseFoundationSafe = Boolean(foundation.registryPersisted && foundation.persistenceNamespaced && foundation.persistenceTaggedWithServerId && foundation.safety?.compositePrimaryKeysActive && (!namespace?.playerStatsTableReady || namespace.playerStatsPrimaryKeyReady) && namespace?.botStatePrimaryKeyReady && namespace?.scopedReadsEnabled && namespace?.botStateUntaggedRows === 0 && (!namespace?.playerStatsTableReady || namespace.playerStatsUntaggedRows === 0));
+  pushCheck(checks, "database-foundation", "Isolation foundation", databaseFoundationSafe ? "pass" : "fail", databaseFoundationSafe ? "PKs, scoped persistence, server-tagged rows e caches persistidos estao preparados para isolamento por servidor." : "A fundacao persistida de isolamento por servidor ainda possui uma garantia estrutural pendente.", { registryPersisted: foundation.registryPersisted, persistenceNamespaced: foundation.persistenceNamespaced, persistenceTaggedWithServerId: foundation.persistenceTaggedWithServerId, compositePrimaryKeysActive: foundation.safety?.compositePrimaryKeysActive, scopedReadsEnabled: namespace?.scopedReadsEnabled, botStateUntaggedRows: namespace?.botStateUntaggedRows, playerStatsUntaggedRows: namespace?.playerStatsUntaggedRows });
 
   if (nitradoMetadataValid && uniqueRouting) {
     try {
