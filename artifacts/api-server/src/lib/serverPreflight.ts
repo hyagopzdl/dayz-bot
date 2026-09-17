@@ -49,33 +49,79 @@ const DISCORD_CHANNEL_EXPECTATIONS: Array<{ key: keyof ServerDiscordRuntimeConfi
 async function waitForDiscordReady(timeoutMs = 15000) {
   const discord = await import("./discordBot");
   const client = discord.getDiscordClient();
-  const diagnostics = discord.getDiscordGatewayDiagnostics();
-  if (diagnostics.ready) return true;
-  if (!process.env.DISCORD_TOKEN) return false;
+  const initialDiagnostics = discord.getDiscordGatewayDiagnostics();
+  console.log("[preflight][discord] início da validação Gateway", initialDiagnostics);
 
-  // The preflight is allowed to recover the Gateway itself. Previously it only
-  // waited for a connection that might never have been started by this process.
+  if (initialDiagnostics.ready) {
+    console.log("[preflight][discord] Gateway já estava READY", initialDiagnostics);
+    return true;
+  }
+  if (!process.env.DISCORD_TOKEN) {
+    console.error("[preflight][discord] Gateway não iniciado: DISCORD_TOKEN ausente", initialDiagnostics);
+    return false;
+  }
+
   try {
+    console.log("[preflight][discord] chamando startDiscordBot", initialDiagnostics);
     await discord.startDiscordBot();
-  } catch {
+    console.log("[preflight][discord] startDiscordBot resolveu", discord.getDiscordGatewayDiagnostics());
+  } catch (error) {
+    console.error("[preflight][discord] startDiscordBot falhou", {
+      error: error instanceof Error ? `${error.name}: ${error.message}` : String(error),
+      diagnostics: discord.getDiscordGatewayDiagnostics(),
+    });
     return false;
   }
 
   const startedAt = Date.now();
   while (Date.now() - startedAt < timeoutMs) {
-    if (discord.getDiscordGatewayDiagnostics().ready && client.isReady()) return true;
+    const diagnostics = discord.getDiscordGatewayDiagnostics();
+    if (diagnostics.ready && client.isReady()) {
+      console.log("[preflight][discord] Gateway READY confirmado", diagnostics);
+      return true;
+    }
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
-  return discord.getDiscordGatewayDiagnostics().ready && client.isReady();
+
+  const finalDiagnostics = discord.getDiscordGatewayDiagnostics();
+  console.error("[preflight][discord] timeout aguardando READY", finalDiagnostics);
+  return finalDiagnostics.ready && client.isReady();
 }
 
 async function validateOptionalDiscord(server: ManagedServerDescriptor, checks: ServerActivationPreflightCheck[]) {
   const guildId = text(server.integrations.discordGuildId);
   if (!guildId) { pushCheck(checks, "discord", "Discord", "skipped", "Discord nao esta configurado e continua opcional para o runtime core."); return; }
+
+  console.log("[preflight][discord] validando guild configurada", { serverId: server.id, guildId });
   const ready = await waitForDiscordReady();
   const discord = await import("./discordBot");
   const diagnostics = discord.getDiscordGatewayDiagnostics();
-  const options = ready ? await listDiscordGuildOptions(server.id) : { ready: false, guilds: [] as DiscordGuildOption[], message: diagnostics.lastLoginError || (process.env.DISCORD_TOKEN ? "O bot Discord nao ficou pronto apos iniciar o Gateway." : "DISCORD_TOKEN nao esta configurado no processo.") };
+  console.log("[preflight][discord] resultado da prontidão", { serverId: server.id, guildId, ready, diagnostics });
+
+  let options: Awaited<ReturnType<typeof listDiscordGuildOptions>>;
+  try {
+    options = ready
+      ? await listDiscordGuildOptions(server.id)
+      : { ready: false, guilds: [] as DiscordGuildOption[], message: diagnostics.lastLoginError || (process.env.DISCORD_TOKEN ? "O bot Discord nao ficou pronto apos iniciar o Gateway." : "DISCORD_TOKEN nao esta configurado no processo.") };
+    console.log("[preflight][discord] guild options retornadas", {
+      serverId: server.id,
+      guildId,
+      ready: options.ready,
+      guildCount: options.guilds.length,
+      guilds: options.guilds.map((guild) => ({ id: guild.id, name: guild.name })),
+      message: options.message || null,
+    });
+  } catch (error) {
+    console.error("[preflight][discord] listDiscordGuildOptions falhou", {
+      serverId: server.id,
+      guildId,
+      diagnostics,
+      error: error instanceof Error ? `${error.name}: ${error.message}` : String(error),
+    });
+    pushCheck(checks, "discord", "Discord", "fail", error instanceof Error ? error.message : String(error), { guildId, ...diagnostics });
+    return;
+  }
+
   if (!options.ready) {
     pushCheck(checks, "discord", "Discord", "fail", options.message || "Uma guild foi configurada, mas o bot Discord nao esta conectado.", {
       tokenConfigured: Boolean(process.env.DISCORD_TOKEN),
@@ -158,14 +204,14 @@ export async function runManagedServerActivationPreflight(serverIdInput: string)
 
   const namespace = foundation.namespace;
   const databaseFoundationSafe = Boolean(liveFoundation?.safe && namespace?.scopedReadsEnabled && namespace?.botStatePrimaryKeyReady && (!namespace?.playerStatsTableReady || namespace.playerStatsPrimaryKeyReady) && namespace?.botStateUntaggedRows === 0 && (!namespace?.playerStatsTableReady || namespace.playerStatsUntaggedRows === 0));
-  pushCheck(checks, "database-foundation", "Isolation foundation", databaseFoundationSafe ? "pass" : "fail", databaseFoundationSafe ? "PKs, scoped persistence, server-tagged rows e caches persistidos estao preparados para isolamento por servidor." : "A fundacao persistida de isolamento por servidor ainda possui uma garantia estrutural pendente.", { liveFoundationSafe: liveFoundation?.safe, liveRegistryPersisted: liveFoundation?.registryPersisted, liveBotStatePrimaryKeyReady: liveFoundation?.botStatePrimaryKeyReady, livePlayerStatsPrimaryKeyReady: liveFoundation?.playerStatsPrimaryKeyReady, liveBotStateUntaggedRows: liveFoundation?.botStateUntaggedRows, livePlayerStatsUntaggedRows: liveFoundation?.playerStatsUntaggedRows, scopedReadsEnabled: namespace?.scopedReadsEnabled, botStatePrimaryKeyReady: namespace?.botStatePrimaryKeyReady, playerStatsPrimaryKeyReady: namespace?.playerStatsPrimaryKeyReady, botStateUntaggedRows: namespace?.botStateUntaggedRows, playerStatsUntaggedRows: namespace?.playerStatsUntaggedRows });
+  pushCheck(checks, "database-foundation", "Isolation foundation", databaseFoundationSafe ? "pass" : "fail", databaseFoundationSafe ? "PKs, scoped persistence, server-tagged rows e caches persistidos estao preparados para isolamento por servidor." : "A fundacao persistida de isolamento por servidor ainda possui uma garantia estrutural pendente.", { liveFoundationSafe: liveFoundation?.safe, liveRegistryPersisted: liveFoundation?.registryPersisted, liveBotStatePrimaryKeyReady: liveFoundation?.botStatePrimaryKeyReady, livePlayerStatsPrimaryKeyReady: liveFoundation?.playerStatsPrimaryKeyReady, liveBotStateUntaggedRows: liveFoundation?.botStateUntaggedRows, playerStatsUntaggedRows: liveFoundation?.playerStatsUntaggedRows, scopedReadsEnabled: namespace?.scopedReadsEnabled, botStatePrimaryKeyReady: namespace?.botStatePrimaryKeyReady, playerStatsPrimaryKeyReady: namespace?.playerStatsPrimaryKeyReady, botStateUntaggedRows: namespace?.botStateUntaggedRows, playerStatsUntaggedRows: namespace?.playerStatsUntaggedRows });
 
   if (nitradoMetadataValid && uniqueRouting) {
     try {
       const remote = prefetchedNitradoValidation || await validateNitradoServiceSetup(server.id, serviceId, baseDir); const sameRouting = remote.serviceId === serviceId && remote.baseDir === baseDir;
-      pushCheck(checks, "nitrado-live", "Nitrado live check", sameRouting ? "pass" : "fail", sameRouting ? `Service acessivel e file_server respondeu para o base dir salvo${remote.admFilesFound ? ` (${remote.admFilesFound} ADM encontrado(s))` : ""}.` : "A validacao Nitrado retornou uma rota diferente da configurada.");
-    } catch (error) { pushCheck(checks, "nitrado-live", "Nitrado live check", "fail", error instanceof Error ? error.message : String(error)); }
-  } else pushCheck(checks, "nitrado-live", "Nitrado live check", "skipped", "Aguardando configuracao Nitrado valida e routing exclusivo.");
+      pushCheck(checks, "nitrado-live", "Nitrado live routing", sameRouting ? "pass" : "fail", sameRouting ? "Service ID e base dir conferem com a rota Nitrado validada agora." : "A rota Nitrado retornada nao confere com o servidor cadastrado.", { remoteServiceId: remote.serviceId, remoteBaseDir: remote.baseDir });
+    } catch (error) { pushCheck(checks, "nitrado-live", "Nitrado live routing", "fail", error instanceof Error ? error.message : String(error)); }
+  } else pushCheck(checks, "nitrado-live", "Nitrado live routing", "skipped", "A rota Nitrado live depende da validacao e unicidade anteriores.");
 
   await validateOptionalDiscord(server, checks);
 
