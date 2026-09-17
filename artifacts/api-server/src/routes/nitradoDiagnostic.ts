@@ -2,7 +2,6 @@ import { Router, type Request } from "express";
 import {
   debugNitradoListRaw,
   getNitradoGameserverStatus,
-  listNitradoDirectory,
 } from "../lib/nitradoDownloader";
 import { getOrganizationIntegrationStatus } from "../lib/organizationIntegrations";
 import { getActiveServerId } from "../lib/serverRuntime";
@@ -56,7 +55,8 @@ async function safeCall<T>(fn: () => Promise<T>) {
   }
 }
 
-function descriptorSnapshot(serverId: string) {
+function descriptorSnapshot(serverId: string | null) {
+  if (!serverId) return null;
   const descriptor = getManagedServerById(serverId);
   if (!descriptor) return null;
   const integration = getOrganizationIntegrationStatus(descriptor.organizationId);
@@ -90,9 +90,8 @@ function gameRootFromBaseDir(baseDir: string) {
   return normalize(baseDir).replace(/\/config$/i, "") || "/";
 }
 
-function missionDirectoryFromBaseDir(baseDir: string, missionDir: string) {
-  const root = absolute(baseDir);
-  return root === "/" ? absolute(missionDir) : `${root}/${normalize(missionDir)}`;
+function missionDirectory(missionDir: string) {
+  return absolute(missionDir);
 }
 
 async function inspectDirectory(serverId: string, directory: string) {
@@ -137,15 +136,21 @@ async function diagnoseServer(serverId: string) {
   const descriptor = descriptorSnapshot(serverId);
   if (!descriptor) return { serverId, descriptor: null, error: "SERVER_NOT_REGISTERED" };
 
-  const baseDir = absolute(String(descriptor.baseDir || ""));
-  const missionDir = normalize(String(descriptor.dayzMissionDir || "dayzps_missions/dayzOffline.chernarusplus"));
+  const configuredBaseDir = absolute(String(descriptor.baseDir || ""));
+  const configuredMissionDir = missionDirectory(
+    String(descriptor.dayzMissionDir || "dayzps_missions/dayzOffline.chernarusplus"),
+  );
+
+  // IMPORTANT: the web interface URL supplied by the user proves the File
+  // Server's logical DayZ root. Keep physical /games/... paths only as a
+  // comparison diagnostic; never use them as the production upload path.
   const roots = Array.from(new Set([
     "/",
-    baseDir,
-    gameRootFromBaseDir(baseDir),
-    baseDir ? `${baseDir}/dayzps_missions` : "",
-    missionDirectoryFromBaseDir(baseDir, missionDir),
-    `${missionDirectoryFromBaseDir(baseDir, missionDir)}/db`,
+    configuredMissionDir,
+    `${configuredMissionDir}/db`,
+    "/dayzps_missions",
+    configuredBaseDir,
+    gameRootFromBaseDir(configuredBaseDir),
   ].filter(Boolean)));
 
   console.log("🔬 NITRADO FILE SERVER ROOT DIAGNOSTIC", { serverId, roots });
@@ -172,28 +177,39 @@ async function diagnoseServer(serverId: string) {
 router.get("/nitrado-diagnostic", async (req, res) => {
   if (!requireDiagnosticAdmin(req, res)) return;
 
-  const startedAt = Date.now();
-  const managedServers = listManagedServers();
-  const servers = [];
-  for (const server of managedServers) servers.push(await diagnoseServer(server.id));
+  try {
+    const startedAt = Date.now();
+    const managedServers = listManagedServers();
+    const servers = [];
 
-  res.json({
-    diagnostic: "nitrado-file-server-root-inspection-v3",
-    generatedAt: new Date().toISOString(),
-    durationMs: Date.now() - startedAt,
-    activeServerId: getActiveServerId(),
-    activeServer: descriptorSnapshot(getActiveServerId()),
-    managedServerCount: managedServers.length,
-    servers,
-    registry: getServerRegistryPersistenceStatus(),
-    namespace: getServerNamespacePersistenceStatus(),
-    isolation: getServerRuntimeIsolationStatus(),
-    interpretation: {
-      purpose: "Expose the actual read-only file_server/list payload for every currently managed server before changing any production upload path.",
-      important: "The entries.path values returned by Nitrado are the source of truth for the next upload-path change.",
-      noUpload: "This endpoint never requests an upload token and never writes a file.",
-    },
-  });
+    for (const server of managedServers) {
+      servers.push(await diagnoseServer(server.id));
+    }
+
+    return res.json({
+      diagnostic: "nitrado-file-server-root-inspection-v4",
+      generatedAt: new Date().toISOString(),
+      durationMs: Date.now() - startedAt,
+      activeServerId: getActiveServerId(),
+      activeServer: descriptorSnapshot(getActiveServerId()),
+      managedServerCount: managedServers.length,
+      servers,
+      registry: getServerRegistryPersistenceStatus(),
+      namespace: getServerNamespacePersistenceStatus(),
+      isolation: getServerRuntimeIsolationStatus(),
+      interpretation: {
+        purpose: "Expose the actual read-only file_server/list payload for every currently managed server before changing production upload behavior.",
+        important: "The Nitrado web interface path /dayzps_missions/dayzOffline.chernarusplus is included directly in this comparison.",
+        noUpload: "This endpoint never requests an upload token and never writes a file.",
+      },
+    });
+  } catch (error) {
+    console.error("❌ NITRADO DIAGNOSTIC FAILED", error);
+    return res.status(500).json({
+      error: "NITRADO_DIAGNOSTIC_FAILED",
+      message: sanitizeError(error),
+    });
+  }
 });
 
 export default router;
