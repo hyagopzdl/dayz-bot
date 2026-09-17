@@ -3,6 +3,7 @@ import {
   getManagedServerById,
   getServerFoundationDiagnostics,
   listManagedServers,
+  setServerNamespacePersistenceStatus,
   type ManagedServerDescriptor,
   type ServerActivationPreflight,
   type ServerDiscordRuntimeConfig,
@@ -109,6 +110,25 @@ export async function runManagedServerActivationPreflight(serverIdInput: string)
     foundation = getServerFoundationDiagnostics();
     try {
       liveFoundation = await inspectLivePersistenceFoundation(server.id);
+      if (liveFoundation.botStateTableReady && liveFoundation.playerStatsTableReady) {
+        setServerNamespacePersistenceStatus({
+          enabled: true,
+          initialized: true,
+          botStateTableReady: true,
+          playerStatsTableReady: true,
+          botStateCompositeKeyReady: liveFoundation.botStatePrimaryKeyReady,
+          playerStatsCompositeKeyReady: liveFoundation.playerStatsPrimaryKeyReady,
+          botStatePrimaryKeyReady: liveFoundation.botStatePrimaryKeyReady,
+          playerStatsPrimaryKeyReady: liveFoundation.playerStatsPrimaryKeyReady,
+          primaryKeyCutoverComplete: liveFoundation.botStatePrimaryKeyReady && liveFoundation.playerStatsPrimaryKeyReady,
+          scopedReadsEnabled: liveFoundation.botStatePrimaryKeyReady,
+          botStateUntaggedRows: liveFoundation.botStateUntaggedRows,
+          playerStatsUntaggedRows: liveFoundation.playerStatsUntaggedRows,
+          lastCheckedAt: new Date().toISOString(),
+          lastError: undefined,
+        });
+        foundation = getServerFoundationDiagnostics();
+      }
     } catch (error) {
       pushCheck(checks, "database-live", "Database live foundation", "fail", error instanceof Error ? error.message : String(error));
     }
