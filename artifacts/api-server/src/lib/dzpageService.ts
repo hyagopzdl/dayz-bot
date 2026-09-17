@@ -1,3 +1,5 @@
+import { getDayzItemImageOverrides } from "./dayzItemOverridesService";
+
 const DZPAGE_API_BASE_URL = "https://dzpage.com/api/v1";
 const DEFAULT_SEARCH_LIMIT = 48;
 const MAX_SEARCH_LIMIT = 100;
@@ -92,6 +94,16 @@ function normalizeItem(item: any): DzPageItemSummary {
   };
 }
 
+async function applyImageOverrides(items: DzPageItemSummary[]) {
+  if (!items.length) return items;
+  const overrides = await getDayzItemImageOverrides();
+  return items.map((item) => {
+    const override = overrides.get(item.className.trim().toLowerCase());
+    if (!override) return item;
+    return { ...item, iconUrl: override, iconThumbUrl: override, hasIcon: true };
+  });
+}
+
 function getFresh<T>(entry: CacheEntry<T> | undefined | null) {
   return entry && entry.expiresAt > Date.now() ? entry.value : undefined;
 }
@@ -124,8 +136,11 @@ export async function searchDzPageItems(options: {
   if (iconsOnly) params.set("icons", "1");
 
   const payload = await requestJson<{ meta?: any; items?: any[] }>("/items", params);
+  const normalizedItems = Array.isArray(payload?.items)
+    ? payload.items.map(normalizeItem).filter((item) => item.className)
+    : [];
   const result: DzPageSearchResult = {
-    items: Array.isArray(payload?.items) ? payload.items.map(normalizeItem).filter((item) => item.className) : [],
+    items: await applyImageOverrides(normalizedItems),
     total: Number(payload?.meta?.total || 0),
     page: Number(payload?.meta?.page || page),
     pages: Number(payload?.meta?.pages || 0),
@@ -144,7 +159,10 @@ export async function getDzPageItem(className: string, options: { language?: str
   const cacheKey = `${normalizedClassName.toLowerCase()}:${language}`;
   if (!options.forceRefresh) {
     const cached = getFresh(itemCache.get(cacheKey));
-    if (cached) return cached;
+    if (cached) {
+      const [resolved] = await applyImageOverrides([cached]);
+      return resolved;
+    }
   }
 
   const params = new URLSearchParams({ lang: language });
@@ -153,7 +171,8 @@ export async function getDzPageItem(className: string, options: { language?: str
 
   const item = normalizeItem(payload.item);
   itemCache.set(cacheKey, { value: item, expiresAt: Date.now() + ITEM_CACHE_TTL_MS });
-  return item;
+  const [resolved] = await applyImageOverrides([item]);
+  return resolved;
 }
 
 export async function getDzPageMeta(options: { forceRefresh?: boolean } = {}) {
