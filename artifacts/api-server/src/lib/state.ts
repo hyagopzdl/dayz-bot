@@ -715,6 +715,18 @@ async function ensureManagedServerRegistryMetadata() {
 }
 
 
+async function ensureManagedServerRegistryReady() {
+  await ensureManagedServerRegistryMetadata();
+  if (!sql) throw new Error("Server registry is unavailable: DATABASE_URL is not configured.");
+  const rows = await sql`SELECT to_regclass('public.managed_servers') IS NOT NULL AS ready`;
+  if (!Boolean((rows as any[])[0]?.ready)) {
+    const diagnostic = getServerRegistryPersistenceStatus().lastError;
+    throw new Error(diagnostic ? `Server registry is unavailable: managed_servers is not ready (${diagnostic}).` : "Server registry is unavailable: managed_servers table does not exist.");
+  }
+  setServerRegistryPersistenceStatus({ enabled: true, initialized: true, tableReady: true, lastError: undefined });
+}
+
+
 export type PlayerPositionHistoryEventType = "position" | "connect" | "disconnect";
 
 export type PlayerPositionHistoryObservation = {
@@ -1613,10 +1625,7 @@ function queueGranularPlayerStats(data: AppState) {
 
 export async function createManagedServerDraft(input: ManagedServerDraftInput) {
   assertNoServerSecrets(input);
-  await ensureManagedServerRegistryMetadata();
-  if (!sql || !getServerRegistryPersistenceStatus().tableReady) {
-    throw new Error("Server registry is unavailable. DATABASE_URL and managed_servers must be ready.");
-  }
+  await ensureManagedServerRegistryReady();
 
   const rawName = String(input?.name || "").trim();
   if (!rawName) throw new Error("Informe o nome do servidor.");
@@ -1687,10 +1696,7 @@ export async function createManagedServerDraft(input: ManagedServerDraftInput) {
 
 export async function updateManagedServerDraft(serverId: string, input: ManagedServerDraftInput) {
   assertNoServerSecrets(input);
-  await ensureManagedServerRegistryMetadata();
-  if (!sql || !getServerRegistryPersistenceStatus().tableReady) {
-    throw new Error("Server registry is unavailable. DATABASE_URL and managed_servers must be ready.");
-  }
+  await ensureManagedServerRegistryReady();
 
   const id = buildManagedServerId(serverId);
   if (!id || id === getPrimaryServerId()) throw new Error("O servidor primario nao pode ser alterado pelo onboarding da Fase 11.");
@@ -1771,10 +1777,7 @@ export async function updateManagedServerDraft(serverId: string, input: ManagedS
 }
 
 export async function bindManagedServerDiscordGuild(serverIdInput: unknown, guildIdInput: unknown) {
-  await ensureManagedServerRegistryMetadata();
-  if (!sql || !getServerRegistryPersistenceStatus().tableReady) {
-    throw new Error("Server registry is unavailable. DATABASE_URL and managed_servers must be ready.");
-  }
+  await ensureManagedServerRegistryReady();
 
   const id = buildManagedServerId(serverIdInput);
   const guildId = optionalServerText(guildIdInput, 64);
@@ -1816,8 +1819,7 @@ export async function bindManagedServerDiscordGuild(serverIdInput: unknown, guil
 }
 
 export async function updateManagedServerDiscordChannels(serverIdInput: unknown, discordInput: unknown) {
-  await ensureManagedServerRegistryMetadata();
-  if (!sql || !getServerRegistryPersistenceStatus().tableReady) throw new Error("Server registry is unavailable.");
+  await ensureManagedServerRegistryReady();
   const id = buildManagedServerId(serverIdInput);
   if (!id) throw new Error("Server ID invalido.");
   const currentServers = await reloadManagedServerRegistryFromDb();
@@ -1841,8 +1843,7 @@ export async function updateManagedServerDiscordChannels(serverIdInput: unknown,
 }
 
 export async function updateManagedServerScopedSettings(serverIdInput: unknown, settingsInput: unknown) {
-  await ensureManagedServerRegistryMetadata();
-  if (!sql || !getServerRegistryPersistenceStatus().tableReady) throw new Error("Server registry is unavailable.");
+  await ensureManagedServerRegistryReady();
   const id = buildManagedServerId(serverIdInput);
   const currentServers = await reloadManagedServerRegistryFromDb();
   const current = currentServers.find((server) => server.id === id);
@@ -1879,8 +1880,7 @@ export async function ensureManagedServerShopDeliveryConfiguration(
   serverIdInput: unknown,
   input: { missionDir: string; restartTimes?: string; restartTimezone?: string },
 ) {
-  await ensureManagedServerRegistryMetadata();
-  if (!sql || !getServerRegistryPersistenceStatus().tableReady) throw new Error("Server registry is unavailable.");
+  await ensureManagedServerRegistryReady();
   const id = buildManagedServerId(serverIdInput);
   if (!id) throw new Error("Server ID invalido.");
 
@@ -1921,8 +1921,7 @@ export async function ensureManagedServerShopDeliveryRoutingConfiguration(
   serverIdInput: unknown,
   input: { serviceId: string; baseDir: string; missionDir: string; restartTimes?: string; restartTimezone?: string },
 ) {
-  await ensureManagedServerRegistryMetadata();
-  if (!sql || !getServerRegistryPersistenceStatus().tableReady) throw new Error("Server registry is unavailable.");
+  await ensureManagedServerRegistryReady();
   const id = buildManagedServerId(serverIdInput);
   if (!id) throw new Error("Server ID invalido.");
 
@@ -2003,10 +2002,7 @@ export async function markManagedServerNitradoValidated(
   serverId: string,
   validation: { serviceId: string; baseDir: string; missionDir?: string },
 ) {
-  await ensureManagedServerRegistryMetadata();
-  if (!sql || !getServerRegistryPersistenceStatus().tableReady) {
-    throw new Error("Server registry is unavailable. DATABASE_URL and managed_servers must be ready.");
-  }
+  await ensureManagedServerRegistryReady();
 
   const id = buildManagedServerId(serverId);
   if (!id || id === getPrimaryServerId()) {
@@ -2112,10 +2108,7 @@ export async function markManagedServerActivationPreflightReady(
   serverId: string,
   preflight: ServerActivationPreflight,
 ) {
-  await ensureManagedServerRegistryMetadata();
-  if (!sql || !getServerRegistryPersistenceStatus().tableReady) {
-    throw new Error("Server registry is unavailable. DATABASE_URL and managed_servers must be ready.");
-  }
+  await ensureManagedServerRegistryReady();
 
   const id = buildManagedServerId(serverId);
   if (!id || id === getPrimaryServerId()) throw new Error("O servidor primario nao usa o activation preflight da Fase 11.");
@@ -2169,10 +2162,7 @@ export async function markManagedServerActivationPreflightReady(
 }
 
 export async function setManagedServerRuntimeEnabled(serverId: string, enabled: boolean) {
-  await ensureManagedServerRegistryMetadata();
-  if (!sql || !getServerRegistryPersistenceStatus().tableReady) {
-    throw new Error("Server registry is unavailable. DATABASE_URL and managed_servers must be ready.");
-  }
+  await ensureManagedServerRegistryReady();
 
   const id = buildManagedServerId(serverId);
   if (!id || id === getPrimaryServerId()) throw new Error("O runtime do servidor primario nao pode ser alterado por este controle.");
@@ -2258,10 +2248,7 @@ export async function setManagedServerRuntimeEnabled(serverId: string, enabled: 
 }
 
 export async function setManagedServerRuntimePaused(serverId: string, paused: boolean, reason?: string) {
-  await ensureManagedServerRegistryMetadata();
-  if (!sql || !getServerRegistryPersistenceStatus().tableReady) {
-    throw new Error("Server registry is unavailable. DATABASE_URL and managed_servers must be ready.");
-  }
+  await ensureManagedServerRegistryReady();
 
   const id = buildManagedServerId(serverId);
   if (!id || id === getPrimaryServerId()) throw new Error("O runtime primario nao pode ser pausado por este controle.");
