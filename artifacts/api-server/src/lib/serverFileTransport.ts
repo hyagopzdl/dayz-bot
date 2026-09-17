@@ -2,8 +2,13 @@ import {
   downloadNitradoTextFile,
   uploadNitradoTextFile,
 } from "./nitradoDownloader";
+import { uploadDayzMissionTextFile } from "./nitradoDayzMissionUpload";
 import { uploadShopTextFileViaFtp } from "./nitradoFtpUpload";
 import { getServerRuntimeContext } from "./serverRuntime";
+
+function isDayzMissionPath(filePath: string) {
+  return /^\/?dayzps_missions\//i.test(String(filePath || "").replace(/\\/g, "/"));
+}
 
 export async function downloadServerTextFile(filePath: string) {
   const runtime = getServerRuntimeContext();
@@ -15,7 +20,11 @@ export async function uploadServerTextFile(filePath: string, content: string) {
   let apiError: unknown;
 
   try {
-    await uploadNitradoTextFile(filePath, content, runtime.serverId);
+    if (isDayzMissionPath(filePath)) {
+      await uploadDayzMissionTextFile(filePath, content, runtime.serverId);
+    } else {
+      await uploadNitradoTextFile(filePath, content, runtime.serverId);
+    }
     return;
   } catch (error) {
     apiError = error;
