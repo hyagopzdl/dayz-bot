@@ -98,6 +98,7 @@ app.use("/admin-panel", onboardingActivationCompatRoutes);
 app.use("/admin-panel", saasOnboardingRoutes);
 app.use("/admin-panel", adminServerContextRoutes);
 app.use("/admin-panel", adminAuthRoutes);
+app.use("/admin-panel", adminPanelRoutes);
 app.use("/admin-panel", serverControlPanelRoutes);
 
 app.use("/api/setup/nitrado", nitradoSetupRoutes);
