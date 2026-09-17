@@ -16,6 +16,8 @@ const managedFeedRuntimes = new Map<string, ReturnType<typeof createDiscordFeedR
 const registeredMemberFeedServers = new Set<string>();
 const registeredInteractionServers = new Set<string>();
 let discordLoginInFlight: Promise<unknown> | null = null;
+let discordReadyAt: string | null = null;
+let discordLastLoginError: string | null = null;
 
 function getDiscordToken() {
   const token = String(process.env.DISCORD_TOKEN || "").trim();
@@ -25,6 +27,13 @@ function getDiscordToken() {
 function describeDiscordError(error: unknown) {
   if (error instanceof Error) return `${error.name}: ${error.message}`;
   return String(error);
+}
+
+function getRequestedIntentBitfield() {
+  const intents = client.options.intents as unknown as { bitfield?: unknown };
+  return typeof intents?.bitfield === "bigint" || typeof intents?.bitfield === "number" || typeof intents?.bitfield === "string"
+    ? String(intents.bitfield)
+    : null;
 }
 
 client.on("error", (error) => console.error("❌ Discord client error:", describeDiscordError(error)));
@@ -42,13 +51,25 @@ export function getDiscordClient() {
   return client;
 }
 
+export function getDiscordGatewayDiagnostics() {
+  return {
+    ready: client.isReady(),
+    readyAt: discordReadyAt,
+    loginInFlight: Boolean(discordLoginInFlight),
+    tokenConfigured: Boolean(getDiscordToken()),
+    requestedIntentBitfield: getRequestedIntentBitfield(),
+    guildCount: client.guilds.cache.size,
+    botUserId: client.user?.id || null,
+    lastLoginError: discordLastLoginError,
+  };
+}
+
 export { registerKillStreakFromKill } from "./discord/modules/killstreak/service";
 
 /**
  * Command registration is deliberately state-free. Every server has the same
  * command surface and tenant state is hydrated only when a real interaction or
- * runtime cycle needs it. This keeps Discord READY cheap as the number of
- * linked servers grows.
+ * runtime cycle needs it. This keeps Discord READY cheap as the number of linked servers grows.
  */
 export async function syncDiscordCommandsForManagedServer(serverId: string) {
   const server = listManagedServers().find((item) => item.id === serverId);
@@ -171,8 +192,6 @@ async function syncAllManagedServers() {
 
   for (const server of servers) {
     try {
-      // Keep READY bounded: registration uses persisted configuration only.
-      // State-heavy feed updates belong to the runtime scheduler.
       await syncDiscordCommandsForManagedServer(server.id);
       await registerManagedServerInteractions(server.id);
     } catch (error) {
@@ -195,6 +214,33 @@ function registerManagedServerMemberFeeds() {
   }
 }
 
+async function handleDiscordReady() {
+  discordReadyAt = new Date().toISOString();
+  discordLastLoginError = null;
+  console.log("🤖 Discord conectado; inicializando servidores vinculados...", {
+    botUserId: client.user?.id || null,
+    botUsername: client.user?.username || null,
+    applicationId: client.application?.id || null,
+    oauthClientId: process.env.DISCORD_OAUTH_CLIENT_ID || process.env.DISCORD_CLIENT_ID || null,
+    requestedIntentBitfield: getRequestedIntentBitfield(),
+    guildCount: client.guilds.cache.size,
+  });
+
+  try {
+    registerSecondaryManagedServerInteractions(client);
+    registerManagedServerMemberFeeds();
+    await syncAllManagedServers();
+    console.log(`✅ Discord multi-tenant pronto (${listManagedServers().length} servidores registrados)`);
+  } catch (error) {
+    console.error("❌ erro inicializando recursos Discord após READY:", describeDiscordError(error));
+  }
+}
+
+// discord.js exposes the clientReady event on current supported versions. Keep
+// the listener on that event so readiness diagnostics cannot depend on the
+// deprecated Gateway `ready` alias.
+client.once("clientReady", handleDiscordReady);
+
 export async function startDiscordBot() {
   const token = getDiscordToken();
   if (!token) {
@@ -205,31 +251,16 @@ export async function startDiscordBot() {
   if (client.isReady?.()) return;
   if (discordLoginInFlight) return discordLoginInFlight;
 
-  client.once("ready", async () => {
-    console.log("🤖 Discord conectado; inicializando servidores vinculados...", {
-      botUserId: client.user?.id || null,
-      botUsername: client.user?.username || null,
-      applicationId: client.application?.id || null,
-      oauthClientId: process.env.DISCORD_OAUTH_CLIENT_ID || process.env.DISCORD_CLIENT_ID || null,
-    });
-
-    try {
-      registerSecondaryManagedServerInteractions(client);
-      registerManagedServerMemberFeeds();
-      await syncAllManagedServers();
-      console.log(`✅ Discord multi-tenant pronto (${listManagedServers().length} servidores registrados)`);
-    } catch (error) {
-      console.error("❌ erro inicializando recursos Discord após READY:", describeDiscordError(error));
-    }
-  });
-
   discordLoginInFlight = (async () => {
     try {
-      console.log("🔐 iniciando login Discord Gateway...");
+      console.log("🔐 iniciando login Discord Gateway...", {
+        requestedIntentBitfield: getRequestedIntentBitfield(),
+      });
       await client.login(token);
-      console.log("✅ login Discord OK; aguardando READY...");
+      console.log("✅ login Discord OK; aguardando READY...", getDiscordGatewayDiagnostics());
     } catch (error) {
-      console.error("❌ erro ao logar no Discord:", describeDiscordError(error));
+      discordLastLoginError = describeDiscordError(error);
+      console.error("❌ erro ao logar no Discord:", discordLastLoginError);
       throw error;
     } finally {
       discordLoginInFlight = null;
