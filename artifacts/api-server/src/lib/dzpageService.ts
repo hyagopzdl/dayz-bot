@@ -37,6 +37,7 @@ export type DzPageMeta = {
 
 const searchCache = new Map<string, CacheEntry<DzPageSearchResult>>();
 const itemCache = new Map<string, CacheEntry<DzPageItemSummary>>();
+const itemRequestCache = new Map<string, Promise<DzPageItemSummary>>();
 let metaCache: CacheEntry<DzPageMeta> | null = null;
 
 function getApiKey() {
@@ -165,14 +166,33 @@ export async function getDzPageItem(className: string, options: { language?: str
     }
   }
 
-  const params = new URLSearchParams({ lang: language });
-  const payload = await requestJson<{ item?: any }>(`/items/${encodeURIComponent(normalizedClassName)}`, params);
-  if (!payload?.item) throw new Error(`DZPage item not found: ${normalizedClassName}`);
+  const request = (async () => {
+    const params = new URLSearchParams({ lang: language });
+    const payload = await requestJson<{ item?: any }>(`/items/${encodeURIComponent(normalizedClassName)}`, params);
+    if (!payload?.item) throw new Error(`DZPage item not found: ${normalizedClassName}`);
 
-  const item = normalizeItem(payload.item);
-  itemCache.set(cacheKey, { value: item, expiresAt: Date.now() + ITEM_CACHE_TTL_MS });
-  const [resolved] = await applyImageOverrides([item]);
-  return resolved;
+    const item = normalizeItem(payload.item);
+    itemCache.set(cacheKey, { value: item, expiresAt: Date.now() + ITEM_CACHE_TTL_MS });
+    return item;
+  })();
+
+  if (!options.forceRefresh) {
+    const existing = itemRequestCache.get(cacheKey);
+    if (existing) {
+      const item = await existing;
+      const [resolved] = await applyImageOverrides([item]);
+      return resolved;
+    }
+    itemRequestCache.set(cacheKey, request);
+  }
+
+  try {
+    const item = await request;
+    const [resolved] = await applyImageOverrides([item]);
+    return resolved;
+  } finally {
+    if (!options.forceRefresh) itemRequestCache.delete(cacheKey);
+  }
 }
 
 export async function getDzPageMeta(options: { forceRefresh?: boolean } = {}) {
@@ -189,5 +209,6 @@ export async function getDzPageMeta(options: { forceRefresh?: boolean } = {}) {
 export function clearDzPageCache() {
   searchCache.clear();
   itemCache.clear();
+  itemRequestCache.clear();
   metaCache = null;
 }
