@@ -145,7 +145,6 @@ export async function runManagedServerRuntimeCycle(
 
       const state = await getStateAsync();
       await hydrateKnownServerPlayers(serverId).catch((err) => console.error(`❌ known players hydrate failed [${serverId}]`, err));
-      scheduleTenantCommerceMirror(state, serverId);
       const settings = normalizeServiceSettings(state.serviceSettings);
       setAdmDownloadMode(settings.admDownloadMode, serverId);
 
@@ -328,7 +327,7 @@ export async function flushExecutableManagedServerStates() {
 export function getManagedServerRuntimeCoordinatorDiagnostics() {
   const servers: ManagedServerDescriptor[] = listManagedServers();
   const executableServers: ManagedServerDescriptor[] = listExecutableManagedServers();
-  const executableIds = new Set(executableServers.map((server: ManagedServerDescriptor) => server.id));
+  const executableIds = new Set(executableServers.map((server) => server.id));
   return {
     scheduler: "centralized",
     intervalMs: RUNTIME_CYCLE_INTERVAL_MS,
@@ -339,10 +338,10 @@ export function getManagedServerRuntimeCoordinatorDiagnostics() {
       backgroundHealthPollingAdded: false,
     },
     schedulerRunning: Boolean(schedulerTimer),
-    activeRuntimeIds: executableServers.map((server: ManagedServerDescriptor) => server.id),
+    activeRuntimeIds: executableServers.map((server) => server.id),
     activeRuntimes: executableServers.length,
     requestedImmediateRuns: [...requestedImmediateRuns],
-    servers: servers.map((server: ManagedServerDescriptor) => {
+    servers: servers.map((server) => {
       const status = statuses.get(server.id);
       return {
         ...(status || {
