@@ -15,6 +15,7 @@ import {
   type DiscordChannelOption,
   type DiscordGuildOption,
 } from "./serverIntegrations";
+import { inspectLivePersistenceFoundation } from "./persistenceFoundationCheck";
 import {
   getStateAsync,
   inspectManagedServerNamespaceRows,
@@ -101,22 +102,47 @@ export async function runManagedServerActivationPreflight(serverIdInput: string)
   pushCheck(checks, "storage-plan", "Local storage plan", storageIsolated ? "pass" : "fail", storageIsolated ? "ADM cache, manifest e state apontam para paths exclusivos do servidor cadastrado." : "Um dos paths planejados saiu do namespace esperado do servidor cadastrado.", { admLogDir: targetStorage.admLogDir, admManifestFile: targetStorage.admManifestFile, stateFile: targetStorage.stateFile });
 
   let namespaceRows = { botState: 0, playerStats: 0, positionHistory: 0 };
+  let liveFoundation: Awaited<ReturnType<typeof inspectLivePersistenceFoundation>> | undefined;
   try {
-    // The preflight must initialize every persistence component whose readiness is
-    // part of the runtime gate. Merely inspecting rows is insufficient because the
-    // player_stats PK/cutover flags are initialized by the granular persistence boot.
     await runInServerMaintenanceContext(server.id, () => getStateAsync());
     namespaceRows = await inspectManagedServerNamespaceRows(server.id);
-    // Namespace inspection initializes/refreshes the live isolation diagnostics. Re-read
-    // the foundation after that I/O so the gate never evaluates a stale startup snapshot.
     foundation = getServerFoundationDiagnostics();
+    try {
+      liveFoundation = await inspectLivePersistenceFoundation(server.id);
+    } catch (error) {
+      pushCheck(checks, "database-live", "Database live foundation", "fail", error instanceof Error ? error.message : String(error));
+    }
     const firstActivation = !server.runtime.activation?.everActivated;
     pushCheck(checks, "namespace-owned", "Database namespace", "pass", firstActivation ? `Namespace exclusivo do servidor confirmado antes da primeira ativacao (${namespaceRows.botState}/${namespaceRows.playerStats}/${namespaceRows.positionHistory}). Rows de onboarding podem ser reutilizadas com seguranca.` : "O servidor ja foi ativado anteriormente; as rows existentes permanecem no proprio namespace.", namespaceRows);
   } catch (error) { pushCheck(checks, "namespace-owned", "Database namespace", "fail", error instanceof Error ? error.message : String(error)); }
 
   const namespace = foundation.namespace;
-  const databaseFoundationSafe = Boolean(foundation.registryPersisted && foundation.persistenceNamespaced && foundation.persistenceTaggedWithServerId && foundation.safety?.compositePrimaryKeysActive && (!namespace?.playerStatsTableReady || namespace.playerStatsPrimaryKeyReady) && namespace?.botStatePrimaryKeyReady && namespace?.scopedReadsEnabled && namespace?.botStateUntaggedRows === 0 && (!namespace?.playerStatsTableReady || namespace.playerStatsUntaggedRows === 0));
-  pushCheck(checks, "database-foundation", "Isolation foundation", databaseFoundationSafe ? "pass" : "fail", databaseFoundationSafe ? "PKs, scoped persistence, server-tagged rows e caches persistidos estao preparados para isolamento por servidor." : "A fundacao persistida de isolamento por servidor ainda possui uma garantia estrutural pendente.", { registryPersisted: foundation.registryPersisted, persistenceNamespaced: foundation.persistenceNamespaced, persistenceTaggedWithServerId: foundation.persistenceTaggedWithServerId, compositePrimaryKeysActive: foundation.safety?.compositePrimaryKeysActive, scopedReadsEnabled: namespace?.scopedReadsEnabled, botStateUntaggedRows: namespace?.botStateUntaggedRows, playerStatsUntaggedRows: namespace?.playerStatsUntaggedRows });
+  const databaseFoundationSafe = Boolean(
+    liveFoundation?.safe &&
+    foundation.registryPersisted &&
+    foundation.persistenceNamespaced &&
+    foundation.persistenceTaggedWithServerId &&
+    foundation.safety?.compositePrimaryKeysActive &&
+    (!namespace?.playerStatsTableReady || namespace.playerStatsPrimaryKeyReady) &&
+    namespace?.botStatePrimaryKeyReady &&
+    namespace?.scopedReadsEnabled &&
+    namespace?.botStateUntaggedRows === 0 &&
+    (!namespace?.playerStatsTableReady || namespace.playerStatsUntaggedRows === 0),
+  );
+  pushCheck(checks, "database-foundation", "Isolation foundation", databaseFoundationSafe ? "pass" : "fail", databaseFoundationSafe ? "PKs, scoped persistence, server-tagged rows e caches persistidos estao preparados para isolamento por servidor." : "A fundacao persistida de isolamento por servidor ainda possui uma garantia estrutural pendente.", {
+    registryPersisted: foundation.registryPersisted,
+    persistenceNamespaced: foundation.persistenceNamespaced,
+    persistenceTaggedWithServerId: foundation.persistenceTaggedWithServerId,
+    compositePrimaryKeysActive: foundation.safety?.compositePrimaryKeysActive,
+    liveRegistryPersisted: liveFoundation?.registryPersisted,
+    liveBotStatePrimaryKeyReady: liveFoundation?.botStatePrimaryKeyReady,
+    livePlayerStatsPrimaryKeyReady: liveFoundation?.playerStatsPrimaryKeyReady,
+    liveBotStateUntaggedRows: liveFoundation?.botStateUntaggedRows,
+    livePlayerStatsUntaggedRows: liveFoundation?.playerStatsUntaggedRows,
+    scopedReadsEnabled: namespace?.scopedReadsEnabled,
+    botStateUntaggedRows: namespace?.botStateUntaggedRows,
+    playerStatsUntaggedRows: namespace?.playerStatsUntaggedRows,
+  });
 
   if (nitradoMetadataValid && uniqueRouting) {
     try {
