@@ -1,7 +1,8 @@
 name: Patch Nitrado HTTP client
 
 on:
-  workflow_dispatch:
+  push:
+    branches: [main]
 
 permissions:
   contents: write
@@ -34,12 +35,7 @@ jobs:
           if old not in text:
               raise SystemExit("trackedNitradoFetch anchor not found")
           text = text.replace(old, new, 1)
-
-          text = text.replace(
-              'const res = await globalThis.fetch(url, init);',
-              'const res = await globalThis.fetch(url, requestInit);',
-              1,
-          )
+          text = text.replace('const res = await globalThis.fetch(url, init);', 'const res = await globalThis.fetch(url, requestInit);', 1)
 
           old = '''  for (const pathCandidate of pathCandidates) {
     for (const strategy of ["query", "form"] as const) {'''
@@ -56,9 +52,7 @@ jobs:
         const message = error instanceof Error ? error.message : String(error);
         errors.push(`${strategy} ${pathCandidate}: ${message}`);
         if (/Nitrado HTTP 429\\b/i.test(message)) {
-          throw new Error(
-            `Nitrado API rate-limited the upload-token request (HTTP 429). ${message}`,
-          );
+          throw new Error(`Nitrado API rate-limited the upload-token request (HTTP 429). ${message}`);
         }'''
           if old not in text:
               raise SystemExit("429 handling anchor not found")
