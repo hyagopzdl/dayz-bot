@@ -717,8 +717,9 @@ async function ensureManagedServerRegistryMetadata() {
 
 async function ensureManagedServerRegistryReady() {
   await ensureManagedServerRegistryMetadata();
-  if (!sql) throw new Error("Server registry is unavailable: DATABASE_URL is not configured.");
-  const rows = await sql`SELECT to_regclass('public.managed_servers') IS NOT NULL AS ready`;
+  const db = sql;
+  if (!db) throw new Error("Server registry is unavailable: DATABASE_URL is not configured.");
+  const rows = await db`SELECT to_regclass('public.managed_servers') IS NOT NULL AS ready`;
   if (!Boolean((rows as any[])[0]?.ready)) {
     const diagnostic = getServerRegistryPersistenceStatus().lastError;
     throw new Error(diagnostic ? `Server registry is unavailable: managed_servers is not ready (${diagnostic}).` : "Server registry is unavailable: managed_servers table does not exist.");
