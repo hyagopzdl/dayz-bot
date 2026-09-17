@@ -72,10 +72,10 @@ function routeDayzUploadPath(url: string) {
   try {
     const parsed = new URL(url);
     const parts = parsed.pathname.split("/").filter(Boolean);
-    if (parts.length !== 4 || parts[0] !== "services" || parts[2] !== "gameservers" || parts[3] !== "file_server") return url;
+    if (parts.length !== 5 || parts[0] !== "services" || parts[2] !== "gameservers" || parts[3] !== "file_server" || parts[4] !== "upload") return url;
 
     const serviceId = parts[1];
-    if (!serviceId || !parsed.pathname.endsWith("/upload")) return url;
+    if (!serviceId) return url;
 
     const server = listManagedServers().find(
       (candidate) => String(candidate.integrations.nitradoServiceId || "").trim() === serviceId,
