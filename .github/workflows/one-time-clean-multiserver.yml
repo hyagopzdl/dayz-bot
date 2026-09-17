@@ -78,7 +78,6 @@ jobs:
           s, removed = remove_function(s, 'ensurePrimaryServerRegistryMetadata')
           if not removed:
               raise RuntimeError('ensurePrimaryServerRegistryMetadata not found')
-
           s = '\n'.join(line for line in s.splitlines() if 'getPrimaryServerDescriptor' not in line and 'getPrimaryServerId' not in line and 'ensurePrimaryServerRegistryMetadata' not in line and 'primary_server' not in line) + '\n'
           s = s.replace('const LEGACY_FILE = path.resolve(process.cwd(), "state.json");\n', '')
           s = s.replace('const STATE_COMPAT_SNAPSHOT_MS = Math.max(6 * 60 * 60_000, Number(process.env.STATE_COMPAT_SNAPSHOT_MS || 6 * 60 * 60 * 1000));\n', '')
@@ -87,7 +86,6 @@ jobs:
           s, _ = remove_function(s, 'maybeWriteCompatibilitySnapshot')
           s = re.sub(r'\n\s*(?:await\s+)?maybeWriteCompatibilitySnapshot\([^;]*\);', '', s)
           s = re.sub(r'function getLocalStateFile\(\) \{.*?\n\}', 'function getLocalStateFile() {\n  return getServerStateStoragePath(getActiveServerId());\n}', s, flags=re.S)
-
           s = re.sub(r'function mapManagedServerRow\(row: any, primary: ManagedServerDescriptor\): ManagedServerDescriptor \{', 'function mapManagedServerRow(row: any): ManagedServerDescriptor {', s)
           s = s.replace('  const isPrimary = id === primary.id;\n', '')
           s = s.replace('row.organization_id || (isPrimary ? getDefaultOrganizationId() : "")', 'row.organization_id')
@@ -102,7 +100,6 @@ jobs:
           s = re.sub(r'\n        \{\n          \.\.\.\(isPrimary \? primary\.runtime\.settings \|\| \{\} : \{\}\),\n', '\n        {\n', s)
           s = re.sub(r'      discord: isPrimary\n        \? \{.*?\n        : \{ \.\.\.\(runtimeConfig\?\.discord \|\| \{\}\) \},', '      discord: { ...(runtimeConfig?.discord || {}) },', s, flags=re.S)
           s = re.sub(r'\n  if \(!isPrimary\) \{\n    const storedStatus = String\(row\.onboarding_status \|\| "draft"\)\.trim\(\)\.toLowerCase\(\);.*?\n  \}', '', s, flags=re.S)
-
           s = re.sub(r'async function reloadManagedServerRegistryFromDb\(primary = .*?\) \{', 'async function reloadManagedServerRegistryFromDb() {', s)
           s = s.replace('  if (!sql) return [primary];', '  if (!sql) {\n    setPersistedManagedServers([]);\n    return [];\n  }')
           s = s.replace('    ORDER BY primary_server DESC, created_at ASC, id ASC', '    ORDER BY created_at ASC, id ASC')
@@ -112,7 +109,6 @@ jobs:
           s = s.replace('next.filter((server) => !server.primary && server.onboardingStatus === "ready")', 'next.filter((server) => server.onboardingStatus === "ready")')
           s = s.replace('reloadManagedServerRegistryFromDb(primary)', 'reloadManagedServerRegistryFromDb()')
           s = re.sub(r'\n\s*primarySeeded:\s*[^,\n]+,', '', s)
-
           state.write_text(s)
 
           src = root / 'artifacts/api-server/src'
@@ -126,11 +122,10 @@ jobs:
           if proc.returncode == 0:
               print(proc.stdout)
               raise RuntimeError('known primary/bootstrap references remain in runtime source')
-
           print('Clean multi-server runtime cleanup applied.')
 
       - name: Typecheck
-        run: corepack pnpm install --frozen-lockfile && corepack pnpm run typecheck
+        run: corepack pnpm install --no-frozen-lockfile && corepack pnpm run typecheck
 
       - name: Commit cleanup and remove one-time workflow
         run: |
