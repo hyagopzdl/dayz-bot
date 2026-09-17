@@ -1,5 +1,6 @@
 import { getServerRuntimeContext } from "./serverRuntime";
 import { getServerNitradoConfig } from "./serverNitrado";
+import { getNitradoFileServerBookmarks } from "./nitradoDownloader";
 
 const DIRECTORY_CACHE_TTL_MS = 10 * 60 * 1000;
 const resolvedDirectoryCache = new Map<string, { directory: string; expiresAt: number }>();
@@ -80,47 +81,43 @@ function isFileEntry(entry: any) {
  */
 async function discoverMissionDirectory(relativeDirectory: string, serverId: string) {
   const normalizedRelative = normalize(relativeDirectory).replace(/^\/+/, "");
-  const logicalDirectory = absolutePath(normalizedRelative);
-  if (!logicalDirectory) throw new Error(`Nitrado DayZ mission directory is empty for ${serverId}.`);
+  const missionMarker = normalizedRelative.match(/^dayzps_missions\/(.+)$/i);
+  if (!missionMarker) throw new Error(\`Nitrado DayZ mission directory is invalid for \${serverId}: \${relativeDirectory}\`);
 
   const cached = resolvedDirectoryCache.get(serverId);
   if (cached && cached.expiresAt > Date.now()) return cached.directory;
 
-  // The Nitrado web interface exposes this exact logical path. Validate it
-  // read-only through the File Server API before requesting an upload token.
-  const entries = await listDirectory(logicalDirectory, serverId);
-  if (entries.length > 0) {
-    resolvedDirectoryCache.set(serverId, {
-      directory: logicalDirectory,
-      expiresAt: Date.now() + DIRECTORY_CACHE_TTL_MS,
-    });
-    console.log("✅ NITRADO DAYZ MISSION DIRECTORY CONFIRMED", {
-      serverId,
-      directory: logicalDirectory,
-      entries: entries.length,
-      source: "nitrado-logical-dayz-path",
-    });
-    return logicalDirectory;
-  }
+  // Nitrado exposes canonical File Server roots through its bookmarks endpoint.
+  // Resolve the physical mission root from that API instead of guessing between
+  // noftp/config/game roots.
+  const bookmarks = await getNitradoFileServerBookmarks(serverId);
+  const missionRoot = bookmarks
+    .map((bookmark) => absolutePath(String(bookmark || "")))
+    .find((bookmark) => /\/dayzps_missions$/i.test(bookmark));
 
-  // If the directory is unexpectedly empty, inspect the parent once so the
-  // error contains useful evidence without trying speculative filesystem roots.
-  const parentDirectory = dirname(logicalDirectory);
-  const parentEntries = await listDirectory(parentDirectory, serverId);
-  const missionFolder = parentEntries.find((entry) =>
-    !isFileEntry(entry) && basename(entryPath(entry)).toLowerCase() === basename(logicalDirectory).toLowerCase(),
-  );
-
-  if (missionFolder) {
+  if (!missionRoot) {
     throw new Error(
-      `Nitrado DayZ mission directory exists but returned no entries: ${logicalDirectory}`,
+      \`Nitrado File Server did not expose a dayzps_missions bookmark for \${serverId}. \` +
+      \`Bookmarks returned: \${bookmarks.map((bookmark) => String(bookmark)).join(", ") || "none"}\`,
     );
   }
 
-  throw new Error(
-    `Nitrado DayZ mission directory was not found at the logical File Server path: ${logicalDirectory}. ` +
-    `Parent listing was also unable to confirm the mission directory.`,
-  );
+  const directory = absolutePath(\`\${missionRoot}/\${missionMarker[1]}\`);
+  const entries = await listDirectory(directory, serverId);
+  resolvedDirectoryCache.set(serverId, {
+    directory,
+    expiresAt: Date.now() + DIRECTORY_CACHE_TTL_MS,
+  });
+
+  console.log("✅ NITRADO DAYZ MISSION DIRECTORY RESOLVED FROM BOOKMARK", {
+    serverId,
+    missionRoot,
+    directory,
+    entries: entries.length,
+    source: "nitrado-file-server-bookmark",
+  });
+
+  return directory;
 }
 
 export async function uploadDayzMissionTextFile(filePath: string, content: string, serverId: string) {
