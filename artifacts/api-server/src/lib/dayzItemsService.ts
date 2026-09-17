@@ -1,5 +1,6 @@
 import postgres from "postgres";
 import type { DayzItemDefinition } from "./dayzItemDatabase";
+import { getDzPageItem, searchDzPageItems } from "./dzpageService";
 
 const sql = process.env.DATABASE_URL
   ? postgres(process.env.DATABASE_URL, {
@@ -52,6 +53,15 @@ function rowToDayzItem(row: any): DayzItemRecord {
     enabled: row.enabled !== false,
     createdAt: row.created_at ? new Date(row.created_at).toISOString() : undefined,
     updatedAt: row.updated_at ? new Date(row.updated_at).toISOString() : undefined,
+  };
+}
+
+function dzPageItemToRecord(item: Awaited<ReturnType<typeof getDzPageItem>>): DayzItemRecord {
+  return {
+    className: item.className,
+    popularName: item.name || item.className,
+    ...(item.iconUrl ? { imageUrl: item.iconUrl } : {}),
+    enabled: true,
   };
 }
 
@@ -114,87 +124,39 @@ export async function ensureDayzItemsSchema() {
 }
 
 export async function getDayzItemByClassName(className: string) {
-  const db = requireSql();
-  await ensureDayzItemsSchema();
-
   const normalized = normalizeClassName(className);
   if (!normalized) return null;
 
-  const rows = await db`
-    SELECT class_name, popular_name, image_url, spawn_event_name, enabled, created_at, updated_at
-    FROM dayz_items
-    WHERE LOWER(class_name) = LOWER(${normalized})
-    LIMIT 1
-  `;
+  try {
+    const item = await getDzPageItem(normalized);
+    return dzPageItemToRecord(item);
+  } catch {
+    if (!sql) return null;
 
-  return rows[0] ? rowToDayzItem(rows[0]) : null;
+    const db = requireSql();
+    await ensureDayzItemsSchema();
+    const rows = await db`
+      SELECT class_name, popular_name, image_url, spawn_event_name, enabled, created_at, updated_at
+      FROM dayz_items
+      WHERE LOWER(class_name) = LOWER(${normalized})
+      LIMIT 1
+    `;
+
+    return rows[0] ? rowToDayzItem(rows[0]) : null;
+  }
 }
 
 export async function searchDayzItemsFromDatabase(options: DayzItemSearchOptions = {}) {
-  const db = requireSql();
-  await ensureDayzItemsSchema();
-
   const query = String(options.query || "").trim();
   const limit = Math.min(100, Math.max(1, Math.floor(Number(options.limit || 25))));
-  const enabledOnly = options.enabledOnly !== false;
 
-  if (!query) {
-    const rows = enabledOnly
-      ? await db`
-          SELECT class_name, popular_name, image_url, spawn_event_name, enabled, created_at, updated_at
-          FROM dayz_items
-          WHERE enabled = true
-          ORDER BY popular_name ASC, class_name ASC
-          LIMIT ${limit}
-        `
-      : await db`
-          SELECT class_name, popular_name, image_url, spawn_event_name, enabled, created_at, updated_at
-          FROM dayz_items
-          ORDER BY popular_name ASC, class_name ASC
-          LIMIT ${limit}
-        `;
+  const result = await searchDzPageItems({
+    query,
+    limit,
+    language: "pt",
+  });
 
-    return rows.map(rowToDayzItem);
-  }
-
-  const normalized = normalizeSearch(query);
-  const like = `%${normalized.replace(/\s+/g, "%")}%`;
-  const rawLike = `%${query}%`;
-
-  const rows = enabledOnly
-    ? await db`
-        SELECT class_name, popular_name, image_url, spawn_event_name, enabled, created_at, updated_at
-        FROM dayz_items
-        WHERE enabled = true
-          AND (
-            LOWER(class_name) LIKE LOWER(${rawLike})
-            OR LOWER(popular_name) LIKE LOWER(${rawLike})
-            OR LOWER(REGEXP_REPLACE(class_name || ' ' || popular_name, '[^a-zA-Z0-9]+', ' ', 'g')) LIKE ${like}
-          )
-        ORDER BY
-          CASE WHEN LOWER(class_name) = LOWER(${query}) THEN 0 ELSE 1 END,
-          CASE WHEN LOWER(popular_name) = LOWER(${query}) THEN 0 ELSE 1 END,
-          CASE WHEN LOWER(class_name) LIKE LOWER(${`${query}%`}) THEN 0 ELSE 1 END,
-          popular_name ASC,
-          class_name ASC
-        LIMIT ${limit}
-      `
-    : await db`
-        SELECT class_name, popular_name, image_url, spawn_event_name, enabled, created_at, updated_at
-        FROM dayz_items
-        WHERE LOWER(class_name) LIKE LOWER(${rawLike})
-           OR LOWER(popular_name) LIKE LOWER(${rawLike})
-           OR LOWER(REGEXP_REPLACE(class_name || ' ' || popular_name, '[^a-zA-Z0-9]+', ' ', 'g')) LIKE ${like}
-        ORDER BY
-          CASE WHEN LOWER(class_name) = LOWER(${query}) THEN 0 ELSE 1 END,
-          CASE WHEN LOWER(popular_name) = LOWER(${query}) THEN 0 ELSE 1 END,
-          CASE WHEN LOWER(class_name) LIKE LOWER(${`${query}%`}) THEN 0 ELSE 1 END,
-          popular_name ASC,
-          class_name ASC
-        LIMIT ${limit}
-      `;
-
-  return rows.map(rowToDayzItem);
+  return result.items.map(dzPageItemToRecord);
 }
 
 export async function getDayzItemsPage(options: {
@@ -203,56 +165,22 @@ export async function getDayzItemsPage(options: {
   limit?: number;
   filter?: "all" | "enabled" | "disabled" | "missing_image";
 }) {
-  const db = requireSql();
-  await ensureDayzItemsSchema();
-
-  const query = String(options.query || "").trim();
   const cursor = Math.max(0, Math.floor(Number(options.cursor || 0)));
   const limit = Math.min(100, Math.max(1, Math.floor(Number(options.limit || 30))));
-  const filter = options.filter || "all";
-  const rawLike = `%${query}%`;
-
-  const whereParts: string[] = [];
-  if (filter === "enabled") whereParts.push("enabled = true");
-  if (filter === "disabled") whereParts.push("enabled = false");
-  if (filter === "missing_image") whereParts.push("(image_url IS NULL OR image_url = '' OR image_url LIKE '%img-placeholder.png%')");
-
-  const queryFilter = query
-    ? db`(LOWER(class_name) LIKE LOWER(${rawLike}) OR LOWER(popular_name) LIKE LOWER(${rawLike}))`
-    : db`true`;
-
-  const enabledFilter = filter === "enabled"
-    ? db`enabled = true`
-    : filter === "disabled"
-      ? db`enabled = false`
-      : filter === "missing_image"
-        ? db`(image_url IS NULL OR image_url = '' OR image_url LIKE '%img-placeholder.png%')`
-        : db`true`;
-
-  const [items, totalRows] = await Promise.all([
-    db`
-      SELECT class_name, popular_name, image_url, spawn_event_name, enabled, created_at, updated_at
-      FROM dayz_items
-      WHERE ${queryFilter} AND ${enabledFilter}
-      ORDER BY popular_name ASC, class_name ASC
-      OFFSET ${cursor}
-      LIMIT ${limit}
-    `,
-    db`
-      SELECT COUNT(*)::int AS count
-      FROM dayz_items
-      WHERE ${queryFilter} AND ${enabledFilter}
-    `,
-  ]);
-
-  const rows = items.map(rowToDayzItem);
-  const total = Number(totalRows[0]?.count || 0);
+  const page = Math.floor(cursor / limit) + 1;
+  const result = await searchDzPageItems({
+    query: String(options.query || "").trim(),
+    page,
+    limit,
+    language: "pt",
+  });
+  const items = result.items.map(dzPageItemToRecord);
 
   return {
-    items: rows,
-    total,
-    nextCursor: cursor + rows.length,
-    hasMore: cursor + rows.length < total,
+    items,
+    total: result.total,
+    nextCursor: cursor + items.length,
+    hasMore: page < result.pages,
   };
 }
 
