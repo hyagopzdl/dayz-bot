@@ -1,0 +1,48 @@
+name: Apply Neon connection fix
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Patch postgres connection options and remove workflow
+        shell: python
+        run: |
+          from pathlib import Path
+          import subprocess
+          p = Path('artifacts/api-server/src/lib/state.ts')
+          t = p.read_text()
+          old = '''const sql = process.env.DATABASE_URL
+  ? postgres(process.env.DATABASE_URL, {
+      ssl: "require",
+      max: 1,
+    })
+  : null;'''
+          new = '''const sql = process.env.DATABASE_URL
+  ? postgres(process.env.DATABASE_URL, {
+      ssl: "require",
+      max: 1,
+      idle_timeout: 30,
+      connect_timeout: 10,
+    })
+  : null;'''
+          if old not in t:
+              raise SystemExit('expected postgres connection block not found')
+          p.write_text(t.replace(old, new, 1))
+          subprocess.run(['git', 'diff', '--check'], check=True)
+          subprocess.run(['git', 'config', 'user.name', 'github-actions[bot]'], check=True)
+          subprocess.run(['git', 'config', 'user.email', '41898282+github-actions[bot]@users.noreply.github.com'], check=True)
+          subprocess.run(['git', 'add', str(p)], check=True)
+          subprocess.run(['git', 'rm', '.github/workflows/apply-neon-connection-fix.yml'], check=True)
+          subprocess.run(['git', 'commit', '-m', 'fix: close idle Neon connections'], check=True)
+          subprocess.run(['git', 'push'], check=True)
