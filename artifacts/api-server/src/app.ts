@@ -21,7 +21,7 @@ import adminAuthRoutes from "./routes/adminAuth";
 import adminServerContextRoutes from "./routes/adminServerContext";
 import testDatabaseResetRoutes from "./routes/testDatabaseReset";
 import { canOrganizationRole, getManagedOrganizationById, listUserOrganizationMemberships } from "./lib/organizationRegistry";
-import { listManagedServers } from "./lib/serverRegistry";
+import { refreshManagedServerRegistryFromDb } from "./lib/state";
 
 const app: Express = express();
 
@@ -81,7 +81,8 @@ app.post("/admin-panel/onboarding/nitrado/import", async (req, res, next) => {
     if (!organization?.active) return next();
     const serviceId = String(req.body?.serviceId || "").trim();
     if (!/^\d+$/.test(serviceId)) return next();
-    const existing = listManagedServers().find((server) => server.integrations.nitradoServiceId === serviceId);
+    const servers = await refreshManagedServerRegistryFromDb();
+    const existing = servers.find((server) => server.integrations.nitradoServiceId === serviceId);
     if (!existing) return next();
     if (existing.organizationId !== organization.id) {
       return res.status(409).type("html").send(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ADM · Servidor já conectado</title><style>:root{color-scheme:dark}body{margin:0;min-height:100vh;background:#090a0c;color:#f7f7f8;font-family:Inter,system-ui,sans-serif}.shell{width:min(700px,calc(100% - 32px));margin:auto;padding:50px 0}.card{padding:24px;border:1px solid #292d36;border-radius:18px;background:#111318}.status{margin-top:14px;padding:12px;border-radius:11px;background:#171a20;color:#ffadb4;border:1px solid #ff727e33;line-height:1.5;font-size:12px}.actions{display:flex;gap:8px;margin-top:18px}a{display:inline-flex;align-items:center;justify-content:center;min-height:42px;padding:0 15px;border:1px solid #343943;border-radius:10px;background:#20242b;color:#f7f7f8;font-size:12px;font-weight:850;text-decoration:none}</style></head><body><main class="shell"><section class="card"><h1>Servidor já conectado</h1><div class="status">O Nitrado Service ID ${serviceId} já está vinculado a outro workspace. Por segurança, este servidor não pode ser importado para esta organização.</div><div class="actions"><a href="/saas">Voltar ao onboarding</a></div></section></main></body></html>`);
@@ -98,8 +99,10 @@ app.use("/admin-panel", saasOnboardingRoutes);
 app.use("/admin-panel", adminServerContextRoutes);
 app.use("/admin-panel", adminAuthRoutes);
 app.use("/admin-panel", serverControlPanelRoutes);
-app.use("/admin-panel", nitradoSetupRoutes);
-app.use("/admin-panel", nitradoSelfServiceCompatRoutes);
-app.use("/admin-panel", adminPanelRoutes);
-app.use("/api", router);
+
+app.use("/api/setup/nitrado", nitradoSetupRoutes);
+app.use("/api/setup/nitrado", nitradoSelfServiceCompatRoutes);
+
+app.use(router);
+
 export default app;
