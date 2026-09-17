@@ -73,7 +73,10 @@ export function installNitradoHttpTransport() {
 
   const originalFetch = globalThis.fetch.bind(globalThis);
 
-  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  // RequestInfo is not exposed by the project's Node/TypeScript lib target.
+  // Keep the fetch input compatible with Node's runtime Request implementation
+  // without depending on the browser-only RequestInfo alias.
+  globalThis.fetch = (async (input: any, init?: RequestInit) => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
     if (!isNitradoApiUrl(url)) return originalFetch(input, init);
 
