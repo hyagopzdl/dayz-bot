@@ -4,8 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsx src/index.ts",
-    "start": "tsx src/index.ts",
+    "dev": "PGIDLE_TIMEOUT=30 PGCONNECT_TIMEOUT=10 PGAPPNAME=dayz-bot-api tsx src/index.ts",
+    "start": "PGIDLE_TIMEOUT=30 PGCONNECT_TIMEOUT=10 PGAPPNAME=dayz-bot-api tsx src/index.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "seed:shop-catalog": "tsx src/scripts/seedShopCatalogToNeon.ts",
     "seed:dayz-items": "tsx src/scripts/seedDayzItemsToNeon.ts"
@@ -24,7 +24,7 @@
   "devDependencies": {
     "@types/cookie-parser": "^1.4.10",
     "@types/cors": "^2.8.19",
-    "@types/express": "^5.0.6",
+    "@types/express": "^5.0.0",
     "@types/node": "catalog:",
     "tsx": "catalog:"
   }
