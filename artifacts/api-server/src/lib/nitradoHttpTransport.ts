@@ -1,3 +1,5 @@
+import { listManagedServers } from "./serverRegistry";
+
 const NITRADO_API_HOST = "api.nitrado.net";
 const RATE_LIMIT_COOLDOWN_MS = 180_000;
 const MAX_DIAGNOSTIC_BODY = 320;
@@ -66,6 +68,42 @@ function acquireSlot() {
   return previous.then(() => release);
 }
 
+function routeDayzUploadPath(url: string) {
+  try {
+    const parsed = new URL(url);
+    if (parsed.pathname !== "/services/" + parsed.pathname.split("/")[2] + "/gameservers/file_server/upload") return url;
+
+    const serviceId = parsed.pathname.split("/")[2];
+    const server = listManagedServers().find(
+      (candidate) => String(candidate.integrations.nitradoServiceId || "").trim() === serviceId,
+    );
+    if (!server) return url;
+
+    const baseDir = String(server.runtime.nitradoBaseDir || "").trim().replace(/\\/g, "/").replace(/\/+$/g, "");
+    if (!baseDir) return url;
+
+    const requestedPath = String(parsed.searchParams.get("path") || "").replace(/\\/g, "/").replace(/^\/+/, "");
+    const missionMatch = requestedPath.match(/(?:^|\/)(dayzps_missions\/.*)$/i);
+    if (!missionMatch) return url;
+
+    const relativeMissionPath = missionMatch[1];
+    const canonicalPath = `${baseDir}/${relativeMissionPath}`;
+    if (requestedPath === canonicalPath.replace(/^\/+/, "")) return url;
+
+    parsed.searchParams.set("path", canonicalPath);
+    console.log("🧭 NITRADO DAYZ UPLOAD ROUTE", {
+      serverId: server.id,
+      serviceId,
+      configuredBaseDir: baseDir,
+      requestedPath,
+      canonicalPath,
+    });
+    return parsed.toString();
+  } catch {
+    return url;
+  }
+}
+
 export function installNitradoHttpTransport() {
   const globalScope = globalThis as typeof globalThis & { __dayzNitradoTransportInstalled?: boolean };
   if (globalScope.__dayzNitradoTransportInstalled) return;
@@ -77,9 +115,10 @@ export function installNitradoHttpTransport() {
   // Keep the fetch input compatible with Node's runtime Request implementation
   // without depending on the browser-only RequestInfo alias.
   globalThis.fetch = (async (input: any, init?: RequestInit) => {
-    const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
-    if (!isNitradoApiUrl(url)) return originalFetch(input, init);
+    const originalUrl = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+    if (!isNitradoApiUrl(originalUrl)) return originalFetch(input, init);
 
+    const url = routeDayzUploadPath(originalUrl);
     const requestInit: RequestInit = { ...(init || {}) };
     const headers = new Headers(requestInit.headers || (input instanceof Request ? input.headers : undefined));
     if (!headers.has("accept")) headers.set("accept", "application/json");
@@ -99,7 +138,7 @@ export function installNitradoHttpTransport() {
       }
 
       console.log(`🌐 NITRADO HTTP → ${label}`);
-      const response = await originalFetch(input, requestInit);
+      const response = await originalFetch(url, requestInit);
       const durationMs = Date.now() - startedAt;
       const contentType = response.headers.get("content-type") || undefined;
       const server = response.headers.get("server") || undefined;
