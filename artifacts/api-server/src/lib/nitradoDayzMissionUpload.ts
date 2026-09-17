@@ -19,14 +19,6 @@ function getNoFtpRoot(serverId: string) {
   const index = baseDir.indexOf(marker);
   if (index === -1) return "";
 
-  // `nitrado.baseDir` is the server's config directory, e.g.
-  // /games/<service-user>/noftp/dayzps/config. The DayZ mission directory
-  // is a sibling of `config`, not a child of `/noftp` itself. The previous
-  // implementation stopped at `/noftp`, producing an invalid path such as
-  // /games/<service-user>/noftp/dayzps_missions/....
-  //
-  // Derive the actual game root from the configured baseDir so this remains
-  // server-scoped and does not hardcode the game name or service user.
   const configSuffix = "/config";
   if (baseDir.toLowerCase().endsWith(configSuffix)) {
     return baseDir.slice(0, -configSuffix.length);
@@ -129,14 +121,16 @@ export async function uploadDayzMissionTextFile(filePath: string, content: strin
   }
 
   const directory = await discoverMissionDirectory(relativeDirectory, serverId);
+  const uploadPath = normalize(directory);
   const serviceId = getServiceId(serverId);
   const tokenUrl = `https://api.nitrado.net/services/${serviceId}/gameservers/file_server/upload`;
-  const form = new URLSearchParams({ path: directory, file });
+  const form = new URLSearchParams({ path: uploadPath, file });
 
   console.log("📤 NITRADO DAYZ UPLOAD TOKEN", {
     serverId,
     serviceId,
     directory,
+    uploadPath,
     file,
     transport: "application/x-www-form-urlencoded",
   });
@@ -157,5 +151,5 @@ export async function uploadDayzMissionTextFile(filePath: string, content: strin
   });
   if (!uploadResponse.ok) throw new Error(`Nitrado file upload HTTP ${uploadResponse.status}: ${await uploadResponse.text()}`);
 
-  console.log("✅ NITRADO DAYZ FILE UPLOADED", { serverId, directory, file });
+  console.log("✅ NITRADO DAYZ FILE UPLOADED", { serverId, directory, uploadPath, file });
 }
