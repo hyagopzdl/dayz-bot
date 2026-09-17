@@ -389,134 +389,110 @@ function saveManifest(files: string[], manifestFile = MANIFEST_FILE) {
 
 function updatePreviousFileStability(admFiles: NitradoEntry[], strategy: AdmServerStrategyState) {
   const previous = admFiles[PREVIOUS_FILE_INDEX]?.path;
-  const now = Date.now();
-  if (strategy.previousFileTracker.file !== previous) {
-    strategy.previousFileTracker = { file: previous, stableSince: now };
+  if (!previous) {
+    strategy.previousFileTracker = {};
     return;
   }
-  if (!previous) strategy.previousFileTracker = {};
-}
-
-function getOptimizedDecision(file: NitradoEntry, index: number, baseDecision: ReturnType<typeof createShadowDecision>, strategy: AdmServerStrategyState) {
-  if (baseDecision.decision === "download") return baseDecision;
-  if (index === ACTIVE_FILE_INDEX) return { decision: "download" as const, reason: "conservative-active-file" };
-  if (index === PREVIOUS_FILE_INDEX) {
-    if (!strategy.previousFileTracker.stableSince) {
-      strategy.previousFileTracker.stableSince = Date.now();
-      return { decision: "download" as const, reason: "previous-file-grace-window" };
-    }
-    const now = Date.now();
-    if (now - strategy.previousFileTracker.stableSince < PREVIOUS_FILE_STABILITY_MS) {
-      return { decision: "download" as const, reason: "previous-file-grace-window" };
-    }
-    return { decision: "skip" as const, reason: "optimized-stable-previous-file" };
+  if (strategy.previousFileTracker.file !== previous) {
+    strategy.previousFileTracker = { file: previous, stableSince: Date.now() };
   }
-  return { decision: "skip" as const, reason: "optimized-stable-old-file" };
 }
 
-function triggerAutomaticFallback(reason: string, serverId = getActiveServerId()) {
+function triggerAutomaticFallback(reason: string, serverId: string) {
+  const strategy = getAdmServerStrategy(serverId);
+  if (strategy.mode !== "optimized") return;
+  strategy.mode = "legacy";
   admDownloadMetrics.strategy.automaticFallbacks += 1;
   admDownloadMetrics.strategy.lastFallbackAt = new Date().toISOString();
   admDownloadMetrics.strategy.lastFallbackReason = reason;
-  setAdmDownloadMode("legacy", serverId);
-  console.error(`🚨 ADM optimized downloader fallback para Legacy: ${reason}`);
+  console.warn(`⚠️ ADM optimized mode fallback to legacy for ${serverId}: ${reason}`);
 }
 
-export async function downloadADM(serverId = getActiveServerId()) {
-  const runtime = getServerRuntimeContext(serverId);
-  const strategy = getAdmServerStrategy(serverId);
-  const serverMetric = getAdmPerServerMetric(serverId);
-  const logDir = runtime.storage.logDir;
-  const manifestFile = runtime.storage.manifestFile;
-  const serviceId = getNitradoServiceId(serverId);
-  const baseDir = runtime.nitrado.baseDir;
-  if (!baseDir) throw new Error(`Nitrado baseDir nao configurado para o servidor ${serverId}.`);
-  if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true });
+function optimizedDecision(file: NitradoEntry, localFile: string, index: number, strategy: AdmServerStrategyState) {
+  const base = createShadowDecision(file, localFile);
+  if (base.decision === "download") return base;
+  if (index === ACTIVE_FILE_INDEX) return { ...base, decision: "download" as const, reason: "conservative-active-file" };
+  if (index === PREVIOUS_FILE_INDEX) {
+    const stableSince = strategy.previousFileTracker.stableSince || 0;
+    if (Date.now() - stableSince < PREVIOUS_FILE_STABILITY_MS) {
+      return { ...base, decision: "download" as const, reason: "previous-file-grace-window" };
+    }
+  }
+  return base;
+}
+
+function maybeAuditFile(index: number, strategy: AdmServerStrategyState) {
+  if (strategy.mode !== "optimized") return false;
+  if (strategy.cycles % AUDIT_INTERVAL_CYCLES !== 0) return false;
+  return index === strategy.optimizedAuditCursor;
+}
+
+function getAdmFilesFromList(entries: NitradoEntry[]) {
+  return entries
+    .filter((entry) => String(entry.type || "file").toLowerCase() !== "directory")
+    .filter((entry) => /\.log$/i.test(entry.path || ""))
+    .sort((a, b) => extractDateFromAdmPath(b.path) - extractDateFromAdmPath(a.path));
+}
+
+export async function downloadADM(serverId = getActiveServerId(), manifestFile = MANIFEST_FILE) {
+  ensureLogDir();
   const cycleStarted = Date.now();
+  const strategy = getAdmServerStrategy(serverId);
   strategy.cycles += 1;
-  serverMetric.cycles += 1;
-  serverMetric.lastCycleAt = new Date().toISOString();
   admDownloadMetrics.cycles += 1;
-  admDownloadMetrics.lastCycleAt = serverMetric.lastCycleAt;
+  admDownloadMetrics.lastCycleAt = new Date().toISOString();
+  admDownloadMetrics.lastCandidateCount = 0;
   admDownloadMetrics.lastDownloadedCount = 0;
   admDownloadMetrics.lastDownloadedBytes = 0;
-  admDownloadMetrics.strategy.mode = strategy.mode;
-  getNitradoToken(serverId);
 
-  console.log(`📂 Listando arquivos ADM... server=${serverId} modo=${strategy.mode}`);
-  let listJson: any;
-  try {
-    admDownloadMetrics.listRequests += 1;
-    listJson = await fetchJson(`https://api.nitrado.net/services/${serviceId}/gameservers/file_server/list?dir=${encodeURIComponent(baseDir)}`, serverId);
-  } catch (err) {
-    admDownloadMetrics.listFailures += 1;
-    throw err;
-  }
+  const serverMetric = getAdmPerServerMetric(serverId);
+  serverMetric.cycles += 1;
+  serverMetric.lastCycleAt = admDownloadMetrics.lastCycleAt;
 
-  const files: NitradoEntry[] = listJson?.data?.entries || [];
-  const admFiles = files
-    .filter((f) => f.path?.endsWith(".ADM"))
-    .sort((a, b) => extractDateFromAdmPath(b.path) - extractDateFromAdmPath(a.path))
-    .slice(0, MAX_CANDIDATES);
-
-  admDownloadMetrics.candidatesSeen += admFiles.length;
-  serverMetric.candidatesSeen += admFiles.length;
-  admDownloadMetrics.lastCandidateCount = admFiles.length;
-
-  if (!admFiles.length) {
-    console.log("⚠️ nenhum .ADM encontrado");
-    saveManifest([], manifestFile);
-    admDownloadMetrics.lastCycleDurationMs = Date.now() - cycleStarted;
-    serverMetric.lastCycleDurationMs = admDownloadMetrics.lastCycleDurationMs;
-    admDownloadMetrics.maxCycleDurationMs = Math.max(admDownloadMetrics.maxCycleDurationMs, admDownloadMetrics.lastCycleDurationMs);
-    return;
-  }
+  const serviceId = getNitradoServiceId(serverId);
+  const entries = await listNitradoDirectory(`gameservers/services/${serviceId}/file_server`, serverId).catch(async () => {
+    try {
+      const json = await fetchJson(`https://api.nitrado.net/services/${serviceId}/gameservers/file_server/list?dir=`, serverId);
+      return json?.data?.entries || [];
+    } catch {
+      return [];
+    }
+  });
+  const admFiles = getAdmFilesFromList(entries);
+  updatePreviousFileStability(admFiles, strategy);
+  const candidates = admFiles.slice(0, MAX_CANDIDATES);
+  admDownloadMetrics.candidatesSeen += candidates.length;
+  admDownloadMetrics.lastCandidateCount = candidates.length;
+  serverMetric.candidatesSeen += candidates.length;
 
   const availableLocalFiles: string[] = [];
-  updatePreviousFileStability(admFiles, strategy);
+  const skippableIndexes: number[] = [];
 
-  const candidateDecisions = admFiles.map((file, index) => {
-    const localFile = path.join(logDir, safeLocalName(file.path));
+  for (let index = 0; index < candidates.length; index += 1) {
+    const file = candidates[index];
+    const localFile = path.join(LOG_DIR, safeLocalName(file.path));
     const baseDecision = createShadowDecision(file, localFile);
-    const optimizedDecision = getOptimizedDecision(file, index, baseDecision, strategy);
-    return { file, index, localFile, baseDecision, optimizedDecision };
-  });
+    const optimized = optimizedDecision(file, localFile, index, strategy);
+    const shouldAudit = maybeAuditFile(index, strategy);
+    const shouldDownload = strategy.mode === "legacy" || optimized.decision === "download" || shouldAudit;
 
-  const skippableIndexes = candidateDecisions.filter((item) => item.optimizedDecision.decision === "skip").map((item) => item.index);
-  const auditIndex = skippableIndexes.length ? skippableIndexes[strategy.optimizedAuditCursor % skippableIndexes.length] : -1;
-
-  for (const candidate of candidateDecisions) {
-    const { file, index, localFile, baseDecision, optimizedDecision } = candidate;
-    const shouldAudit = strategy.mode === "optimized" && index === auditIndex && strategy.cycles % AUDIT_INTERVAL_CYCLES === 0;
-    const optimizedSkip = strategy.mode === "optimized" && !shouldAudit && optimizedDecision.decision === "skip";
-
-    if (optimizedSkip) {
-      const metric = getAdmFileMetric(file.path);
-      const saved = baseDecision.remoteSize || baseDecision.localSize || 0;
-      metric.optimizedSkips += 1;
-      metric.optimizedSavedBytes += saved;
+    if (!shouldDownload) {
+      skippableIndexes.push(index);
       admDownloadMetrics.strategy.optimizedSkips += 1;
-      admDownloadMetrics.strategy.optimizedSavedBytes += saved;
-      serverMetric.optimizedSkips += 1;
-      serverMetric.optimizedSavedBytes += saved;
-      if (index === PREVIOUS_FILE_INDEX) admDownloadMetrics.strategy.previousStableSkips += 1;
-      availableLocalFiles.push(localFile);
-      addRecentShadowDecision({ at: new Date().toISOString(), file: safeLocalName(file.path), decision: "skip", reason: optimizedDecision.reason, remoteSize: baseDecision.remoteSize, localSize: baseDecision.localSize, actualBytes: 0, contentChanged: null, mismatch: false });
-      console.log(`⏭️ ADM estável reutilizado: ${file.path}`);
+      const metric = getAdmFileMetric(file.path);
+      metric.optimizedSkips += 1;
+      metric.optimizedSavedBytes += baseDecision.remoteSize || 0;
+      admDownloadMetrics.strategy.optimizedSavedBytes += baseDecision.remoteSize || 0;
+      admDownloadMetrics.strategy.previousStableSkips += optimized.reason === "same-size" && index === PREVIOUS_FILE_INDEX ? 1 : 0;
+      if (fs.existsSync(localFile)) availableLocalFiles.push(localFile);
       continue;
     }
 
     try {
-      const previousText = fs.existsSync(localFile) ? fs.readFileSync(localFile, "utf8") : null;
-      const previousHash = previousText === null ? null : hashText(previousText);
       const text = await downloadText(file.path, serverId);
-      if (!text) {
-        console.log(`⚠️ sem URL de download: ${file.path}`);
-        if (fs.existsSync(localFile)) availableLocalFiles.push(localFile);
-        continue;
-      }
-
+      if (text === null) throw new Error("no download token");
       const bytes = Buffer.byteLength(text, "utf8");
+      const previousHash = fs.existsSync(localFile) ? hashText(fs.readFileSync(localFile, "utf8")) : null;
       const downloadedHash = hashText(text);
       const contentChanged = previousHash === null ? null : previousHash !== downloadedHash;
       const shadowMismatch = baseDecision.decision === "skip" && contentChanged === true;
@@ -524,7 +500,7 @@ export async function downloadADM(serverId = getActiveServerId()) {
 
       if (strategy.mode !== "legacy") {
         admDownloadMetrics.shadow.decisions += 1;
-        const shadowDecision = optimizedDecision;
+        const shadowDecision = optimized;
         if (shadowDecision.decision === "download") {
           admDownloadMetrics.shadow.wouldDownload += 1;
           admDownloadMetrics.shadow.estimatedOptimizedBytes += bytes;
@@ -636,11 +612,6 @@ function withDayzMissionFolderVariants(pathValue: string) {
   return uniqueStrings(variants);
 }
 
-/**
- * Resolve a DayZ mission file to the server's actual Nitrado noftp root.
- * The runtime baseDir points to .../noftp/dayzps/config, while the editable
- * console mission tree lives at .../noftp/dayzps_missions/....
- */
 function resolveDayzUploadDirectory(pathValue: string, serverId = getActiveServerId()) {
   const normalized = normalizeNitradoFileServerPath(pathValue);
   const missionMatch = normalized.match(/(?:^|\/)(dayzps_missions\/.*)$/i);
@@ -672,7 +643,8 @@ async function getUploadToken(filePath: string, serverId = getActiveServerId()):
 
   console.log(`📤 Nitrado upload token request: file=${file} path=${directory}`);
 
-  const json = await postWithQueryParams(url, { path: directory, file }, serverId);
+  const form = new URLSearchParams({ path: directory, file });
+  const json = await postWithForm(url, form, serverId);
   const token = json?.data?.token;
   if (!token?.url || !token?.token) throw new Error(`Nitrado did not return an upload token for ${filePath}`);
 
@@ -680,11 +652,15 @@ async function getUploadToken(filePath: string, serverId = getActiveServerId()):
   return { url: token.url, token: token.token };
 }
 
-async function postWithQueryParams(url: string, params: Record<string, string>, serverId: string): Promise<any> {
-  const fullUrl = `${url}?${new URLSearchParams(params).toString()}`;
-  const res = await trackedNitradoFetch(fullUrl, {
+async function postWithForm(url: string, form: URLSearchParams, serverId: string): Promise<any> {
+  const body = form.toString();
+  const res = await trackedNitradoFetch(url, {
     method: "POST",
-    headers: { Authorization: `Bearer ${getNitradoToken(serverId)}` },
+    headers: {
+      Authorization: `Bearer ${getNitradoToken(serverId)}`,
+      "content-type": "application/x-www-form-urlencoded",
+    },
+    body,
   });
   if (!res.ok) throw new Error(`Nitrado HTTP ${res.status}: ${await res.text()}`);
   return (await res.json()) as any;
@@ -708,32 +684,24 @@ export async function debugNitradoListRaw(dir: string, serverId = getActiveServe
   const text = await res.text();
   let entriesCount: number | null = null;
   try {
-    const json = JSON.parse(text);
-    const entries = json?.data?.entries;
-    entriesCount = Array.isArray(entries) ? entries.length : null;
-  } catch {}
-  return { dir: normalizedDir || "/", ok: res.ok, status: res.status, statusText: res.statusText, text: text.slice(0, 900), entriesCount };
+    const parsed = JSON.parse(text);
+    entriesCount = Array.isArray(parsed?.data?.entries) ? parsed.data.entries.length : null;
+  } catch {
+    entriesCount = null;
+  }
+  return { dir: normalizedDir, ok: res.ok, status: res.status, statusText: res.statusText, text, entriesCount };
 }
 
-export async function probeNitradoUploadTokenForDirectory(dir: string, file = "shop_pending.json", serverId = getActiveServerId()): Promise<{ dir: string; file: string; ok: boolean; status: number; statusText: string; text: string }> {
-  getNitradoToken(serverId);
-  const serviceId = getNitradoServiceId(serverId);
-  const normalizedDir = String(dir || "").replace(/\\/g, "/").replace(/\/+$/g, "");
-  const baseUrl = `https://api.nitrado.net/services/${serviceId}/gameservers/file_server/upload`;
-  const url = `${baseUrl}?${new URLSearchParams({ path: normalizedDir, file }).toString()}`;
-  const res = await trackedNitradoFetch(url, { method: "POST", headers: { Authorization: `Bearer ${getNitradoToken(serverId)}` } });
-  const text = await res.text();
-  return { dir: normalizedDir || "/", file, ok: res.ok, status: res.status, statusText: res.statusText, text: text.slice(0, 700) };
-}
-
-export async function uploadNitradoTextFile(filePath: string, content: string, serverId = getActiveServerId()): Promise<void> {
-  getNitradoToken(serverId);
+export async function uploadNitradoTextFile(filePath: string, content: string, serverId = getActiveServerId()) {
   const { url, token } = await getUploadToken(filePath, serverId);
+  const body = Buffer.from(content, "utf8");
   const res = await trackedNitradoFetch(url, {
     method: "POST",
-    headers: { "Content-Type": "application/binary", token },
-    body: content,
+    headers: {
+      token,
+      "content-type": "application/octet-stream",
+    },
+    body,
   });
-  if (!res.ok) throw new Error(`Nitrado file upload HTTP ${res.status}: ${await res.text()}`);
-  console.log(`✅ Nitrado file uploaded: ${filePath}`);
+  if (!res.ok) throw new Error(`Nitrado binary upload HTTP ${res.status}: ${await res.text()}`);
 }
