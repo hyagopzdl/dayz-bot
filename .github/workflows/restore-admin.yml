@@ -1,0 +1,19 @@
+name: Restore admin panel
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: write
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          git fetch --no-tags --depth=2 origin main
+          git checkout 420d494a7c3206afbea86784f70a2e345632dbb7 -- artifacts/api-server/src/routes/adminPanel.ts
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add artifacts/api-server/src/routes/adminPanel.ts
+          git commit -m 'fix: restore admin panel after targeted edit error'
+          git push
