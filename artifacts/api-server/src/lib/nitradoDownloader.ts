@@ -604,6 +604,16 @@ function normalizeNitradoFileServerPath(value: string) {
   return String(value || "").replace(/\\/g, "/").replace(/^\/+/, "").replace(/\/+$/g, "");
 }
 
+function splitRemoteFilePath(filePath: string) {
+  const normalized = normalizeNitradoFileServerPath(filePath);
+  const separatorIndex = normalized.lastIndexOf("/");
+  if (separatorIndex === -1) return { path: "", file: normalized };
+  return {
+    path: normalized.slice(0, separatorIndex),
+    file: normalized.slice(separatorIndex + 1),
+  };
+}
+
 function getNoFtpRootFromAdmBaseDir(serverId = getActiveServerId()) {
   const baseDir = String(getServerRuntimeContext(serverId).nitrado.baseDir || "").replace(/\\/g, "/").replace(/\/+$/g, "");
   const marker = "/noftp/";
