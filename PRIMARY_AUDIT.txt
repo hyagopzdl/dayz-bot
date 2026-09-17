@@ -1,5 +1,1080 @@
 === PRIMARY DESCRIPTOR ===
+./artifacts/api-server/src/routes/adminPanel.ts-89-import { getRuntimePerformanceMetrics } from "../lib/runtimeMetrics";
+./artifacts/api-server/src/routes/adminPanel.ts-90-import { getNetworkMetrics } from "../lib/networkMetrics";
+./artifacts/api-server/src/routes/adminPanel.ts:91:import { getManagedServerById, getPrimaryServerDescriptor, getPrimaryServerId, getServerFoundationDiagnostics, listManagedServers } from "../lib/serverRegistry";
+./artifacts/api-server/src/routes/adminPanel.ts-92-import { getActiveServerId, isServerRuntimeLocked, runInServerDataContext, runInServerMaintenanceContext, runInServerRuntimeContext, runWithServerMaintenanceLock } from "../lib/serverRuntime";
+./artifacts/api-server/src/routes/adminPanel.ts-93-import {
+--
+./artifacts/api-server/src/routes/adminPanel.ts-1434-  const resolvedCapability: OrganizationCapability = capability
+./artifacts/api-server/src/routes/adminPanel.ts-1435-    || (req.method === "GET" || req.method === "HEAD" ? "view" : "manage");
+./artifacts/api-server/src/routes/adminPanel.ts:1436:  return requireOrganizationAccess(req, res, getPrimaryServerDescriptor().organizationId, resolvedCapability);
+./artifacts/api-server/src/routes/adminPanel.ts-1437-}
+./artifacts/api-server/src/routes/adminPanel.ts-1438-
+--
+./artifacts/api-server/src/routes/adminPanel.ts-1477-function currentOrganizationIdForRequest(req: Request) {
+./artifacts/api-server/src/routes/adminPanel.ts-1478-  if (req.adminSession?.serverId) {
+./artifacts/api-server/src/routes/adminPanel.ts:1479:    return getManagedServerById(req.adminSession.serverId)?.organizationId || getPrimaryServerDescriptor().organizationId;
+./artifacts/api-server/src/routes/adminPanel.ts-1480-  }
+./artifacts/api-server/src/routes/adminPanel.ts:1481:  return getPrimaryServerDescriptor().organizationId;
+./artifacts/api-server/src/routes/adminPanel.ts-1482-}
+./artifacts/api-server/src/routes/adminPanel.ts-1483-
+--
+./artifacts/api-server/src/routes/adminPanel.ts-9449-router.get("/api/servers/current", async (req, res) => {
+./artifacts/api-server/src/routes/adminPanel.ts-9450-  if (!requireAdmin(req, res)) return;
+./artifacts/api-server/src/routes/adminPanel.ts:9451:  const server = getManagedServerById(getActiveServerId()) || getPrimaryServerDescriptor();
+./artifacts/api-server/src/routes/adminPanel.ts-9452-  res.json({ server, foundation: foundationForRequest(req) });
+./artifacts/api-server/src/routes/adminPanel.ts-9453-});
+--
+./artifacts/api-server/src/routes/adminPanel.ts-9459-    const state = await getStateAsync();
+./artifacts/api-server/src/routes/adminPanel.ts-9460-    const overview = await buildOverviewPayload(state as AdminState);
+./artifacts/api-server/src/routes/adminPanel.ts:9461:    const serverDescriptor = getManagedServerById(getActiveServerId()) || getPrimaryServerDescriptor();
+./artifacts/api-server/src/routes/adminPanel.ts-9462-    res.json({
+./artifacts/api-server/src/routes/adminPanel.ts-9463-      ...overview,
+--
+./artifacts/api-server/src/routes/playerPortal.ts-36-import { renderPlayerPortal } from "./playerPortalView";
+./artifacts/api-server/src/routes/playerPortal.ts-37-import { renderSaasOnboarding } from "./saasOnboardingView";
+./artifacts/api-server/src/routes/playerPortal.ts:38:import { getManagedServerById, getPrimaryServerDescriptor, getPrimaryServerId } from "../lib/serverRegistry";
+./artifacts/api-server/src/routes/playerPortal.ts-39-import { isSaasSelfServiceEnabled } from "../lib/organizationRegistry";
+./artifacts/api-server/src/routes/playerPortal.ts-40-import { isOrganizationSecretEncryptionConfigured } from "../lib/organizationIntegrations";
+--
+./artifacts/api-server/src/routes/playerPortal.ts-64-
+./artifacts/api-server/src/routes/playerPortal.ts-65-  const selectedServer = getManagedServerById(selectedServerId);
+./artifacts/api-server/src/routes/playerPortal.ts:66:  const primaryServer = getPrimaryServerDescriptor();
+./artifacts/api-server/src/routes/playerPortal.ts-67-  if (!selectedServer || selectedServer.organizationId !== primaryServer.organizationId) return null;
+./artifacts/api-server/src/routes/playerPortal.ts-68-
+--
+./artifacts/api-server/src/routes/playerPortal.ts-76-
+./artifacts/api-server/src/routes/playerPortal.ts-77-  return {
+./artifacts/api-server/src/routes/playerPortal.ts:78:    sourceServer: { id: primaryServerId, name: getPrimaryServerDescriptor().name },
+./artifacts/api-server/src/routes/playerPortal.ts-79-    candidates: Array.from(new Set(candidates)),
+./artifacts/api-server/src/routes/playerPortal.ts-80-  };
+--
+./artifacts/api-server/src/routes/nitradoDiagnostic.ts-8-import {
+./artifacts/api-server/src/routes/nitradoDiagnostic.ts-9-  getManagedServerById,
+./artifacts/api-server/src/routes/nitradoDiagnostic.ts:10:  getPrimaryServerDescriptor,
+./artifacts/api-server/src/routes/nitradoDiagnostic.ts-11-  getPrimaryServerId,
+./artifacts/api-server/src/routes/nitradoDiagnostic.ts-12-  getServerRuntimeIsolationStatus,
+--
+./artifacts/api-server/src/routes/nitradoDiagnostic.ts-71-function descriptorSnapshot(serverId: string) {
+./artifacts/api-server/src/routes/nitradoDiagnostic.ts-72-  const descriptor = getManagedServerById(serverId)
+./artifacts/api-server/src/routes/nitradoDiagnostic.ts:73:    || (serverId === getPrimaryServerId() ? getPrimaryServerDescriptor() : undefined);
+./artifacts/api-server/src/routes/nitradoDiagnostic.ts-74-
+./artifacts/api-server/src/routes/nitradoDiagnostic.ts-75-  if (!descriptor) return null;
+--
+./artifacts/api-server/src/lib/serverRegistry.ts-154-export function getPrimaryServerId() { return ""; }
+./artifacts/api-server/src/lib/serverRegistry.ts-155-/** @deprecated Never returns a synthetic server. Historical callers must stop using this API. */
+./artifacts/api-server/src/lib/serverRegistry.ts:156:export function getPrimaryServerDescriptor(): ManagedServerDescriptor { throw new Error("Primary server fallback has been removed; resolve a managed server context first."); }
+./artifacts/api-server/src/lib/serverRegistry.ts-157-
+./artifacts/api-server/src/lib/serverRegistry.ts-158-export function listManagedServers() { return persistedServers.map(cloneServer); }
+--
+./artifacts/api-server/src/lib/state.ts-12-import {
+./artifacts/api-server/src/lib/state.ts-13-  buildManagedServerId,
+./artifacts/api-server/src/lib/state.ts:14:  getPrimaryServerDescriptor,
+./artifacts/api-server/src/lib/state.ts-15-  getPrimaryServerId,
+./artifacts/api-server/src/lib/state.ts-16-  getManagedServerActivationConfigSignature,
+--
+./artifacts/api-server/src/lib/state.ts-599-}
+./artifacts/api-server/src/lib/state.ts-600-
+./artifacts/api-server/src/lib/state.ts:601:async function reloadManagedServerRegistryFromDb(primary = getPrimaryServerDescriptor()) {
+./artifacts/api-server/src/lib/state.ts-602-  if (!sql) return [primary];
+./artifacts/api-server/src/lib/state.ts-603-  const rows = await sql`
+--
+./artifacts/api-server/src/lib/state.ts-697-
+./artifacts/api-server/src/lib/state.ts-698-  serverRegistryReadyPromise = (async () => {
+./artifacts/api-server/src/lib/state.ts:699:    const primary = getPrimaryServerDescriptor();
+./artifacts/api-server/src/lib/state.ts-700-    const defaultOrganization = getDefaultOrganizationDescriptor();
+./artifacts/api-server/src/lib/state.ts-701-    try {
+--
+./artifacts/api-server/src/lib/state.ts-2217-  if (!sql || !getServerRegistryPersistenceStatus().tableReady) throw new Error("Server registry is unavailable.");
+./artifacts/api-server/src/lib/state.ts-2218-  const id = buildManagedServerId(serverIdInput);
+./artifacts/api-server/src/lib/state.ts:2219:  if (!id || id === getPrimaryServerId()) return getPrimaryServerDescriptor();
+./artifacts/api-server/src/lib/state.ts-2220-
+./artifacts/api-server/src/lib/state.ts-2221-  const currentServers = await reloadManagedServerRegistryFromDb();
+--
+./artifacts/api-server/src/lib/state.ts-2259-  if (!sql || !getServerRegistryPersistenceStatus().tableReady) throw new Error("Server registry is unavailable.");
+./artifacts/api-server/src/lib/state.ts-2260-  const id = buildManagedServerId(serverIdInput);
+./artifacts/api-server/src/lib/state.ts:2261:  if (!id || id === getPrimaryServerId()) return getPrimaryServerDescriptor();
+./artifacts/api-server/src/lib/state.ts-2262-
+./artifacts/api-server/src/lib/state.ts-2263-  const currentServers = await reloadManagedServerRegistryFromDb();
+--
+./artifacts/api-server/src/lib/nitradoDownloader.ts-3-import path from "path";
+./artifacts/api-server/src/lib/nitradoDownloader.ts-4-import { byteLengthOfBody, recordNetworkTransfer } from "./networkMetrics";
+./artifacts/api-server/src/lib/nitradoDownloader.ts:5:import { getManagedServerById, getPrimaryServerDescriptor, getPrimaryServerId } from "./serverRegistry";
+./artifacts/api-server/src/lib/nitradoDownloader.ts-6-import { getActiveServerId, getServerRuntimeContext } from "./serverRuntime";
+./artifacts/api-server/src/lib/nitradoDownloader.ts-7-import { getServerNitradoConfig } from "./serverNitrado";
+--
+./artifacts/api-server/src/lib/serverNitradoMigration.ts-2-import { encryptOrganizationSecret, getOrganizationNitradoCredential } from "./organizationIntegrations";
+./artifacts/api-server/src/lib/serverNitradoMigration.ts-3-import {
+./artifacts/api-server/src/lib/serverNitradoMigration.ts:4:  getPrimaryServerDescriptor,
+./artifacts/api-server/src/lib/serverNitradoMigration.ts-5-  getManagedServerById,
+./artifacts/api-server/src/lib/serverNitradoMigration.ts-6-  listManagedServers,
+--
+./artifacts/api-server/src/lib/playerPortalServerContext.ts-1-import type { NextFunction, Request, Response } from "express";
+./artifacts/api-server/src/lib/playerPortalServerContext.ts-2-import {
+./artifacts/api-server/src/lib/playerPortalServerContext.ts:3:  getPrimaryServerDescriptor,
+./artifacts/api-server/src/lib/playerPortalServerContext.ts-4-  getPrimaryServerId,
+./artifacts/api-server/src/lib/playerPortalServerContext.ts-5-  listExecutableManagedServers,
+--
+./artifacts/api-server/src/lib/playerPortalServerContext.ts-45-}
+./artifacts/api-server/src/lib/playerPortalServerContext.ts-46-
+./artifacts/api-server/src/lib/playerPortalServerContext.ts:47:export function listPlayerPortalServers(organizationId = getPrimaryServerDescriptor().organizationId) {
+./artifacts/api-server/src/lib/playerPortalServerContext.ts-48-  // Phase 16 keeps discovery tenant-scoped. A player enters another tenant only
+./artifacts/api-server/src/lib/playerPortalServerContext.ts-49-  // through an explicit server entrypoint (?server=<id>); once inside, the
+--
+./artifacts/api-server/src/lib/playerPortalServerContext.ts-145-    invalidSelections,
+./artifacts/api-server/src/lib/playerPortalServerContext.ts-146-    policy: "explicit-server-entrypoint+same-organization-switcher+invalid-server-fail-closed",
+./artifacts/api-server/src/lib/playerPortalServerContext.ts:147:    organizationId: getPrimaryServerDescriptor().organizationId,
+./artifacts/api-server/src/lib/playerPortalServerContext.ts-148-  };
+./artifacts/api-server/src/lib/playerPortalServerContext.ts-149-}
+--
+./.github/workflows/primary-audit.yml-15-          {
+./.github/workflows/primary-audit.yml-16-            echo '=== PRIMARY DESCRIPTOR ==='
+./.github/workflows/primary-audit.yml:17:            grep -RniE -C 2 'getPrimaryServerDescriptor|Primary server fallback has been removed' . --exclude-dir=.git --exclude-dir=node_modules || true
+./.github/workflows/primary-audit.yml-18-            echo '=== PRIMARY ID ==='
+./.github/workflows/primary-audit.yml-19-            grep -RniE -C 1 'getPrimaryServerId' . --exclude-dir=.git --exclude-dir=node_modules || true
 === PRIMARY ID ===
+./artifacts/api-server/src/routes/adminPanel.ts-90-import { getNetworkMetrics } from "../lib/networkMetrics";
+./artifacts/api-server/src/routes/adminPanel.ts:91:import { getManagedServerById, getPrimaryServerDescriptor, getPrimaryServerId, getServerFoundationDiagnostics, listManagedServers } from "../lib/serverRegistry";
+./artifacts/api-server/src/routes/adminPanel.ts-92-import { getActiveServerId, isServerRuntimeLocked, runInServerDataContext, runInServerMaintenanceContext, runInServerRuntimeContext, runWithServerMaintenanceLock } from "../lib/serverRuntime";
+--
+./artifacts/api-server/src/routes/adminPanel.ts-1225-  const intervalMs = getSpawnZoneAutomationIntervalMs();
+./artifacts/api-server/src/routes/adminPanel.ts:1226:  const primaryServerId = getPrimaryServerId();
+./artifacts/api-server/src/routes/adminPanel.ts-1227-  const run = () => runInServerRuntimeContext(primaryServerId, () =>
+--
+./artifacts/api-server/src/routes/adminPanel.ts-8730-    if (client.isReady()) {
+./artifacts/api-server/src/routes/adminPanel.ts:8731:      await registerDiscordCommands(client, effectiveCommandSettings, getActiveServerId(), getActiveServerId() === getPrimaryServerId() ? "full" : "core");
+./artifacts/api-server/src/routes/adminPanel.ts-8732-    }
+--
+./artifacts/api-server/src/routes/adminPanel.ts-8795-    const effectiveCommandSettings = applyServiceSettingsToCommandSettings(state.discordCommandSettings, state.serviceSettings);
+./artifacts/api-server/src/routes/adminPanel.ts:8796:    await registerDiscordCommands(client, effectiveCommandSettings, getActiveServerId(), getActiveServerId() === getPrimaryServerId() ? "full" : "core");
+./artifacts/api-server/src/routes/adminPanel.ts-8797-    res.json({ commands: listDiscordCommandDescriptors(effectiveCommandSettings) });
+--
+./artifacts/api-server/src/routes/playerPortal.ts-37-import { renderSaasOnboarding } from "./saasOnboardingView";
+./artifacts/api-server/src/routes/playerPortal.ts:38:import { getManagedServerById, getPrimaryServerDescriptor, getPrimaryServerId } from "../lib/serverRegistry";
+./artifacts/api-server/src/routes/playerPortal.ts-39-import { isSaasSelfServiceEnabled } from "../lib/organizationRegistry";
+--
+./artifacts/api-server/src/routes/playerPortal.ts-61-  const selectedServerId = getActiveServerId();
+./artifacts/api-server/src/routes/playerPortal.ts:62:  const primaryServerId = getPrimaryServerId();
+./artifacts/api-server/src/routes/playerPortal.ts-63-  if (selectedServerId === primaryServerId) return null;
+--
+./artifacts/api-server/src/routes/playerPortal.ts-224-    const state = await getStateAsync();
+./artifacts/api-server/src/routes/playerPortal.ts:225:    if (getActiveServerId() === getPrimaryServerId()) {
+./artifacts/api-server/src/routes/playerPortal.ts-226-      throw new Error("Primary identity import is only available on secondary servers.");
+--
+./artifacts/api-server/src/routes/nitradoDiagnostic.ts-10-  getPrimaryServerDescriptor,
+./artifacts/api-server/src/routes/nitradoDiagnostic.ts:11:  getPrimaryServerId,
+./artifacts/api-server/src/routes/nitradoDiagnostic.ts-12-  getServerRuntimeIsolationStatus,
+--
+./artifacts/api-server/src/routes/nitradoDiagnostic.ts-72-  const descriptor = getManagedServerById(serverId)
+./artifacts/api-server/src/routes/nitradoDiagnostic.ts:73:    || (serverId === getPrimaryServerId() ? getPrimaryServerDescriptor() : undefined);
+./artifacts/api-server/src/routes/nitradoDiagnostic.ts-74-
+--
+./artifacts/api-server/src/routes/nitradoDiagnostic.ts-164-    targetServers: TARGET_SERVERS,
+./artifacts/api-server/src/routes/nitradoDiagnostic.ts:165:    primaryServerId: getPrimaryServerId(),
+./artifacts/api-server/src/routes/nitradoDiagnostic.ts:166:    primaryServer: descriptorSnapshot(getPrimaryServerId()),
+./artifacts/api-server/src/routes/nitradoDiagnostic.ts-167-    managedServers: listManagedServers().map((server) => descriptorSnapshot(server.id)),
+--
+./artifacts/api-server/src/lib/serverRegistry.ts-153-/** @deprecated No runtime fallback; retained until all historical callers are migrated. */
+./artifacts/api-server/src/lib/serverRegistry.ts:154:export function getPrimaryServerId() { return ""; }
+./artifacts/api-server/src/lib/serverRegistry.ts-155-/** @deprecated Never returns a synthetic server. Historical callers must stop using this API. */
+--
+./artifacts/api-server/src/lib/nitradoFtp.ts-4-import { getServerNitradoConfig } from "./serverNitrado";
+./artifacts/api-server/src/lib/nitradoFtp.ts:5:import { getPrimaryServerId, getServerScopedSettings } from "./serverRegistry";
+./artifacts/api-server/src/lib/nitradoFtp.ts-6-
+--
+./artifacts/api-server/src/lib/nitradoFtp.ts-63-  const primaryMissionDir = String(
+./artifacts/api-server/src/lib/nitradoFtp.ts:64:    getServerScopedSettings(getPrimaryServerId()).dayzMissionDir || "",
+./artifacts/api-server/src/lib/nitradoFtp.ts-65-  )
+--
+./artifacts/api-server/src/lib/catalogService.ts-3-import { getActiveServerId } from "./serverRuntime";
+./artifacts/api-server/src/lib/catalogService.ts:4:import { getManagedServerById, getPrimaryServerId } from "./serverRegistry";
+./artifacts/api-server/src/lib/catalogService.ts-5-
+--
+./artifacts/api-server/src/lib/catalogService.ts-149-async function cleanupLegacySecondaryAutoClone(serverId: string) {
+./artifacts/api-server/src/lib/catalogService.ts:150:  const primaryServerId = getPrimaryServerId();
+./artifacts/api-server/src/lib/catalogService.ts-151-  if (serverId === primaryServerId) return false;
+--
+./artifacts/api-server/src/lib/catalogService.ts-173-
+./artifacts/api-server/src/lib/catalogService.ts:174:  const primaryServerId = getPrimaryServerId();
+./artifacts/api-server/src/lib/catalogService.ts-175-  if (serverId !== primaryServerId) {
+--
+./artifacts/api-server/src/lib/state.ts-14-  getPrimaryServerDescriptor,
+./artifacts/api-server/src/lib/state.ts:15:  getPrimaryServerId,
+./artifacts/api-server/src/lib/state.ts-16-  getManagedServerActivationConfigSignature,
+--
+./artifacts/api-server/src/lib/state.ts-116-  const serverId = getActiveServerId();
+./artifacts/api-server/src/lib/state.ts:117:  return serverId === getPrimaryServerId() ? LEGACY_FILE : getServerStateStoragePath(serverId);
+./artifacts/api-server/src/lib/state.ts-118-}
+--
+./artifacts/api-server/src/lib/state.ts-1959-  if (!id) throw new Error("Informe um nome ou Server ID valido.");
+./artifacts/api-server/src/lib/state.ts:1960:  if (id === getPrimaryServerId()) throw new Error("O Server ID do PZ Deathmatch e reservado e nao pode ser reutilizado.");
+./artifacts/api-server/src/lib/state.ts-1961-
+--
+./artifacts/api-server/src/lib/state.ts-2029-  const id = buildManagedServerId(serverId);
+./artifacts/api-server/src/lib/state.ts:2030:  if (!id || id === getPrimaryServerId()) throw new Error("O servidor primario nao pode ser alterado pelo onboarding da Fase 11.");
+./artifacts/api-server/src/lib/state.ts-2031-  const currentServers = await reloadManagedServerRegistryFromDb();
+--
+./artifacts/api-server/src/lib/state.ts-2092-        updated_at = NOW()
+./artifacts/api-server/src/lib/state.ts:2093:    WHERE id = ${id} AND id <> ${getPrimaryServerId()}
+./artifacts/api-server/src/lib/state.ts-2094-  `;
+--
+./artifacts/api-server/src/lib/state.ts-2218-  const id = buildManagedServerId(serverIdInput);
+./artifacts/api-server/src/lib/state.ts:2219:  if (!id || id === getPrimaryServerId()) return getPrimaryServerDescriptor();
+./artifacts/api-server/src/lib/state.ts-2220-
+--
+./artifacts/api-server/src/lib/state.ts-2260-  const id = buildManagedServerId(serverIdInput);
+./artifacts/api-server/src/lib/state.ts:2261:  if (!id || id === getPrimaryServerId()) return getPrimaryServerDescriptor();
+./artifacts/api-server/src/lib/state.ts-2262-
+--
+./artifacts/api-server/src/lib/state.ts-2345-  const id = buildManagedServerId(serverId);
+./artifacts/api-server/src/lib/state.ts:2346:  if (!id || id === getPrimaryServerId()) {
+./artifacts/api-server/src/lib/state.ts-2347-    throw new Error("O servidor primario nao usa o fluxo de validacao da Fase 11.");
+--
+./artifacts/api-server/src/lib/state.ts-2410-        updated_at = NOW()
+./artifacts/api-server/src/lib/state.ts:2411:    WHERE id = ${id} AND id <> ${getPrimaryServerId()}
+./artifacts/api-server/src/lib/state.ts-2412-  `;
+--
+./artifacts/api-server/src/lib/state.ts-2428-  const id = buildManagedServerId(serverId);
+./artifacts/api-server/src/lib/state.ts:2429:  if (!id || id === getPrimaryServerId()) throw new Error("O preflight de namespace aceita somente servidores adicionais.");
+./artifacts/api-server/src/lib/state.ts-2430-
+--
+./artifacts/api-server/src/lib/state.ts-2454-  const id = buildManagedServerId(serverId);
+./artifacts/api-server/src/lib/state.ts:2455:  if (!id || id === getPrimaryServerId()) throw new Error("O servidor primario nao usa o activation preflight da Fase 11.");
+./artifacts/api-server/src/lib/state.ts-2456-  const currentServers = await reloadManagedServerRegistryFromDb();
+--
+./artifacts/api-server/src/lib/state.ts-2490-        updated_at = NOW()
+./artifacts/api-server/src/lib/state.ts:2491:    WHERE id = ${id} AND id <> ${getPrimaryServerId()}
+./artifacts/api-server/src/lib/state.ts-2492-  `;
+--
+./artifacts/api-server/src/lib/state.ts-2511-  const id = buildManagedServerId(serverId);
+./artifacts/api-server/src/lib/state.ts:2512:  if (!id || id === getPrimaryServerId()) throw new Error("O runtime do servidor primario nao pode ser alterado por este controle.");
+./artifacts/api-server/src/lib/state.ts-2513-  const currentServers = await reloadManagedServerRegistryFromDb();
+--
+./artifacts/api-server/src/lib/state.ts-2577-        updated_at = NOW()
+./artifacts/api-server/src/lib/state.ts:2578:    WHERE id = ${id} AND id <> ${getPrimaryServerId()}
+./artifacts/api-server/src/lib/state.ts-2579-  `;
+--
+./artifacts/api-server/src/lib/state.ts-2600-  const id = buildManagedServerId(serverId);
+./artifacts/api-server/src/lib/state.ts:2601:  if (!id || id === getPrimaryServerId()) throw new Error("O runtime primario nao pode ser pausado por este controle.");
+./artifacts/api-server/src/lib/state.ts-2602-  const currentServers = await reloadManagedServerRegistryFromDb();
+--
+./artifacts/api-server/src/lib/state.ts-2634-        updated_at = NOW()
+./artifacts/api-server/src/lib/state.ts:2635:    WHERE id = ${id} AND id <> ${getPrimaryServerId()} AND runtime_enabled = TRUE
+./artifacts/api-server/src/lib/state.ts-2636-    RETURNING id
+--
+./artifacts/api-server/src/lib/state.ts-2824-    // retag legacy Deathmatch player stats.
+./artifacts/api-server/src/lib/state.ts:2825:    const legacyPlayerStatsOwner = getPrimaryServerId();
+./artifacts/api-server/src/lib/state.ts-2826-    await sql`UPDATE player_stats_state SET server_id = ${legacyPlayerStatsOwner} WHERE server_id IS NULL`;
+--
+./artifacts/api-server/src/lib/state.ts-3435-  // had this protection; multi-server/V2 must preserve it server-scoped.
+./artifacts/api-server/src/lib/state.ts:3436:  if (getActiveServerId() === getPrimaryServerId()) {
+./artifacts/api-server/src/lib/state.ts-3437-    try {
+./artifacts/api-server/src/lib/state.ts-3438-      const existingRows = botStateScopedPersistenceReady
+./artifacts/api-server/src/lib/state.ts:3439:        ? await sql`SELECT data FROM bot_state WHERE server_id = ${getPrimaryServerId()} AND id = ${STATE_ID} LIMIT 1`
+./artifacts/api-server/src/lib/state.ts:3440:        : await sql`SELECT data FROM bot_state WHERE server_id = ${getPrimaryServerId()} AND id = ${STATE_ID} LIMIT 1`;
+./artifacts/api-server/src/lib/state.ts-3441-      if (existingRows.length) {
+--
+./artifacts/api-server/src/lib/state.ts-3706-async function persistRecoveredPrimarySnapshot(state: AppState, previousMainRow?: any) {
+./artifacts/api-server/src/lib/state.ts:3707:  if (!sql || getActiveServerId() !== getPrimaryServerId() || !botStateScopedPersistenceReady) return;
+./artifacts/api-server/src/lib/state.ts-3708-  const recoveryAt = new Date().toISOString();
+--
+./artifacts/api-server/src/lib/state.ts-3712-      INSERT INTO bot_state (id, data, updated_at, server_id)
+./artifacts/api-server/src/lib/state.ts:3713:      VALUES (${backupId}, ${sql.json(previousMainRow.data)}, NOW(), ${getPrimaryServerId()})
+./artifacts/api-server/src/lib/state.ts-3714-      ON CONFLICT (server_id, id) DO NOTHING
+--
+./artifacts/api-server/src/lib/state.ts-3718-    INSERT INTO bot_state (id, data, updated_at, server_id)
+./artifacts/api-server/src/lib/state.ts:3719:    VALUES (${STATE_ID}, ${sql.json(state)}, NOW(), ${getPrimaryServerId()})
+./artifacts/api-server/src/lib/state.ts-3720-    ON CONFLICT (server_id, id)
+--
+./artifacts/api-server/src/lib/state.ts-3723-  console.warn("🛟 PZ Deathmatch state recovered from same-server persistence sources", {
+./artifacts/api-server/src/lib/state.ts:3724:    serverId: getPrimaryServerId(),
+./artifacts/api-server/src/lib/state.ts-3725-    recoveryAt,
+--
+./artifacts/api-server/src/lib/state.ts-3799-      lastScopedReadSource = "server-scoped";
+./artifacts/api-server/src/lib/state.ts:3800:      if (!rows.some((row: any) => row.id === STATE_ID) && getActiveServerId() === getPrimaryServerId()) {
+./artifacts/api-server/src/lib/state.ts-3801-        // Legacy fallback exists only for the production primary. A fresh
+--
+./artifacts/api-server/src/lib/state.ts-3807-          FROM bot_state
+./artifacts/api-server/src/lib/state.ts:3808:          WHERE (server_id = ${getPrimaryServerId()} OR server_id IS NULL)
+./artifacts/api-server/src/lib/state.ts-3809-            AND id IN (${stateIds[0]}, ${stateIds[1]}, ${stateIds[2]}, ${stateIds[3]}, ${stateIds[4]}, ${stateIds[5]}, ${stateIds[6]})
+--
+./artifacts/api-server/src/lib/state.ts-3822-      ` as any[];
+./artifacts/api-server/src/lib/state.ts:3823:      if (!rows.some((row: any) => row.id === STATE_ID) && getActiveServerId() === getPrimaryServerId()) {
+./artifacts/api-server/src/lib/state.ts-3824-        // A truly legacy untagged row belongs only to the production primary.
+--
+./artifacts/api-server/src/lib/state.ts-3848-    if (!mainRow) {
+./artifacts/api-server/src/lib/state.ts:3849:      const isPrimary = getActiveServerId() === getPrimaryServerId();
+./artifacts/api-server/src/lib/state.ts-3850-      let state = defaultState();
+--
+./artifacts/api-server/src/lib/state.ts-3962-      applyGranularPlayerRows(getCachedState()!, granularRows as any[]);
+./artifacts/api-server/src/lib/state.ts:3963:      primaryStatsRecovered = getActiveServerId() === getPrimaryServerId() && granularHasMoreAuthoritativeData;
+./artifacts/api-server/src/lib/state.ts-3964-      if (primaryStatsRecovered) {
+--
+./artifacts/api-server/src/lib/state.ts-4004-  } catch (err) {
+./artifacts/api-server/src/lib/state.ts:4005:    if (getActiveServerId() !== getPrimaryServerId()) {
+./artifacts/api-server/src/lib/state.ts-4006-      domainPersistenceMetrics.bootSource = "neon-read-failed-closed";
+--
+./artifacts/api-server/src/lib/state.ts-4126-    await sql`ALTER TABLE player_position_history ADD COLUMN IF NOT EXISTS server_id TEXT`;
+./artifacts/api-server/src/lib/state.ts:4127:    await sql`UPDATE player_position_history SET server_id = ${getPrimaryServerId()} WHERE server_id IS NULL`;
+./artifacts/api-server/src/lib/state.ts-4128-    await sql`ALTER TABLE player_position_history ALTER COLUMN server_id SET NOT NULL`;
+--
+./artifacts/api-server/src/lib/nitradoDownloader.ts-4-import { byteLengthOfBody, recordNetworkTransfer } from "./networkMetrics";
+./artifacts/api-server/src/lib/nitradoDownloader.ts:5:import { getManagedServerById, getPrimaryServerDescriptor, getPrimaryServerId } from "./serverRegistry";
+./artifacts/api-server/src/lib/nitradoDownloader.ts-6-import { getActiveServerId, getServerRuntimeContext } from "./serverRuntime";
+--
+./artifacts/api-server/src/lib/nitradoDownloader.ts-62-
+./artifacts/api-server/src/lib/nitradoDownloader.ts:63:function getAdmServerStrategy(serverId = getPrimaryServerId()): AdmServerStrategyState {
+./artifacts/api-server/src/lib/nitradoDownloader.ts-64-  let state = admServerStrategies.get(serverId);
+--
+./artifacts/api-server/src/lib/nitradoDownloader.ts-71-
+./artifacts/api-server/src/lib/nitradoDownloader.ts:72:export function setAdmDownloadMode(mode: AdmDownloadMode, serverId = getPrimaryServerId()) {
+./artifacts/api-server/src/lib/nitradoDownloader.ts-73-  getAdmServerStrategy(serverId).mode = mode;
+./artifacts/api-server/src/lib/nitradoDownloader.ts:74:  if (serverId === getPrimaryServerId()) admDownloadMetrics.strategy.mode = mode;
+./artifacts/api-server/src/lib/nitradoDownloader.ts-75-}
+./artifacts/api-server/src/lib/nitradoDownloader.ts-76-
+./artifacts/api-server/src/lib/nitradoDownloader.ts:77:export function getAdmDownloadMode(serverId = getPrimaryServerId()): AdmDownloadMode {
+./artifacts/api-server/src/lib/nitradoDownloader.ts-78-  return getAdmServerStrategy(serverId).mode;
+--
+./artifacts/api-server/src/lib/nitradoDownloader.ts-319-
+./artifacts/api-server/src/lib/nitradoDownloader.ts:320:export async function getNitradoGameserverStatus(serverId = getPrimaryServerId()): Promise<NitradoGameserverStatus> {
+./artifacts/api-server/src/lib/nitradoDownloader.ts-321-  getNitradoToken(serverId);
+--
+./artifacts/api-server/src/lib/nitradoDownloader.ts-340-
+./artifacts/api-server/src/lib/nitradoDownloader.ts:341:async function getDownloadUrl(filePath: string, serverId = getPrimaryServerId()): Promise<string | null> {
+./artifacts/api-server/src/lib/nitradoDownloader.ts-342-  admDownloadMetrics.downloadUrlRequests += 1;
+--
+./artifacts/api-server/src/lib/nitradoDownloader.ts-347-
+./artifacts/api-server/src/lib/nitradoDownloader.ts:348:async function downloadText(filePath: string, serverId = getPrimaryServerId()): Promise<string | null> {
+./artifacts/api-server/src/lib/nitradoDownloader.ts-349-  const url = await getDownloadUrl(filePath, serverId);
+--
+./artifacts/api-server/src/lib/nitradoDownloader.ts-443-
+./artifacts/api-server/src/lib/nitradoDownloader.ts:444:function triggerAutomaticFallback(reason: string, serverId = getPrimaryServerId()) {
+./artifacts/api-server/src/lib/nitradoDownloader.ts-445-  admDownloadMetrics.strategy.automaticFallbacks += 1;
+--
+./artifacts/api-server/src/lib/nitradoDownloader.ts-451-
+./artifacts/api-server/src/lib/nitradoDownloader.ts:452:export async function downloadADM(serverId = getPrimaryServerId()) {
+./artifacts/api-server/src/lib/nitradoDownloader.ts-453-  const runtime = getServerRuntimeContext(serverId);
+--
+./artifacts/api-server/src/lib/discord/stateAccess.ts-2-import { ensureBotState } from "./state";
+./artifacts/api-server/src/lib/discord/stateAccess.ts:3:import { getManagedServerById, getPrimaryServerId } from "../serverRegistry";
+./artifacts/api-server/src/lib/discord/stateAccess.ts-4-import { getServerRuntimeContext, runInServerDataContext } from "../serverRuntime";
+--
+./artifacts/api-server/src/lib/discord/stateAccess.ts-10-
+./artifacts/api-server/src/lib/discord/stateAccess.ts:11:export function createDiscordStateAccess(serverId = getPrimaryServerId()) {
+./artifacts/api-server/src/lib/discord/stateAccess.ts-12-  const runtime = getServerRuntimeContext(serverId);
+--
+./artifacts/api-server/src/lib/discord/secondaryInteractions.ts-11-import {
+./artifacts/api-server/src/lib/discord/secondaryInteractions.ts:12:  getPrimaryServerId,
+./artifacts/api-server/src/lib/discord/secondaryInteractions.ts-13-  resolveServerIdFromDiscordGuildId,
+--
+./artifacts/api-server/src/lib/discord/secondaryInteractions.ts-208-
+./artifacts/api-server/src/lib/discord/secondaryInteractions.ts:209:      if (serverId === getPrimaryServerId()) return;
+./artifacts/api-server/src/lib/discord/secondaryInteractions.ts-210-
+--
+./artifacts/api-server/src/lib/discord/modules/memberFeed.ts-7-import { buildNeutralEmbed, buildSuccessEmbed } from "../ui/embeds";
+./artifacts/api-server/src/lib/discord/modules/memberFeed.ts:8:import { getPrimaryServerId } from "../../serverRegistry";
+./artifacts/api-server/src/lib/discord/modules/memberFeed.ts-9-import { getServerRuntimeContext } from "../../serverRuntime";
+--
+./artifacts/api-server/src/lib/discord/modules/memberFeed.ts-23-
+./artifacts/api-server/src/lib/discord/modules/memberFeed.ts:24:async function resolveMemberFeedChannel(client: Client, serverId = getPrimaryServerId()) {
+./artifacts/api-server/src/lib/discord/modules/memberFeed.ts-25-  const runtime = getServerRuntimeContext(serverId);
+--
+./artifacts/api-server/src/lib/discord/modules/memberFeed.ts-49-
+./artifacts/api-server/src/lib/discord/modules/memberFeed.ts:50:async function sendMemberFeedEmbed(client: Client, embed: ReturnType<typeof buildSuccessEmbed>, serverId = getPrimaryServerId()) {
+./artifacts/api-server/src/lib/discord/modules/memberFeed.ts-51-  const channel = await resolveMemberFeedChannel(client, serverId);
+--
+./artifacts/api-server/src/lib/discord/modules/memberFeed.ts-60-
+./artifacts/api-server/src/lib/discord/modules/memberFeed.ts:61:export function registerMemberFeed(client: Client, serverId = getPrimaryServerId()) {
+./artifacts/api-server/src/lib/discord/modules/memberFeed.ts-62-  const runtime = getServerRuntimeContext(serverId);
+--
+./artifacts/api-server/src/lib/discord/commands.ts:1:import { getPrimaryServerId } from "../serverRegistry";
+./artifacts/api-server/src/lib/discord/commands.ts-2-import { getServerRuntimeContext } from "../serverRuntime";
+--
+./artifacts/api-server/src/lib/discord/commands.ts-338-  settings?: DiscordCommandSettingsLike,
+./artifacts/api-server/src/lib/discord/commands.ts:339:  serverId = getPrimaryServerId(),
+./artifacts/api-server/src/lib/discord/commands.ts-340-  scope: DiscordCommandRegistrationScope = "full",
+--
+./artifacts/api-server/src/lib/discord/channels.ts-1-import { Client, TextBasedChannel } from "discord.js";
+./artifacts/api-server/src/lib/discord/channels.ts:2:import { getPrimaryServerId } from "../serverRegistry";
+./artifacts/api-server/src/lib/discord/channels.ts-3-import { getServerRuntimeContext } from "../serverRuntime";
+--
+./artifacts/api-server/src/lib/discord/channels.ts-25-
+./artifacts/api-server/src/lib/discord/channels.ts:26:export async function resolveDiscordChannels(client: Client, serverId = getPrimaryServerId()): Promise<DiscordChannels> {
+./artifacts/api-server/src/lib/discord/channels.ts-27-  const config = getServerRuntimeContext(serverId).discord;
+--
+./artifacts/api-server/src/lib/serverPreflight.ts-4-  getManagedServerById,
+./artifacts/api-server/src/lib/serverPreflight.ts:5:  getPrimaryServerId,
+./artifacts/api-server/src/lib/serverPreflight.ts-6-  getServerFoundationDiagnostics,
+--
+./artifacts/api-server/src/lib/serverPreflight.ts-69-  const serverId = text(serverIdInput); const checkedAt = new Date().toISOString(); const checks: ServerActivationPreflightCheck[] = [];
+./artifacts/api-server/src/lib/serverPreflight.ts:70:  const primaryId = getPrimaryServerId(); let server = getManagedServerById(serverId);
+./artifacts/api-server/src/lib/serverPreflight.ts-71-  if (!server || server.id === primaryId || server.primary) {
+--
+./artifacts/api-server/src/lib/playerPortalServerContext.ts-3-  getPrimaryServerDescriptor,
+./artifacts/api-server/src/lib/playerPortalServerContext.ts:4:  getPrimaryServerId,
+./artifacts/api-server/src/lib/playerPortalServerContext.ts-5-  listExecutableManagedServers,
+--
+./artifacts/api-server/src/lib/playerPortalServerContext.ts-57-  const available = listManagedServers().filter((server) => server.enabled);
+./artifacts/api-server/src/lib/playerPortalServerContext.ts:58:  const primaryId = getPrimaryServerId();
+./artifacts/api-server/src/lib/playerPortalServerContext.ts-59-  const requested = requestedServerId(req);
+--
+./.github/workflows/primary-audit.yml-18-            echo '=== PRIMARY ID ==='
+./.github/workflows/primary-audit.yml:19:            grep -RniE -C 1 'getPrimaryServerId' . --exclude-dir=.git --exclude-dir=node_modules || true
+./.github/workflows/primary-audit.yml-20-            echo '=== PRIMARY FLAGS ==='
 === PRIMARY FLAGS ===
+artifacts/api-server/src/routes/nitradoSetup.ts-43-function escapeHtml(value: unknown){return String(value??"").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;").replaceAll("'","&#039;");}
+artifacts/api-server/src/routes/nitradoSetup.ts:44:export function renderNitradoSetup(){return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ADM · Conectar Nitrado</title><style>:root{color-scheme:dark;--bg:#172235;--card:#202d42;--border:#40506a;--text:#f5f7fb;--muted:#9faabd;--cyan:#16d8eb;--green:#51df9b;--orange:#ff9418}*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 15% -10%,#263b58,#101a29 70%);color:var(--text);font-family:Inter,system-ui,sans-serif}.shell{width:min(1040px,calc(100% - 32px));margin:auto;padding:40px 0 70px}.top{display:flex;justify-content:space-between;margin-bottom:26px}.brand{font-weight:900}.user,.muted{color:var(--muted);font-size:12px}.hero,.card{border:1px solid var(--border);border-radius:14px;background:#202d42}.hero{padding:28px 30px}.eyebrow{color:var(--cyan);font-size:10px;font-weight:900;letter-spacing:.13em;text-transform:uppercase}.hero h1{font-size:36px;letter-spacing:-.045em;margin:8px 0}.hero p{color:var(--muted);line-height:1.6;margin:0}.steps{display:grid;gap:16px;margin-top:16px}.card{padding:24px}.head{display:flex;gap:14px}.num{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;background:var(--cyan);color:#102032;font-weight:950;flex:0 0 auto}.orange{background:var(--orange)}.green{background:var(--green)}h2{font-size:18px;margin:0 0 5px}.field{display:grid;gap:7px;margin-top:18px}.field label{font-size:11px;font-weight:850}.field input,.field select{width:100%;height:46px;border:1px solid #4a5970;border-radius:9px;background:#303e53;color:var(--text);padding:0 12px;outline:0}.row{display:flex;gap:8px}.row input{flex:1}button{min-height:42px;padding:0 15px;border:1px solid #4a5970;border-radius:9px;background:#303e53;color:var(--text);font-weight:850;font-size:12px;cursor:pointer}button.primary{background:var(--cyan);color:#102032;border-color:var(--cyan)}button:disabled{opacity:.45}.status{margin-top:13px;padding:12px;border-radius:9px;background:#1a2638;color:var(--muted);font-size:12px;line-height:1.5}.ok{color:var(--green);border:1px solid #51df9b44}.error{color:#ff9da6;border:1px solid #ff647044}.services{display:grid;gap:8px;margin-top:14px}.service{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:13px;border:1px solid var(--border);border-radius:9px;background:#1a2638}.service.dayz{border-color:#16d8eb55}.service small{display:block;color:var(--muted);margin-top:4px}.pill{font-size:9px;font-weight:900;padding:5px 8px;border-radius:99px;background:#35445a}.pill.dayz{color:var(--cyan);background:#16d8eb18}.hidden{display:none!important}@media(max-width:680px){.shell{padding-top:22px}.top{flex-direction:column;gap:8px}.hero h1{font-size:29px}.row{flex-direction:column}}</style></head><body><main class="shell"><div class="top"><div class="brand">Advanced DayZ Management</div><div class="user" id="user">Configuração Nitrado</div></div><section class="hero"><div class="eyebrow">Primeiro acesso · Nitrado</div><h1>Conecte sua conta Nitrado.</h1><p>Você não precisa descobrir Service ID, username ou caminho manualmente. Informe apenas seu <strong>Long-life token</strong> e o ADM identifica os serviços disponíveis na sua conta. A credencial fica criptografada e nunca volta para o navegador.</p></section><div class="steps"><section class="card"><div class="head"><div class="num">1</div><div><h2>Conecte o Nitrado</h2><div class="muted">Use um Long-life token com a permissão <strong>service</strong>.</div></div></div><div class="field"><label>Workspace</label><select id="org"></select></div><div class="field"><label>Long-life token</label><div class="row"><input id="token" type="password" autocomplete="new-password" placeholder="Cole o token aqui"><button class="primary" id="connect">Validar e conectar</button></div></div><div id="tokenStatus" class="status">Carregando…</div><div class="field"><button id="disconnect">Remover credencial salva</button></div></section><section id="servicesCard" class="card hidden"><div class="head"><div class="num orange">2</div><div><h2>Seus serviços Nitrado</h2><div class="muted">Os serviços vieram diretamente da sua conta. DayZ fica destacado.</div></div></div><div id="services" class="services"></div><div id="serviceStatus" class="status">Selecione um servidor DayZ.</div></section><section id="importCard" class="card hidden"><div class="head"><div class="num green">3</div><div><h2>Adicionar ao ADM</h2><div class="muted">O Service ID e o caminho base serão preenchidos a partir dos dados da Nitrado. Depois você revisa o preflight e ativa o runtime.</div></div></div><div class="field"><label>Servidor selecionado</label><input id="selected" disabled></div><div class="field"><button class="primary" id="import">Importar servidor e continuar</button></div><div id="importStatus" class="status">Nenhum servidor selecionado.</div></section></div></main><script>const $=id=>document.getElementById(id);let selected=null;const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));async function api(path,init={}){const r=await fetch(path,{credentials:'same-origin',headers:{Accept:'application/json',...(init.body?{'Content-Type':'application/json'}:{})},...init});const t=await r.text();let d={};try{d=t?JSON.parse(t):{}}catch{d={message:t}}if(!r.ok)throw new Error(d.message||'Não foi possível concluir a operação.');return d}function status(el,msg,type=''){el.textContent=msg;el.className='status '+type}function render(list){$('services').innerHTML=list.length?list.map(s=>'<div class="service '+(s.dayz?'dayz':'')+'"><div><strong>'+esc(s.name)+'</strong><small>'+esc(s.game||'Serviço Nitrado')+' · '+esc(s.status)+' · '+esc(s.id)+(s.slots?' · '+s.slots+' slots':'')+'</small></div><div><span class="pill '+(s.dayz?'dayz':'')+'">'+(s.dayz?'DAYZ':'OUTRO')+'</span> '+(s.dayz?'<button data-id="'+esc(s.id)+'">Selecionar</button>':'')+'</div></div>').join(''):'<div class="status">Nenhum serviço retornado.</div>';document.querySelectorAll('[data-id]').forEach(b=>b.onclick=()=>{selected=list.find(s=>s.id===b.dataset.id);$('importCard').classList.remove('hidden');$('selected').value=selected.name+' · '+selected.id;status($('serviceStatus'),'Servidor DayZ selecionado.','ok');$('importCard').scrollIntoView({behavior:'smooth',block:'center'})})}async function load(){try{const d=await api('/admin-panel/api/setup/nitrado/state');$('user').textContent=d.organization.name+' · '+d.role;$('org').innerHTML='<option value="'+esc(d.organization.id)+'">'+esc(d.organization.name)+'</option>';if(d.token.configured){status($('tokenStatus'),'Nitrado já conectado. Carregando seus serviços…','ok');await loadServices(d.organization.id)}else status($('tokenStatus'),'Cole seu Long-life token para validar a conta e descobrir os servidores.')}catch(e){status($('tokenStatus'),e.message,'error')}}async function loadServices(org){try{const d=await api('/admin-panel/api/setup/nitrado/services?organizationId='+encodeURIComponent(org));$('servicesCard').classList.remove('hidden');render(d.services||[]);status($('serviceStatus'),(d.dayzServices||[]).length+' servidor(es) DayZ encontrado(s).','ok')}catch(e){status($('tokenStatus'),e.message,'error')}}$('connect').onclick=async()=>{const token=$('token').value.trim();if(!token)return status($('tokenStatus'),'Cole o Long-life token antes de continuar.','error');const b=$('connect');b.disabled=true;b.textContent='Validando…';try{const d=await api('/admin-panel/api/setup/nitrado/connect',{method:'POST',body:JSON.stringify({organizationId:$('org').value,token})});$('token').value='';status($('tokenStatus'),d.message,'ok');$('servicesCard').classList.remove('hidden');render(d.services||[]);status($('serviceStatus'),(d.dayzServices||[]).length+' servidor(es) DayZ encontrado(s).','ok')}catch(e){status($('tokenStatus'),e.message,'error')}finally{b.disabled=false;b.textContent='Validar e conectar'}};$('import').onclick=async()=>{if(!selected)return;const b=$('import');b.disabled=true;b.textContent='Importando…';try{const d=await api('/admin-panel/api/setup/nitrado/import',{method:'POST',body:JSON.stringify({organizationId:$('org').value,serviceId:selected.id})});status($('importStatus'),d.message,'ok');b.textContent='Servidor importado';setTimeout(()=>location.href='/admin-panel/onboarding?serverId='+encodeURIComponent(d.server?.id||''),800)}catch(e){status($('importStatus'),e.message,'error');b.disabled=false;b.textContent='Importar servidor e continuar'}};$('disconnect').onclick=async()=>{if(!confirm('Remover a credencial Nitrado deste workspace? Os servidores cadastrados serão preservados.'))return;try{await api('/admin-panel/api/setup/nitrado/disconnect',{method:'POST',body:JSON.stringify({organizationId:$('org').value})});$('servicesCard').classList.add('hidden');$('importCard').classList.add('hidden');status($('tokenStatus'),'Credencial removida. Seus servidores e dados continuam preservados.')}catch(e){status($('tokenStatus'),e.message,'error')}};load();</script></body></html>`;}
+artifacts/api-server/src/routes/nitradoSetup.ts-45-router.get("/nitrado-setup",(req,res)=>{if(!req.portalSession&&!readPortalSession(req))return res.redirect("/api/auth/discord?returnTo=/admin-panel/nitrado-setup");return res.type("html").send(renderNitradoSetup());});
+--
+artifacts/api-server/src/routes/adminPanel.ts-177-      serverName: server.name,
+artifacts/api-server/src/routes/adminPanel.ts:178:      primary: server.primary,
+artifacts/api-server/src/routes/adminPanel.ts-179-      runtimeEnabled: server.runtimeEnabled,
+--
+artifacts/api-server/src/routes/adminPanel.ts-2934-    }
+artifacts/api-server/src/routes/adminPanel.ts:2935:    .icon-btn, .primary-btn, .ghost-btn, .danger-btn {
+artifacts/api-server/src/routes/adminPanel.ts-2936-      height: 40px;
+--
+artifacts/api-server/src/routes/adminPanel.ts-2945-    .icon-btn:hover, .ghost-btn:hover { background: #35373D; border-color: var(--border-strong); }
+artifacts/api-server/src/routes/adminPanel.ts:2946:    .primary-btn { background: var(--primary); color: #fff; }
+artifacts/api-server/src/routes/adminPanel.ts:2947:    .primary-btn:hover { background: #6875ff; transform: translateY(-1px); }
+artifacts/api-server/src/routes/adminPanel.ts-2948-    .danger-btn { background: rgba(242,63,67,.11); color: #ffb4b6; border: 1px solid rgba(242,63,67,.22); }
+--
+artifacts/api-server/src/routes/adminPanel.ts-3738-    .chip.danger, .chip.failed, .status-offline { color: #ffadb1; background: rgba(255,107,114,.10); border-color: rgba(255,107,114,.18); }
+artifacts/api-server/src/routes/adminPanel.ts:3739:    .icon-btn, .primary-btn, .ghost-btn, .danger-btn, .mini-btn {
+artifacts/api-server/src/routes/adminPanel.ts-3740-      height: 34px;
+--
+artifacts/api-server/src/routes/adminPanel.ts-3753-    .icon-btn:hover, .ghost-btn:hover, .mini-btn:hover { background: rgba(255,255,255,.07); border-color: var(--border-strong); transform: none; }
+artifacts/api-server/src/routes/adminPanel.ts:3754:    .primary-btn {
+artifacts/api-server/src/routes/adminPanel.ts-3755-      background: linear-gradient(180deg, var(--primary-hover), var(--primary));
+--
+artifacts/api-server/src/routes/adminPanel.ts-3758-    }
+artifacts/api-server/src/routes/adminPanel.ts:3759:    .primary-btn:hover { filter: brightness(1.04); transform: none; }
+artifacts/api-server/src/routes/adminPanel.ts-3760-    .danger-btn { background: rgba(255,107,114,.09); color: #ffb8bc; border: 1px solid rgba(255,107,114,.20); }
+--
+artifacts/api-server/src/routes/adminPanel.ts-4122-      .modal-actions .ghost-btn,
+artifacts/api-server/src/routes/adminPanel.ts:4123:      .modal-actions .primary-btn,
+artifacts/api-server/src/routes/adminPanel.ts-4124-      .modal-actions .danger-btn { width: 100%; }
+--
+artifacts/api-server/src/routes/adminPanel.ts-4144-      .chip { max-width: 100%; overflow-wrap: anywhere; }
+artifacts/api-server/src/routes/adminPanel.ts:4145:      .ghost-btn, .primary-btn, .danger-btn, .icon-btn { border-radius: 10px; }
+artifacts/api-server/src/routes/adminPanel.ts-4146-    }
+--
+artifacts/api-server/src/routes/adminPanel.ts-7326-    function managedServerStatusChip(server) {
+artifacts/api-server/src/routes/adminPanel.ts:7327:      if (server.primary) {
+artifacts/api-server/src/routes/adminPanel.ts-7328-        const runtimeStatus = managedServerRuntimeStatus(server.id);
+--
+artifacts/api-server/src/routes/adminPanel.ts-7369-      const servers = Array.isArray(state.managedServers) ? state.managedServers : [];
+artifacts/api-server/src/routes/adminPanel.ts:7370:      const additional = servers.filter((server) => !server.primary);
+artifacts/api-server/src/routes/adminPanel.ts-7371-      els.managedServersSummary.innerHTML =
+artifacts/api-server/src/routes/adminPanel.ts:7372:        '<span class="chip success">' + servers.filter((server) => server.primary).length + ' primary</span>' +
+artifacts/api-server/src/routes/adminPanel.ts-7373-        '<span class="chip">' + additional.length + ' additional</span>' +
+--
+artifacts/api-server/src/routes/adminPanel.ts-7391-          '</div>' +
+artifacts/api-server/src/routes/adminPanel.ts:7392:          (!server.primary ? '<div class="server-onboarding-actions"><button class="ghost-btn" type="button" data-managed-server-edit="' + escapeHtml(server.id) + '">Configurar</button></div>' : '') +
+artifacts/api-server/src/routes/adminPanel.ts-7393-        '</div>';
+--
+artifacts/api-server/src/routes/adminPanel.ts-7441-    function renderManagedServerPreflight(server) {
+artifacts/api-server/src/routes/adminPanel.ts:7442:      if (!server || server.primary) return;
+artifacts/api-server/src/routes/adminPanel.ts-7443-      const integration = managedServerIntegrationState(server);
+--
+artifacts/api-server/src/routes/adminPanel.ts-7530-    function renderManagedServerSetup(server) {
+artifacts/api-server/src/routes/adminPanel.ts:7531:      if (!server || server.primary) return;
+artifacts/api-server/src/routes/adminPanel.ts-7532-      const integration = managedServerIntegrationState(server);
+--
+artifacts/api-server/src/routes/adminPanel.ts-7653-        renderManagedServers();
+artifacts/api-server/src/routes/adminPanel.ts:7654:        const selected = (state.managedServers || []).find((server) => server.id === state.selectedManagedServerId && !server.primary);
+artifacts/api-server/src/routes/adminPanel.ts-7655-        if (selected) renderManagedServerSetup(selected);
+--
+artifacts/api-server/src/routes/adminPanel.ts-7675-    function editManagedServer(serverId) {
+artifacts/api-server/src/routes/adminPanel.ts:7676:      const server = (state.managedServers || []).find((candidate) => candidate.id === serverId && !candidate.primary);
+artifacts/api-server/src/routes/adminPanel.ts-7677-      if (!server) return;
+--
+artifacts/api-server/src/routes/adminPanel.ts-7692-    function readManagedServerForm() {
+artifacts/api-server/src/routes/adminPanel.ts:7693:      const editing = (state.managedServers || []).find((server) => server.id === state.selectedManagedServerId && !server.primary);
+artifacts/api-server/src/routes/adminPanel.ts-7694-      return {
+--
+artifacts/api-server/src/routes/adminPanel.ts-7809-
+artifacts/api-server/src/routes/adminPanel.ts:7810:      const selectedBeforeRun = (state.managedServers || []).find((server) => server.id === serverId && !server.primary);
+artifacts/api-server/src/routes/adminPanel.ts-7811-      if (!selectedBeforeRun) {
+--
+artifacts/api-server/src/routes/adminPanel.ts-7859-      const button = els.managedServerRuntimeToggle;
+artifacts/api-server/src/routes/adminPanel.ts:7860:      const server = (state.managedServers || []).find((candidate) => candidate.id === serverId && !candidate.primary);
+artifacts/api-server/src/routes/adminPanel.ts-7861-      if (!serverId || !server || !button) return;
+--
+artifacts/api-server/src/routes/adminPanel.ts-7900-      const button = els.managedServerRuntimePauseToggle;
+artifacts/api-server/src/routes/adminPanel.ts:7901:      const server = (state.managedServers || []).find((candidate) => candidate.id === serverId && !candidate.primary);
+artifacts/api-server/src/routes/adminPanel.ts-7902-      if (!serverId || !server || !button || !server.runtimeEnabled) return;
+--
+artifacts/api-server/src/routes/adminPanel.ts-7936-      const button = els.managedServerRuntimeRetry;
+artifacts/api-server/src/routes/adminPanel.ts:7937:      const server = (state.managedServers || []).find((candidate) => candidate.id === serverId && !candidate.primary);
+artifacts/api-server/src/routes/adminPanel.ts-7938-      if (!serverId || !server || !button || !server.runtimeEnabled || server.runtime?.operations?.paused === true) return;
+--
+artifacts/api-server/src/routes/adminPanel.ts-8978-  const foundation = foundationForRequest(req, servers);
+artifacts/api-server/src/routes/adminPanel.ts:8979:  const currentServer = servers.find((server) => server.primary) || servers[0] || null;
+artifacts/api-server/src/routes/adminPanel.ts-8980-  res.json({
+--
+artifacts/api-server/src/routes/adminPanel.ts-9242-    const serverId = String(req.params.serverId || "");
+artifacts/api-server/src/routes/adminPanel.ts:9243:    const current = listManagedServers().find((candidate) => candidate.id === serverId && !candidate.primary);
+artifacts/api-server/src/routes/adminPanel.ts-9244-    if (!current) {
+--
+artifacts/api-server/src/routes/adminPanel.ts-9288-    const serverId = String(req.params.serverId || "");
+artifacts/api-server/src/routes/adminPanel.ts:9289:    const current = listManagedServers().find((server) => server.id === serverId && !server.primary);
+artifacts/api-server/src/routes/adminPanel.ts-9290-    if (!current) {
+--
+artifacts/api-server/src/routes/adminPanel.ts-9339-    const serverId = String(req.params.serverId || "");
+artifacts/api-server/src/routes/adminPanel.ts:9340:    const current = listManagedServers().find((server) => server.id === serverId && !server.primary);
+artifacts/api-server/src/routes/adminPanel.ts-9341-    if (!current) {
+--
+artifacts/api-server/src/routes/adminPanel.ts-9377-    const serverId = String(req.params.serverId || "");
+artifacts/api-server/src/routes/adminPanel.ts:9378:    const current = listManagedServers().find((server) => server.id === serverId && !server.primary);
+artifacts/api-server/src/routes/adminPanel.ts-9379-    if (!current) {
+--
+artifacts/api-server/src/routes/adminPanel.ts-9414-    const serverId = String(req.params.serverId || "");
+artifacts/api-server/src/routes/adminPanel.ts:9415:    const current = listManagedServers().find((server) => server.id === serverId && !server.primary);
+artifacts/api-server/src/routes/adminPanel.ts-9416-    if (!current) {
+--
+artifacts/api-server/src/routes/saasOnboarding.ts-73-function fallbackPage(title: string, body: string) {
+artifacts/api-server/src/routes/saasOnboarding.ts:74:  return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ADM · ${escapeHtml(title)}</title><style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;min-height:100vh;background:#090a0c;color:#f7f7f8;font-family:Inter,system-ui,sans-serif}.shell{width:min(760px,calc(100% - 32px));margin:auto;padding:34px 0 70px}.top{font-weight:900;margin-bottom:38px}.progress{display:flex;gap:6px;margin-bottom:30px}.progress span{height:3px;flex:1;border-radius:99px;background:#292d36}.progress span.active{background:#f3f3f4}.card{padding:22px;border:1px solid #292d36;border-radius:18px;background:#111318;box-shadow:0 20px 70px #0003}h1{font-size:36px;letter-spacing:-.04em;margin:0 0 10px}h2{font-size:19px;margin:0 0 7px}p{color:#969da9;line-height:1.6;margin:0}.services{display:grid;gap:9px;margin-top:20px}.service{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:15px;border:1px solid #292d36;border-radius:13px;background:#15181d}.service strong{display:block;font-size:13px}.service small{display:block;color:#969da9;font-size:10px;margin-top:4px}.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:18px}button,a{display:inline-flex;align-items:center;justify-content:center;min-height:42px;padding:0 15px;border:1px solid #343943;border-radius:10px;background:#20242b;color:#f7f7f8;font-size:12px;font-weight:850;text-decoration:none;cursor:pointer}button.primary,a.primary{background:#f2f3f5;color:#101114;border-color:#f2f3f5}.status{margin-top:14px;padding:11px 12px;border-radius:11px;background:#171a20;color:#969da9;font-size:11px;line-height:1.5}.status.error{color:#ffadb4;border:1px solid #ff727e33;background:#ff727e0f}.status.ok{color:#62e6a2;border:1px solid #62e6a233;background:#62e6a20f}.meta{margin-top:16px;padding:13px;border:1px solid #292d36;border-radius:12px;background:#15181d}.meta strong{display:block}.meta span{display:block;color:#969da9;font-size:10px;margin-top:4px}</style></head><body><main class="shell"><div class="top">Advanced DayZ Management</div>${body}</main></body></html>`;
+artifacts/api-server/src/routes/saasOnboarding.ts-75-}
+--
+artifacts/api-server/src/routes/serverControlPanel.ts-58-    id: server.id, name: server.name, organizationId: server.organizationId, enabled: server.enabled,
+artifacts/api-server/src/routes/serverControlPanel.ts:59:    runtimeEnabled: server.runtimeEnabled, primary: server.primary, onboardingStatus: server.onboardingStatus,
+artifacts/api-server/src/routes/serverControlPanel.ts-60-    nitradoServiceId: server.integrations.nitradoServiceId || null, discordGuildId: server.integrations.discordGuildId || null,
+--
+artifacts/api-server/src/routes/saasOnboardingView.ts-18-<style>
+artifacts/api-server/src/routes/saasOnboardingView.ts:19::root{color-scheme:dark;--bg:#090a0c;--surface:#111318;--surface2:#171a20;--border:#292d36;--text:#f7f7f8;--muted:#969da9;--accent:#f2f3f5;--success:#62e6a2;--danger:#ff727e}*{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(circle at 50% -15%,#202631 0,#0c0e12 42%,#090a0c 75%);color:var(--text);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.shell{width:min(760px,calc(100% - 32px));margin:0 auto;padding:34px 0 70px}.top{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:42px}.brand{font-size:17px;font-weight:900;letter-spacing:-.02em}.user{color:var(--muted);font-size:12px}.progress{display:flex;gap:6px;margin-bottom:30px}.progress span{height:3px;flex:1;border-radius:99px;background:#292d36}.progress span.active{background:#f3f3f4}.eyebrow{font-size:10px;font-weight:850;letter-spacing:.14em;text-transform:uppercase;color:#8f97a5;margin-bottom:9px}h1{font-size:38px;line-height:1.03;letter-spacing:-.045em;margin:0 0 12px}h2{font-size:20px;letter-spacing:-.025em;margin:0 0 7px}p{color:var(--muted);line-height:1.6;margin:0}.hero{margin-bottom:24px}.card{padding:22px;border:1px solid var(--border);border-radius:18px;background:rgba(17,19,24,.92);box-shadow:0 20px 70px rgba(0,0,0,.2)}.hidden{display:none!important}.tutorial{display:grid;gap:9px;margin:20px 0}.tutorial .item{display:flex;gap:12px;padding:12px 13px;border:1px solid #252932;border-radius:12px;background:#15181d}.number{width:24px;height:24px;flex:0 0 24px;border-radius:50%;display:grid;place-items:center;background:#242831;color:#f1f2f4;font-size:11px;font-weight:900}.item strong{display:block;font-size:12px;margin-bottom:3px}.item span{font-size:11px;line-height:1.45;color:var(--muted)}.item code{font:inherit;color:#e7e9ec}.field{display:grid;gap:8px;margin-top:18px}.field label{font-size:11px;font-weight:800;color:#c3c7cf}.inputRow{display:flex;gap:8px;position:relative;z-index:2}.field input{width:100%;min-width:0;height:46px;padding:0 13px;border:1px solid #353a45;border-radius:11px;background:var(--surface2);color:var(--text);outline:0;font:inherit;position:relative;z-index:1}.inputRow input{flex:1;width:auto}.inputRow button{position:relative;z-index:3;flex:0 0 auto}button,a.button{display:inline-flex;align-items:center;justify-content:center;min-height:42px;padding:0 15px;border:1px solid #343943;border-radius:10px;background:#20242b;color:var(--text);font-size:12px;font-weight:850;text-decoration:none;cursor:pointer;pointer-events:auto}button.primary,a.button.primary{background:var(--accent);border-color:var(--accent);color:#101114}button:disabled{opacity:.45;cursor:not-allowed;pointer-events:auto}.status{margin-top:12px;padding:11px 12px;border-radius:11px;background:#171a20;color:var(--muted);font-size:11px;line-height:1.5}.status.ok{color:var(--success);border:1px solid rgba(98,230,162,.2);background:rgba(98,230,162,.06)}.status.error{color:#ffadb4;border:1px solid rgba(255,114,126,.2);background:rgba(255,114,126,.06)}.services{display:grid;gap:9px;margin-top:18px}.service{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:14px;border:1px solid #2a2e37;border-radius:13px;background:#15181d;cursor:pointer}.service:hover{border-color:#444a56}.service.selected{border-color:#f0f1f3;background:#1a1d23}.service strong{display:block;font-size:13px}.service small{display:block;color:var(--muted);font-size:10px;margin-top:4px}.radio{width:17px;height:17px;border:1px solid #505662;border-radius:50%;display:grid;place-items:center;flex:0 0 17px}.service.selected .radio:after{content:"";width:7px;height:7px;border-radius:50%;background:#f2f3f5}.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:18px}.choice{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:20px}.choice button{min-height:76px;align-items:flex-start;justify-content:flex-start;flex-direction:column;padding:15px;text-align:left}.choice strong{font-size:13px}.choice span{font-size:10px;font-weight:500;color:var(--muted);margin-top:5px;line-height:1.4}.successIcon{width:44px;height:44px;border-radius:50%;display:grid;place-items:center;background:rgba(98,230,162,.1);color:var(--success);font-size:21px;margin-bottom:16px}.serverMeta{padding:12px 13px;border:1px solid #292e37;border-radius:12px;background:#15181d;margin-top:16px}.serverMeta strong{display:block;font-size:14px}.serverMeta span{display:block;color:var(--muted);font-size:10px;margin-top:4px}.foot{margin-top:20px;text-align:center;color:#6f7682;font-size:10px}.foot a{color:#aeb4be}.noscript{margin-top:12px;padding:11px 12px;border-radius:11px;background:#2a1518;color:#ffadb4;font-size:11px;line-height:1.5}@media(max-width:620px){.shell{padding-top:22px}.top{align-items:flex-start;flex-direction:column;margin-bottom:30px}h1{font-size:31px}.inputRow{flex-direction:column}.inputRow input{width:100%}.choice{grid-template-columns:1fr}}
+artifacts/api-server/src/routes/saasOnboardingView.ts-20-</style></head><body><main class="shell">
+--
+artifacts/api-server/src/routes/nitradoDiagnostic.ts-80-    name: descriptor.name,
+artifacts/api-server/src/routes/nitradoDiagnostic.ts:81:    primary: descriptor.primary,
+artifacts/api-server/src/routes/nitradoDiagnostic.ts-82-    enabled: descriptor.enabled,
+--
+artifacts/api-server/src/lib/parser.ts-863-    // runtime. Future server runtimes must never inspect another server's ADM.
+artifacts/api-server/src/lib/parser.ts:864:    if (runtime.isPrimary && fs.existsSync("ADM.log")) return ["ADM.log"];
+artifacts/api-server/src/lib/parser.ts-865-    return [];
+--
+artifacts/api-server/src/lib/state.ts-501-  const id = String(row.id || "").trim();
+artifacts/api-server/src/lib/state.ts:502:  const isPrimary = id === primary.id;
+artifacts/api-server/src/lib/state.ts-503-  const runtimeConfig = parseManagedServerRuntimeConfig(row.runtime_config);
+--
+artifacts/api-server/src/lib/state.ts-506-    name: String(row.name || row.id || "Server"),
+artifacts/api-server/src/lib/state.ts:507:    organizationId: buildOrganizationId(row.organization_id || (isPrimary ? getDefaultOrganizationId() : "")) || getDefaultOrganizationId(),
+artifacts/api-server/src/lib/state.ts-508-    enabled: row.enabled !== false,
+artifacts/api-server/src/lib/state.ts:509:    primary: isPrimary,
+artifacts/api-server/src/lib/state.ts:510:    runtimeEnabled: isPrimary ? true : Boolean(row.runtime_enabled),
+artifacts/api-server/src/lib/state.ts:511:    onboardingStatus: isPrimary ? "active" : "draft",
+artifacts/api-server/src/lib/state.ts-512-    mode: "multi-server-native",
+--
+artifacts/api-server/src/lib/state.ts-520-      // it could silently point at PZ paths/channels during a future activation.
+artifacts/api-server/src/lib/state.ts:521:      nitradoBaseDir: String(runtimeConfig?.nitradoBaseDir || (isPrimary ? primary.runtime.nitradoBaseDir : "") || "").trim() || undefined,
+artifacts/api-server/src/lib/state.ts:522:      nitradoValidation: !isPrimary && runtimeConfig?.nitradoValidation && typeof runtimeConfig.nitradoValidation === "object"
+artifacts/api-server/src/lib/state.ts-523-        ? {
+--
+artifacts/api-server/src/lib/state.ts-529-        : undefined,
+artifacts/api-server/src/lib/state.ts:530:      activationPreflight: !isPrimary
+artifacts/api-server/src/lib/state.ts-531-        && runtimeConfig?.activationPreflight
+--
+artifacts/api-server/src/lib/state.ts-550-        : undefined,
+artifacts/api-server/src/lib/state.ts:551:      activation: !isPrimary
+artifacts/api-server/src/lib/state.ts-552-        && runtimeConfig?.activation
+--
+artifacts/api-server/src/lib/state.ts-563-        : undefined,
+artifacts/api-server/src/lib/state.ts:564:      operations: !isPrimary
+artifacts/api-server/src/lib/state.ts-565-        && runtimeConfig?.operations
+--
+artifacts/api-server/src/lib/state.ts-577-        {
+artifacts/api-server/src/lib/state.ts:578:          ...(isPrimary ? primary.runtime.settings || {} : {}),
+artifacts/api-server/src/lib/state.ts-579-          ...(String(runtimeConfig?.settings?.shopDeliveryConfiguredAt || "").trim()
+--
+artifacts/api-server/src/lib/state.ts-583-      ),
+artifacts/api-server/src/lib/state.ts:584:      discord: isPrimary
+artifacts/api-server/src/lib/state.ts-585-        ? { ...(primary.runtime.discord || {}), ...(runtimeConfig?.discord || {}) }
+--
+artifacts/api-server/src/lib/state.ts-589-
+artifacts/api-server/src/lib/state.ts:590:  if (!isPrimary) {
+artifacts/api-server/src/lib/state.ts-591-    const storedStatus = String(row.onboarding_status || "draft").trim().toLowerCase();
+--
+artifacts/api-server/src/lib/state.ts-603-  const rows = await sql`
+artifacts/api-server/src/lib/state.ts:604:    SELECT id, name, organization_id, enabled, primary_server, runtime_enabled, onboarding_status,
+artifacts/api-server/src/lib/state.ts-605-           mode, nitrado_service_id, discord_guild_id, runtime_config
+artifacts/api-server/src/lib/state.ts-606-    FROM managed_servers
+artifacts/api-server/src/lib/state.ts:607:    ORDER BY primary_server DESC, created_at ASC, id ASC
+artifacts/api-server/src/lib/state.ts-608-  `;
+--
+artifacts/api-server/src/lib/state.ts-613-    rowsLoaded: next.length,
+artifacts/api-server/src/lib/state.ts:614:    draftRows: next.filter((server) => !server.primary && server.onboardingStatus === "draft").length,
+artifacts/api-server/src/lib/state.ts:615:    configuredRows: next.filter((server) => !server.primary && server.onboardingStatus === "configured").length,
+artifacts/api-server/src/lib/state.ts:616:    readyRows: next.filter((server) => !server.primary && server.onboardingStatus === "ready").length,
+artifacts/api-server/src/lib/state.ts-617-    runtimeEnabledRows: next.filter((server) => server.runtimeEnabled).length,
+--
+artifacts/api-server/src/lib/state.ts-760-          enabled BOOLEAN NOT NULL DEFAULT TRUE,
+artifacts/api-server/src/lib/state.ts:761:          primary_server BOOLEAN NOT NULL DEFAULT FALSE,
+artifacts/api-server/src/lib/state.ts-762-          runtime_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+--
+artifacts/api-server/src/lib/state.ts-800-        INSERT INTO managed_servers (
+artifacts/api-server/src/lib/state.ts:801:          id, name, organization_id, enabled, primary_server, runtime_enabled, onboarding_status, mode, nitrado_service_id, discord_guild_id, runtime_config, created_at, updated_at
+artifacts/api-server/src/lib/state.ts-802-        )
+--
+artifacts/api-server/src/lib/state.ts-902-      const invalidRuntimeIds = descriptors
+artifacts/api-server/src/lib/state.ts:903:        .filter((server) => !server.primary && server.runtimeEnabled)
+artifacts/api-server/src/lib/state.ts-904-        .filter((server) => !(
+--
+artifacts/api-server/src/lib/state.ts-920-
+artifacts/api-server/src/lib/state.ts:921:      const persistedPrimary = descriptors.find((server) => server.id === primary.id) || descriptors.find((server) => server.primary);
+artifacts/api-server/src/lib/state.ts-922-      setServerRegistryPersistenceStatus({
+--
+artifacts/api-server/src/lib/state.ts-927-        rowsLoaded: descriptors.length,
+artifacts/api-server/src/lib/state.ts:928:        draftRows: descriptors.filter((server) => !server.primary && server.onboardingStatus === "draft").length,
+artifacts/api-server/src/lib/state.ts:929:        configuredRows: descriptors.filter((server) => !server.primary && server.onboardingStatus === "configured").length,
+artifacts/api-server/src/lib/state.ts:930:        readyRows: descriptors.filter((server) => !server.primary && server.onboardingStatus === "ready").length,
+artifacts/api-server/src/lib/state.ts-931-        runtimeEnabledRows: descriptors.filter((server) => server.runtimeEnabled).length,
+--
+artifacts/api-server/src/lib/state.ts-945-          service: "neon-server-registry",
+artifacts/api-server/src/lib/state.ts:946:          operation: (inserted as any[]).length ? "seed_primary_server_metadata" : "backfill_primary_runtime_config",
+artifacts/api-server/src/lib/state.ts-947-          direction: "outbound",
+--
+artifacts/api-server/src/lib/state.ts-979-            JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = keycols.attnum
+artifacts/api-server/src/lib/state.ts:980:            WHERE t.relname = 'bot_state' AND i.indisprimary
+artifacts/api-server/src/lib/state.ts-981-            GROUP BY i.indexrelid
+--
+artifacts/api-server/src/lib/state.ts-1998-    INSERT INTO managed_servers (
+artifacts/api-server/src/lib/state.ts:1999:      id, name, organization_id, enabled, primary_server, runtime_enabled, onboarding_status,
+artifacts/api-server/src/lib/state.ts-2000-      mode, nitrado_service_id, discord_guild_id, runtime_config, created_at, updated_at
+--
+artifacts/api-server/src/lib/state.ts-2084-        enabled = TRUE,
+artifacts/api-server/src/lib/state.ts:2085:        primary_server = FALSE,
+artifacts/api-server/src/lib/state.ts-2086-        runtime_enabled = FALSE,
+--
+artifacts/api-server/src/lib/state.ts-2404-    SET enabled = TRUE,
+artifacts/api-server/src/lib/state.ts:2405:        primary_server = FALSE,
+artifacts/api-server/src/lib/state.ts-2406-        runtime_enabled = FALSE,
+--
+artifacts/api-server/src/lib/state.ts-2485-    SET enabled = TRUE,
+artifacts/api-server/src/lib/state.ts:2486:        primary_server = FALSE,
+artifacts/api-server/src/lib/state.ts-2487-        runtime_enabled = FALSE,
+--
+artifacts/api-server/src/lib/state.ts-2841-      JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = keycols.attnum
+artifacts/api-server/src/lib/state.ts:2842:      WHERE t.relname = 'player_stats_state' AND i.indisprimary
+artifacts/api-server/src/lib/state.ts-2843-      GROUP BY i.indexrelid
+--
+artifacts/api-server/src/lib/state.ts-3848-    if (!mainRow) {
+artifacts/api-server/src/lib/state.ts:3849:      const isPrimary = getActiveServerId() === getPrimaryServerId();
+artifacts/api-server/src/lib/state.ts-3850-      let state = defaultState();
+--
+artifacts/api-server/src/lib/state.ts-3852-
+artifacts/api-server/src/lib/state.ts:3853:      if (isPrimary) {
+artifacts/api-server/src/lib/state.ts-3854-        // A missing primary main row is never allowed to silently become an
+--
+artifacts/api-server/src/lib/serverRuntime.ts-27-  setServerRuntimeIsolationStatus({ initialized: true, contextServerId: descriptor.id, nitradoRoutingNamespaced: Boolean(descriptor.integrations.nitradoServiceId && descriptor.runtime.nitradoBaseDir), discordRoutingNamespaced: true, processingLockNamespaced: true, staggerOffsetMs, activeLocks: runtimeLocks.size, lockSkips, executionContextNamespaced: true, contextRuns, contextFallbacks, lastContextServerId, stateCacheNamespaced: true, schedulerCentralized: true, admStrategyNamespaced: true, admParserStorageNamespaced: true, persistenceRuntimeNamespaced: true, positionHistoryNamespaced: true, discordLoopGuardsNamespaced: true, mapSchedulersContextualized: true, activationReadiness: true, lastError: undefined });
+artifacts/api-server/src/lib/serverRuntime.ts:28:  return { server: descriptor, serverId: descriptor.id, isPrimary: false, staggerOffsetMs, nitrado: { serviceId: descriptor.integrations.nitradoServiceId, baseDir: descriptor.runtime.nitradoBaseDir }, discord: { guildId: descriptor.integrations.discordGuildId, ...descriptor.runtime.discord }, storage: getAdmStoragePaths(descriptor) };
+artifacts/api-server/src/lib/serverRuntime.ts-29-}
+--
+artifacts/api-server/src/lib/serverRuntime.ts-40-  const storage = getAdmStoragePaths(descriptor);
+artifacts/api-server/src/lib/serverRuntime.ts:41:  return { serverId: descriptor.id, isPrimary: false, admLogDir: storage.logDir, admManifestFile: storage.manifestFile, stateFile: path.resolve(process.cwd(), "state_servers", descriptor.id, "state.json") };
+artifacts/api-server/src/lib/serverRuntime.ts-42-}
+--
+artifacts/api-server/src/lib/serverPreflight.ts-70-  const primaryId = getPrimaryServerId(); let server = getManagedServerById(serverId);
+artifacts/api-server/src/lib/serverPreflight.ts:71:  if (!server || server.id === primaryId || server.primary) {
+artifacts/api-server/src/lib/serverPreflight.ts-72-    pushCheck(checks, "registry", "Server registry", "fail", server ? "O servidor primario nao usa o activation preflight de servidores adicionais." : `Servidor ${serverId || "desconhecido"} nao encontrado.`);
+--
+artifacts/api-server/src/lib/serverPreflight.ts-103-  const admNamespaceMarker = `/adm_servers/${server.id}/`; const stateNamespaceMarker = `/state_servers/${server.id}/`;
+artifacts/api-server/src/lib/serverPreflight.ts:104:  const storageIsolated = !targetStorage.isPrimary && targetAdmLogDir.includes(admNamespaceMarker) && targetManifest.includes(admNamespaceMarker) && targetState.includes(stateNamespaceMarker);
+artifacts/api-server/src/lib/serverPreflight.ts-105-  pushCheck(checks, "storage-plan", "Local storage plan", storageIsolated ? "pass" : "fail", storageIsolated ? "ADM cache, manifest e state apontam para paths exclusivos do servidor cadastrado." : "Um dos paths planejados saiu do namespace esperado do servidor cadastrado.", { admLogDir: targetStorage.admLogDir, admManifestFile: targetStorage.admManifestFile, stateFile: targetStorage.stateFile });
+--
+artifacts/api-server/src/lib/playerPortalServerContext.ts-22-    name: server.name,
+artifacts/api-server/src/lib/playerPortalServerContext.ts:23:    primary: server.primary,
+artifacts/api-server/src/lib/playerPortalServerContext.ts-24-    runtimeEnabled: server.runtimeEnabled,
 === LEGACY BOOT HELPERS ===
+artifacts/api-server/src/lib/state.ts-599-}
+artifacts/api-server/src/lib/state.ts-600-
+artifacts/api-server/src/lib/state.ts:601:async function reloadManagedServerRegistryFromDb(primary = getPrimaryServerDescriptor()) {
+artifacts/api-server/src/lib/state.ts-602-  if (!sql) return [primary];
+artifacts/api-server/src/lib/state.ts-603-  const rows = await sql`
+--
+artifacts/api-server/src/lib/state.ts-622-
+artifacts/api-server/src/lib/state.ts-623-export async function refreshManagedServerRegistryFromDb() {
+artifacts/api-server/src/lib/state.ts:624:  return reloadManagedServerRegistryFromDb();
+artifacts/api-server/src/lib/state.ts-625-}
+artifacts/api-server/src/lib/state.ts-626-
+--
+artifacts/api-server/src/lib/state.ts-681-}
+artifacts/api-server/src/lib/state.ts-682-
+artifacts/api-server/src/lib/state.ts:683:async function ensurePrimaryServerRegistryMetadata() {
+artifacts/api-server/src/lib/state.ts-684-  if (!sql) {
+artifacts/api-server/src/lib/state.ts-685-    setOrganizationRegistryPersistenceStatus({ enabled: false, initialized: true });
+--
+artifacts/api-server/src/lib/state.ts-899-      // fails closed on stale/manual runtime_enabled values that do not have a
+artifacts/api-server/src/lib/state.ts-900-      // matching Nitrado validation + Phase 11 preflight for the saved config.
+artifacts/api-server/src/lib/state.ts:901:      let descriptors = await reloadManagedServerRegistryFromDb(primary);
+artifacts/api-server/src/lib/state.ts-902-      const invalidRuntimeIds = descriptors
+artifacts/api-server/src/lib/state.ts-903-        .filter((server) => !server.primary && server.runtimeEnabled)
+--
+artifacts/api-server/src/lib/state.ts-917-        `;
+artifacts/api-server/src/lib/state.ts-918-      }
+artifacts/api-server/src/lib/state.ts:919:      if (invalidRuntimeIds.length) descriptors = await reloadManagedServerRegistryFromDb(primary);
+artifacts/api-server/src/lib/state.ts-920-
+artifacts/api-server/src/lib/state.ts-921-      const persistedPrimary = descriptors.find((server) => server.id === primary.id) || descriptors.find((server) => server.primary);
+--
+artifacts/api-server/src/lib/state.ts-1948-export async function createManagedServerDraft(input: ManagedServerDraftInput) {
+artifacts/api-server/src/lib/state.ts-1949-  assertNoServerSecrets(input);
+artifacts/api-server/src/lib/state.ts:1950:  await ensurePrimaryServerRegistryMetadata();
+artifacts/api-server/src/lib/state.ts-1951-  if (!sql || !getServerRegistryPersistenceStatus().tableReady) {
+artifacts/api-server/src/lib/state.ts-1952-    throw new Error("Server registry is unavailable. DATABASE_URL and managed_servers must be ready.");
+--
+artifacts/api-server/src/lib/state.ts-1987-  descriptor.onboardingStatus = deriveServerOnboardingStatus(descriptor);
+artifacts/api-server/src/lib/state.ts-1988-
+artifacts/api-server/src/lib/state.ts:1989:  const existingServers = await reloadManagedServerRegistryFromDb();
+artifacts/api-server/src/lib/state.ts-1990-  if (descriptor.integrations.nitradoServiceId && existingServers.some((server) => server.integrations.nitradoServiceId === descriptor.integrations.nitradoServiceId)) {
+artifacts/api-server/src/lib/state.ts-1991-    throw new Error("Este Nitrado Service ID ja esta vinculado a outro servidor.");
+--
+artifacts/api-server/src/lib/state.ts-2009-  if (!(inserted as any[]).length) throw new Error(`Server ID ${descriptor.id} ja existe.`);
+artifacts/api-server/src/lib/state.ts-2010-
+artifacts/api-server/src/lib/state.ts:2011:  const servers = await reloadManagedServerRegistryFromDb();
+artifacts/api-server/src/lib/state.ts-2012-  recordNetworkTransfer({
+artifacts/api-server/src/lib/state.ts-2013-    service: "neon-server-registry",
+--
+artifacts/api-server/src/lib/state.ts-2022-export async function updateManagedServerDraft(serverId: string, input: ManagedServerDraftInput) {
+artifacts/api-server/src/lib/state.ts-2023-  assertNoServerSecrets(input);
+artifacts/api-server/src/lib/state.ts:2024:  await ensurePrimaryServerRegistryMetadata();
+artifacts/api-server/src/lib/state.ts-2025-  if (!sql || !getServerRegistryPersistenceStatus().tableReady) {
+artifacts/api-server/src/lib/state.ts-2026-    throw new Error("Server registry is unavailable. DATABASE_URL and managed_servers must be ready.");
+--
+artifacts/api-server/src/lib/state.ts-2029-  const id = buildManagedServerId(serverId);
+artifacts/api-server/src/lib/state.ts-2030-  if (!id || id === getPrimaryServerId()) throw new Error("O servidor primario nao pode ser alterado pelo onboarding da Fase 11.");
+artifacts/api-server/src/lib/state.ts:2031:  const currentServers = await reloadManagedServerRegistryFromDb();
+artifacts/api-server/src/lib/state.ts-2032-  const current = currentServers.find((server) => server.id === id);
+artifacts/api-server/src/lib/state.ts-2033-  if (!current) throw new Error(`Servidor ${id} nao encontrado.`);
+--
+artifacts/api-server/src/lib/state.ts-2094-  `;
+artifacts/api-server/src/lib/state.ts-2095-
+artifacts/api-server/src/lib/state.ts:2096:  const servers = await reloadManagedServerRegistryFromDb();
+artifacts/api-server/src/lib/state.ts-2097-  recordNetworkTransfer({
+artifacts/api-server/src/lib/state.ts-2098-    service: "neon-server-registry",
+--
+artifacts/api-server/src/lib/state.ts-2106-
+artifacts/api-server/src/lib/state.ts-2107-export async function bindManagedServerDiscordGuild(serverIdInput: unknown, guildIdInput: unknown) {
+artifacts/api-server/src/lib/state.ts:2108:  await ensurePrimaryServerRegistryMetadata();
+artifacts/api-server/src/lib/state.ts-2109-  if (!sql || !getServerRegistryPersistenceStatus().tableReady) {
+artifacts/api-server/src/lib/state.ts-2110-    throw new Error("Server registry is unavailable. DATABASE_URL and managed_servers must be ready.");
+--
+artifacts/api-server/src/lib/state.ts-2116-  if (!guildId) throw new Error("Discord Guild ID invalido.");
+artifacts/api-server/src/lib/state.ts-2117-
+artifacts/api-server/src/lib/state.ts:2118:  const currentServers = await reloadManagedServerRegistryFromDb();
+artifacts/api-server/src/lib/state.ts-2119-  const current = currentServers.find((server) => server.id === id);
+artifacts/api-server/src/lib/state.ts-2120-  if (!current) throw new Error(`Servidor ${id} nao encontrado.`);
+--
+artifacts/api-server/src/lib/state.ts-2139-  `;
+artifacts/api-server/src/lib/state.ts-2140-
+artifacts/api-server/src/lib/state.ts:2141:  const servers = await reloadManagedServerRegistryFromDb();
+artifacts/api-server/src/lib/state.ts-2142-  recordNetworkTransfer({
+artifacts/api-server/src/lib/state.ts-2143-    service: "neon-server-registry",
+--
+artifacts/api-server/src/lib/state.ts-2151-
+artifacts/api-server/src/lib/state.ts-2152-export async function updateManagedServerDiscordChannels(serverIdInput: unknown, discordInput: unknown) {
+artifacts/api-server/src/lib/state.ts:2153:  await ensurePrimaryServerRegistryMetadata();
+artifacts/api-server/src/lib/state.ts-2154-  if (!sql || !getServerRegistryPersistenceStatus().tableReady) throw new Error("Server registry is unavailable.");
+artifacts/api-server/src/lib/state.ts-2155-  const id = buildManagedServerId(serverIdInput);
+artifacts/api-server/src/lib/state.ts-2156-  if (!id) throw new Error("Server ID invalido.");
+artifacts/api-server/src/lib/state.ts:2157:  const currentServers = await reloadManagedServerRegistryFromDb();
+artifacts/api-server/src/lib/state.ts-2158-  const current = currentServers.find((server) => server.id === id);
+artifacts/api-server/src/lib/state.ts-2159-  if (!current) throw new Error(`Servidor ${id} nao encontrado.`);
+--
+artifacts/api-server/src/lib/state.ts-2167-    WHERE id = ${id}
+artifacts/api-server/src/lib/state.ts-2168-  `;
+artifacts/api-server/src/lib/state.ts:2169:  const servers = await reloadManagedServerRegistryFromDb();
+artifacts/api-server/src/lib/state.ts-2170-  recordNetworkTransfer({
+artifacts/api-server/src/lib/state.ts-2171-    service: "neon-server-registry", operation: "update_server_discord_channels", direction: "outbound",
+--
+artifacts/api-server/src/lib/state.ts-2176-
+artifacts/api-server/src/lib/state.ts-2177-export async function updateManagedServerScopedSettings(serverIdInput: unknown, settingsInput: unknown) {
+artifacts/api-server/src/lib/state.ts:2178:  await ensurePrimaryServerRegistryMetadata();
+artifacts/api-server/src/lib/state.ts-2179-  if (!sql || !getServerRegistryPersistenceStatus().tableReady) throw new Error("Server registry is unavailable.");
+artifacts/api-server/src/lib/state.ts-2180-  const id = buildManagedServerId(serverIdInput);
+artifacts/api-server/src/lib/state.ts:2181:  const currentServers = await reloadManagedServerRegistryFromDb();
+artifacts/api-server/src/lib/state.ts-2182-  const current = currentServers.find((server) => server.id === id);
+artifacts/api-server/src/lib/state.ts-2183-  if (!current) throw new Error(`Servidor ${id || String(serverIdInput || "")} nao encontrado.`);
+--
+artifacts/api-server/src/lib/state.ts-2202-    WHERE id = ${id}
+artifacts/api-server/src/lib/state.ts-2203-  `;
+artifacts/api-server/src/lib/state.ts:2204:  const servers = await reloadManagedServerRegistryFromDb();
+artifacts/api-server/src/lib/state.ts-2205-  recordNetworkTransfer({
+artifacts/api-server/src/lib/state.ts-2206-    service: "neon-server-registry", operation: "update_server_scoped_settings", direction: "outbound",
+--
+artifacts/api-server/src/lib/state.ts-2214-  input: { missionDir: string; restartTimes?: string; restartTimezone?: string },
+artifacts/api-server/src/lib/state.ts-2215-) {
+artifacts/api-server/src/lib/state.ts:2216:  await ensurePrimaryServerRegistryMetadata();
+artifacts/api-server/src/lib/state.ts-2217-  if (!sql || !getServerRegistryPersistenceStatus().tableReady) throw new Error("Server registry is unavailable.");
+artifacts/api-server/src/lib/state.ts-2218-  const id = buildManagedServerId(serverIdInput);
+artifacts/api-server/src/lib/state.ts-2219-  if (!id || id === getPrimaryServerId()) return getPrimaryServerDescriptor();
+artifacts/api-server/src/lib/state.ts-2220-
+artifacts/api-server/src/lib/state.ts:2221:  const currentServers = await reloadManagedServerRegistryFromDb();
+artifacts/api-server/src/lib/state.ts-2222-  const current = currentServers.find((server) => server.id === id);
+artifacts/api-server/src/lib/state.ts-2223-  if (!current) throw new Error(`Servidor ${id} nao encontrado.`);
+--
+artifacts/api-server/src/lib/state.ts-2244-    WHERE id = ${id}
+artifacts/api-server/src/lib/state.ts-2245-  `;
+artifacts/api-server/src/lib/state.ts:2246:  const servers = await reloadManagedServerRegistryFromDb();
+artifacts/api-server/src/lib/state.ts-2247-  recordNetworkTransfer({
+artifacts/api-server/src/lib/state.ts-2248-    service: "neon-server-registry", operation: "bootstrap_shop_delivery_settings", direction: "outbound",
+--
+artifacts/api-server/src/lib/state.ts-2256-  input: { serviceId: string; baseDir: string; missionDir: string; restartTimes?: string; restartTimezone?: string },
+artifacts/api-server/src/lib/state.ts-2257-) {
+artifacts/api-server/src/lib/state.ts:2258:  await ensurePrimaryServerRegistryMetadata();
+artifacts/api-server/src/lib/state.ts-2259-  if (!sql || !getServerRegistryPersistenceStatus().tableReady) throw new Error("Server registry is unavailable.");
+artifacts/api-server/src/lib/state.ts-2260-  const id = buildManagedServerId(serverIdInput);
+artifacts/api-server/src/lib/state.ts-2261-  if (!id || id === getPrimaryServerId()) return getPrimaryServerDescriptor();
+artifacts/api-server/src/lib/state.ts-2262-
+artifacts/api-server/src/lib/state.ts:2263:  const currentServers = await reloadManagedServerRegistryFromDb();
+artifacts/api-server/src/lib/state.ts-2264-  const current = currentServers.find((server) => server.id === id);
+artifacts/api-server/src/lib/state.ts-2265-  if (!current) throw new Error(`Servidor ${id} nao encontrado.`);
+--
+artifacts/api-server/src/lib/state.ts-2325-    WHERE id = ${id}
+artifacts/api-server/src/lib/state.ts-2326-  `;
+artifacts/api-server/src/lib/state.ts:2327:  const servers = await reloadManagedServerRegistryFromDb();
+artifacts/api-server/src/lib/state.ts-2328-  recordNetworkTransfer({
+artifacts/api-server/src/lib/state.ts-2329-    service: "neon-server-registry", operation: "self_heal_shop_delivery_routing", direction: "outbound",
+--
+artifacts/api-server/src/lib/state.ts-2338-  validation: { serviceId: string; baseDir: string; missionDir?: string },
+artifacts/api-server/src/lib/state.ts-2339-) {
+artifacts/api-server/src/lib/state.ts:2340:  await ensurePrimaryServerRegistryMetadata();
+artifacts/api-server/src/lib/state.ts-2341-  if (!sql || !getServerRegistryPersistenceStatus().tableReady) {
+artifacts/api-server/src/lib/state.ts-2342-    throw new Error("Server registry is unavailable. DATABASE_URL and managed_servers must be ready.");
+--
+artifacts/api-server/src/lib/state.ts-2352-  if (!serviceId || !baseDir) throw new Error("Service ID e base dir sao obrigatorios para validar o Nitrado.");
+artifacts/api-server/src/lib/state.ts-2353-
+artifacts/api-server/src/lib/state.ts:2354:  const currentServers = await reloadManagedServerRegistryFromDb();
+artifacts/api-server/src/lib/state.ts-2355-  const current = currentServers.find((server) => server.id === id);
+artifacts/api-server/src/lib/state.ts-2356-  if (!current) throw new Error(`Servidor ${id} nao encontrado.`);
+--
+artifacts/api-server/src/lib/state.ts-2412-  `;
+artifacts/api-server/src/lib/state.ts-2413-
+artifacts/api-server/src/lib/state.ts:2414:  const servers = await reloadManagedServerRegistryFromDb();
+artifacts/api-server/src/lib/state.ts-2415-  recordNetworkTransfer({
+artifacts/api-server/src/lib/state.ts-2416-    service: "neon-server-registry",
+--
+artifacts/api-server/src/lib/state.ts-2424-
+artifacts/api-server/src/lib/state.ts-2425-export async function inspectManagedServerNamespaceRows(serverId: string) {
+artifacts/api-server/src/lib/state.ts:2426:  await ensurePrimaryServerRegistryMetadata();
+artifacts/api-server/src/lib/state.ts-2427-  if (!sql) throw new Error("DATABASE_URL nao esta disponivel para o preflight.");
+artifacts/api-server/src/lib/state.ts-2428-  const id = buildManagedServerId(serverId);
+--
+artifacts/api-server/src/lib/state.ts-2447-  preflight: ServerActivationPreflight,
+artifacts/api-server/src/lib/state.ts-2448-) {
+artifacts/api-server/src/lib/state.ts:2449:  await ensurePrimaryServerRegistryMetadata();
+artifacts/api-server/src/lib/state.ts-2450-  if (!sql || !getServerRegistryPersistenceStatus().tableReady) {
+artifacts/api-server/src/lib/state.ts-2451-    throw new Error("Server registry is unavailable. DATABASE_URL and managed_servers must be ready.");
+--
+artifacts/api-server/src/lib/state.ts-2454-  const id = buildManagedServerId(serverId);
+artifacts/api-server/src/lib/state.ts-2455-  if (!id || id === getPrimaryServerId()) throw new Error("O servidor primario nao usa o activation preflight da Fase 11.");
+artifacts/api-server/src/lib/state.ts:2456:  const currentServers = await reloadManagedServerRegistryFromDb();
+artifacts/api-server/src/lib/state.ts-2457-  const current = currentServers.find((server) => server.id === id);
+artifacts/api-server/src/lib/state.ts-2458-  if (!current) throw new Error(`Servidor ${id} nao encontrado.`);
+--
+artifacts/api-server/src/lib/state.ts-2492-  `;
+artifacts/api-server/src/lib/state.ts-2493-
+artifacts/api-server/src/lib/state.ts:2494:  const servers = await reloadManagedServerRegistryFromDb();
+artifacts/api-server/src/lib/state.ts-2495-  recordNetworkTransfer({
+artifacts/api-server/src/lib/state.ts-2496-    service: "neon-server-registry",
+--
+artifacts/api-server/src/lib/state.ts-2504-
+artifacts/api-server/src/lib/state.ts-2505-export async function setManagedServerRuntimeEnabled(serverId: string, enabled: boolean) {
+artifacts/api-server/src/lib/state.ts:2506:  await ensurePrimaryServerRegistryMetadata();
+artifacts/api-server/src/lib/state.ts-2507-  if (!sql || !getServerRegistryPersistenceStatus().tableReady) {
+artifacts/api-server/src/lib/state.ts-2508-    throw new Error("Server registry is unavailable. DATABASE_URL and managed_servers must be ready.");
+--
+artifacts/api-server/src/lib/state.ts-2511-  const id = buildManagedServerId(serverId);
+artifacts/api-server/src/lib/state.ts-2512-  if (!id || id === getPrimaryServerId()) throw new Error("O runtime do servidor primario nao pode ser alterado por este controle.");
+artifacts/api-server/src/lib/state.ts:2513:  const currentServers = await reloadManagedServerRegistryFromDb();
+artifacts/api-server/src/lib/state.ts-2514-  const current = currentServers.find((server) => server.id === id);
+artifacts/api-server/src/lib/state.ts-2515-  if (!current) throw new Error(`Servidor ${id} nao encontrado.`);
+--
+artifacts/api-server/src/lib/state.ts-2579-  `;
+artifacts/api-server/src/lib/state.ts-2580-
+artifacts/api-server/src/lib/state.ts:2581:  const servers = await reloadManagedServerRegistryFromDb();
+artifacts/api-server/src/lib/state.ts-2582-  const next = servers.find((server) => server.id === id);
+artifacts/api-server/src/lib/state.ts-2583-  if (!next) throw new Error(`Servidor ${id} nao encontrado apos atualizar o runtime.`);
+--
+artifacts/api-server/src/lib/state.ts-2593-
+artifacts/api-server/src/lib/state.ts-2594-export async function setManagedServerRuntimePaused(serverId: string, paused: boolean, reason?: string) {
+artifacts/api-server/src/lib/state.ts:2595:  await ensurePrimaryServerRegistryMetadata();
+artifacts/api-server/src/lib/state.ts-2596-  if (!sql || !getServerRegistryPersistenceStatus().tableReady) {
+artifacts/api-server/src/lib/state.ts-2597-    throw new Error("Server registry is unavailable. DATABASE_URL and managed_servers must be ready.");
+--
+artifacts/api-server/src/lib/state.ts-2600-  const id = buildManagedServerId(serverId);
+artifacts/api-server/src/lib/state.ts-2601-  if (!id || id === getPrimaryServerId()) throw new Error("O runtime primario nao pode ser pausado por este controle.");
+artifacts/api-server/src/lib/state.ts:2602:  const currentServers = await reloadManagedServerRegistryFromDb();
+artifacts/api-server/src/lib/state.ts-2603-  const current = currentServers.find((server) => server.id === id);
+artifacts/api-server/src/lib/state.ts-2604-  if (!current) throw new Error(`Servidor ${id} nao encontrado.`);
+--
+artifacts/api-server/src/lib/state.ts-2638-  if (!(updated as any[]).length) throw new Error("O runtime mudou de estado durante o pause/resume. Atualize o painel e tente novamente.");
+artifacts/api-server/src/lib/state.ts-2639-
+artifacts/api-server/src/lib/state.ts:2640:  const servers = await reloadManagedServerRegistryFromDb();
+artifacts/api-server/src/lib/state.ts-2641-  const next = servers.find((server) => server.id === id);
+artifacts/api-server/src/lib/state.ts-2642-  if (!next) throw new Error(`Servidor ${id} nao encontrado apos atualizar pause/resume.`);
+--
+artifacts/api-server/src/lib/state.ts-2652-
+artifacts/api-server/src/lib/state.ts-2653-export async function createManagedOrganization(input: { id?: unknown; name?: unknown }) {
+artifacts/api-server/src/lib/state.ts:2654:  await ensurePrimaryServerRegistryMetadata();
+artifacts/api-server/src/lib/state.ts-2655-  if (!sql) throw new Error("Organization registry is unavailable.");
+artifacts/api-server/src/lib/state.ts-2656-  const name = normalizeOrganizationName(input?.name);
+--
+artifacts/api-server/src/lib/state.ts-2702-
+artifacts/api-server/src/lib/state.ts-2703-export async function removeOrganizationNitradoCredential(organizationIdInput: unknown) {
+artifacts/api-server/src/lib/state.ts:2704:  await ensurePrimaryServerRegistryMetadata();
+artifacts/api-server/src/lib/state.ts-2705-  if (!sql) throw new Error("Organization integration registry is unavailable.");
+artifacts/api-server/src/lib/state.ts-2706-  const organizationId = buildOrganizationId(organizationIdInput);
+--
+artifacts/api-server/src/lib/state.ts-2718-
+artifacts/api-server/src/lib/state.ts-2719-export async function createManagedOrganizationForOwner(input: { id?: unknown; name?: unknown }, ownerDiscordIdInput: unknown) {
+artifacts/api-server/src/lib/state.ts:2720:  await ensurePrimaryServerRegistryMetadata();
+artifacts/api-server/src/lib/state.ts-2721-  if (!sql) throw new Error("Organization registry is unavailable.");
+artifacts/api-server/src/lib/state.ts-2722-  const ownerDiscordId = String(ownerDiscordIdInput || "").trim();
+--
+artifacts/api-server/src/lib/state.ts-2751-
+artifacts/api-server/src/lib/state.ts-2752-export async function upsertOrganizationMembership(organizationIdInput: unknown, discordIdInput: unknown, roleInput: unknown) {
+artifacts/api-server/src/lib/state.ts:2753:  await ensurePrimaryServerRegistryMetadata();
+artifacts/api-server/src/lib/state.ts-2754-  if (!sql) throw new Error("Organization registry is unavailable.");
+artifacts/api-server/src/lib/state.ts-2755-  const organizationId = buildOrganizationId(organizationIdInput);
+--
+artifacts/api-server/src/lib/state.ts-2784-
+artifacts/api-server/src/lib/state.ts-2785-export async function removeOrganizationMembership(organizationIdInput: unknown, discordIdInput: unknown) {
+artifacts/api-server/src/lib/state.ts:2786:  await ensurePrimaryServerRegistryMetadata();
+artifacts/api-server/src/lib/state.ts-2787-  if (!sql) throw new Error("Organization registry is unavailable.");
+artifacts/api-server/src/lib/state.ts-2788-  const organizationId = buildOrganizationId(organizationIdInput);
+--
+artifacts/api-server/src/lib/state.ts-3766-    return existingCachedState;
+artifacts/api-server/src/lib/state.ts-3767-  }
+artifacts/api-server/src/lib/state.ts:3768:  await ensurePrimaryServerRegistryMetadata();
+artifacts/api-server/src/lib/state.ts-3769-  // Registry onboarding can fail independently from gameplay persistence.
+artifacts/api-server/src/lib/state.ts-3770-  // Re-probe the already-existing bot_state unique key so a registry failure
 === ONBOARDING ===
+artifacts/api-server/src/routes/nitradoSetup.ts-3-import { readPortalSession } from "../auth/session";
+artifacts/api-server/src/routes/nitradoSetup.ts-4-import { canOrganizationRole, getManagedOrganizationById, listUserOrganizationMemberships } from "../lib/organizationRegistry";
+artifacts/api-server/src/routes/nitradoSetup.ts-5-import { decryptEncryptedSecret, encryptOrganizationSecret, getOrganizationIntegrationRecord, deactivateOrganizationIntegration, upsertOrganizationIntegrationRecord } from "../lib/organizationIntegrations";
+artifacts/api-server/src/routes/nitradoSetup.ts:6:import { createManagedServerDraft } from "../lib/state";
+artifacts/api-server/src/routes/nitradoSetup.ts-7-import { listManagedServers } from "../lib/serverRegistry";
+artifacts/api-server/src/routes/nitradoSetup.ts-8-
+artifacts/api-server/src/routes/nitradoSetup.ts-9-const router = Router();
+--
+artifacts/api-server/src/routes/nitradoSetup.ts-36-  } finally { await db.end({ timeout: 5 }).catch(() => undefined); }
+artifacts/api-server/src/routes/nitradoSetup.ts-37-}
+artifacts/api-server/src/routes/nitradoSetup.ts-38-router.get("/api/setup/nitrado/state", async (req,res) => { try { const { organization,membership }=getOrganization(req,req.query.organizationId); const record=getOrganizationIntegrationRecord(organization.id,"nitrado"); return send(res,200,{organization:{id:organization.id,name:organization.name},role:membership.role,token:{configured:Boolean(record?.active),updatedAt:record?.updatedAt||null},servers:listManagedServers().filter(s=>s.organizationId===organization.id).map(s=>({id:s.id,name:s.name,serviceId:s.integrations.nitradoServiceId||null,status:s.onboardingStatus}))}); } catch(e){return send(res,403,{message:e instanceof Error?e.message:String(e)});} });
+artifacts/api-server/src/routes/nitradoSetup.ts:39:router.post("/api/setup/nitrado/connect", async (req,res) => { try { const {organization}=getOrganization(req,req.body?.organizationId); const token=String(req.body?.token||"").trim(); if(!token)return send(res,400,{message:"Cole o Long-life token da Nitrado."}); if(token.length>4096)return send(res,400,{message:"Token Nitrado inválido."}); const services=await servicesFor(token); await saveToken(organization.id,token); return send(res,200,{connected:true,organization:{id:organization.id,name:organization.name},services,dayzServices:services.filter(s=>s.dayz),message:services.length?`${services.length} serviço(s) encontrado(s) na sua conta Nitrado.`:"Token válido, mas nenhum serviço foi retornado pela Nitrado."}); } catch(e){return send(res,400,{message:e instanceof Error?e.message:String(e)});} });
+artifacts/api-server/src/routes/nitradoSetup.ts-40-router.get("/api/setup/nitrado/services", async (req,res) => { try { const {organization}=getOrganization(req,req.query.organizationId); const record=getOrganizationIntegrationRecord(organization.id,"nitrado"); if(!record?.active)return send(res,409,{message:"Conecte sua conta Nitrado primeiro."}); const services=await servicesFor(decryptEncryptedSecret(record)); return send(res,200,{services,dayzServices:services.filter(s=>s.dayz)}); } catch(e){return send(res,400,{message:e instanceof Error?e.message:String(e)});} });
+artifacts/api-server/src/routes/nitradoSetup.ts:41:router.post("/api/setup/nitrado/import", async (req,res) => { try { const {organization}=getOrganization(req,req.body?.organizationId); const serviceId=String(req.body?.serviceId||"").trim(); if(!/^\d+$/.test(serviceId))return send(res,400,{message:"Selecione um serviço Nitrado válido."}); const record=getOrganizationIntegrationRecord(organization.id,"nitrado"); if(!record?.active)return send(res,409,{message:"Conecte sua conta Nitrado primeiro."}); const token=decryptEncryptedSecret(record); const service=(await servicesFor(token)).find(s=>s.id===serviceId); if(!service)return send(res,404,{message:"Esse serviço não pertence à conta Nitrado conectada."}); if(!service.dayz)return send(res,400,{message:"Este serviço não parece ser um servidor DayZ."}); const existing=listManagedServers().find(s=>s.organizationId===organization.id&&s.integrations.nitradoServiceId===serviceId); if(existing)return send(res,200,{created:false,server:{id:existing.id,name:existing.name},message:"Esse servidor já está conectado ao workspace."}); const detail=await nitrado<{data?:{gameserver?:any}}>(token,`/services/${encodeURIComponent(serviceId)}/gameservers`); const gameserver=detail?.data?.gameserver||{}; const baseDir=inferBaseDir(gameserver); const name=String(gameserver?.query?.server_name||service.name||`DayZ ${serviceId}`).trim().slice(0,100); const server=await createManagedServerDraft({organizationId:organization.id,name,id:name,nitradoServiceId:serviceId,nitradoBaseDir:baseDir||undefined}); return send(res,201,{created:true,server:{id:server.id,name:server.name,serviceId,baseDir:baseDir||null,status:server.onboardingStatus},message:baseDir?"Servidor importado. Service ID e caminho Nitrado preenchidos automaticamente.":"Servidor importado. O Service ID foi preenchido; confirme o caminho base no setup."}); } catch(e){return send(res,400,{message:e instanceof Error?e.message:String(e)});} });
+artifacts/api-server/src/routes/nitradoSetup.ts-42-router.post("/api/setup/nitrado/disconnect", async (req,res) => { try { const {organization}=getOrganization(req,req.body?.organizationId); const db=process.env.DATABASE_URL?postgres(process.env.DATABASE_URL,{ssl:"require",max:1}):null; if(!db)throw new Error("DATABASE_URL não está configurado."); try { await db`UPDATE organization_integrations SET active=FALSE,updated_at=NOW() WHERE organization_id=${organization.id} AND provider='nitrado'`; deactivateOrganizationIntegration(organization.id,"nitrado"); } finally { await db.end({timeout:5}).catch(()=>undefined); } return send(res,200,{disconnected:true}); } catch(e){return send(res,400,{message:e instanceof Error?e.message:String(e)});} });
+artifacts/api-server/src/routes/nitradoSetup.ts-43-function escapeHtml(value: unknown){return String(value??"").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;").replaceAll("'","&#039;");}
+artifacts/api-server/src/routes/nitradoSetup.ts:44:export function renderNitradoSetup(){return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ADM · Conectar Nitrado</title><style>:root{color-scheme:dark;--bg:#172235;--card:#202d42;--border:#40506a;--text:#f5f7fb;--muted:#9faabd;--cyan:#16d8eb;--green:#51df9b;--orange:#ff9418}*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 15% -10%,#263b58,#101a29 70%);color:var(--text);font-family:Inter,system-ui,sans-serif}.shell{width:min(1040px,calc(100% - 32px));margin:auto;padding:40px 0 70px}.top{display:flex;justify-content:space-between;margin-bottom:26px}.brand{font-weight:900}.user,.muted{color:var(--muted);font-size:12px}.hero,.card{border:1px solid var(--border);border-radius:14px;background:#202d42}.hero{padding:28px 30px}.eyebrow{color:var(--cyan);font-size:10px;font-weight:900;letter-spacing:.13em;text-transform:uppercase}.hero h1{font-size:36px;letter-spacing:-.045em;margin:8px 0}.hero p{color:var(--muted);line-height:1.6;margin:0}.steps{display:grid;gap:16px;margin-top:16px}.card{padding:24px}.head{display:flex;gap:14px}.num{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;background:var(--cyan);color:#102032;font-weight:950;flex:0 0 auto}.orange{background:var(--orange)}.green{background:var(--green)}h2{font-size:18px;margin:0 0 5px}.field{display:grid;gap:7px;margin-top:18px}.field label{font-size:11px;font-weight:850}.field input,.field select{width:100%;height:46px;border:1px solid #4a5970;border-radius:9px;background:#303e53;color:var(--text);padding:0 12px;outline:0}.row{display:flex;gap:8px}.row input{flex:1}button{min-height:42px;padding:0 15px;border:1px solid #4a5970;border-radius:9px;background:#303e53;color:var(--text);font-weight:850;font-size:12px;cursor:pointer}button.primary{background:var(--cyan);color:#102032;border-color:var(--cyan)}button:disabled{opacity:.45}.status{margin-top:13px;padding:12px;border-radius:9px;background:#1a2638;color:var(--muted);font-size:12px;line-height:1.5}.ok{color:var(--green);border:1px solid #51df9b44}.error{color:#ff9da6;border:1px solid #ff647044}.services{display:grid;gap:8px;margin-top:14px}.service{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:13px;border:1px solid var(--border);border-radius:9px;background:#1a2638}.service.dayz{border-color:#16d8eb55}.service small{display:block;color:var(--muted);margin-top:4px}.pill{font-size:9px;font-weight:900;padding:5px 8px;border-radius:99px;background:#35445a}.pill.dayz{color:var(--cyan);background:#16d8eb18}.hidden{display:none!important}@media(max-width:680px){.shell{padding-top:22px}.top{flex-direction:column;gap:8px}.hero h1{font-size:29px}.row{flex-direction:column}}</style></head><body><main class="shell"><div class="top"><div class="brand">Advanced DayZ Management</div><div class="user" id="user">Configuração Nitrado</div></div><section class="hero"><div class="eyebrow">Primeiro acesso · Nitrado</div><h1>Conecte sua conta Nitrado.</h1><p>Você não precisa descobrir Service ID, username ou caminho manualmente. Informe apenas seu <strong>Long-life token</strong> e o ADM identifica os serviços disponíveis na sua conta. A credencial fica criptografada e nunca volta para o navegador.</p></section><div class="steps"><section class="card"><div class="head"><div class="num">1</div><div><h2>Conecte o Nitrado</h2><div class="muted">Use um Long-life token com a permissão <strong>service</strong>.</div></div></div><div class="field"><label>Workspace</label><select id="org"></select></div><div class="field"><label>Long-life token</label><div class="row"><input id="token" type="password" autocomplete="new-password" placeholder="Cole o token aqui"><button class="primary" id="connect">Validar e conectar</button></div></div><div id="tokenStatus" class="status">Carregando…</div><div class="field"><button id="disconnect">Remover credencial salva</button></div></section><section id="servicesCard" class="card hidden"><div class="head"><div class="num orange">2</div><div><h2>Seus serviços Nitrado</h2><div class="muted">Os serviços vieram diretamente da sua conta. DayZ fica destacado.</div></div></div><div id="services" class="services"></div><div id="serviceStatus" class="status">Selecione um servidor DayZ.</div></section><section id="importCard" class="card hidden"><div class="head"><div class="num green">3</div><div><h2>Adicionar ao ADM</h2><div class="muted">O Service ID e o caminho base serão preenchidos a partir dos dados da Nitrado. Depois você revisa o preflight e ativa o runtime.</div></div></div><div class="field"><label>Servidor selecionado</label><input id="selected" disabled></div><div class="field"><button class="primary" id="import">Importar servidor e continuar</button></div><div id="importStatus" class="status">Nenhum servidor selecionado.</div></section></div></main><script>const $=id=>document.getElementById(id);let selected=null;const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));async function api(path,init={}){const r=await fetch(path,{credentials:'same-origin',headers:{Accept:'application/json',...(init.body?{'Content-Type':'application/json'}:{})},...init});const t=await r.text();let d={};try{d=t?JSON.parse(t):{}}catch{d={message:t}}if(!r.ok)throw new Error(d.message||'Não foi possível concluir a operação.');return d}function status(el,msg,type=''){el.textContent=msg;el.className='status '+type}function render(list){$('services').innerHTML=list.length?list.map(s=>'<div class="service '+(s.dayz?'dayz':'')+'"><div><strong>'+esc(s.name)+'</strong><small>'+esc(s.game||'Serviço Nitrado')+' · '+esc(s.status)+' · '+esc(s.id)+(s.slots?' · '+s.slots+' slots':'')+'</small></div><div><span class="pill '+(s.dayz?'dayz':'')+'">'+(s.dayz?'DAYZ':'OUTRO')+'</span> '+(s.dayz?'<button data-id="'+esc(s.id)+'">Selecionar</button>':'')+'</div></div>').join(''):'<div class="status">Nenhum serviço retornado.</div>';document.querySelectorAll('[data-id]').forEach(b=>b.onclick=()=>{selected=list.find(s=>s.id===b.dataset.id);$('importCard').classList.remove('hidden');$('selected').value=selected.name+' · '+selected.id;status($('serviceStatus'),'Servidor DayZ selecionado.','ok');$('importCard').scrollIntoView({behavior:'smooth',block:'center'})})}async function load(){try{const d=await api('/admin-panel/api/setup/nitrado/state');$('user').textContent=d.organization.name+' · '+d.role;$('org').innerHTML='<option value="'+esc(d.organization.id)+'">'+esc(d.organization.name)+'</option>';if(d.token.configured){status($('tokenStatus'),'Nitrado já conectado. Carregando seus serviços…','ok');await loadServices(d.organization.id)}else status($('tokenStatus'),'Cole seu Long-life token para validar a conta e descobrir os servidores.')}catch(e){status($('tokenStatus'),e.message,'error')}}async function loadServices(org){try{const d=await api('/admin-panel/api/setup/nitrado/services?organizationId='+encodeURIComponent(org));$('servicesCard').classList.remove('hidden');render(d.services||[]);status($('serviceStatus'),(d.dayzServices||[]).length+' servidor(es) DayZ encontrado(s).','ok')}catch(e){status($('tokenStatus'),e.message,'error')}}$('connect').onclick=async()=>{const token=$('token').value.trim();if(!token)return status($('tokenStatus'),'Cole o Long-life token antes de continuar.','error');const b=$('connect');b.disabled=true;b.textContent='Validando…';try{const d=await api('/admin-panel/api/setup/nitrado/connect',{method:'POST',body:JSON.stringify({organizationId:$('org').value,token})});$('token').value='';status($('tokenStatus'),d.message,'ok');$('servicesCard').classList.remove('hidden');render(d.services||[]);status($('serviceStatus'),(d.dayzServices||[]).length+' servidor(es) DayZ encontrado(s).','ok')}catch(e){status($('tokenStatus'),e.message,'error')}finally{b.disabled=false;b.textContent='Validar e conectar'}};$('import').onclick=async()=>{if(!selected)return;const b=$('import');b.disabled=true;b.textContent='Importando…';try{const d=await api('/admin-panel/api/setup/nitrado/import',{method:'POST',body:JSON.stringify({organizationId:$('org').value,serviceId:selected.id})});status($('importStatus'),d.message,'ok');b.textContent='Servidor importado';setTimeout(()=>location.href='/admin-panel/onboarding?serverId='+encodeURIComponent(d.server?.id||''),800)}catch(e){status($('importStatus'),e.message,'error');b.disabled=false;b.textContent='Importar servidor e continuar'}};$('disconnect').onclick=async()=>{if(!confirm('Remover a credencial Nitrado deste workspace? Os servidores cadastrados serão preservados.'))return;try{await api('/admin-panel/api/setup/nitrado/disconnect',{method:'POST',body:JSON.stringify({organizationId:$('org').value})});$('servicesCard').classList.add('hidden');$('importCard').classList.add('hidden');status($('tokenStatus'),'Credencial removida. Seus servidores e dados continuam preservados.')}catch(e){status($('tokenStatus'),e.message,'error')}};load();</script></body></html>`;}
+artifacts/api-server/src/routes/nitradoSetup.ts-45-router.get("/nitrado-setup",(req,res)=>{if(!req.portalSession&&!readPortalSession(req))return res.redirect("/api/auth/discord?returnTo=/admin-panel/nitrado-setup");return res.type("html").send(renderNitradoSetup());});
+artifacts/api-server/src/routes/nitradoSetup.ts-46-export default router;
+--
+artifacts/api-server/src/routes/adminPanel.ts-52-  updateDayzItemInDatabase,
+artifacts/api-server/src/routes/adminPanel.ts-53-} from "../lib/dayzItemsService";
+artifacts/api-server/src/routes/adminPanel.ts-54-import {
+artifacts/api-server/src/routes/adminPanel.ts:55:  createManagedServerDraft,
+artifacts/api-server/src/routes/adminPanel.ts-56-  getStateAsync,
+artifacts/api-server/src/routes/adminPanel.ts-57-  saveStateAsync,
+artifacts/api-server/src/routes/adminPanel.ts-58-  flushStateAsync,
+--
+artifacts/api-server/src/routes/adminPanel.ts-75-  createManagedOrganizationForOwner,
+artifacts/api-server/src/routes/adminPanel.ts-76-  upsertOrganizationMembership,
+artifacts/api-server/src/routes/adminPanel.ts-77-  removeOrganizationMembership,
+artifacts/api-server/src/routes/adminPanel.ts:78:  saveOrganizationNitradoCredential,
+artifacts/api-server/src/routes/adminPanel.ts-79-  removeOrganizationNitradoCredential,
+artifacts/api-server/src/routes/adminPanel.ts-80-  refreshManagedServerRegistryFromDb,
+artifacts/api-server/src/routes/adminPanel.ts-81-} from "../lib/state";
+--
+artifacts/api-server/src/routes/adminPanel.ts-8900-  if (!requireOrganizationAccess(req, res, organizationId, "own")) return;
+artifacts/api-server/src/routes/adminPanel.ts-8901-  try {
+artifacts/api-server/src/routes/adminPanel.ts-8902-    const validation = await testOrganizationNitradoCredential(req.body?.token);
+artifacts/api-server/src/routes/adminPanel.ts:8903:    await saveOrganizationNitradoCredential(organizationId, req.body?.token, validation);
+artifacts/api-server/src/routes/adminPanel.ts-8904-    res.json({ organizationId, validation, nitrado: getOrganizationIntegrationStatus(organizationId) });
+artifacts/api-server/src/routes/adminPanel.ts-8905-  } catch (err) {
+artifacts/api-server/src/routes/adminPanel.ts-8906-    res.status(400).send(err instanceof Error ? err.message : String(err));
+--
+artifacts/api-server/src/routes/adminPanel.ts-9004-        || "";
+artifacts/api-server/src/routes/adminPanel.ts-9005-      if (!organizationId || !requireOrganizationAccess(req, res, organizationId, "manage")) return;
+artifacts/api-server/src/routes/adminPanel.ts-9006-    }
+artifacts/api-server/src/routes/adminPanel.ts:9007:    const server = await createManagedServerDraft({ ...(req.body || {}), organizationId });
+artifacts/api-server/src/routes/adminPanel.ts-9008-    res.status(201).json({
+artifacts/api-server/src/routes/adminPanel.ts-9009-      server,
+artifacts/api-server/src/routes/adminPanel.ts-9010-      servers: authorizedServersForRequest(req),
+--
+artifacts/api-server/src/routes/saasOnboarding.ts-7-import { getManagedServerById } from "../lib/serverRegistry";
+artifacts/api-server/src/routes/saasOnboarding.ts-8-import { renderSaasOnboarding } from "./saasOnboardingView";
+artifacts/api-server/src/routes/saasOnboarding.ts-9-import { testOrganizationNitradoCredential } from "../lib/serverIntegrations";
+artifacts/api-server/src/routes/saasOnboarding.ts:10:import { createManagedServerDraft, markManagedServerNitradoValidated, refreshManagedServerRegistryFromDb, saveOrganizationNitradoCredential, setManagedServerRuntimeEnabled } from "../lib/state";
+artifacts/api-server/src/routes/saasOnboarding.ts-11-import { runManagedServerActivationPreflight } from "../lib/serverPreflight";
+artifacts/api-server/src/routes/saasOnboarding.ts-12-import { requestManagedServerRuntimeCycle } from "../lib/serverRuntimeCoordinator";
+artifacts/api-server/src/routes/saasOnboarding.ts-13-import { ensureAdminUsersSchema } from "../lib/adminUsers";
+--
+artifacts/api-server/src/routes/saasOnboarding.ts-78-  res.type("html").send(renderSaasOnboarding(req.portalSession!, isSaasSelfServiceEnabled() && isOrganizationSecretEncryptionConfigured()));
+artifacts/api-server/src/routes/saasOnboarding.ts-79-});
+artifacts/api-server/src/routes/saasOnboarding.ts-80-
+artifacts/api-server/src/routes/saasOnboarding.ts:81:router.post("/onboarding/nitrado/connect", requirePortalAuth, async (req, res) => {
+artifacts/api-server/src/routes/saasOnboarding.ts-82-  try {
+artifacts/api-server/src/routes/saasOnboarding.ts-83-    const organization = getOrganization(req);
+artifacts/api-server/src/routes/saasOnboarding.ts-84-    const token = String(req.body?.token || "").trim();
+artifacts/api-server/src/routes/saasOnboarding.ts-85-    if (!token) throw new Error("Cole o Long-life token antes de continuar.");
+artifacts/api-server/src/routes/saasOnboarding.ts-86-    if (token.length > 4096) throw new Error("Token Nitrado inválido.");
+artifacts/api-server/src/routes/saasOnboarding.ts-87-    await testOrganizationNitradoCredential(token);
+artifacts/api-server/src/routes/saasOnboarding.ts:88:    await saveOrganizationNitradoCredential(organization.id, token, { source: "saas-onboarding" });
+artifacts/api-server/src/routes/saasOnboarding.ts-89-    return res.redirect("/admin-panel/onboarding/nitrado/services");
+artifacts/api-server/src/routes/saasOnboarding.ts-90-  } catch (error) {
+artifacts/api-server/src/routes/saasOnboarding.ts-91-    const message = error instanceof Error ? error.message : String(error);
+--
+artifacts/api-server/src/routes/saasOnboarding.ts-122-    const gameserver = detail?.data?.gameserver || {};
+artifacts/api-server/src/routes/saasOnboarding.ts-123-    const baseDir = inferBaseDir(gameserver);
+artifacts/api-server/src/routes/saasOnboarding.ts-124-    const name = String(gameserver?.query?.server_name || service.name || `DayZ ${serviceId}`).trim().slice(0, 100);
+artifacts/api-server/src/routes/saasOnboarding.ts:125:    const server = await createManagedServerDraft({ organizationId: organization.id, name, nitradoServiceId: serviceId, nitradoBaseDir: baseDir || undefined });
+artifacts/api-server/src/routes/saasOnboarding.ts-126-    return res.redirect(`/admin-panel/onboarding/nitrado/next?serverId=${encodeURIComponent(server.id)}`);
+artifacts/api-server/src/routes/saasOnboarding.ts-127-  } catch (error) {
+artifacts/api-server/src/routes/saasOnboarding.ts-128-    const message = error instanceof Error ? error.message : String(error);
+--
+artifacts/api-server/src/routes/saasOnboardingView.ts-20-</style></head><body><main class="shell">
+artifacts/api-server/src/routes/saasOnboardingView.ts-21-<div class="top"><div class="brand">Advanced DayZ Management</div><div class="user">${escapeHtml(displayName)}</div></div>
+artifacts/api-server/src/routes/saasOnboardingView.ts-22-<div class="progress"><span id="p1" class="active"></span><span id="p2"></span><span id="p3"></span></div>
+artifacts/api-server/src/routes/saasOnboardingView.ts:23:<section id="step1"><div class="hero"><div class="eyebrow">1 · Nitrado</div><h1>Conecte seu servidor.</h1><p>O ADM precisa de um único Long-life token para descobrir e acessar os servidores da sua conta Nitrado.</p></div><div class="card"><h2>Onde encontrar o token</h2><p>Você só precisa fazer isso uma vez. O token será salvo de forma criptografada e nunca será exibido novamente.</p><div class="tutorial"><div class="item"><div class="number">1</div><div><strong>Abra sua conta Nitrado</strong><span>Acesse a Nitrado e abra o menu da sua conta.</span></div></div><div class="item"><div class="number">2</div><div><strong>Abra a área de Developer / API</strong><span>Entre na página de tokens de API e crie um novo <code>Long-life token</code>.</span></div></div><div class="item"><div class="number">3</div><div><strong>Habilite somente <code>service</code></strong><span>Essa permissão é a necessária para o ADM listar e gerenciar o seu serviço DayZ.</span></div></div><div class="item"><div class="number">4</div><div><strong>Copie o token</strong><span>O token é mostrado na criação. Cole-o abaixo e não compartilhe esse valor.</span></div></div></div><div class="actions"><a class="button" href="https://server.nitrado.net/" target="_blank" rel="noopener">Abrir Nitrado</a></div><form id="tokenForm" class="field" method="post" action="/admin-panel/onboarding/nitrado/connect"><label for="token">Long-life token</label><div class="inputRow"><input id="token" name="token" type="password" autocomplete="new-password" placeholder="Cole seu token aqui" required><button type="submit" id="connect" class="primary">Validar token</button></div></form><div id="tokenStatus" class="status">Nenhuma credencial foi configurada nesta sessão.</div><noscript><div class="noscript">JavaScript está desativado. O formulário acima continua funcionando normalmente.</div></noscript></div></section>
+artifacts/api-server/src/routes/saasOnboardingView.ts-24-<section id="step2" class="hidden"><div class="hero"><div class="eyebrow">2 · Servidor</div><h1>Qual servidor você quer adicionar?</h1><p>Encontramos os servidores DayZ disponíveis no token informado. Escolha um para começar.</p></div><div class="card"><div id="services" class="services"></div><div id="serviceStatus" class="status">Selecione um servidor.</div><div class="actions"><button type="button" id="backToken">Voltar</button><button type="button" id="addServer" class="primary" disabled>Adicionar servidor</button></div></div></section>
+artifacts/api-server/src/routes/saasOnboardingView.ts-25-<section id="step3" class="hidden"><div class="hero"><div class="eyebrow">3 · Opcional</div><h1>Quer configurar o Discord agora?</h1><p>O servidor já está conectado ao ADM. O Discord pode ser configurado agora ou depois, dentro do painel.</p></div><div class="card"><div class="successIcon">✓</div><h2 id="readyTitle">Servidor conectado</h2><p id="readyText">O ADM já pode processar o servidor. Você não precisa configurar o Discord para continuar.</p><div id="serverMeta" class="serverMeta"></div><div class="choice"><button type="button" id="discordNow"><strong>Configurar agora</strong><span>Adicionar o bot ao seu servidor Discord.</span></button><button type="button" id="discordLater"><strong>Fazer depois</strong><span>Ir direto para o painel e configurar quando quiser.</span></button></div><div id="readyStatus" class="status hidden"></div></div></section>
+artifacts/api-server/src/routes/saasOnboardingView.ts-26-<div class="foot">Você está conectado como ${escapeHtml(displayName)} · <a href="/app">Player Portal</a></div></main>
+--
+artifacts/api-server/src/routes/saasOnboardingView.ts-66-      const token=$("token").value.trim();
+artifacts/api-server/src/routes/saasOnboardingView.ts-67-      if(!token){status($("tokenStatus"),"Cole o Long-life token antes de continuar.","error");$("token").focus();return;}
+artifacts/api-server/src/routes/saasOnboardingView.ts-68-      const button=$("connect");button.disabled=true;status($("tokenStatus"),"Validando token com a Nitrado…");
+artifacts/api-server/src/routes/saasOnboardingView.ts:69:      try{const data=await api("/admin-panel/api/setup/nitrado/connect",{method:"POST",body:JSON.stringify({token})});$("token").value="";state.services=data.dayzServices||[];renderServices();status($("tokenStatus"),data.message||"Token validado.","ok");setStep(2)}catch(error){status($("tokenStatus"),error.message,"error")}finally{button.disabled=false;}
+artifacts/api-server/src/routes/saasOnboardingView.ts-70-    });
+artifacts/api-server/src/routes/saasOnboardingView.ts-71-    $("backToken").addEventListener("click",()=>setStep(1));
+artifacts/api-server/src/routes/saasOnboardingView.ts-72-    $("addServer").addEventListener("click",async()=>{if(!state.selected)return;$("addServer").disabled=true;status($("serviceStatus"),"Conectando o servidor e preparando o runtime…");try{const imported=await api("/admin-panel/api/setup/nitrado/import",{method:"POST",body:JSON.stringify({serviceId:state.selected})});state.server=imported.server;const activation=await api("/admin-panel/onboarding/activate",{method:"POST",body:JSON.stringify({serverId:state.server.id})});state.server=activation.server||state.server;showConnectedServer(state.server,false)}catch(error){status($("serviceStatus"),error.message,"error");$("addServer").disabled=false}});
+--
+artifacts/api-server/src/routes/adminAuth.ts-11-} from "../lib/adminUsers";
+artifacts/api-server/src/routes/adminAuth.ts-12-import { clearAdminSessionCookie, createAdminSession, setAdminSessionCookie } from "../auth/adminSession";
+artifacts/api-server/src/routes/adminAuth.ts-13-import { buildManagedServerId, getManagedServerById, listManagedServers } from "../lib/serverRegistry";
+artifacts/api-server/src/routes/adminAuth.ts:14:import { createManagedOrganization, createManagedServerDraft, markManagedServerNitradoValidated, refreshManagedServerRegistryFromDb, saveOrganizationNitradoCredential, setManagedServerRuntimeEnabled } from "../lib/state";
+artifacts/api-server/src/routes/adminAuth.ts-15-import { discoverOrganizationNitradoServices, validateNitradoServiceSetup } from "../lib/serverIntegrations";
+artifacts/api-server/src/routes/adminAuth.ts-16-import { runManagedServerActivationPreflight } from "../lib/serverPreflight";
+artifacts/api-server/src/routes/adminAuth.ts-17-import { requestManagedServerRuntimeCycle } from "../lib/serverRuntimeCoordinator";
+--
+artifacts/api-server/src/routes/adminAuth.ts-74-  }
+artifacts/api-server/src/routes/adminAuth.ts-75-  res.type("html").send(discordPage(server.id,req.query.discord==="connected",String(req.query.error||"")));
+artifacts/api-server/src/routes/adminAuth.ts-76-});
+artifacts/api-server/src/routes/adminAuth.ts:77:router.post("/setup/nitrado",async(req,res)=>{if(!req.adminSession){res.redirect("/admin-panel/login");return;}try{const token=String(req.body?.token||"").trim();if(!token)throw new Error("Informe o token da Nitrado.");const oid=orgIdFor(req.adminSession.username);const org=await createManagedOrganization({id:oid,name:`${req.adminSession.username} Workspace`});if(!org)throw new Error("Não foi possível preparar seu workspace.");await saveOrganizationNitradoCredential(oid,token,{source:"admin-onboarding-discovery"});const result=await discoverOrganizationNitradoServices(oid);res.type("html").send(setupServicesPage(result.services));}catch(e){res.status(400).type("html").send(setupTokenPage(e instanceof Error?e.message:String(e)));}});
+artifacts/api-server/src/routes/adminAuth.ts:78:router.post("/setup/server",async(req,res)=>{if(!req.adminSession){res.redirect("/admin-panel/login");return;}try{const serviceId=String(req.body?.serviceId||"").trim();if(!/^\d+$/.test(serviceId))throw new Error("Selecione um servidor.");const oid=orgIdFor(req.adminSession.username);const credential=getOrganizationNitradoCredential(oid);if(!credential.token)throw new Error("Conecte sua conta Nitrado novamente.");const discovery=await discoverOrganizationNitradoServices(oid);const selected=discovery.services.find(s=>s.id===serviceId);if(!selected)throw new Error("Este servidor não está disponível para a conta Nitrado conectada.");let server=listManagedServers().find(s=>String(s.integrations.nitradoServiceId||"")===serviceId);if(server){const existingAccess=await getAdminServerAccess(req.adminSession.adminUserId,server.id);if(!existingAccess&&server.organizationId!==oid){const migrated=await migrateLegacyAdminServerOwnership(req.adminSession.adminUserId,server.id,oid);if(migrated){await refreshManagedServerRegistryFromDb();server=getManagedServerById(server.id)||server;}}if(!existingAccess&&server.organizationId!==oid)throw new Error("Este servidor já pertence a outro workspace.");await saveOrganizationNitradoCredential(server.organizationId,credential.token,{source:"admin-onboarding-existing-server-recovery"});}else{const desiredId=buildManagedServerId(selected.name)||`dayz-${serviceId}`;server=getManagedServerById(desiredId);if(server&&String(server.integrations.nitradoServiceId||"")!==serviceId)server=undefined;if(!server){server=await createManagedServerDraft({id:desiredId,name:selected.name,organizationId:oid,nitradoServiceId:serviceId,nitradoBaseDir:selected.detectedBaseDir});}}if(!server)throw new Error("Não foi possível preparar o servidor selecionado.");if(!selected.assignedServerId){const validation=await validateNitradoServiceSetup(server.id,serviceId,selected.detectedBaseDir);server=await markManagedServerNitradoValidated(server.id,validation);}server=await resolveManagedServer(server.id)||server;if(!server.runtimeEnabled&&!server.runtime.activation?.lastDisabledAt){const preflight=await runManagedServerActivationPreflight(server.id);if(!preflight.passed)throw new Error("O servidor foi conectado, mas o runtime não passou nas verificações de isolamento. Revise o preflight antes de continuar.");server=await setManagedServerRuntimeEnabled(server.id,true);requestManagedServerRuntimeCycle(server.id,"activation");}const updated=await assignAdminUserServer(req.adminSession.adminUserId,server.id);if(!updated)throw new Error("Não foi possível vincular o admin ao servidor.");setAdminSessionCookie(req,res,createAdminSession({adminUserId:updated.id,username:updated.username,serverId:updated.serverId}));res.redirect("/admin-panel/setup");}catch(e){try{const result=await discoverOrganizationNitradoServices(orgIdFor(req.adminSession.username));res.status(400).type("html").send(setupServicesPage(result.services,e instanceof Error?e.message:String(e)));}catch{res.status(400).type("html").send(setupTokenPage(e instanceof Error?e.message:String(e)));}}});
+artifacts/api-server/src/routes/adminAuth.ts-79-
+artifacts/api-server/src/routes/adminAuth.ts-80-export default router;
+--
+artifacts/api-server/src/lib/state.ts-1945-  return changed;
+artifacts/api-server/src/lib/state.ts-1946-}
+artifacts/api-server/src/lib/state.ts-1947-
+artifacts/api-server/src/lib/state.ts:1948:export async function createManagedServerDraft(input: ManagedServerDraftInput) {
+artifacts/api-server/src/lib/state.ts-1949-  assertNoServerSecrets(input);
+artifacts/api-server/src/lib/state.ts-1950-  await ensurePrimaryServerRegistryMetadata();
+artifacts/api-server/src/lib/state.ts-1951-  if (!sql || !getServerRegistryPersistenceStatus().tableReady) {
+--
+artifacts/api-server/src/lib/state.ts-2669-  return getManagedOrganizationById(id);
+artifacts/api-server/src/lib/state.ts-2670-}
+artifacts/api-server/src/lib/state.ts-2671-
+artifacts/api-server/src/lib/state.ts:2672:export async function saveOrganizationNitradoCredential(organizationIdInput: unknown, tokenInput: unknown, metadata: Record<string, unknown> = {}) {
+artifacts/api-server/src/lib/state.ts-2673-  if (!sql) throw new Error("Organization integration registry is unavailable.");
+artifacts/api-server/src/lib/state.ts-2674-  const organizationId = buildOrganizationId(organizationIdInput);
+artifacts/api-server/src/lib/state.ts-2675-  if (!organizationId || !getManagedOrganizationById(organizationId)) throw new Error("Organization nao encontrada.");
