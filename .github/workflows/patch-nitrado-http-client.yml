@@ -1,0 +1,91 @@
+name: Patch Nitrado HTTP client
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - name: Patch Nitrado HTTP headers and upload strategy
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path("artifacts/api-server/src/lib/nitradoDownloader.ts")
+          text = path.read_text()
+
+          old = '''async function trackedNitradoFetch(url: string, init: RequestInit = {}) {
+  const outboundBytes = byteLengthOfBody(init.body);'''
+          new = '''async function trackedNitradoFetch(url: string, init: RequestInit = {}) {
+  const outboundBytes = byteLengthOfBody(init.body);
+  const headers = new Headers(init.headers || {});
+  if (!headers.has("Accept")) headers.set("Accept", "application/json");
+  if (!headers.has("User-Agent")) headers.set("User-Agent", "PZ-DayZ-Bot/1.0");
+  const requestInit: RequestInit = { ...init, headers };'''
+          if old not in text:
+              raise SystemExit("trackedNitradoFetch anchor not found")
+          text = text.replace(old, new, 1)
+
+          text = text.replace(
+              'const res = await globalThis.fetch(url, init);',
+              'const res = await globalThis.fetch(url, requestInit);',
+              1,
+          )
+
+          old = '''  for (const pathCandidate of pathCandidates) {
+    for (const strategy of ["query", "form"] as const) {'''
+          new = '''  for (const pathCandidate of pathCandidates) {
+    for (const strategy of ["form", "query"] as const) {'''
+          if old not in text:
+              raise SystemExit("upload strategy anchor not found")
+          text = text.replace(old, new, 1)
+
+          old = '''      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        errors.push(`${strategy} ${pathCandidate}: ${message}`);'''
+          new = '''      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        errors.push(`${strategy} ${pathCandidate}: ${message}`);
+        if (/Nitrado HTTP 429\\b/i.test(message)) {
+          throw new Error(
+            `Nitrado API rate-limited the upload-token request (HTTP 429). ${message}`,
+          );
+        }'''
+          if old not in text:
+              raise SystemExit("429 handling anchor not found")
+          text = text.replace(old, new, 1)
+
+          path.write_text(text)
+
+      - name: Commit patch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add artifacts/api-server/src/lib/nitradoDownloader.ts
+          git commit -m "fix(nitrado): harden API requests against Cloudflare rate limits"
+          git push origin main
+
+      - name: Remove one-shot workflow
+        if: always()
+        shell: bash
+        run: |
+          git fetch origin main
+          git checkout main
+          git pull --ff-only origin main
+          rm -f .github/workflows/patch-nitrado-http-client.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -u .github/workflows/patch-nitrado-http-client.yml
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: remove one-shot Nitrado HTTP patch workflow"
+            git push origin main
+          fi
