@@ -1,0 +1,162 @@
+name: One-time clean multi-server architecture
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Apply clean architecture cleanup
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+          import subprocess
+
+          root = Path('.')
+          state = root / 'artifacts/api-server/src/lib/state.ts'
+          registry = root / 'artifacts/api-server/src/lib/serverRegistry.ts'
+
+          def remove_function(text, name):
+              marker = re.search(r'(?m)^(?:export\\s+)?(?:async\\s+)?function\\s+' + re.escape(name) + r'\\b', text)
+              if not marker:
+                  return text, False
+              start = marker.start()
+              brace = text.find('{', marker.end())
+              if brace < 0:
+                  raise RuntimeError(f'Cannot find body for {name}')
+              depth = 0
+              in_str = None
+              escape = False
+              line_comment = False
+              block_comment = False
+              i = brace
+              while i < len(text):
+                  c = text[i]
+                  n = text[i+1] if i + 1 < len(text) else ''
+                  if line_comment:
+                      if c == '\\n': line_comment = False
+                  elif block_comment:
+                      if c == '*' and n == '/': block_comment = False; i += 1
+                  elif in_str:
+                      if escape: escape = False
+                      elif c == '\\\\': escape = True
+                      elif c == in_str: in_str = None
+                  else:
+                      if c == '/' and n == '/': line_comment = True; i += 1
+                      elif c == '/' and n == '*': block_comment = True; i += 1
+                      elif c in ('"', "'", '`'): in_str = c
+                      elif c == '{': depth += 1
+                      elif c == '}':
+                          depth -= 1
+                          if depth == 0:
+                              end = i + 1
+                              while end < len(text) and text[end] in ' \t': end += 1
+                              if end < len(text) and text[end] == '\n': end += 1
+                              return text[:start] + text[end:], True
+                  i += 1
+              raise RuntimeError(f'Unbalanced braces in {name}')
+
+          # serverRegistry: primary server is no longer a concept.
+          r = registry.read_text()
+          r = r.replace('  /** @deprecated Persistence no longer creates or selects a primary server. */\n  primary?: boolean;\n', '')
+          r = r.replace('  /** @deprecated No longer seeded; retained for persisted diagnostic compatibility. */\n  primarySeeded?: boolean;\n', '')
+          r = r.replace('  const resolved = requested || (persistedServers.length === 1 ? persistedServers[0].id : "");', '  const resolved = requested;')
+          r = re.sub(r'\n/\*\* @deprecated No runtime fallback; retained until all historical callers are migrated\. \*/\nexport function getPrimaryServerId\(\) \{ return ""; \}\n/\*\* @deprecated Never returns a synthetic server\. Historical callers must stop using this API\. \*/\nexport function getPrimaryServerDescriptor\(\): ManagedServerDescriptor \{ throw new Error\("Primary server fallback has been removed; resolve a managed server context first\."\); \}\n', '\n', r)
+          registry.write_text(r)
+
+          # state.ts: remove the runtime bootstrap/migration function completely.
+          s = state.read_text()
+          s, removed = remove_function(s, 'ensurePrimaryServerRegistryMetadata')
+          if not removed:
+              raise RuntimeError('ensurePrimaryServerRegistryMetadata not found')
+
+          # Remove old primary/fallback imports and runtime references.
+          s = re.sub(r'\\n  getPrimaryServerDescriptor,\\n  getPrimaryServerId,', '', s)
+          s = s.replace('const LEGACY_FILE = path.resolve(process.cwd(), "state.json");\n', '')
+          s = s.replace('const STATE_COMPAT_SNAPSHOT_MS = Math.max(6 * 60 * 60_000, Number(process.env.STATE_COMPAT_SNAPSHOT_MS || 6 * 60 * 60 * 1000));\n', '')
+          s = s.replace('  lastCompatibilitySnapshotAt: number;\n', '')
+          s = s.replace('      lastCompatibilitySnapshotAt: 0,\n', '')
+          s = re.sub(r'function getLocalStateFile\(\) \{.*?\n\}', 'function getLocalStateFile() {\n  return getServerStateStoragePath(getActiveServerId());\n}', s, flags=re.S)
+
+          # Every registry row is a normal managed server. Empty registry means empty registry.
+          s = re.sub(r'function mapManagedServerRow\(row: any, primary: ManagedServerDescriptor\): ManagedServerDescriptor \{', 'function mapManagedServerRow(row: any): ManagedServerDescriptor {', s)
+          s = s.replace('  const isPrimary = id === primary.id;\n', '')
+          s = s.replace('row.organization_id || (isPrimary ? getDefaultOrganizationId() : "")', 'row.organization_id')
+          s = s.replace('    primary: isPrimary,\n', '')
+          s = s.replace('    runtimeEnabled: isPrimary ? true : Boolean(row.runtime_enabled),', '    runtimeEnabled: Boolean(row.runtime_enabled),')
+          s = s.replace('    onboardingStatus: isPrimary ? "active" : "draft",', '    onboardingStatus: normalizeServerOnboardingStatus(row.onboarding_status),')
+          s = s.replace('String(runtimeConfig?.nitradoBaseDir || (isPrimary ? primary.runtime.nitradoBaseDir : "") || "").trim() || undefined', 'String(runtimeConfig?.nitradoBaseDir || "").trim() || undefined')
+          s = re.sub(r'      nitradoValidation: !isPrimary && ', '      nitradoValidation: ', s)
+          s = re.sub(r'      activationPreflight: !isPrimary\n        && ', '      activationPreflight: ', s)
+          s = re.sub(r'      activation: !isPrimary\n        && ', '      activation: ', s)
+          s = re.sub(r'      operations: !isPrimary\n        && ', '      operations: ', s)
+          s = re.sub(r'        \{\n          \.\.\.\(isPrimary \? primary\.runtime\.settings \|\| \{\} : \{\}\),\n          ', '        {\n          ', s)
+          s = re.sub(r'      discord: isPrimary\n        \? \{ \.\.\.\(primary\.runtime\.discord \|\| \{\}\), \{3\}\.\.\.\(runtimeConfig\?\.discord \|\| \{\}\) \}\n        : \{ \.\.\.\(runtimeConfig\?\.discord \|\| \{\}\) \},', '      discord: { ...(runtimeConfig?.discord || {}) },', s)
+          s = re.sub(r'\n  if \(!isPrimary\) \{\n    const storedStatus = String\(row\.onboarding_status \|\| "draft"\)\.trim\(\)\.toLowerCase\(\);\n    descriptor\.onboardingStatus = storedStatus === "ready"\n      && hasMatchingManagedServerNitradoValidation\(descriptor\)\n      && hasMatchingActivationPreflight\(descriptor\)\n      \? "ready"\n      : deriveServerOnboardingStatus\(descriptor\);\n  \}', '', s)
+
+          s = re.sub(r'async function reloadManagedServerRegistryFromDb\(primary = getPrimaryServerDescriptor\(\)\) \{', 'async function reloadManagedServerRegistryFromDb() {', s)
+          s = s.replace('  if (!sql) return [primary];', '  if (!sql) {\n    setPersistedManagedServers([]);\n    return [];\n  }')
+          s = s.replace('    SELECT id, name, organization_id, enabled, primary_server, runtime_enabled, onboarding_status,', '    SELECT id, name, organization_id, enabled, runtime_enabled, onboarding_status,')
+          s = s.replace('    ORDER BY primary_server DESC, created_at ASC, id ASC', '    ORDER BY created_at ASC, id ASC')
+          s = s.replace('  const descriptors = (rows as any[]).map((row) => mapManagedServerRow(row, primary));\n  const next = descriptors.length ? descriptors : [primary];', '  const next = (rows as any[]).map((row) => mapManagedServerRow(row));')
+          s = s.replace('next.filter((server) => !server.primary && server.onboardingStatus === "draft")', 'next.filter((server) => server.onboardingStatus === "draft")')
+          s = s.replace('next.filter((server) => !server.primary && server.onboardingStatus === "configured")', 'next.filter((server) => server.onboardingStatus === "configured")')
+          s = s.replace('next.filter((server) => !server.primary && server.onboardingStatus === "ready")', 'next.filter((server) => server.onboardingStatus === "ready")')
+          s = s.replace('reloadManagedServerRegistryFromDb(primary)', 'reloadManagedServerRegistryFromDb()')
+          s = re.sub(r'\nexport async function refreshManagedServerRegistryFromDb\(\) \{\n  return reloadManagedServerRegistryFromDb\(\);\n\}', '\nexport async function refreshManagedServerRegistryFromDb() {\n  return reloadManagedServerRegistryFromDb();\n}', s)
+
+          # Remove compatibility snapshot writer and any remaining invocations.
+          s, _ = remove_function(s, 'maybeWriteCompatibilitySnapshot')
+          s = re.sub(r'\n\s*await maybeWriteCompatibilitySnapshot\([^;]*\);', '', s)
+          s = re.sub(r'\n\s*maybeWriteCompatibilitySnapshot\([^;]*\);', '', s)
+
+          # Remove obsolete primary-only status assignments left by the deleted bootstrap.
+          s = re.sub(r'\n\s*primarySeeded:\s*[^,\n]+,', '', s)
+          s = re.sub(r'\n\s*const persistedPrimary = .*?\n\s*setServerRegistryPersistenceStatus\(\{.*?\n\s*\}\);', '', s, flags=re.S)
+
+          # No runtime migration/bootstrap calls should survive.
+          if 'ensurePrimaryServerRegistryMetadata' in s:
+              raise RuntimeError('runtime bootstrap symbol still present in state.ts')
+          if 'getPrimaryServerDescriptor' in s or 'getPrimaryServerId' in s:
+              raise RuntimeError('primary fallback symbol still present in state.ts')
+          state.write_text(s)
+
+          # Remove any primary-only references in the API source tree imports/usages.
+          src = root / 'artifacts/api-server/src'
+          for p in src.rglob('*.ts'):
+              text = p.read_text()
+              text2 = text.replace('getPrimaryServerDescriptor,', '').replace('getPrimaryServerId,', '')
+              text2 = re.sub(r'\nexport function getPrimaryServerId\([^\n]*\)\s*\{[^\n]*\}', '', text2)
+              text2 = re.sub(r'\nexport function getPrimaryServerDescriptor\([^\n]*\)\s*\{[^\n]*\}', '', text2)
+              if text2 != text:
+                  p.write_text(text2)
+
+          # Fail fast if the runtime still contains the known legacy concepts.
+          proc = subprocess.run(['git', 'grep', '-nE', 'ensurePrimaryServerRegistryMetadata|getPrimaryServerDescriptor|getPrimaryServerId|primary_server'], capture_output=True, text=True)
+          if proc.returncode == 0:
+              print(proc.stdout)
+              raise RuntimeError('known primary/bootstrap references remain')
+
+          print('Clean multi-server runtime cleanup applied.')
+
+      - name: Typecheck
+        run: corepack pnpm install --frozen-lockfile && corepack pnpm run typecheck
+
+      - name: Commit cleanup
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add artifacts/api-server/src
+          git diff --cached --quiet || git commit -m "refactor: remove legacy primary server runtime"
+          git push
