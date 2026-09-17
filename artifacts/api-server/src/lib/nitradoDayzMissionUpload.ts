@@ -18,7 +18,23 @@ function getNoFtpRoot(serverId: string) {
   const marker = "/noftp/";
   const index = baseDir.indexOf(marker);
   if (index === -1) return "";
-  return baseDir.slice(0, index + marker.length - 1);
+
+  // `nitrado.baseDir` is the server's config directory, e.g.
+  // /games/<service-user>/noftp/dayzps/config. The DayZ mission directory
+  // is a sibling of `config`, not a child of `/noftp` itself. The previous
+  // implementation stopped at `/noftp`, producing an invalid path such as
+  // /games/<service-user>/noftp/dayzps_missions/....
+  //
+  // Derive the actual game root from the configured baseDir so this remains
+  // server-scoped and does not hardcode the game name or service user.
+  const configSuffix = "/config";
+  if (baseDir.toLowerCase().endsWith(configSuffix)) {
+    return baseDir.slice(0, -configSuffix.length);
+  }
+
+  const lastSlash = baseDir.lastIndexOf("/");
+  if (lastSlash > 0) return baseDir.slice(0, lastSlash);
+  return baseDir;
 }
 
 function basename(value: string) {
