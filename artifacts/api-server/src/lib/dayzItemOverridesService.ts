@@ -18,6 +18,11 @@ function normalizeClassName(value: unknown) {
   return String(value || "").trim().toLowerCase();
 }
 
+export function isSystemOwner(adminUserId: unknown) {
+  const configured = String(process.env.SYSTEM_OWNER_ADMIN_USER_ID || "").trim();
+  return Boolean(configured && String(adminUserId || "").trim() === configured);
+}
+
 export async function ensureDayzItemOverridesSchema() {
   if (schemaPromise) return schemaPromise;
   const db = requireSql();
@@ -27,7 +32,10 @@ export async function ensureDayzItemOverridesSchema() {
       image_url TEXT,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
-  `.then(() => undefined);
+  `.then(() => undefined).catch((error) => {
+    schemaPromise = null;
+    throw error;
+  });
   return schemaPromise;
 }
 
