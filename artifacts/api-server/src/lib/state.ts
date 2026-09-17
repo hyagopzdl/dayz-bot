@@ -19,6 +19,7 @@ import {
   hasMatchingManagedServerNitradoValidation,
   hasManagedServerRuntimeActivation,
   normalizeManagedServerName,
+  normalizeServerOnboardingStatus,
   setPersistedManagedServers,
   setServerRegistryPersistenceStatus,
   setServerNamespacePersistenceStatus,
