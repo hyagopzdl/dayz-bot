@@ -1,6 +1,7 @@
 import app from "./app";
 import { logger } from "./lib/logger";
 import { startDiscordBot } from "./lib/discordBot";
+import { installNitradoHttpTransport } from "./lib/nitradoHttpTransport";
 import { flushExecutableManagedServerStates, startManagedServerRuntimeScheduler } from "./lib/serverRuntimeCoordinator";
 
 function formatMb(bytes: number) { return `${(bytes / 1024 / 1024).toFixed(1)} MB`; }
@@ -28,6 +29,7 @@ function installStateFlushHooks() {
 }
 installProcessDiagnostics();
 installStateFlushHooks();
+installNitradoHttpTransport();
 let started = false;
 function startServer(port: number) {
   if (started) return;
