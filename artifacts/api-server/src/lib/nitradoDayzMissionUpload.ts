@@ -11,22 +11,12 @@ function normalize(value: string) {
     .replace(/\/+$/g, "");
 }
 
-function getNoFtpRoot(serverId: string) {
+function getConfiguredRoot(serverId: string) {
   const baseDir = String(getServerRuntimeContext(serverId).nitrado.baseDir || "")
     .replace(/\\/g, "/")
     .replace(/\/+$/g, "");
-  const marker = "/noftp/";
-  const index = baseDir.indexOf(marker);
-  if (index === -1) return "";
-
-  const configSuffix = "/config";
-  if (baseDir.toLowerCase().endsWith(configSuffix)) {
-    return baseDir.slice(0, -configSuffix.length);
-  }
-
-  const lastSlash = baseDir.lastIndexOf("/");
-  if (lastSlash > 0) return baseDir.slice(0, lastSlash);
-  return baseDir;
+  if (!baseDir) return "";
+  return baseDir.startsWith("/") ? baseDir : `/${baseDir}`;
 }
 
 function basename(value: string) {
@@ -72,28 +62,49 @@ function findChild(entries: any[], name: string) {
 
 async function discoverMissionDirectory(relativeDirectory: string, serverId: string) {
   const normalizedRelative = normalize(relativeDirectory);
-  const noFtpRoot = getNoFtpRoot(serverId);
-  if (!noFtpRoot) throw new Error(`Nitrado noftp root nao pode ser derivado para o servidor ${serverId}.`);
+  const configuredRoot = getConfiguredRoot(serverId);
+  if (!configuredRoot) throw new Error(`Nitrado baseDir nao pode ser resolvido para o servidor ${serverId}.`);
 
   const cached = resolvedDirectoryCache.get(serverId);
   if (cached && cached.expiresAt > Date.now()) return cached.directory;
 
-  const absoluteDirectory = `${noFtpRoot}/${normalizedRelative}`;
+  // The persisted Nitrado baseDir is the validated configuration root for the
+  // server. Do not strip /config and invent a different filesystem root.
+  const absoluteDirectory = `${configuredRoot}/${normalizedRelative}`;
   try {
-    await listDirectory(absoluteDirectory, serverId);
-    resolvedDirectoryCache.set(serverId, { directory: absoluteDirectory, expiresAt: Date.now() + DIRECTORY_CACHE_TTL_MS });
-    console.log("✅ NITRADO DAYZ MISSION DIRECTORY CONFIRMED", { serverId, directory: absoluteDirectory, source: "direct-list" });
-    return absoluteDirectory;
+    const entries = await listDirectory(absoluteDirectory, serverId);
+    if (entries.length > 0) {
+      resolvedDirectoryCache.set(serverId, {
+        directory: absoluteDirectory,
+        expiresAt: Date.now() + DIRECTORY_CACHE_TTL_MS,
+      });
+      console.log("✅ NITRADO DAYZ MISSION DIRECTORY CONFIRMED", {
+        serverId,
+        directory: absoluteDirectory,
+        entries: entries.length,
+        source: "configured-baseDir",
+      });
+      return absoluteDirectory;
+    }
+
+    console.warn("⚠️ NITRADO DAYZ DIRECTORY LIST EMPTY", {
+      serverId,
+      directory: absoluteDirectory,
+      source: "configured-baseDir",
+    });
   } catch (directError) {
-    console.warn("⚠️ NITRADO DAYZ DIRECT DIRECTORY CHECK FAILED", {
+    console.warn("⚠️ NITRADO DAYZ CONFIGURED DIRECTORY CHECK FAILED", {
       serverId,
       directory: absoluteDirectory,
       error: directError instanceof Error ? directError.message : String(directError),
     });
   }
 
+  // If the configured root does not expose the target directory, discover the
+  // actual path from the file-server hierarchy instead of guessing /noftp or
+  // /ftproot variants. The returned entry.path becomes the canonical path.
   const parts = normalizedRelative.split("/").filter(Boolean);
-  let current = noFtpRoot;
+  let current = configuredRoot;
   for (const part of parts) {
     const entries = await listDirectory(current, serverId);
     const child = findChild(entries, part);
@@ -101,12 +112,34 @@ async function discoverMissionDirectory(relativeDirectory: string, serverId: str
       throw new Error(`Nitrado directory not found while resolving ${normalizedRelative}: parent=${current} child=${part}`);
     }
     const discovered = entryPath(child);
-    current = discovered.startsWith("games/") || discovered.startsWith("/games/") ? `/${discovered.replace(/^\/+/, "")}` : `${current}/${part}`;
-    console.log("🧭 NITRADO DAYZ DIRECTORY DISCOVERY", { serverId, parent: current, child: part, discoveredPath: discovered || null });
+    current = discovered
+      ? (discovered.startsWith("games/") || discovered.startsWith("/games/")
+        ? `/${discovered.replace(/^\/+/, "")}`
+        : `${current}/${part}`)
+      : `${current}/${part}`;
+    console.log("🧭 NITRADO DAYZ DIRECTORY DISCOVERY", {
+      serverId,
+      parent: current,
+      child: part,
+      discoveredPath: discovered || null,
+    });
   }
 
-  resolvedDirectoryCache.set(serverId, { directory: current, expiresAt: Date.now() + DIRECTORY_CACHE_TTL_MS });
-  console.log("✅ NITRADO DAYZ MISSION DIRECTORY RESOLVED", { serverId, directory: current, requestedDirectory: normalizedRelative });
+  const finalEntries = await listDirectory(current, serverId);
+  if (finalEntries.length === 0) {
+    throw new Error(`Nitrado directory resolved but is empty: ${current}`);
+  }
+
+  resolvedDirectoryCache.set(serverId, {
+    directory: current,
+    expiresAt: Date.now() + DIRECTORY_CACHE_TTL_MS,
+  });
+  console.log("✅ NITRADO DAYZ MISSION DIRECTORY RESOLVED", {
+    serverId,
+    directory: current,
+    entries: finalEntries.length,
+    requestedDirectory: normalizedRelative,
+  });
   return current;
 }
 
