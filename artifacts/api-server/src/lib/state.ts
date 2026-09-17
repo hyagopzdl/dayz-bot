@@ -397,6 +397,11 @@ const sql = process.env.DATABASE_URL
     })
   : null;
 
+function getSql(): postgres.Sql {
+  if (!sql) throw new Error("DATABASE_URL is not configured.");
+  return sql;
+}
+
 let serverRegistryReadyPromise: Promise<void> | null = null;
 let botStateScopedPersistenceReady = false;
 let playerStatsScopedPersistenceReady = false;
@@ -579,7 +584,7 @@ function mapManagedServerRow(row: any): ManagedServerDescriptor {
 
 async function reloadManagedServerRegistryFromDb() {
   if (!sql) return [] as ManagedServerDescriptor[];
-  const rows = await sql`
+  const rows = await getSql()`
     SELECT id, name, organization_id, enabled, primary_server, runtime_enabled, onboarding_status,
            mode, nitrado_service_id, discord_guild_id, runtime_config
     FROM managed_servers
@@ -607,17 +612,17 @@ async function reloadOrganizationRegistryFromDb() {
     setPersistedOrganizations([getDefaultOrganizationDescriptor()], []);
     return;
   }
-  const organizationRows = await sql`
+  const organizationRows = await getSql()`
     SELECT id, name, active, created_at, updated_at
     FROM organizations
     ORDER BY created_at ASC, id ASC
   `;
-  const membershipRows = await sql`
+  const membershipRows = await getSql()`
     SELECT organization_id, discord_id, role, created_at, updated_at
     FROM organization_members
     ORDER BY organization_id ASC, created_at ASC, discord_id ASC
   `;
-  const integrationRows = await sql`
+  const integrationRows = await getSql()`
     SELECT organization_id, provider, encrypted_secret, iv, auth_tag, key_version, metadata, active, created_at, updated_at
     FROM organization_integrations
     ORDER BY organization_id ASC, provider ASC
@@ -669,35 +674,35 @@ async function ensureManagedServerRegistryMetadata() {
   serverRegistryReadyPromise = (async () => {
     const defaultOrganization = getDefaultOrganizationDescriptor();
     try {
-      await sql`CREATE TABLE IF NOT EXISTS organizations (id TEXT PRIMARY KEY, name TEXT NOT NULL, active BOOLEAN NOT NULL DEFAULT TRUE, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`;
-      await sql`CREATE TABLE IF NOT EXISTS organization_members (organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE, discord_id TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'viewer' CHECK (role IN ('owner','admin','moderator','viewer')), created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), PRIMARY KEY (organization_id, discord_id))`;
-      await sql`CREATE INDEX IF NOT EXISTS organization_members_discord_id_idx ON organization_members (discord_id)`;
-      await sql`CREATE TABLE IF NOT EXISTS organization_integrations (organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE, provider TEXT NOT NULL CHECK (provider IN ('nitrado')), encrypted_secret TEXT NOT NULL, iv TEXT NOT NULL, auth_tag TEXT NOT NULL, key_version INTEGER NOT NULL DEFAULT 1, metadata JSONB NOT NULL DEFAULT '{}'::jsonb, active BOOLEAN NOT NULL DEFAULT TRUE, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), PRIMARY KEY (organization_id, provider))`;
-      await sql`INSERT INTO organizations (id, name, active, created_at, updated_at) VALUES (${defaultOrganization.id}, ${defaultOrganization.name}, TRUE, NOW(), NOW()) ON CONFLICT (id) DO NOTHING`;
+      await getSql()`CREATE TABLE IF NOT EXISTS organizations (id TEXT PRIMARY KEY, name TEXT NOT NULL, active BOOLEAN NOT NULL DEFAULT TRUE, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`;
+      await getSql()`CREATE TABLE IF NOT EXISTS organization_members (organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE, discord_id TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'viewer' CHECK (role IN ('owner','admin','moderator','viewer')), created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), PRIMARY KEY (organization_id, discord_id))`;
+      await getSql()`CREATE INDEX IF NOT EXISTS organization_members_discord_id_idx ON organization_members (discord_id)`;
+      await getSql()`CREATE TABLE IF NOT EXISTS organization_integrations (organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE, provider TEXT NOT NULL CHECK (provider IN ('nitrado')), encrypted_secret TEXT NOT NULL, iv TEXT NOT NULL, auth_tag TEXT NOT NULL, key_version INTEGER NOT NULL DEFAULT 1, metadata JSONB NOT NULL DEFAULT '{}'::jsonb, active BOOLEAN NOT NULL DEFAULT TRUE, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), PRIMARY KEY (organization_id, provider))`;
+      await getSql()`INSERT INTO organizations (id, name, active, created_at, updated_at) VALUES (${defaultOrganization.id}, ${defaultOrganization.name}, TRUE, NOW(), NOW()) ON CONFLICT (id) DO NOTHING`;
       await reloadOrganizationRegistryFromDb();
       setOrganizationRegistryPersistenceStatus({ enabled: true, organizationsTableReady: true, membershipsTableReady: true, defaultOrganizationSeeded: true, initialized: true });
 
-      await sql`CREATE TABLE IF NOT EXISTS managed_servers (id TEXT PRIMARY KEY, name TEXT NOT NULL, organization_id TEXT NOT NULL DEFAULT ${defaultOrganization.id}, enabled BOOLEAN NOT NULL DEFAULT TRUE, primary_server BOOLEAN NOT NULL DEFAULT FALSE, runtime_enabled BOOLEAN NOT NULL DEFAULT FALSE, onboarding_status TEXT NOT NULL DEFAULT 'draft', mode TEXT NOT NULL DEFAULT 'multi-server-native', nitrado_service_id TEXT, discord_guild_id TEXT, runtime_config JSONB, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`;
-      await sql`ALTER TABLE managed_servers ADD COLUMN IF NOT EXISTS runtime_config JSONB`;
-      await sql`ALTER TABLE managed_servers ADD COLUMN IF NOT EXISTS runtime_enabled BOOLEAN NOT NULL DEFAULT FALSE`;
-      await sql`ALTER TABLE managed_servers ADD COLUMN IF NOT EXISTS onboarding_status TEXT NOT NULL DEFAULT 'draft'`;
-      await sql`ALTER TABLE managed_servers ADD COLUMN IF NOT EXISTS organization_id TEXT`;
-      await sql`UPDATE managed_servers SET organization_id = ${defaultOrganization.id}, updated_at = NOW() WHERE organization_id IS NULL OR BTRIM(organization_id) = ''`;
-      await sql`CREATE INDEX IF NOT EXISTS managed_servers_organization_id_idx ON managed_servers (organization_id)`;
-      await sql`ALTER TABLE managed_servers ALTER COLUMN organization_id SET NOT NULL`;
-      const ownership = await sql`SELECT COUNT(*)::int AS missing FROM managed_servers WHERE organization_id IS NULL OR BTRIM(organization_id) = ''`;
+      await getSql()`CREATE TABLE IF NOT EXISTS managed_servers (id TEXT PRIMARY KEY, name TEXT NOT NULL, organization_id TEXT NOT NULL DEFAULT ${defaultOrganization.id}, enabled BOOLEAN NOT NULL DEFAULT TRUE, primary_server BOOLEAN NOT NULL DEFAULT FALSE, runtime_enabled BOOLEAN NOT NULL DEFAULT FALSE, onboarding_status TEXT NOT NULL DEFAULT 'draft', mode TEXT NOT NULL DEFAULT 'multi-server-native', nitrado_service_id TEXT, discord_guild_id TEXT, runtime_config JSONB, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`;
+      await getSql()`ALTER TABLE managed_servers ADD COLUMN IF NOT EXISTS runtime_config JSONB`;
+      await getSql()`ALTER TABLE managed_servers ADD COLUMN IF NOT EXISTS runtime_enabled BOOLEAN NOT NULL DEFAULT FALSE`;
+      await getSql()`ALTER TABLE managed_servers ADD COLUMN IF NOT EXISTS onboarding_status TEXT NOT NULL DEFAULT 'draft'`;
+      await getSql()`ALTER TABLE managed_servers ADD COLUMN IF NOT EXISTS organization_id TEXT`;
+      await getSql()`UPDATE managed_servers SET organization_id = ${defaultOrganization.id}, updated_at = NOW() WHERE organization_id IS NULL OR BTRIM(organization_id) = ''`;
+      await getSql()`CREATE INDEX IF NOT EXISTS managed_servers_organization_id_idx ON managed_servers (organization_id)`;
+      await getSql()`ALTER TABLE managed_servers ALTER COLUMN organization_id SET NOT NULL`;
+      const ownership = await getSql()`SELECT COUNT(*)::int AS missing FROM managed_servers WHERE organization_id IS NULL OR BTRIM(organization_id) = ''`;
       setOrganizationRegistryPersistenceStatus({ serverOwnershipColumnReady: Number((ownership as any[])[0]?.missing || 0) === 0, serversWithoutOrganization: Number((ownership as any[])[0]?.missing || 0) });
       setServerRegistryPersistenceStatus({ tableReady: true });
 
       const descriptors = await reloadManagedServerRegistryFromDb();
       setServerRegistryPersistenceStatus({ enabled: true, initialized: true, tableReady: true, primarySeeded: false, rowsLoaded: descriptors.length, draftRows: descriptors.filter((server) => server.onboardingStatus === 'draft').length, configuredRows: descriptors.filter((server) => server.onboardingStatus === 'configured').length, readyRows: descriptors.filter((server) => server.onboardingStatus === 'ready').length, runtimeEnabledRows: descriptors.filter((server) => server.runtimeEnabled).length, lastLoadedAt: new Date().toISOString(), lastError: undefined });
 
-      const tableCheck = await sql`SELECT to_regclass('public.bot_state') IS NOT NULL AS exists`;
+      const tableCheck = await getSql()`SELECT to_regclass('public.bot_state') IS NOT NULL AS exists`;
       if (Boolean((tableCheck as any[])[0]?.exists)) {
-        await sql`ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS server_id TEXT`;
-        const untagged = await sql`SELECT COUNT(*)::int AS count FROM bot_state WHERE server_id IS NULL`;
+        await getSql()`ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS server_id TEXT`;
+        const untagged = await getSql()`SELECT COUNT(*)::int AS count FROM bot_state WHERE server_id IS NULL`;
         if (Number((untagged as any[])[0]?.count || 0) > 0) throw new Error('Legacy bot_state rows without server_id remain; assign them explicitly before enabling multi-server runtime.');
-        await sql`CREATE UNIQUE INDEX IF NOT EXISTS bot_state_server_id_id_uidx ON bot_state (server_id, id)`;
+        await getSql()`CREATE UNIQUE INDEX IF NOT EXISTS bot_state_server_id_id_uidx ON bot_state (server_id, id)`;
         botStatePrimaryKeyReady = true;
         botStateScopedPersistenceReady = true;
         setServerNamespacePersistenceStatus({ enabled: true, initialized: true, botStateTableReady: true, botStateCompositeKeyReady: true, botStatePrimaryKeyReady: true, scopedReadsEnabled: true, scopedReadFallbacks: 0, botStateTaggedRows: 0, botStateUntaggedRows: 0, lastScopedReadSource: 'server-scoped', lastCheckedAt: new Date().toISOString(), lastError: undefined });
@@ -1670,7 +1675,7 @@ export async function createManagedServerDraft(input: ManagedServerDraftInput) {
     throw new Error("Este Discord Guild ID ja esta vinculado a outro servidor.");
   }
 
-  const inserted = await sql`
+  const inserted = await getSql()`
     INSERT INTO managed_servers (
       id, name, organization_id, enabled, primary_server, runtime_enabled, onboarding_status,
       mode, nitrado_service_id, discord_guild_id, runtime_config, created_at, updated_at
@@ -1751,7 +1756,7 @@ export async function updateManagedServerDraft(serverId: string, input: ManagedS
     throw new Error("Este Discord Guild ID ja esta vinculado a outro servidor.");
   }
 
-  await sql`
+  await getSql()`
     UPDATE managed_servers
     SET name = ${next.name},
         enabled = TRUE,
@@ -1800,7 +1805,7 @@ export async function bindManagedServerDiscordGuild(serverIdInput: unknown, guil
     discord: guildChanged ? {} : { ...(current.runtime.discord || {}) },
   };
 
-  await sql`
+  await getSql()`
     UPDATE managed_servers
     SET discord_guild_id = ${guildId},
         runtime_config = ${JSON.stringify(nextRuntime)}::jsonb,
@@ -1830,7 +1835,7 @@ export async function updateManagedServerDiscordChannels(serverIdInput: unknown,
 
   const discord = normalizeServerDiscordDraft(discordInput, current.runtime.discord || {});
   const runtime = { ...current.runtime, discord };
-  await sql`
+  await getSql()`
     UPDATE managed_servers
     SET runtime_config = ${JSON.stringify(runtime)}::jsonb, updated_at = NOW()
     WHERE id = ${id}
@@ -1864,7 +1869,7 @@ export async function updateManagedServerScopedSettings(serverIdInput: unknown, 
   settings.dayzMissionDir = missionDir;
   settings.shopDeliveryConfiguredAt = new Date().toISOString();
   const runtime = { ...current.runtime, settings };
-  await sql`
+  await getSql()`
     UPDATE managed_servers
     SET runtime_config = ${JSON.stringify(runtime)}::jsonb, updated_at = NOW()
     WHERE id = ${id}
@@ -1905,7 +1910,7 @@ export async function ensureManagedServerShopDeliveryConfiguration(
   };
 
   const runtime = { ...current.runtime, settings };
-  await sql`
+  await getSql()`
     UPDATE managed_servers
     SET runtime_config = ${JSON.stringify(runtime)}::jsonb, updated_at = NOW()
     WHERE id = ${id}
@@ -1985,7 +1990,7 @@ export async function ensureManagedServerShopDeliveryRoutingConfiguration(
     };
   }
 
-  await sql`
+  await getSql()`
     UPDATE managed_servers
     SET runtime_config = ${JSON.stringify(runtime)}::jsonb, updated_at = NOW()
     WHERE id = ${id}
@@ -2062,7 +2067,7 @@ export async function markManagedServerNitradoValidated(
   };
   next.onboardingStatus = deriveServerOnboardingStatus(next);
 
-  await sql`
+  await getSql()`
     UPDATE managed_servers
     SET enabled = TRUE,
         primary_server = FALSE,
@@ -2091,7 +2096,7 @@ export async function inspectManagedServerNamespaceRows(serverId: string) {
   const id = buildManagedServerId(serverId);
   if (!id || id === getPrimaryServerId()) throw new Error("O preflight de namespace aceita somente servidores adicionais.");
 
-  const rows = await sql`
+  const rows = await getSql()`
     SELECT
       (SELECT COUNT(*)::int FROM bot_state WHERE server_id = ${id}) AS bot_state_rows,
       (SELECT COUNT(*)::int FROM player_stats_state WHERE server_id = ${id}) AS player_stats_rows,
@@ -2140,7 +2145,7 @@ export async function markManagedServerActivationPreflightReady(
     },
   };
 
-  await sql`
+  await getSql()`
     UPDATE managed_servers
     SET enabled = TRUE,
         primary_server = FALSE,
@@ -2226,7 +2231,7 @@ export async function setManagedServerRuntimeEnabled(serverId: string, enabled: 
     discord: { ...(current.runtime.discord || {}) },
   };
 
-  await sql`
+  await getSql()`
     UPDATE managed_servers
     SET runtime_enabled = ${enabled},
         onboarding_status = 'ready',
@@ -2282,7 +2287,7 @@ export async function setManagedServerRuntimePaused(serverId: string, paused: bo
     discord: { ...(current.runtime.discord || {}) },
   };
 
-  const updated = await sql`
+  const updated = await getSql()`
     UPDATE managed_servers
     SET runtime_config = ${JSON.stringify(nextRuntime)}::jsonb,
         updated_at = NOW()
@@ -2310,7 +2315,7 @@ export async function createManagedOrganization(input: { id?: unknown; name?: un
   const name = normalizeOrganizationName(input?.name);
   const id = buildOrganizationId(input?.id || name);
   if (!id) throw new Error("Informe um Organization ID valido.");
-  await sql`
+  await getSql()`
     INSERT INTO organizations (id, name, active, created_at, updated_at)
     VALUES (${id}, ${name}, TRUE, NOW(), NOW())
     ON CONFLICT (id) DO UPDATE
@@ -2328,7 +2333,7 @@ export async function saveOrganizationNitradoCredential(organizationIdInput: unk
   const organizationId = buildOrganizationId(organizationIdInput);
   if (!organizationId || !getManagedOrganizationById(organizationId)) throw new Error("Organization nao encontrada.");
   const encrypted = encryptOrganizationSecret(tokenInput);
-  await sql`
+  await getSql()`
     INSERT INTO organization_integrations (
       organization_id, provider, encrypted_secret, iv, auth_tag, key_version, metadata, active, created_at, updated_at
     ) VALUES (
@@ -2359,7 +2364,7 @@ export async function removeOrganizationNitradoCredential(organizationIdInput: u
   if (!sql) throw new Error("Organization integration registry is unavailable.");
   const organizationId = buildOrganizationId(organizationIdInput);
   if (!organizationId) throw new Error("Organization nao encontrada.");
-  await sql`DELETE FROM organization_integrations WHERE organization_id = ${organizationId} AND provider = 'nitrado'`;
+  await getSql()`DELETE FROM organization_integrations WHERE organization_id = ${organizationId} AND provider = 'nitrado'`;
   await reloadOrganizationRegistryFromDb();
   recordNetworkTransfer({
     service: "neon-organization-integrations",
@@ -2461,7 +2466,7 @@ async function ensureGranularPlayerStatsTable() {
   if (!sql || !GRANULAR_PLAYER_STATS_ENABLED) return;
   if (granularPlayerStatsTableReadyPromise) return granularPlayerStatsTableReadyPromise;
   granularPlayerStatsTableReadyPromise = (async () => {
-    await sql`
+    await getSql()`
       CREATE TABLE IF NOT EXISTS player_stats_state (
         server_id TEXT NOT NULL,
         player_key TEXT NOT NULL,
@@ -2471,23 +2476,23 @@ async function ensureGranularPlayerStatsTable() {
         PRIMARY KEY (server_id, player_key)
       )
     `;
-    await sql`ALTER TABLE player_stats_state ADD COLUMN IF NOT EXISTS server_id TEXT`;
+    await getSql()`ALTER TABLE player_stats_state ADD COLUMN IF NOT EXISTS server_id TEXT`;
     // Any row without server_id predates multi-server and therefore belongs to
     // the production primary. Never derive this migration from the active
     // AsyncLocalStorage context: a secondary/admin request must not be able to
     // retag legacy Deathmatch player stats.
     const legacyPlayerStatsOwner = getPrimaryServerId();
-    await sql`UPDATE player_stats_state SET server_id = ${legacyPlayerStatsOwner} WHERE server_id IS NULL`;
-    await sql`CREATE INDEX IF NOT EXISTS player_stats_state_updated_at_idx ON player_stats_state (updated_at)`;
-    await sql`CREATE INDEX IF NOT EXISTS player_stats_state_server_id_idx ON player_stats_state (server_id)`;
-    const namespaceCounts = await sql`
+    await getSql()`UPDATE player_stats_state SET server_id = ${legacyPlayerStatsOwner} WHERE server_id IS NULL`;
+    await getSql()`CREATE INDEX IF NOT EXISTS player_stats_state_updated_at_idx ON player_stats_state (updated_at)`;
+    await getSql()`CREATE INDEX IF NOT EXISTS player_stats_state_server_id_idx ON player_stats_state (server_id)`;
+    const namespaceCounts = await getSql()`
       SELECT
         COUNT(*) FILTER (WHERE server_id = ${legacyPlayerStatsOwner})::int AS tagged_rows,
         COUNT(*) FILTER (WHERE server_id IS NULL)::int AS untagged_rows
       FROM player_stats_state
     `;
     const untaggedRows = Number((namespaceCounts as any[])[0]?.untagged_rows || 0);
-    const pkRows = await sql`
+    const pkRows = await getSql()`
       SELECT array_agg(a.attname ORDER BY keycols.ordinality) AS columns
       FROM pg_index i
       JOIN pg_class t ON t.oid = i.indrelid
@@ -2503,7 +2508,7 @@ async function ensureGranularPlayerStatsTable() {
     if (pkColumns.join(',') === 'server_id,player_key') {
       playerStatsPrimaryKeyReady = true;
     } else if (pkColumns.join(',') === 'player_key' && untaggedRows === 0) {
-      await sql`CREATE UNIQUE INDEX IF NOT EXISTS player_stats_state_server_id_player_key_uidx ON player_stats_state (server_id, player_key)`;
+      await getSql()`CREATE UNIQUE INDEX IF NOT EXISTS player_stats_state_server_id_player_key_uidx ON player_stats_state (server_id, player_key)`;
       await sql.begin(async (tx: any) => {
         await tx`ALTER TABLE player_stats_state ALTER COLUMN server_id SET NOT NULL`;
         await tx`ALTER TABLE player_stats_state DROP CONSTRAINT player_stats_state_pkey`;
@@ -3004,7 +3009,7 @@ async function persistDiscordRuntimeToNeon(serialized: string, hash: string) {
 
   try {
     if (botStateScopedPersistenceReady) {
-      await sql`
+      await getSql()`
         INSERT INTO bot_state (id, data, updated_at, server_id)
         VALUES (${DISCORD_RUNTIME_STATE_ID}, ${sql.json(runtime)}, NOW(), ${getActiveServerId()})
         ON CONFLICT (server_id, id)
@@ -3090,8 +3095,8 @@ async function persistStateToNeon(serialized: string, hash: string, reasons: str
   if (getActiveServerId() === getPrimaryServerId()) {
     try {
       const existingRows = botStateScopedPersistenceReady
-        ? await sql`SELECT data FROM bot_state WHERE server_id = ${getPrimaryServerId()} AND id = ${STATE_ID} LIMIT 1`
-        : await sql`SELECT data FROM bot_state WHERE server_id = ${getPrimaryServerId()} AND id = ${STATE_ID} LIMIT 1`;
+        ? await getSql()`SELECT data FROM bot_state WHERE server_id = ${getPrimaryServerId()} AND id = ${STATE_ID} LIMIT 1`
+        : await getSql()`SELECT data FROM bot_state WHERE server_id = ${getPrimaryServerId()} AND id = ${STATE_ID} LIMIT 1`;
       if (existingRows.length) {
         const previousCount = Object.keys(((existingRows[0].data || {}) as Partial<AppState>).players || {}).length;
         const incomingCount = Object.keys(parsed.players || {}).length;
@@ -3134,7 +3139,7 @@ async function persistStateToNeon(serialized: string, hash: string, reasons: str
   const writeStarted = Date.now();
   try {
     if (botStateScopedPersistenceReady) {
-      await sql`
+      await getSql()`
         INSERT INTO bot_state (id, data, updated_at, server_id)
         VALUES (${STATE_ID}, ${sql.json(parsed)}, NOW(), ${getActiveServerId()})
         ON CONFLICT (server_id, id)
@@ -3320,13 +3325,13 @@ function applyGranularPlayerRows(state: AppState, rows: any[]) {
 async function loadAllGranularPlayerRowsForActiveServer() {
   if (!sql) return [] as any[];
   return playerStatsScopedPersistenceReady
-    ? await sql`
+    ? await getSql()`
         SELECT player_key, stats, current_streak, updated_at
         FROM player_stats_state
         WHERE server_id = ${getActiveServerId()}
         ORDER BY player_key ASC
       ` as any[]
-    : await sql`
+    : await getSql()`
         SELECT player_key, stats, current_streak, updated_at
         FROM player_stats_state
         WHERE server_id = ${getActiveServerId()}
@@ -3337,7 +3342,7 @@ async function loadAllGranularPlayerRowsForActiveServer() {
 async function readGranularPlayerSummaryForActiveServer(): Promise<PlayerTotalsSummary> {
   if (!sql) return { players: 0, kills: 0, deaths: 0 };
   const rows = playerStatsScopedPersistenceReady
-    ? await sql`
+    ? await getSql()`
         SELECT
           COUNT(*)::int AS players,
           COALESCE(SUM(CASE WHEN COALESCE(stats->>'kills','') ~ '^[0-9]+$' THEN (stats->>'kills')::bigint ELSE 0 END), 0)::bigint AS kills,
@@ -3345,7 +3350,7 @@ async function readGranularPlayerSummaryForActiveServer(): Promise<PlayerTotalsS
         FROM player_stats_state
         WHERE server_id = ${getActiveServerId()}
       `
-    : await sql`
+    : await getSql()`
         SELECT
           COUNT(*)::int AS players,
           COALESCE(SUM(CASE WHEN COALESCE(stats->>'kills','') ~ '^[0-9]+$' THEN (stats->>'kills')::bigint ELSE 0 END), 0)::bigint AS kills,
@@ -3362,13 +3367,13 @@ async function persistRecoveredPrimarySnapshot(state: AppState, previousMainRow?
   const recoveryAt = new Date().toISOString();
   if (previousMainRow?.data) {
     const backupId = `recovery_backup_main_${Date.now()}`;
-    await sql`
+    await getSql()`
       INSERT INTO bot_state (id, data, updated_at, server_id)
       VALUES (${backupId}, ${sql.json(previousMainRow.data)}, NOW(), ${getPrimaryServerId()})
       ON CONFLICT (server_id, id) DO NOTHING
     `;
   }
-  await sql`
+  await getSql()`
     INSERT INTO bot_state (id, data, updated_at, server_id)
     VALUES (${STATE_ID}, ${sql.json(state)}, NOW(), ${getPrimaryServerId()})
     ON CONFLICT (server_id, id)
@@ -3385,7 +3390,7 @@ async function persistRecoveredPrimarySnapshot(state: AppState, previousMainRow?
 async function refreshBotStateScopedReadCapability() {
   if (!sql) return;
   try {
-    const indexes = await sql`
+    const indexes = await getSql()`
       SELECT array_agg(a.attname ORDER BY keycols.ordinality) AS columns
       FROM pg_index i
       JOIN pg_class t ON t.oid = i.indrelid
@@ -3444,7 +3449,7 @@ export async function getStateAsync(): Promise<AppState> {
     const stateIds = [STATE_ID, DISCORD_RUNTIME_STATE_ID, domainIds[0], domainIds[1], domainIds[2], domainIds[3], domainIds[4]];
     let rows: any[] = [];
     if (botStateScopedPersistenceReady) {
-      rows = await sql`
+      rows = await getSql()`
         SELECT id, data, updated_at, server_id
         FROM bot_state
         WHERE server_id = ${getActiveServerId()}
@@ -3456,7 +3461,7 @@ export async function getStateAsync(): Promise<AppState> {
         // secondary namespace must NEVER read another server's rows.
         scopedReadFallbacks += 1;
         lastScopedReadSource = "legacy-fallback";
-        rows = await sql`
+        rows = await getSql()`
           SELECT id, data, updated_at, server_id
           FROM bot_state
           WHERE (server_id = ${getPrimaryServerId()} OR server_id IS NULL)
@@ -3468,7 +3473,7 @@ export async function getStateAsync(): Promise<AppState> {
       // already contain one `main` per server, so an unscoped SELECT + find()
       // is nondeterministic and can load another server's empty state.
       lastScopedReadSource = "server-id-safe-fallback";
-      rows = await sql`
+      rows = await getSql()`
         SELECT id, data, updated_at, server_id
         FROM bot_state
         WHERE server_id = ${getActiveServerId()}
@@ -3479,7 +3484,7 @@ export async function getStateAsync(): Promise<AppState> {
         // It is considered only when no explicit pz-deathmatch row exists.
         scopedReadFallbacks += 1;
         lastScopedReadSource = "primary-untagged-fallback";
-        rows = await sql`
+        rows = await getSql()`
           SELECT id, data, updated_at, server_id
           FROM bot_state
           WHERE server_id IS NULL
@@ -3544,7 +3549,7 @@ export async function getStateAsync(): Promise<AppState> {
       if (recoveredPrimary) {
         await persistRecoveredPrimarySnapshot(state);
       } else if (botStateScopedPersistenceReady) {
-        await sql`
+        await getSql()`
           INSERT INTO bot_state (id, data, updated_at, server_id)
           VALUES (${STATE_ID}, ${sql.json(state)}, NOW(), ${getActiveServerId()})
           ON CONFLICT (server_id, id) DO NOTHING
@@ -3600,13 +3605,13 @@ export async function getStateAsync(): Promise<AppState> {
       const granularRows = granularHasMoreAuthoritativeData
         ? await loadAllGranularPlayerRowsForActiveServer()
         : playerStatsScopedPersistenceReady
-          ? await sql`
+          ? await getSql()`
               SELECT player_key, stats, current_streak, updated_at
               FROM player_stats_state
               WHERE server_id = ${getActiveServerId()}
                 AND updated_at > ${new Date(mainUpdatedAt || 0)}
             ` as any[]
-          : await sql`
+          : await getSql()`
               SELECT player_key, stats, current_streak, updated_at
               FROM player_stats_state
               WHERE server_id = ${getActiveServerId()}
@@ -3758,7 +3763,7 @@ async function ensurePlayerPositionHistoryTable() {
   if (playerPositionTableReadyPromise) return playerPositionTableReadyPromise;
 
   playerPositionTableReadyPromise = (async () => {
-    await sql`
+    await getSql()`
       CREATE TABLE IF NOT EXISTS player_position_history (
         id BIGSERIAL PRIMARY KEY,
         server_id TEXT NOT NULL,
@@ -3777,13 +3782,13 @@ async function ensurePlayerPositionHistoryTable() {
     `;
     // Existing Phase 7 installs used a global source_key. Tag those rows as the
     // primary server before promoting uniqueness to (server_id, source_key).
-    await sql`ALTER TABLE player_position_history ADD COLUMN IF NOT EXISTS server_id TEXT`;
-    await sql`UPDATE player_position_history SET server_id = ${getPrimaryServerId()} WHERE server_id IS NULL`;
-    await sql`ALTER TABLE player_position_history ALTER COLUMN server_id SET NOT NULL`;
-    await sql`ALTER TABLE player_position_history DROP CONSTRAINT IF EXISTS player_position_history_source_key_key`;
-    await sql`CREATE UNIQUE INDEX IF NOT EXISTS player_position_history_server_source_key_uidx ON player_position_history (server_id, source_key)`;
-    await sql`CREATE INDEX IF NOT EXISTS player_position_history_server_observed_at_idx ON player_position_history (server_id, observed_at)`;
-    await sql`CREATE INDEX IF NOT EXISTS player_position_history_server_player_time_idx ON player_position_history (server_id, player_normalized, observed_at)`;
+    await getSql()`ALTER TABLE player_position_history ADD COLUMN IF NOT EXISTS server_id TEXT`;
+    await getSql()`UPDATE player_position_history SET server_id = ${getPrimaryServerId()} WHERE server_id IS NULL`;
+    await getSql()`ALTER TABLE player_position_history ALTER COLUMN server_id SET NOT NULL`;
+    await getSql()`ALTER TABLE player_position_history DROP CONSTRAINT IF EXISTS player_position_history_source_key_key`;
+    await getSql()`CREATE UNIQUE INDEX IF NOT EXISTS player_position_history_server_source_key_uidx ON player_position_history (server_id, source_key)`;
+    await getSql()`CREATE INDEX IF NOT EXISTS player_position_history_server_observed_at_idx ON player_position_history (server_id, observed_at)`;
+    await getSql()`CREATE INDEX IF NOT EXISTS player_position_history_server_player_time_idx ON player_position_history (server_id, player_normalized, observed_at)`;
   })().catch((err) => {
     playerPositionTableReadyPromise = null;
     throw err;
@@ -3820,7 +3825,7 @@ async function flushPlayerPositionHistoryBatch() {
       observed_at: row.observedAt,
       source_file: row.sourceFile || null,
     }));
-    const result = await sql`
+    const result = await getSql()`
       INSERT INTO player_position_history ${sql(values)}
       ON CONFLICT (server_id, source_key) DO NOTHING
     `;
@@ -3840,7 +3845,7 @@ async function flushPlayerPositionHistoryBatch() {
     });
 
     if (now - getPlayerPositionRuntime().lastCleanupAt >= PLAYER_POSITION_CLEANUP_INTERVAL_MS) {
-      await sql`DELETE FROM player_position_history WHERE observed_at < NOW() - INTERVAL '24 hours'`;
+      await getSql()`DELETE FROM player_position_history WHERE observed_at < NOW() - INTERVAL '24 hours'`;
       getPlayerPositionRuntime().lastCleanupAt = now;
     }
   } catch (err) {
@@ -3996,7 +4001,7 @@ export async function getLatestPlayerPositionSnapshot(playerNames: string[]): Pr
     try {
       await ensurePlayerPositionHistoryTable();
       const normalizedNames = [...requested.keys()];
-      const rows = await sql`
+      const rows = await getSql()`
         SELECT DISTINCT ON (player_normalized)
           player_name, player_normalized, x, z, observed_at
         FROM player_position_history
