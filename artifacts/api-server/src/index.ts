@@ -3,6 +3,7 @@ import { logger } from "./lib/logger";
 import { startDiscordBot } from "./lib/discordBot";
 import { installNitradoHttpTransport } from "./lib/nitradoHttpTransport";
 import { flushExecutableManagedServerStates, startManagedServerRuntimeScheduler } from "./lib/serverRuntimeCoordinator";
+import { refreshManagedServerRegistryFromDb } from "./lib/state";
 
 function formatMb(bytes: number) { return `${(bytes / 1024 / 1024).toFixed(1)} MB`; }
 function logMemory(stage: string) {
@@ -44,10 +45,25 @@ function startServer(port: number) {
 
     setImmediate(() => {
       logMemory("post-listen-before-discord");
-      try {
-        console.log("🚀 iniciando bot do Discord multi-tenant...");
-        void startDiscordBot().catch((err) => { console.error("❌ erro assíncrono ao iniciar Discord:", err); logMemory("discord-start-failed"); });
-      } catch (err) { console.error("❌ erro ao iniciar Discord:", err); logMemory("discord-start-threw"); }
+      void refreshManagedServerRegistryFromDb()
+        .then(() => {
+          const registry = require("./lib/serverRegistry") as typeof import("./lib/serverRegistry");
+          console.log("🗂️ SERVER REGISTRY HYDRATED", {
+            managedServers: registry.listManagedServers().length,
+            registry: registry.getServerRegistryPersistenceStatus(),
+            namespace: registry.getServerNamespacePersistenceStatus(),
+          });
+        })
+        .catch((err) => {
+          console.error("❌ erro ao hidratar registry multi-tenant no startup:", err);
+        })
+        .finally(() => {
+          logMemory("post-registry-before-discord");
+          try {
+            console.log("🚀 iniciando bot do Discord multi-tenant...");
+            void startDiscordBot().catch((err) => { console.error("❌ erro assíncrono ao iniciar Discord:", err); logMemory("discord-start-failed"); });
+          } catch (err) { console.error("❌ erro ao iniciar Discord:", err); logMemory("discord-start-threw"); }
+        });
     });
 
     startManagedServerRuntimeScheduler();
