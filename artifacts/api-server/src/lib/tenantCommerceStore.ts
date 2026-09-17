@@ -238,11 +238,10 @@ export function scheduleTenantCommerceMirror(state: any, serverId = getActiveSer
   const shouldMirrorCommerce = lastCommerceSnapshotHash.get(serverId) !== commerceHash;
   if (!shouldMirrorPlayers && !shouldMirrorCommerce) return;
 
-  const existing = pendingSnapshots.get(serverId);
   pendingSnapshots.set(serverId, {
-    snapshot: existing?.snapshot || { ...playerSnapshot, ...commerceSnapshot },
-    mirrorPlayers: Boolean(existing?.mirrorPlayers || shouldMirrorPlayers),
-    mirrorCommerce: Boolean(existing?.mirrorCommerce || shouldMirrorCommerce),
+    snapshot: { ...playerSnapshot, ...commerceSnapshot },
+    mirrorPlayers: Boolean(pendingSnapshots.get(serverId)?.mirrorPlayers || shouldMirrorPlayers),
+    mirrorCommerce: Boolean(pendingSnapshots.get(serverId)?.mirrorCommerce || shouldMirrorCommerce),
   });
   if (flushPromises.has(serverId)) return;
 
