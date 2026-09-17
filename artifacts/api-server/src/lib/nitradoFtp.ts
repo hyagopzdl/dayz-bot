@@ -2,7 +2,7 @@ import net from "net";
 import { recordNetworkTransfer } from "./networkMetrics";
 import { getActiveServerId } from "./serverRuntime";
 import { getServerNitradoConfig } from "./serverNitrado";
-import { getPrimaryServerId, getServerScopedSettings } from "./serverRegistry";
+import { getServerScopedSettings } from "./serverRegistry";
 
 type FtpResponse = {
   code: number;
@@ -54,37 +54,21 @@ function normalizeFtpPath(value: string, rootValue = "") {
  */
 function resolveServerScopedFilePath(filePath: string, serverId: string) {
   const cleanPath = String(filePath || "")
-    .replace(/\\/g, "/")
+    .replace(/\/g, "/")
     .replace(/^\/+/, "")
     .replace(/\/+/g, "/");
 
   if (!cleanPath) return cleanPath;
 
-  const primaryMissionDir = String(
-    getServerScopedSettings(getPrimaryServerId()).dayzMissionDir || "",
-  )
-    .replace(/\\/g, "/")
-    .replace(/^\/+|\/+$/g, "");
   const serverMissionDir = String(
     getServerScopedSettings(serverId).dayzMissionDir || "",
   )
-    .replace(/\\/g, "/")
+    .replace(/\/g, "/")
     .replace(/^\/+|\/+$/g, "");
 
-  if (!primaryMissionDir || !serverMissionDir || primaryMissionDir === serverMissionDir) {
-    return cleanPath;
-  }
-
-  if (cleanPath === primaryMissionDir) {
-    return serverMissionDir;
-  }
-
-  const primaryPrefix = `${primaryMissionDir}/`;
-  if (cleanPath.startsWith(primaryPrefix)) {
-    return `${serverMissionDir}/${cleanPath.slice(primaryPrefix.length)}`;
-  }
-
-  return cleanPath;
+  return serverMissionDir && cleanPath.startsWith(`${serverMissionDir}/`)
+    ? cleanPath
+    : cleanPath;
 }
 
 function parsePasvEndpoint(message: string) {

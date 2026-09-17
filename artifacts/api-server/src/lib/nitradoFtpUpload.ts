@@ -161,17 +161,35 @@ function splitPath(filePath: string) {
   return { directory: parts.join("/"), file };
 }
 
-function candidateDirectories(filePath: string, configuredRoot?: string, missionDir?: string) {
+function deriveNitradoFilesystemRoot(baseDir: string, namespace: "noftp" | "ftproot") {
+  const normalized = String(baseDir || "").replace(/\\/g, "/");
+  const match = normalized.match(/^(\/games\/[^/]+)\/(?:noftp|ftproot)(?:\/|$)/i);
+  return match?.[1] ? `${match[1]}/${namespace}` : "";
+}
+
+function candidateDirectories(
+  filePath: string,
+  configuredRoot?: string,
+  missionDir?: string,
+  baseDir?: string,
+) {
   const { directory } = splitPath(filePath);
   const cleanRoot = normalizePath(configuredRoot || "");
+  const noFtpRoot = deriveNitradoFilesystemRoot(baseDir || "", "noftp");
+  const ftpRoot = deriveNitradoFilesystemRoot(baseDir || "", "ftproot");
   const candidates = [directory];
+
   if (cleanRoot) candidates.push(`${cleanRoot}/${directory}`);
+  if (noFtpRoot) candidates.push(`${noFtpRoot}/${directory}`);
+  if (ftpRoot) candidates.push(`${ftpRoot}/${directory}`);
+
   if (missionDir) {
     const mission = normalizePath(missionDir);
     if (directory === mission || directory.startsWith(`${mission}/`)) {
       candidates.push(directory);
     }
   }
+
   return Array.from(new Set(candidates.filter(Boolean)));
 }
 
@@ -182,7 +200,7 @@ export async function uploadShopTextFileViaFtp(filePath: string, content: string
   const { host, port, user, password, root } = config.ftp;
   const { file } = splitPath(filePath);
   const missionDir = getServerScopedSettings(serverId).dayzMissionDir;
-  const directories = candidateDirectories(filePath, root, missionDir);
+  const directories = candidateDirectories(filePath, root, missionDir, config.baseDir);
   const client = new FtpClient();
   let workingDirectory = "/";
 

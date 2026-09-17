@@ -852,13 +852,25 @@ function getNoFtpRootFromAdmBaseDir(serverId = getActiveServerId()) {
   return uniqueStrings(variants);
 }
 
-function buildUploadPathCandidates(pathValue: string) {
-  // IMPORTANT: the File Server upload API expects the logical directory shown
-  // by Nitrado's File Browser. Do not translate it into /games/.../noftp or
-  // /games/.../ftproot. Those are internal filesystem representations and are
-  // not the canonical upload destination. Also avoid a trailing slash: Nitrado
-  // has been returning "Destination directory doesn't exist" for that form.
-  return withDayzMissionFolderVariants(pathValue);
+function buildUploadPathCandidates(pathValue: string, serverId = getActiveServerId()) {
+  const logicalVariants = withDayzMissionFolderVariants(pathValue);
+  const noFtpRoot = getNoFtpRootFromAdmBaseDir(serverId);
+  const ftpRoot = getFtpRootFromAdmBaseDir(serverId);
+  const candidates: string[] = [];
+
+  for (const variant of logicalVariants) {
+    // Keep the logical File Browser namespace first. This is the canonical
+    // form and avoids changing behavior for servers where Nitrado accepts it.
+    candidates.push(variant);
+
+    // The legacy single-server implementation also resolved the same logical
+    // mission path against the server's actual noftp/ftproot roots. Restore
+    // those candidates, but derive them from the requested server only.
+    if (noFtpRoot) candidates.push(`${noFtpRoot}/${variant}`);
+    if (ftpRoot) candidates.push(`${ftpRoot}/${variant}`);
+  }
+
+  return uniqueStrings(candidates);
 }
 
 async function getUploadToken(
@@ -869,7 +881,7 @@ async function getUploadToken(
   const { path, file } = splitRemoteFilePath(filePath);
   const url = `https://api.nitrado.net/services/${serviceId}/gameservers/file_server/upload`;
   const errors: string[] = [];
-  const pathCandidates = buildUploadPathCandidates(path);
+  const pathCandidates = buildUploadPathCandidates(path, serverId);
 
   console.log(`📤 Nitrado upload token request: file=${file}`);
   console.log(`📤 Nitrado canonical upload path candidates: ${pathCandidates.join(" | ")}`);
