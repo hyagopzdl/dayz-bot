@@ -1223,7 +1223,7 @@ function startSpawnZoneAutomationScheduler() {
   if (spawnZoneAutomationStarted) return;
   spawnZoneAutomationStarted = true;
   const intervalMs = getSpawnZoneAutomationIntervalMs();
-  const run = () => Promise.all(listExecutableManagedServers().map((server) => runInServerRuntimeContext(server.id, () => runSpawnZoneAutomationNow().catch((err) => console.error(`spawn zones automation failed [${server.id}]`, err))));
+  const run = () => Promise.all(listExecutableManagedServers().map((server) => runInServerRuntimeContext(server.id, () => runSpawnZoneAutomationNow().catch((err) => console.error(`spawn zones automation failed [${server.id}]`, err)))));
   const initialTimer = setTimeout(run, 5_000);
   const timer = setInterval(run, intervalMs);
   if (typeof (initialTimer as any).unref === "function") (initialTimer as any).unref();
