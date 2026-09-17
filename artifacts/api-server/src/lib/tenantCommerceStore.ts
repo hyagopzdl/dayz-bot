@@ -5,8 +5,10 @@ import { getActiveServerId } from "./serverRuntime";
 const sql = process.env.DATABASE_URL ? postgres(process.env.DATABASE_URL, { ssl: "require", max: 1 }) : null;
 let schemaReady: Promise<void> | null = null;
 const knownPlayersByServer = new Map<string, Map<string, string>>();
-const lastSnapshotHash = new Map<string, string>();
-const pendingSnapshots = new Map<string, any>();
+const lastPlayerSnapshotHash = new Map<string, string>();
+const lastCommerceSnapshotHash = new Map<string, string>();
+const lastPlayerMirrorAt = new Map<string, number>();
+const pendingSnapshots = new Map<string, { snapshot: any; mirrorPlayers: boolean; mirrorCommerce: boolean }>();
 const flushPromises = new Map<string, Promise<void>>();
 
 function normalize(value: string) { return String(value || "").trim().replace(/\s+/g, " ").toLowerCase(); }
@@ -109,7 +111,7 @@ export function getPersistedKnownGamertags(serverId = getActiveServerId()) {
   return [...(knownPlayersByServer.get(serverId)?.values() || [])];
 }
 
-async function mirrorSnapshot(serverId: string, snap: any) {
+async function mirrorPlayers(serverId: string, snap: any) {
   if (!sql) return;
   await ensureSchema();
   const known = knownPlayersByServer.get(serverId) || new Map<string, string>();
@@ -140,6 +142,11 @@ async function mirrorSnapshot(serverId: string, snap: any) {
   }
   for (const [key, name] of observed) known.set(key, name);
   knownPlayersByServer.set(serverId, known);
+}
+
+async function mirrorCommerce(serverId: string, snap: any) {
+  if (!sql) return;
+  await ensureSchema();
 
   const links = Object.values(snap.playerLinks || {}) as any[];
   if (links.length) {
@@ -147,14 +154,25 @@ async function mirrorSnapshot(serverId: string, snap: any) {
     await sql`DELETE FROM server_player_links WHERE server_id = ${serverId} AND NOT (discord_id = ANY(${ids}))`;
     const rows = links.map((link) => ({ server_id:serverId, discord_id:String(link.discordId), gamertag_normalized:String(link.gamertagNormalized || normalize(link.gamertag)), gamertag:String(link.gamertag), locale:link.locale || null, linked_at:link.linkedAt ? new Date(link.linkedAt) : null, updated_at:link.updatedAt ? new Date(link.updatedAt) : new Date() }));
     await sql`INSERT INTO server_player_links ${sql(rows, "server_id","discord_id","gamertag_normalized","gamertag","locale","linked_at","updated_at")}
-      ON CONFLICT (server_id,discord_id) DO UPDATE SET gamertag_normalized=EXCLUDED.gamertag_normalized,gamertag=EXCLUDED.gamertag,locale=EXCLUDED.locale,linked_at=EXCLUDED.linked_at,updated_at=EXCLUDED.updated_at`;
+      ON CONFLICT (server_id,discord_id) DO UPDATE SET gamertag_normalized=EXCLUDED.gamertag_normalized,gamertag=EXCLUDED.gamertag,locale=EXCLUDED.locale,linked_at=EXCLUDED.linked_at,updated_at=EXCLUDED.updated_at
+      WHERE server_player_links.gamertag_normalized IS DISTINCT FROM EXCLUDED.gamertag_normalized
+         OR server_player_links.gamertag IS DISTINCT FROM EXCLUDED.gamertag
+         OR server_player_links.locale IS DISTINCT FROM EXCLUDED.locale
+         OR server_player_links.linked_at IS DISTINCT FROM EXCLUDED.linked_at`;
   } else await sql`DELETE FROM server_player_links WHERE server_id = ${serverId}`;
 
   const wallets = Object.values(snap.wallets || {}) as any[];
   if (wallets.length) {
     const rows = wallets.map((wallet) => ({ server_id:serverId, discord_id:String(wallet.discordId), gamertag:String(wallet.gamertag), balance:Number(wallet.balance||0), total_earned:Number(wallet.totalEarned||0), total_spent:Number(wallet.totalSpent||0), online_reward_minutes:Number(wallet.onlineRewardMinutes||0), last_playtime_reward_at:wallet.lastPlaytimeRewardAt ? new Date(wallet.lastPlaytimeRewardAt) : null, created_at:wallet.createdAt ? new Date(wallet.createdAt) : null, updated_at:wallet.updatedAt ? new Date(wallet.updatedAt) : new Date() }));
     await sql`INSERT INTO server_wallets ${sql(rows,"server_id","discord_id","gamertag","balance","total_earned","total_spent","online_reward_minutes","last_playtime_reward_at","created_at","updated_at")}
-      ON CONFLICT (server_id,discord_id) DO UPDATE SET gamertag=EXCLUDED.gamertag,balance=EXCLUDED.balance,total_earned=EXCLUDED.total_earned,total_spent=EXCLUDED.total_spent,online_reward_minutes=EXCLUDED.online_reward_minutes,last_playtime_reward_at=EXCLUDED.last_playtime_reward_at,updated_at=EXCLUDED.updated_at`;
+      ON CONFLICT (server_id,discord_id) DO UPDATE SET gamertag=EXCLUDED.gamertag,balance=EXCLUDED.balance,total_earned=EXCLUDED.total_earned,total_spent=EXCLUDED.total_spent,online_reward_minutes=EXCLUDED.online_reward_minutes,last_playtime_reward_at=EXCLUDED.last_playtime_reward_at,updated_at=NOW()
+      WHERE server_wallets.gamertag IS DISTINCT FROM EXCLUDED.gamertag
+         OR server_wallets.balance IS DISTINCT FROM EXCLUDED.balance
+         OR server_wallets.total_earned IS DISTINCT FROM EXCLUDED.total_earned
+         OR server_wallets.total_spent IS DISTINCT FROM EXCLUDED.total_spent
+         OR server_wallets.online_reward_minutes IS DISTINCT FROM EXCLUDED.online_reward_minutes
+         OR server_wallets.last_playtime_reward_at IS DISTINCT FROM EXCLUDED.last_playtime_reward_at
+         OR server_wallets.created_at IS DISTINCT FROM EXCLUDED.created_at`;
   }
 
   const transactions = snap.economyTransactions || [];
@@ -166,7 +184,11 @@ async function mirrorSnapshot(serverId: string, snap: any) {
   const orders = snap.shopOrders || [];
   if (orders.length) {
     const rows = orders.map((order:any) => ({ server_id:serverId,id:String(order.id),discord_id:order.discordUserId || order.discordId || null,status:order.status || null,created_at:order.createdAt ? new Date(order.createdAt) : null,updated_at:new Date(),payload:JSON.stringify(order) }));
-    await sql`INSERT INTO server_shop_orders ${sql(rows,"server_id","id","discord_id","status","created_at","updated_at","payload")} ON CONFLICT (server_id,id) DO UPDATE SET discord_id=EXCLUDED.discord_id,status=EXCLUDED.status,updated_at=NOW(),payload=EXCLUDED.payload`;
+    await sql`INSERT INTO server_shop_orders ${sql(rows,"server_id","id","discord_id","status","created_at","updated_at","payload")} ON CONFLICT (server_id,id) DO UPDATE SET discord_id=EXCLUDED.discord_id,status=EXCLUDED.status,updated_at=NOW(),payload=EXCLUDED.payload
+      WHERE server_shop_orders.discord_id IS DISTINCT FROM EXCLUDED.discord_id
+         OR server_shop_orders.status IS DISTINCT FROM EXCLUDED.status
+         OR server_shop_orders.created_at IS DISTINCT FROM EXCLUDED.created_at
+         OR server_shop_orders.payload IS DISTINCT FROM EXCLUDED.payload`;
   }
 
   const locations = snap.shopSavedLocations || [];
@@ -176,7 +198,8 @@ async function mirrorSnapshot(serverId: string, snap: any) {
   } else await sql`DELETE FROM server_shop_saved_locations WHERE server_id=${serverId}`;
   if (locations.length) {
     const rows = locations.map((loc:any) => ({ server_id:serverId,discord_id:String(loc.discordUserId || loc.discordId),name:String(loc.name),payload:JSON.stringify(loc),updated_at:new Date() }));
-    await sql`INSERT INTO server_shop_saved_locations ${sql(rows,"server_id","discord_id","name","payload","updated_at")} ON CONFLICT (server_id,discord_id,name) DO UPDATE SET payload=EXCLUDED.payload,updated_at=NOW()`;
+    await sql`INSERT INTO server_shop_saved_locations ${sql(rows,"server_id","discord_id","name","payload","updated_at")} ON CONFLICT (server_id,discord_id,name) DO UPDATE SET payload=EXCLUDED.payload,updated_at=NOW()
+      WHERE server_shop_saved_locations.payload IS DISTINCT FROM EXCLUDED.payload`;
   }
 
   const checkouts = snap.shopPendingCheckouts || [];
@@ -186,30 +209,63 @@ async function mirrorSnapshot(serverId: string, snap: any) {
   } else await sql`DELETE FROM server_shop_checkouts WHERE server_id=${serverId}`;
   if (checkouts.length) {
     const rows = checkouts.map((c:any) => ({ server_id:serverId,id:String(c.id),discord_id:String(c.discordUserId || c.discordId),expires_at:c.expiresAt ? new Date(c.expiresAt) : null,payload:JSON.stringify(c),updated_at:new Date() }));
-    await sql`INSERT INTO server_shop_checkouts ${sql(rows,"server_id","id","discord_id","expires_at","payload","updated_at")} ON CONFLICT (server_id,id) DO UPDATE SET discord_id=EXCLUDED.discord_id,expires_at=EXCLUDED.expires_at,payload=EXCLUDED.payload,updated_at=NOW()`;
+    await sql`INSERT INTO server_shop_checkouts ${sql(rows,"server_id","id","discord_id","expires_at","payload","updated_at")} ON CONFLICT (server_id,id) DO UPDATE SET discord_id=EXCLUDED.discord_id,expires_at=EXCLUDED.expires_at,payload=EXCLUDED.payload,updated_at=NOW()
+      WHERE server_shop_checkouts.discord_id IS DISTINCT FROM EXCLUDED.discord_id
+         OR server_shop_checkouts.expires_at IS DISTINCT FROM EXCLUDED.expires_at
+         OR server_shop_checkouts.payload IS DISTINCT FROM EXCLUDED.payload`;
   }
 }
 
 export function scheduleTenantCommerceMirror(state: any, serverId = getActiveServerId()) {
   if (!sql) return;
-  const snapshot = {
-    players: state.players || {}, onlinePlayers: state.onlinePlayers || {}, playerLinks: state.playerLinks || {}, wallets: state.wallets || {},
+  const playerSnapshot = {
+    players: state.players || {},
+    onlinePlayers: state.onlinePlayers || {},
+  };
+  const commerceSnapshot = {
+    playerLinks: state.playerLinks || {},
+    wallets: state.wallets || {},
     economyTransactions: Array.isArray(state.economyTransactions) ? state.economyTransactions : [],
     shopOrders: Array.isArray(state.shopOrders) ? state.shopOrders : [],
     shopSavedLocations: Array.isArray(state.shopSavedLocations) ? state.shopSavedLocations : [],
     shopPendingCheckouts: Array.isArray(state.shopPendingCheckouts) ? state.shopPendingCheckouts : [],
   };
-  const fingerprint = hash(snapshot);
-  if (lastSnapshotHash.get(serverId) === fingerprint) return;
-  pendingSnapshots.set(serverId, snapshot);
+
+  const playerHash = hash(playerSnapshot);
+  const commerceHash = hash(commerceSnapshot);
+  const now = Date.now();
+  const shouldMirrorPlayers = lastPlayerSnapshotHash.get(serverId) !== playerHash || now - (lastPlayerMirrorAt.get(serverId) || 0) >= 15 * 60 * 1000;
+  const shouldMirrorCommerce = lastCommerceSnapshotHash.get(serverId) !== commerceHash;
+  if (!shouldMirrorPlayers && !shouldMirrorCommerce) return;
+
+  const existing = pendingSnapshots.get(serverId);
+  pendingSnapshots.set(serverId, {
+    snapshot: existing?.snapshot || { ...playerSnapshot, ...commerceSnapshot },
+    mirrorPlayers: Boolean(existing?.mirrorPlayers || shouldMirrorPlayers),
+    mirrorCommerce: Boolean(existing?.mirrorCommerce || shouldMirrorCommerce),
+  });
   if (flushPromises.has(serverId)) return;
+
   const runner = (async () => {
     try {
       while (pendingSnapshots.has(serverId)) {
-        const next = pendingSnapshots.get(serverId); pendingSnapshots.delete(serverId);
-        const nextHash = hash(next);
-        await mirrorSnapshot(serverId, next);
-        lastSnapshotHash.set(serverId, nextHash);
+        const next = pendingSnapshots.get(serverId)!;
+        pendingSnapshots.delete(serverId);
+        if (next.mirrorPlayers) {
+          await mirrorPlayers(serverId, next.snapshot);
+          lastPlayerSnapshotHash.set(serverId, hash({ players: next.snapshot.players || {}, onlinePlayers: next.snapshot.onlinePlayers || {} }));
+          lastPlayerMirrorAt.set(serverId, Date.now());
+        }
+        if (next.mirrorCommerce) {
+          await mirrorCommerce(serverId, next.snapshot);
+          lastCommerceSnapshotHash.set(serverId, hash({
+            playerLinks: next.snapshot.playerLinks || {}, wallets: next.snapshot.wallets || {},
+            economyTransactions: Array.isArray(next.snapshot.economyTransactions) ? next.snapshot.economyTransactions : [],
+            shopOrders: Array.isArray(next.snapshot.shopOrders) ? next.snapshot.shopOrders : [],
+            shopSavedLocations: Array.isArray(next.snapshot.shopSavedLocations) ? next.snapshot.shopSavedLocations : [],
+            shopPendingCheckouts: Array.isArray(next.snapshot.shopPendingCheckouts) ? next.snapshot.shopPendingCheckouts : [],
+          }));
+        }
       }
     } catch (err) {
       console.error(`❌ tenant commerce mirror failed [${serverId}]`, err);
