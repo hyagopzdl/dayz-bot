@@ -1,6 +1,8 @@
 name: Repair Nitrado FTP syntax
 
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
