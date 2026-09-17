@@ -79,8 +79,7 @@ jobs:
           if not removed:
               raise RuntimeError('ensurePrimaryServerRegistryMetadata not found')
 
-          # Drop every import/call line for the removed primary-server APIs.
-          s = '\n'.join(line for line in s.splitlines() if 'getPrimaryServerDescriptor' not in line and 'getPrimaryServerId' not in line and 'ensurePrimaryServerRegistryMetadata' not in line) + '\n'
+          s = '\n'.join(line for line in s.splitlines() if 'getPrimaryServerDescriptor' not in line and 'getPrimaryServerId' not in line and 'ensurePrimaryServerRegistryMetadata' not in line and 'primary_server' not in line) + '\n'
           s = s.replace('const LEGACY_FILE = path.resolve(process.cwd(), "state.json");\n', '')
           s = s.replace('const STATE_COMPAT_SNAPSHOT_MS = Math.max(6 * 60 * 60_000, Number(process.env.STATE_COMPAT_SNAPSHOT_MS || 6 * 60 * 60 * 1000));\n', '')
           s = s.replace('  lastCompatibilitySnapshotAt: number;\n', '')
@@ -106,7 +105,6 @@ jobs:
 
           s = re.sub(r'async function reloadManagedServerRegistryFromDb\(primary = .*?\) \{', 'async function reloadManagedServerRegistryFromDb() {', s)
           s = s.replace('  if (!sql) return [primary];', '  if (!sql) {\n    setPersistedManagedServers([]);\n    return [];\n  }')
-          s = re.sub(r'\s*SELECT id, name, organization_id, enabled, primary_server, runtime_enabled, onboarding_status,', '\n    SELECT id, name, organization_id, enabled, runtime_enabled, onboarding_status,', s)
           s = s.replace('    ORDER BY primary_server DESC, created_at ASC, id ASC', '    ORDER BY created_at ASC, id ASC')
           s = re.sub(r'  const descriptors = \(rows as any\[\]\)\.map\(\(row\) => mapManagedServerRow\(row, primary\)\);\n  const next = descriptors\.length \? descriptors : \[primary\];', '  const next = (rows as any[]).map((row) => mapManagedServerRow(row));', s)
           s = s.replace('next.filter((server) => !server.primary && server.onboardingStatus === "draft")', 'next.filter((server) => server.onboardingStatus === "draft")')
@@ -120,7 +118,7 @@ jobs:
           src = root / 'artifacts/api-server/src'
           for p in src.rglob('*.ts'):
               text = p.read_text()
-              text2 = '\n'.join(line for line in text.splitlines() if 'getPrimaryServerDescriptor' not in line and 'getPrimaryServerId' not in line and 'ensurePrimaryServerRegistryMetadata' not in line) + '\n'
+              text2 = '\n'.join(line for line in text.splitlines() if 'getPrimaryServerDescriptor' not in line and 'getPrimaryServerId' not in line and 'ensurePrimaryServerRegistryMetadata' not in line and 'primary_server' not in line) + '\n'
               if text2 != text:
                   p.write_text(text2)
 
