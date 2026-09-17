@@ -21,9 +21,13 @@ function requireSystemOwner(req: Request, res: Response) {
 }
 
 router.get("/", (req, res) => {
-  if (!req.adminSession) return res.redirect("/admin-panel/login");
+  if (!req.adminSession) {
+    res.redirect("/admin-panel/login");
+    return;
+  }
   if (!isSystemOwner(req.adminSession.adminUserId)) {
-    return res.status(403).send("System owner access required.");
+    res.status(403).send("System owner access required.");
+    return;
   }
 
   res.type("html").send(`<!doctype html>
@@ -65,7 +69,9 @@ loadOverrides();
 
 router.get("/search", async (req, res) => {
   try {
-    if (!requireSystemOwner(req, res)) return;
+    if (!requireSystemOwner(req, res)) {
+      return;
+    }
     const query = String(req.query.q || "").trim();
     const result = await searchDzPageItems({ query, page: 1, limit: 48, language: "pt" });
     res.json(result);
@@ -76,7 +82,9 @@ router.get("/search", async (req, res) => {
 
 router.get("/overrides", async (req, res) => {
   try {
-    if (!requireSystemOwner(req, res)) return;
+    if (!requireSystemOwner(req, res)) {
+      return;
+    }
     const values = await getDayzItemImageOverrides();
     res.json({ overrides: [...values.entries()].map(([className, imageUrl]) => ({ className, imageUrl })) });
   } catch (error) {
@@ -86,12 +94,18 @@ router.get("/overrides", async (req, res) => {
 
 router.put("/overrides/:className", async (req, res) => {
   try {
-    if (!requireSystemOwner(req, res)) return;
+    if (!requireSystemOwner(req, res)) {
+      return;
+    }
     const className = decodeURIComponent(String(req.params.className || "")).trim();
     const imageUrl = typeof req.body?.imageUrl === "string" ? req.body.imageUrl.trim() : "";
-    if (!className) return res.status(400).json({ error: "className is required." });
+    if (!className) {
+      res.status(400).json({ error: "className is required." });
+      return;
+    }
     if (imageUrl.length > 2048 || !/^https?:\/\//i.test(imageUrl)) {
-      return res.status(400).json({ error: "imageUrl must be a valid http(s) URL up to 2048 characters." });
+      res.status(400).json({ error: "imageUrl must be a valid http(s) URL up to 2048 characters." });
+      return;
     }
     await setDayzItemImageOverride(className, imageUrl);
     res.json({ className, imageUrl });
@@ -102,9 +116,14 @@ router.put("/overrides/:className", async (req, res) => {
 
 router.delete("/overrides/:className", async (req, res) => {
   try {
-    if (!requireSystemOwner(req, res)) return;
+    if (!requireSystemOwner(req, res)) {
+      return;
+    }
     const className = decodeURIComponent(String(req.params.className || "")).trim();
-    if (!className) return res.status(400).json({ error: "className is required." });
+    if (!className) {
+      res.status(400).json({ error: "className is required." });
+      return;
+    }
     await setDayzItemImageOverride(className, null);
     res.status(204).end();
   } catch (error) {
