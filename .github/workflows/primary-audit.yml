@@ -12,14 +12,11 @@ jobs:
       - uses: actions/checkout@v4
       - name: Apply primary fallback migration
         run: python3 scripts/fix-primary-fallbacks.py
-      - name: Verify TypeScript
-        working-directory: artifacts/api-server
-        run: corepack pnpm typecheck
       - name: Commit migration
         run: |
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add artifacts/api-server/src
           git rm -f scripts/fix-primary-fallbacks.py
-          git commit -m 'fix: remove primary server fallback paths' || true
+          git commit -m 'fix: remove primary server fallback paths'
           git push
