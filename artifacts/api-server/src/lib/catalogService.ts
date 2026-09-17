@@ -89,15 +89,6 @@ export async function ensureShopCatalogSchema() {
     `;
     await db`CREATE INDEX IF NOT EXISTS server_shop_catalog_items_category_idx ON server_shop_catalog_items (server_id, category)`;
     await db`CREATE INDEX IF NOT EXISTS server_shop_catalog_items_enabled_idx ON server_shop_catalog_items (server_id, enabled)`;
-    await db`
-      CREATE TABLE IF NOT EXISTS dayz_items (
-        class_name TEXT PRIMARY KEY, popular_name TEXT NOT NULL, image_url TEXT,
-        spawn_event_name TEXT, enabled BOOLEAN NOT NULL DEFAULT true,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      )
-    `;
-    await db`ALTER TABLE dayz_items ADD COLUMN IF NOT EXISTS spawn_event_name TEXT`;
-    await db`ALTER TABLE dayz_items ADD COLUMN IF NOT EXISTS image_url TEXT`;
   })().catch((error) => {
     schemaPromise = null;
     throw error;
@@ -111,53 +102,11 @@ async function countServerCatalogItems(serverId: string) {
   return Number((rows as any[])[0]?.count || 0);
 }
 
-async function catalogsAreExactClone(sourceServerId: string, targetServerId: string) {
-  const db = requireSql();
-  const rows = await db`
-    SELECT
-      NOT EXISTS (
-        (SELECT id, label, emoji, description, enabled, sort_order FROM server_shop_catalog_categories WHERE server_id = ${sourceServerId}
-         EXCEPT SELECT id, label, emoji, description, enabled, sort_order FROM server_shop_catalog_categories WHERE server_id = ${targetServerId})
-        UNION ALL
-        (SELECT id, label, emoji, description, enabled, sort_order FROM server_shop_catalog_categories WHERE server_id = ${targetServerId}
-         EXCEPT SELECT id, label, emoji, description, enabled, sort_order FROM server_shop_catalog_categories WHERE server_id = ${sourceServerId})
-      )
-      AND NOT EXISTS (
-        (SELECT id, name, class_name, popular_name, category, price, description, image_url, enabled, max_per_restart, sort_order FROM server_shop_catalog_items WHERE server_id = ${sourceServerId}
-         EXCEPT SELECT id, name, class_name, popular_name, category, price, description, image_url, enabled, max_per_restart, sort_order FROM server_shop_catalog_items WHERE server_id = ${targetServerId})
-        UNION ALL
-        (SELECT id, name, class_name, popular_name, category, price, description, image_url, enabled, max_per_restart, sort_order FROM server_shop_catalog_items WHERE server_id = ${targetServerId}
-         EXCEPT SELECT id, name, class_name, popular_name, category, price, description, image_url, enabled, max_per_restart, sort_order FROM server_shop_catalog_items WHERE server_id = ${sourceServerId})
-      ) AS exact_clone
-  `;
-  return rows[0]?.exact_clone === true;
-}
-
-async function cleanupLegacySecondaryAutoClone(serverId: string) {
-  const primaryServerId = getPrimaryServerId();
-  if (serverId === primaryServerId) return false;
-  const db = requireSql();
-  const targetCount = await countServerCatalogItems(serverId);
-  if (!targetCount) return false;
-  const primaryCount = await countServerCatalogItems(primaryServerId);
-  if (!primaryCount || targetCount !== primaryCount) return false;
-  if (!(await catalogsAreExactClone(primaryServerId, serverId))) return false;
-  await db.begin(async (tx) => {
-    await tx`DELETE FROM server_shop_catalog_items WHERE server_id = ${serverId}`;
-    await tx`DELETE FROM server_shop_catalog_categories WHERE server_id = ${serverId}`;
-  });
-  cachedCatalogs.delete(serverId);
-  return true;
-}
-
 async function seedServerCatalogIfNeeded(serverId: string) {
   const db = requireSql();
   await ensureShopCatalogSchema();
   const primaryServerId = getPrimaryServerId();
-  if (serverId !== primaryServerId) {
-    await cleanupLegacySecondaryAutoClone(serverId);
-    return;
-  }
+  if (serverId !== primaryServerId) return;
   if (await countServerCatalogItems(serverId)) return;
   await db.begin(async (tx) => {
     await tx`INSERT INTO server_shop_catalog_categories (server_id, id, label, emoji, description, enabled, sort_order, created_at, updated_at)
@@ -196,9 +145,8 @@ async function hydrateCatalogItemsFromDzPage(items: ShopItem[]) {
       return {
         ...item,
         name: dzItem.name || item.name,
-        popularName: dzItem.name || item.popularName,
+        popularName: item.popularName || dzItem.name || item.name,
         imageUrl: dzItem.iconUrl || item.imageUrl,
-        ...(dzItem.category ? { dzPageCategory: dzItem.category } : {}),
       } as ShopItem;
     } catch {
       return item;
@@ -360,5 +308,5 @@ export async function cloneShopCatalogFromServer(sourceServerId: string, targetS
 }
 
 export function getShopCatalogIsolationDiagnostics() {
-  return { phase: 16, cacheModel: "per-server" as const, tableModel: "server-scoped" as const, loadedServers: [...cachedCatalogs.keys()], legacyTablesReadOnlyMigrationSource: true };
+  return { phase: 17, cacheModel: "per-server" as const, tableModel: "server-scoped" as const, loadedServers: [...cachedCatalogs.keys()], legacyTablesReadOnlyMigrationSource: true };
 }
