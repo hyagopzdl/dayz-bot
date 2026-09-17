@@ -7,14 +7,12 @@ const router = Router();
 // account yet. Send it to the real admin login instead of the setup flow.
 // After login, adminAuth resolves the user's persisted server access and
 // creates the session with the correct serverId.
-router.get("/", (req, res) => {
+router.get("/", (req, res, next) => {
   const session = req.adminSession;
   if (!session) return res.redirect("/admin-panel/login");
 
   const serverId = String(session.serverId || "").trim();
-  if (serverId && getManagedServerById(serverId)) {
-    return res.redirect("/admin-panel");
-  }
+  if (serverId && getManagedServerById(serverId)) return next();
 
   return res.redirect("/admin-panel/setup");
 });
