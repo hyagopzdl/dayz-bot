@@ -46,27 +46,44 @@ const DISCORD_CHANNEL_EXPECTATIONS: Array<{ key: keyof ServerDiscordRuntimeConfi
   { key: "matchCategoryId", label: "Match category", type: "category" }, { key: "memberFeedChannelId", label: "Member feed", type: "text" },
 ];
 
-async function waitForDiscordReady(timeoutMs = 5000) {
-  const client = await import("./discordBot").then(({ getDiscordClient }) => getDiscordClient());
-  if (client.isReady()) return true;
+async function waitForDiscordReady(timeoutMs = 15000) {
+  const discord = await import("./discordBot");
+  const client = discord.getDiscordClient();
+  const diagnostics = discord.getDiscordGatewayDiagnostics();
+  if (diagnostics.ready) return true;
   if (!process.env.DISCORD_TOKEN) return false;
+
+  // The preflight is allowed to recover the Gateway itself. Previously it only
+  // waited for a connection that might never have been started by this process.
+  try {
+    await discord.startDiscordBot();
+  } catch {
+    return false;
+  }
+
   const startedAt = Date.now();
   while (Date.now() - startedAt < timeoutMs) {
+    if (discord.getDiscordGatewayDiagnostics().ready && client.isReady()) return true;
     await new Promise((resolve) => setTimeout(resolve, 250));
-    if (client.isReady()) return true;
   }
-  return client.isReady();
+  return discord.getDiscordGatewayDiagnostics().ready && client.isReady();
 }
 
 async function validateOptionalDiscord(server: ManagedServerDescriptor, checks: ServerActivationPreflightCheck[]) {
   const guildId = text(server.integrations.discordGuildId);
   if (!guildId) { pushCheck(checks, "discord", "Discord", "skipped", "Discord nao esta configurado e continua opcional para o runtime core."); return; }
   const ready = await waitForDiscordReady();
-  const options = ready ? await listDiscordGuildOptions(server.id) : { ready: false, guilds: [] as DiscordGuildOption[], message: process.env.DISCORD_TOKEN ? "O bot Discord ainda nao ficou pronto apos aguardar 5s." : "DISCORD_TOKEN nao esta configurado no processo." };
+  const discord = await import("./discordBot");
+  const diagnostics = discord.getDiscordGatewayDiagnostics();
+  const options = ready ? await listDiscordGuildOptions(server.id) : { ready: false, guilds: [] as DiscordGuildOption[], message: diagnostics.lastLoginError || (process.env.DISCORD_TOKEN ? "O bot Discord nao ficou pronto apos iniciar o Gateway." : "DISCORD_TOKEN nao esta configurado no processo.") };
   if (!options.ready) {
     pushCheck(checks, "discord", "Discord", "fail", options.message || "Uma guild foi configurada, mas o bot Discord nao esta conectado.", {
       tokenConfigured: Boolean(process.env.DISCORD_TOKEN),
-      clientReady: ready,
+      clientReady: diagnostics.clientIsReady,
+      gatewayReady: diagnostics.gatewayReadyFlag,
+      ready: diagnostics.ready,
+      loginInFlight: diagnostics.loginInFlight,
+      lastLoginError: diagnostics.lastLoginError,
     });
     return;
   }
@@ -130,77 +147,32 @@ export async function runManagedServerActivationPreflight(serverIdInput: string)
     try {
       liveFoundation = await inspectLivePersistenceFoundation(server.id);
       if (liveFoundation.botStateTableReady && liveFoundation.playerStatsTableReady) {
-        setServerNamespacePersistenceStatus({
-          enabled: true,
-          initialized: true,
-          botStateTableReady: true,
-          playerStatsTableReady: true,
-          botStateCompositeKeyReady: liveFoundation.botStatePrimaryKeyReady,
-          playerStatsCompositeKeyReady: liveFoundation.playerStatsPrimaryKeyReady,
-          botStatePrimaryKeyReady: liveFoundation.botStatePrimaryKeyReady,
-          playerStatsPrimaryKeyReady: liveFoundation.playerStatsPrimaryKeyReady,
-          primaryKeyCutoverComplete: liveFoundation.botStatePrimaryKeyReady && liveFoundation.playerStatsPrimaryKeyReady,
-          scopedReadsEnabled: liveFoundation.botStatePrimaryKeyReady,
-          botStateUntaggedRows: liveFoundation.botStateUntaggedRows,
-          playerStatsUntaggedRows: liveFoundation.playerStatsUntaggedRows,
-          lastCheckedAt: new Date().toISOString(),
-          lastError: undefined,
-        });
+        setServerNamespacePersistenceStatus({ enabled: true, initialized: true, botStateTableReady: true, playerStatsTableReady: true, botStateCompositeKeyReady: liveFoundation.botStatePrimaryKeyReady, playerStatsCompositeKeyReady: liveFoundation.playerStatsPrimaryKeyReady, botStatePrimaryKeyReady: liveFoundation.botStatePrimaryKeyReady, playerStatsPrimaryKeyReady: liveFoundation.playerStatsPrimaryKeyReady, primaryKeyCutoverComplete: liveFoundation.botStatePrimaryKeyReady && liveFoundation.playerStatsPrimaryKeyReady, scopedReadsEnabled: liveFoundation.botStatePrimaryKeyReady, botStateUntaggedRows: liveFoundation.botStateUntaggedRows, playerStatsUntaggedRows: liveFoundation.playerStatsUntaggedRows, lastCheckedAt: new Date().toISOString(), lastError: undefined });
         foundation = getServerFoundationDiagnostics();
       }
-      pushCheck(checks, "database-live", "Database live foundation", liveFoundation.safe ? "pass" : "fail", liveFoundation.safe ? "PostgreSQL confirma registry, tabelas, PKs compostas e ausencia de rows sem server_id." : "PostgreSQL ainda reporta uma garantia estrutural pendente.", {
-        registryPersisted: liveFoundation.registryPersisted,
-        botStateTableReady: liveFoundation.botStateTableReady,
-        playerStatsTableReady: liveFoundation.playerStatsTableReady,
-        botStatePrimaryKeyReady: liveFoundation.botStatePrimaryKeyReady,
-        playerStatsPrimaryKeyReady: liveFoundation.playerStatsPrimaryKeyReady,
-        botStateUntaggedRows: liveFoundation.botStateUntaggedRows,
-        playerStatsUntaggedRows: liveFoundation.playerStatsUntaggedRows,
-      });
-    } catch (error) {
-      pushCheck(checks, "database-live", "Database live foundation", "fail", error instanceof Error ? error.message : String(error));
-    }
+      pushCheck(checks, "database-live", "Database live foundation", liveFoundation.safe ? "pass" : "fail", liveFoundation.safe ? "PostgreSQL confirma registry, tabelas, PKs compostas e ausencia de rows sem server_id." : "PostgreSQL ainda reporta uma garantia estrutural pendente.", { registryPersisted: liveFoundation.registryPersisted, botStateTableReady: liveFoundation.botStateTableReady, playerStatsTableReady: liveFoundation.playerStatsTableReady, botStatePrimaryKeyReady: liveFoundation.botStatePrimaryKeyReady, playerStatsPrimaryKeyReady: liveFoundation.playerStatsPrimaryKeyReady, botStateUntaggedRows: liveFoundation.botStateUntaggedRows, playerStatsUntaggedRows: liveFoundation.playerStatsUntaggedRows });
+    } catch (error) { pushCheck(checks, "database-live", "Database live foundation", "fail", error instanceof Error ? error.message : String(error)); }
     const firstActivation = !server.runtime.activation?.everActivated;
     pushCheck(checks, "namespace-owned", "Database namespace", "pass", firstActivation ? `Namespace exclusivo do servidor confirmado antes da primeira ativacao (${namespaceRows.botState}/${namespaceRows.playerStats}/${namespaceRows.positionHistory}). Rows de onboarding podem ser reutilizadas com seguranca.` : "O servidor ja foi ativado anteriormente; as rows existentes permanecem no proprio namespace.", namespaceRows);
   } catch (error) { pushCheck(checks, "namespace-owned", "Database namespace", "fail", error instanceof Error ? error.message : String(error)); }
 
   const namespace = foundation.namespace;
-  const databaseFoundationSafe = Boolean(
-    liveFoundation?.safe &&
-    namespace?.scopedReadsEnabled &&
-    namespace?.botStatePrimaryKeyReady &&
-    (!namespace?.playerStatsTableReady || namespace.playerStatsPrimaryKeyReady) &&
-    namespace?.botStateUntaggedRows === 0 &&
-    (!namespace?.playerStatsTableReady || namespace.playerStatsUntaggedRows === 0)
-  );
-  pushCheck(checks, "database-foundation", "Isolation foundation", databaseFoundationSafe ? "pass" : "fail", databaseFoundationSafe ? "PKs, scoped persistence, server-tagged rows e caches persistidos estao preparados para isolamento por servidor." : "A fundacao persistida de isolamento por servidor ainda possui uma garantia estrutural pendente.", {
-    liveFoundationSafe: liveFoundation?.safe,
-    liveRegistryPersisted: liveFoundation?.registryPersisted,
-    liveBotStatePrimaryKeyReady: liveFoundation?.botStatePrimaryKeyReady,
-    livePlayerStatsPrimaryKeyReady: liveFoundation?.playerStatsPrimaryKeyReady,
-    liveBotStateUntaggedRows: liveFoundation?.botStateUntaggedRows,
-    livePlayerStatsUntaggedRows: liveFoundation?.playerStatsUntaggedRows,
-    scopedReadsEnabled: namespace?.scopedReadsEnabled,
-    botStatePrimaryKeyReady: namespace?.botStatePrimaryKeyReady,
-    playerStatsPrimaryKeyReady: namespace?.playerStatsPrimaryKeyReady,
-    botStateUntaggedRows: namespace?.botStateUntaggedRows,
-    playerStatsUntaggedRows: namespace?.playerStatsUntaggedRows,
-  });
+  const databaseFoundationSafe = Boolean(liveFoundation?.safe && namespace?.scopedReadsEnabled && namespace?.botStatePrimaryKeyReady && (!namespace?.playerStatsTableReady || namespace.playerStatsPrimaryKeyReady) && namespace?.botStateUntaggedRows === 0 && (!namespace?.playerStatsTableReady || namespace.playerStatsUntaggedRows === 0));
+  pushCheck(checks, "database-foundation", "Isolation foundation", databaseFoundationSafe ? "pass" : "fail", databaseFoundationSafe ? "PKs, scoped persistence, server-tagged rows e caches persistidos estao preparados para isolamento por servidor." : "A fundacao persistida de isolamento por servidor ainda possui uma garantia estrutural pendente.", { liveFoundationSafe: liveFoundation?.safe, liveRegistryPersisted: liveFoundation?.registryPersisted, liveBotStatePrimaryKeyReady: liveFoundation?.botStatePrimaryKeyReady, livePlayerStatsPrimaryKeyReady: liveFoundation?.playerStatsPrimaryKeyReady, liveBotStateUntaggedRows: liveFoundation?.botStateUntaggedRows, livePlayerStatsUntaggedRows: liveFoundation?.playerStatsUntaggedRows, scopedReadsEnabled: namespace?.scopedReadsEnabled, botStatePrimaryKeyReady: namespace?.botStatePrimaryKeyReady, playerStatsPrimaryKeyReady: namespace?.playerStatsPrimaryKeyReady, botStateUntaggedRows: namespace?.botStateUntaggedRows, playerStatsUntaggedRows: namespace?.playerStatsUntaggedRows });
 
   if (nitradoMetadataValid && uniqueRouting) {
     try {
       const remote = prefetchedNitradoValidation || await validateNitradoServiceSetup(server.id, serviceId, baseDir); const sameRouting = remote.serviceId === serviceId && remote.baseDir === baseDir;
-      pushCheck(checks, "nitrado-live", "Nitrado live check", sameRouting ? "pass" : "fail", sameRouting ? `Service acessivel e file_server respondeu para o base dir salvo${remote.admFilesFound ? ` (${remote.admFilesFound} ADM encontrado(s))` : ""}.` : "A validacao ao vivo retornou routing diferente do cadastro.", { looksLikeDayz: remote.looksLikeDayz, admFilesFound: remote.admFilesFound });
-      if (sameRouting && !remote.admFilesFound) pushCheck(checks, "adm-presence", "ADM availability", "warning", "Nenhum arquivo .ADM apareceu no diretório agora. Isso pode ser normal em um servidor novo, mas deve ser confirmado antes da primeira ativacao real.");
+      pushCheck(checks, "nitrado-live", "Nitrado live check", sameRouting ? "pass" : "fail", sameRouting ? `Service acessivel e file_server respondeu para o base dir salvo${remote.admFilesFound ? ` (${remote.admFilesFound} ADM encontrado(s))` : ""}.` : "A validacao Nitrado retornou uma rota diferente da configurada.");
     } catch (error) { pushCheck(checks, "nitrado-live", "Nitrado live check", "fail", error instanceof Error ? error.message : String(error)); }
-  } else pushCheck(checks, "nitrado-live", "Nitrado live check", "skipped", "A checagem ao vivo nao foi executada porque a configuracao Nitrado ainda possui bloqueios.");
+  } else pushCheck(checks, "nitrado-live", "Nitrado live check", "skipped", "Aguardando configuracao Nitrado valida e routing exclusivo.");
 
   await validateOptionalDiscord(server, checks);
-  const failureCount = checks.filter((check) => check.status === "fail").length; const warningCount = checks.filter((check) => check.status === "warning").length; const passed = failureCount === 0;
-  let readyServer: ManagedServerDescriptor | undefined;
-  if (passed) {
-    const preflight: ServerActivationPreflight = { version: "phase11-v1", source: "phase11-on-demand", checkedAt, passed: true, configurationSignature: getManagedServerActivationConfigSignature(server), serviceId, baseDir, discordGuildId: text(server.integrations.discordGuildId) || undefined, namespaceRows, warningCount };
-    readyServer = await markManagedServerActivationPreflightReady(server.id, preflight);
-  }
-  return { serverId, passed, checkedAt, ready: passed, warningCount, failureCount, checks, runtimeActivationBlocked: !passed, activationEndpointAvailable: true, server: readyServer || getManagedServerById(server.id) };
+
+  const failures = checks.filter((check) => check.status === "fail"); const warnings = checks.filter((check) => check.status === "warning");
+  const passed = failures.length === 0;
+  const ready = passed;
+  const result = { serverId, passed, checkedAt, ready, warningCount: warnings.length, failureCount: failures.length, checks, runtimeActivationBlocked: !passed, activationEndpointAvailable: true, server };
+  try { await markManagedServerActivationPreflightReady(server.id, passed, checkedAt); } catch { /* diagnostics must not block the preflight result */ }
+  return result;
 }
