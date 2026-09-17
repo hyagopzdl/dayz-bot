@@ -18,7 +18,7 @@ import {
 import { isLiveRuntimeEnabled } from "./systems";
 
 const KILL_REGEX = /Player "([^"]+)".*?killed by Player "([^"]+)"/;
-const CONNECT_REGEX = /Player "([^"]+)".*?is connected/;
+const CONNECT_REGEX = /Player "([^"]+)".*?(?:is connected|has connected)/;
 const DISCONNECT_REGEX = /Player "([^"]+)".*?has been disconnected/;
 const PLAYER_POSITION_REGEX = /Player "([^"]+)"(?:\s+\(DEAD\))?\s*\(id=.*?pos=<\s*(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)>/g;
 const PLAYER_POSITION_MAX_COORD = 20000;
@@ -72,9 +72,6 @@ function collectPlayerPositionObservations(
     });
   }
 
-  // Some connect/disconnect lines may not expose coordinates. Preserve the
-  // session boundary anyway so historical map reconstruction never assumes a
-  // player remained online after the log explicitly says otherwise.
   const boundaryPlayer = connectMatch?.[1] || disconnectMatch?.[1];
   if (boundaryPlayer) {
     const playerName = boundaryPlayer.trim();
@@ -317,7 +314,6 @@ function extractWeapon(line: string): string {
   return "Unknown";
 }
 
-
 function extractDistance(line: string): number | null {
   const match = line.match(/\bfrom\s+(\d+(?:\.\d+)?)\s*(?:m|meter|meters)?\b/i);
 
@@ -373,8 +369,6 @@ function addKillFeedEvent(
     at: eventTime?.date?.toISOString() || new Date().toISOString(),
   };
 
-  // killFeedEvents is a transient Discord queue and is intentionally cleared after publish.
-  // Keep a separate bounded ring buffer for the Player Portal so Discord cannot consume it.
   state.killFeedEvents.push(event);
   state.portalKillFeedEvents.push(event);
 
@@ -613,11 +607,7 @@ function markOffline(state: AppState, player: string) {
 
 function cleanupOnlinePlayers(state: AppState) {
   ensureOnlineState(state);
-
-  // Online presence is controlled only by real ADM connect/disconnect events.
-  // Session stats are stored separately and cleared on disconnect.
 }
-
 
 function recordOnlineActivitySample(state: AppState) {
   const samples = Array.isArray(state.onlineActivitySamples)
@@ -725,10 +715,7 @@ function rebuildOnlinePresenceFromAdmFiles(
   ensureOnlineState(state);
 
   const previousOnlinePlayers = state.onlinePlayers || {};
-  const previousSessions = ((state as any).onlineSessions || {}) as Record<
-    string,
-    any
-  >;
+  const previousSessions = ((state as any).onlineSessions || {}) as Record<string, any>;
 
   let rebuiltOnlinePlayers: Record<string, any> = {};
   let rebuiltOnlineSessions: Record<string, any> = {};
@@ -741,10 +728,6 @@ function rebuildOnlinePresenceFromAdmFiles(
     const baseDate =
       extractBaseDateFromLog(lines) || extractBaseDateFromFilePath(filePath);
 
-    // Every ADM file represents a new DayZ server process. Presence from older
-    // files must not leak into the current online list. Rebuilding presence from
-    // scratch avoids ghost players when disconnect events are missed around
-    // restarts, crashes, or log rotation.
     rebuiltOnlinePlayers = {};
     rebuiltOnlineSessions = {};
 
@@ -859,8 +842,6 @@ function readManifestFiles(): string[] {
   const runtime = getServerRuntimeContext();
   const manifestFile = runtime.storage.manifestFile;
   if (!fs.existsSync(manifestFile)) {
-    // Preserve the historical single-file fallback only for the primary PZ
-    // runtime. Future server runtimes must never inspect another server's ADM.
     if (runtime.isPrimary && fs.existsSync("ADM.log")) return ["ADM.log"];
     return [];
   }
@@ -1117,15 +1098,10 @@ export async function getLeaderboard() {
     try {
       await queuePlayerPositionHistoryObservations(positionObservations);
     } catch (err) {
-      // Position history is intentionally isolated from the critical parser
-      // state. A history write failure must never block kills/rankings/cursors.
       console.error("❌ erro salvando histórico de posições:", err);
     }
   }
 
-  // Phase 13 routes shop file I/O through the active server context. The PZ keeps
-  // its legacy FTP transport, while secondary runtimes use the scoped Nitrado API.
-  // This check is still a no-op unless that server has a delivery batch waiting.
   try {
     const monitorBefore = getShopResetMonitorPersistenceKey(state);
     const clearResult = await tryAutoClearShopAfterAdmReset(state, orderedFiles);
