@@ -82,7 +82,7 @@ function isFileEntry(entry: any) {
 async function discoverMissionDirectory(relativeDirectory: string, serverId: string) {
   const normalizedRelative = normalize(relativeDirectory).replace(/^\/+/, "");
   const missionMarker = normalizedRelative.match(/^dayzps_missions\/(.+)$/i);
-  if (!missionMarker) throw new Error(\`Nitrado DayZ mission directory is invalid for \${serverId}: \${relativeDirectory}\`);
+  if (!missionMarker) throw new Error(`Nitrado DayZ mission directory is invalid for \${serverId}: \${relativeDirectory}`);
 
   const cached = resolvedDirectoryCache.get(serverId);
   if (cached && cached.expiresAt > Date.now()) return cached.directory;
@@ -97,12 +97,12 @@ async function discoverMissionDirectory(relativeDirectory: string, serverId: str
 
   if (!missionRoot) {
     throw new Error(
-      \`Nitrado File Server did not expose a dayzps_missions bookmark for \${serverId}. \` +
-      \`Bookmarks returned: \${bookmarks.map((bookmark) => String(bookmark)).join(", ") || "none"}\`,
+      `Nitrado File Server did not expose a dayzps_missions bookmark for \${serverId}. ` +
+      `Bookmarks returned: \${bookmarks.map((bookmark) => String(bookmark)).join(", ") || "none"}`,
     );
   }
 
-  const directory = absolutePath(\`\${missionRoot}/\${missionMarker[1]}\`);
+  const directory = absolutePath(`\${missionRoot}/\${missionMarker[1]}`);
   const entries = await listDirectory(directory, serverId);
   resolvedDirectoryCache.set(serverId, {
     directory,
