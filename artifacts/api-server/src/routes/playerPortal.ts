@@ -57,7 +57,7 @@ function getRouteParam(value: string | string[] | undefined, name: string): stri
   return param;
 }
 
-async function getPrimaryIdentityImportOptions(_state: AppState, _session: PortalSession) {
+async function getPrimaryIdentityImportOptions(_state: AppState, _session: PortalSession): Promise<{ candidates: string[] } | null> {
   return null;
 }
 

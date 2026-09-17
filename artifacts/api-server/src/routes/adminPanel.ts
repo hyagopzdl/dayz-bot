@@ -9448,7 +9448,7 @@ router.post("/api/servers/:serverId/runtime/retry", async (req, res) => {
 router.get("/api/servers/current", async (req, res) => {
   if (!requireAdmin(req, res)) return;
   const server = getManagedServerById(getActiveServerId());
-  if (!server) return res.status(404).json({ error: "SERVER_CONTEXT_REQUIRED" });
+  if (!server) { res.status(404).json({ error: "SERVER_CONTEXT_REQUIRED" }); return; }
   res.json({ server, foundation: foundationForRequest(req) });
 });
 
@@ -9459,7 +9459,7 @@ router.get("/api/overview", async (req, res) => {
     const state = await getStateAsync();
     const overview = await buildOverviewPayload(state as AdminState);
     const serverDescriptor = getManagedServerById(getActiveServerId());
-    if (!serverDescriptor) return res.status(404).json({ error: "SERVER_CONTEXT_REQUIRED" });
+    if (!serverDescriptor) { res.status(404).json({ error: "SERVER_CONTEXT_REQUIRED" }); return; }
     res.json({
       ...overview,
       server: {

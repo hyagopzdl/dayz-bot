@@ -83,7 +83,7 @@ export function buildManagedServerId(value: unknown) {
 }
 function normalizeServerId(value: unknown) { return buildManagedServerId(value); }
 export function normalizeManagedServerName(value: unknown) { return String(value || "").trim().replace(/\s+/g, " ").slice(0, 80) || "Servidor"; }
-function normalizeServerOnboardingStatus(value: unknown): ServerOnboardingStatus {
+export function normalizeServerOnboardingStatus(value: unknown): ServerOnboardingStatus {
   const normalized = String(value || "").trim().toLowerCase();
   if (normalized === "active" || normalized === "configured" || normalized === "ready") return normalized;
   return "draft";
@@ -150,6 +150,8 @@ export function canExecuteManagedServerRuntime(serverId: unknown) {
 }
 export function listExecutableManagedServers() { return listManagedServers().filter((server) => canExecuteManagedServerRuntime(server.id)); }
 
+
+export function getPrimaryServerId() { return ""; }
 
 export function listManagedServers() { return persistedServers.map(cloneServer); }
 export function setPersistedManagedServers(servers: ManagedServerDescriptor[]) {
