@@ -2,7 +2,6 @@ import { Router, type Request } from "express";
 import {
   getNitradoGameserverStatus,
   listNitradoDirectory,
-  probeNitradoUploadTokenForDirectory,
 } from "../lib/nitradoDownloader";
 import { getOrganizationIntegrationStatus } from "../lib/organizationIntegrations";
 import { getActiveServerId } from "../lib/serverRuntime";
@@ -123,13 +122,6 @@ async function diagnoseServer(serverId: string, expectedServiceId: string, label
     listing[dir || "/"] = await safeCall(() => listNitradoDirectory(dir, serverId));
   }
 
-  const uploadProbe = {} as Record<string, unknown>;
-  for (const dir of [missionDir, `${missionDir}/db`]) {
-    uploadProbe[dir] = await safeCall(() =>
-      probeNitradoUploadTokenForDirectory(dir, "events.xml", serverId),
-    );
-  }
-
   const status = await safeCall(() => getNitradoGameserverStatus(serverId));
 
   return {
@@ -141,7 +133,10 @@ async function diagnoseServer(serverId: string, expectedServiceId: string, label
       ? { ok: true, value: status.data.status }
       : { ok: false, error: status.error },
     listing,
-    uploadProbe,
+    uploadProbe: {
+      supported: false,
+      reason: "Upload token probing is intentionally disabled in diagnostics; production upload uses the same File Server API path and form encoding without uploading a file.",
+    },
   };
 }
 
@@ -169,9 +164,9 @@ router.get("/nitrado-diagnostic", async (req, res) => {
     servers,
     interpretation: {
       listSuccessMeans: "Nitrado accepted the service credential and resolved the requested directory for the File Server list endpoint.",
-      uploadProbeSuccessMeans: "Nitrado accepted the same credential and returned an upload token for that logical directory; no file is uploaded by this diagnostic.",
+      uploadPath: "Production upload token requests use POST form parameters path and file; this diagnostic does not perform a file upload.",
       credentialWarning: "credentialSource=environment-fallback means both servers in the default organization currently inherit the single Render NITRADO_TOKEN. A per-organization secret is preferred for production isolation.",
-      usefulComparison: "Compare Deathmatch 19149785 with Survival 19791331 directory listings, upload probes, and credential source before changing any Render secret or Shop path.",
+      usefulComparison: "Compare Deathmatch 19149785 with Survival 19791331 directory listings and credential source before changing any Render secret or Shop path.",
     },
   });
 });
