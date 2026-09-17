@@ -1,0 +1,54 @@
+name: Repair state SQL narrowing
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch state SQL access
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('artifacts/api-server/src/lib/state.ts')
+          s = p.read_text()
+          marker = '''const sql = process.env.DATABASE_URL
+  ? postgres(process.env.DATABASE_URL, {
+      ssl: "require",
+      max: 1,
+    })
+  : null;
+'''
+          assert marker in s, 'sql declaration not found'
+          helper = marker + '''
+function requireSql(): postgres.Sql {
+  if (!sql) throw new Error("DATABASE_URL is not configured.");
+  return sql;
+}
+'''
+          s = s.replace(marker, helper, 1)
+          count = s.count('sql`')
+          assert count > 0, 'no sql tagged queries found'
+          s = s.replace('sql`', 'requireSql()`')
+          p.write_text(s)
+          print(f'replaced {count} SQL tagged queries')
+          PY
+      - name: Typecheck
+        run: |
+          corepack prepare pnpm@10.25.0 --activate
+          unset npm_config_user_agent
+          pnpm install
+          pnpm -w run typecheck:libs
+          pnpm --filter @workspace/api-server typecheck
+      - name: Commit repair branch
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git checkout -b repair/state-sql-narrowing
+          git add artifacts/api-server/src/lib/state.ts .github/workflows/fix-state-sql-narrowing.yml
+          git commit -m 'fix: make state database access type-safe'
+          git push --set-upstream origin repair/state-sql-narrowing
