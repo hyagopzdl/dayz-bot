@@ -666,6 +666,16 @@ async function postWithForm(url: string, form: URLSearchParams, serverId: string
   return (await res.json()) as any;
 }
 
+export async function getNitradoFileServerBookmarks(serverId = getActiveServerId()): Promise<any[]> {
+  getNitradoToken(serverId);
+  const serviceId = getNitradoServiceId(serverId);
+  const json = await fetchJson(
+    `https://api.nitrado.net/services/${serviceId}/gameservers/file_server/bookmarks`,
+    serverId,
+  );
+  return Array.isArray(json?.data?.bookmarks) ? json.data.bookmarks : [];
+}
+
 export async function listNitradoDirectory(dir: string, serverId = getActiveServerId()): Promise<NitradoEntry[]> {
   getNitradoToken(serverId);
   const serviceId = getNitradoServiceId(serverId);
