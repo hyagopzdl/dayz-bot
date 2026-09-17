@@ -7,7 +7,7 @@ import {
   type ServerActivationPreflight,
   type ServerDiscordRuntimeConfig,
 } from "./serverRegistry";
-import { getServerStoragePlan } from "./serverRuntime";
+import { getServerStoragePlan, runInServerMaintenanceContext } from "./serverRuntime";
 import {
   listDiscordGuildChannels,
   listDiscordGuildOptions,
@@ -16,6 +16,7 @@ import {
   type DiscordGuildOption,
 } from "./serverIntegrations";
 import {
+  getStateAsync,
   inspectManagedServerNamespaceRows,
   markManagedServerActivationPreflightReady,
   markManagedServerNitradoValidated,
@@ -101,6 +102,10 @@ export async function runManagedServerActivationPreflight(serverIdInput: string)
 
   let namespaceRows = { botState: 0, playerStats: 0, positionHistory: 0 };
   try {
+    // The preflight must initialize every persistence component whose readiness is
+    // part of the runtime gate. Merely inspecting rows is insufficient because the
+    // player_stats PK/cutover flags are initialized by the granular persistence boot.
+    await runInServerMaintenanceContext(server.id, () => getStateAsync());
     namespaceRows = await inspectManagedServerNamespaceRows(server.id);
     // Namespace inspection initializes/refreshes the live isolation diagnostics. Re-read
     // the foundation after that I/O so the gate never evaluates a stale startup snapshot.
