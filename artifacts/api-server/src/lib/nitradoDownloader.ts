@@ -382,62 +382,35 @@ export async function downloadNitradoTextFile(
   throw new Error(`Nitrado text download failed for ${filePath}. Attempts: ${errors.join(" | ")}`);
 }
 
-
 function saveManifest(files: string[], manifestFile = MANIFEST_FILE) {
   const manifest: Manifest = { files, updatedAt: new Date().toISOString() };
   fs.writeFileSync(manifestFile, JSON.stringify(manifest, null, 2));
 }
 
 function updatePreviousFileStability(admFiles: NitradoEntry[], strategy: AdmServerStrategyState) {
-  const previous = admFiles[PREVIOUS_FILE_INDEX];
-  const previousPath = previous?.path;
-
-  if (!previousPath) {
-    strategy.previousFileTracker = {};
+  const previous = admFiles[PREVIOUS_FILE_INDEX]?.path;
+  const now = Date.now();
+  if (strategy.previousFileTracker.file !== previous) {
+    strategy.previousFileTracker = { file: previous, stableSince: now };
     return;
   }
-
-  if (strategy.previousFileTracker.file !== previousPath) {
-    strategy.previousFileTracker = { file: previousPath };
-  }
+  if (!previous) strategy.previousFileTracker = {};
 }
 
-function getOptimizedDecision(
-  file: NitradoEntry,
-  index: number,
-  baseDecision: ReturnType<typeof createShadowDecision>,
-  strategy: AdmServerStrategyState,
-) {
-  if (index === ACTIVE_FILE_INDEX) {
-    return { decision: "download" as const, reason: "conservative-active-file" };
-  }
-
-  if (baseDecision.decision === "download") {
-    if (index === PREVIOUS_FILE_INDEX && strategy.previousFileTracker.file === file.path) {
-      strategy.previousFileTracker.stableSince = undefined;
-    }
-    return baseDecision;
-  }
-
+function getOptimizedDecision(file: NitradoEntry, index: number, baseDecision: ReturnType<typeof createShadowDecision>, strategy: AdmServerStrategyState) {
+  if (baseDecision.decision === "download") return baseDecision;
+  if (index === ACTIVE_FILE_INDEX) return { decision: "download" as const, reason: "conservative-active-file" };
   if (index === PREVIOUS_FILE_INDEX) {
-    const now = Date.now();
-    if (strategy.previousFileTracker.file !== file.path) {
-      strategy.previousFileTracker = { file: file.path, stableSince: now };
-      return { decision: "download" as const, reason: "previous-file-grace-window" };
-    }
-
     if (!strategy.previousFileTracker.stableSince) {
-      strategy.previousFileTracker.stableSince = now;
+      strategy.previousFileTracker.stableSince = Date.now();
       return { decision: "download" as const, reason: "previous-file-grace-window" };
     }
-
+    const now = Date.now();
     if (now - strategy.previousFileTracker.stableSince < PREVIOUS_FILE_STABILITY_MS) {
       return { decision: "download" as const, reason: "previous-file-grace-window" };
     }
-
     return { decision: "skip" as const, reason: "optimized-stable-previous-file" };
   }
-
   return { decision: "skip" as const, reason: "optimized-stable-old-file" };
 }
 
@@ -468,10 +441,6 @@ export async function downloadADM(serverId = getActiveServerId()) {
   admDownloadMetrics.lastDownloadedCount = 0;
   admDownloadMetrics.lastDownloadedBytes = 0;
   admDownloadMetrics.strategy.mode = strategy.mode;
-
-  // Missing tenant credentials are a real runtime failure. Let the coordinator
-  // observe it so the secondary circuit breaker can protect Nitrado/Render
-  // instead of silently reporting a successful cycle with no downloads.
   getNitradoToken(serverId);
 
   console.log(`📂 Listando arquivos ADM... server=${serverId} modo=${strategy.mode}`);
@@ -513,9 +482,7 @@ export async function downloadADM(serverId = getActiveServerId()) {
     return { file, index, localFile, baseDecision, optimizedDecision };
   });
 
-  const skippableIndexes = candidateDecisions
-    .filter((item) => item.optimizedDecision.decision === "skip")
-    .map((item) => item.index);
+  const skippableIndexes = candidateDecisions.filter((item) => item.optimizedDecision.decision === "skip").map((item) => item.index);
   const auditIndex = skippableIndexes.length ? skippableIndexes[strategy.optimizedAuditCursor % skippableIndexes.length] : -1;
 
   for (const candidate of candidateDecisions) {
@@ -534,10 +501,7 @@ export async function downloadADM(serverId = getActiveServerId()) {
       serverMetric.optimizedSavedBytes += saved;
       if (index === PREVIOUS_FILE_INDEX) admDownloadMetrics.strategy.previousStableSkips += 1;
       availableLocalFiles.push(localFile);
-      addRecentShadowDecision({
-        at: new Date().toISOString(), file: safeLocalName(file.path), decision: "skip", reason: optimizedDecision.reason,
-        remoteSize: baseDecision.remoteSize, localSize: baseDecision.localSize, actualBytes: 0, contentChanged: null, mismatch: false,
-      });
+      addRecentShadowDecision({ at: new Date().toISOString(), file: safeLocalName(file.path), decision: "skip", reason: optimizedDecision.reason, remoteSize: baseDecision.remoteSize, localSize: baseDecision.localSize, actualBytes: 0, contentChanged: null, mismatch: false });
       console.log(`⏭️ ADM estável reutilizado: ${file.path}`);
       continue;
     }
@@ -572,9 +536,7 @@ export async function downloadADM(serverId = getActiveServerId()) {
           else if (shadowDecision.reason === "conservative-active-file" || shadowDecision.reason === "previous-file-grace-window") {
             admDownloadMetrics.shadow.conservativeDownloads += 1;
             metric.shadowConservativeDownloads += 1;
-            if (shadowDecision.reason === "previous-file-grace-window") {
-              admDownloadMetrics.strategy.previousGraceDownloads += 1;
-            }
+            if (shadowDecision.reason === "previous-file-grace-window") admDownloadMetrics.strategy.previousGraceDownloads += 1;
           }
         } else {
           admDownloadMetrics.shadow.wouldSkip += 1;
@@ -590,11 +552,7 @@ export async function downloadADM(serverId = getActiveServerId()) {
             metric.shadowSafeSkips += 1;
           }
         }
-
-        addRecentShadowDecision({
-          at: new Date().toISOString(), file: safeLocalName(file.path), decision: shadowDecision.decision, reason: shouldAudit ? "optimized-audit" : shadowDecision.reason,
-          remoteSize: baseDecision.remoteSize, localSize: baseDecision.localSize, actualBytes: bytes, contentChanged, mismatch: shadowMismatch,
-        });
+        addRecentShadowDecision({ at: new Date().toISOString(), file: safeLocalName(file.path), decision: shadowDecision.decision, reason: shouldAudit ? "optimized-audit" : shadowDecision.reason, remoteSize: baseDecision.remoteSize, localSize: baseDecision.localSize, actualBytes: bytes, contentChanged, mismatch: shadowMismatch });
       }
 
       if (shouldAudit) {
@@ -630,10 +588,7 @@ export async function downloadADM(serverId = getActiveServerId()) {
     }
   }
 
-  if (strategy.mode === "optimized" && skippableIndexes.length && strategy.cycles % AUDIT_INTERVAL_CYCLES === 0) {
-    strategy.optimizedAuditCursor = (strategy.optimizedAuditCursor + 1) % skippableIndexes.length;
-  }
-
+  if (strategy.mode === "optimized" && skippableIndexes.length && strategy.cycles % AUDIT_INTERVAL_CYCLES === 0) strategy.optimizedAuditCursor = (strategy.optimizedAuditCursor + 1) % skippableIndexes.length;
   saveManifest(availableLocalFiles, manifestFile);
   admDownloadMetrics.lastCycleDurationMs = Date.now() - cycleStarted;
   serverMetric.lastCycleDurationMs = admDownloadMetrics.lastCycleDurationMs;
@@ -646,339 +601,129 @@ function getNitradoServiceId(serverId = getActiveServerId()) {
 }
 
 function normalizeNitradoFileServerPath(value: string) {
-  return String(value || "")
-    .replace(/\\/g, "/")
-    .replace(/^\/+/, "")
-    .replace(/\/+$/g, "");
+  return String(value || "").replace(/\\/g, "/").replace(/^\/+/, "").replace(/\/+$/g, "");
 }
 
-export async function listNitradoDirectory(
-  dir: string,
-  serverId = getActiveServerId(),
-): Promise<NitradoEntry[]> {
-  getNitradoToken(serverId);
+function getNoFtpRootFromAdmBaseDir(serverId = getActiveServerId()) {
+  const baseDir = String(getServerRuntimeContext(serverId).nitrado.baseDir || "").replace(/\\/g, "/").replace(/\/+$/g, "");
+  const marker = "/noftp/";
+  const index = baseDir.indexOf(marker);
+  if (index === -1) return "";
+  return baseDir.slice(0, index + marker.length - 1);
+}
 
-  const serviceId = getNitradoServiceId(serverId);
-  const normalizedDir = normalizeNitradoFileServerPath(dir);
+function getFtpRootFromAdmBaseDir(serverId = getActiveServerId()) {
+  const baseDir = String(getServerRuntimeContext(serverId).nitrado.baseDir || "").replace(/\\/g, "/");
+  const match = baseDir.match(/^(\/games\/[^/]+)\/(?:noftp|ftproot)(?:\/|$)/i);
+  return match?.[1] ? `${match[1]}/ftproot` : "";
+}
 
-  console.log(`📂 Nitrado list request: dir=${normalizedDir || "/"}`);
+function withDayzMissionFolderVariants(pathValue: string) {
+  const normalized = normalizeNitradoFileServerPath(pathValue);
+  const variants = [normalized];
+  if (normalized.startsWith("dayzps_missions/")) variants.push(normalized.replace(/^dayzps_missions\//, "dayzps_mission/"));
+  if (normalized.startsWith("dayzps_mission/")) variants.push(normalized.replace(/^dayzps_mission\//, "dayzps_missions/"));
+  return uniqueStrings(variants);
+}
 
-  const json = await fetchJson(
-    `https://api.nitrado.net/services/${serviceId}/gameservers/file_server/list?dir=${encodeURIComponent(
-      normalizedDir,
-    )}`,
+/**
+ * Resolve a DayZ mission file to the server's actual Nitrado noftp root.
+ * The runtime baseDir points to .../noftp/dayzps/config, while the editable
+ * console mission tree lives at .../noftp/dayzps_missions/....
+ */
+function resolveDayzUploadDirectory(pathValue: string, serverId = getActiveServerId()) {
+  const normalized = normalizeNitradoFileServerPath(pathValue);
+  const missionMatch = normalized.match(/(?:^|\/)(dayzps_missions\/.*)$/i);
+  if (!missionMatch) return normalized;
+
+  const noFtpRoot = getNoFtpRootFromAdmBaseDir(serverId);
+  if (!noFtpRoot) return normalized;
+
+  const resolved = `${noFtpRoot}/${missionMatch[1]}`;
+  console.log("🧭 NITRADO DAYZ UPLOAD PATH", {
     serverId,
-  );
-
-  return json?.data?.entries || [];
-}
-
-export async function debugNitradoListRaw(dir: string, serverId = getActiveServerId()): Promise<{
-  dir: string;
-  ok: boolean;
-  status: number;
-  statusText: string;
-  text: string;
-  entriesCount: number | null;
-}> {
-  getNitradoToken(serverId);
-
-  const serviceId = getNitradoServiceId(serverId);
-  const normalizedDir = normalizeNitradoFileServerPath(dir);
-  const url = `https://api.nitrado.net/services/${serviceId}/gameservers/file_server/list?dir=${encodeURIComponent(
-    normalizedDir,
-  )}`;
-
-  const res = await trackedNitradoFetch(url, {
-    headers: {
-      Authorization: `Bearer ${getNitradoToken(serverId)}`,
-    },
+    configuredBaseDir: getServerRuntimeContext(serverId).nitrado.baseDir,
+    noFtpRoot,
+    requestedPath: normalized,
+    resolvedPath: resolved,
   });
-
-  const text = await res.text();
-  let entriesCount: number | null = null;
-
-  try {
-    const json = JSON.parse(text);
-    const entries = json?.data?.entries;
-    entriesCount = Array.isArray(entries) ? entries.length : null;
-  } catch {
-    entriesCount = null;
-  }
-
-  return {
-    dir: normalizedDir || "/",
-    ok: res.ok,
-    status: res.status,
-    statusText: res.statusText,
-    text: text.slice(0, 900),
-    entriesCount,
-  };
-}
-
-export async function probeNitradoUploadTokenForDirectory(
-  dir: string,
-  file = "shop_pending.json",
-  serverId = getActiveServerId(),
-): Promise<{
-  dir: string;
-  file: string;
-  ok: boolean;
-  status: number;
-  statusText: string;
-  text: string;
-}> {
-  getNitradoToken(serverId);
-
-  const serviceId = getNitradoServiceId(serverId);
-  const normalizedDir = String(dir || "")
-    .replace(/\\/g, "/")
-    .replace(/\/+$/g, "");
-  const baseUrl = `https://api.nitrado.net/services/${serviceId}/gameservers/file_server/upload`;
-  const url = `${baseUrl}?${new URLSearchParams({ path: normalizedDir, file }).toString()}`;
-
-  const res = await trackedNitradoFetch(url, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${getNitradoToken(serverId)}`,
-    },
-  });
-
-  const text = await res.text();
-
-  return {
-    dir: normalizedDir || "/",
-    file,
-    ok: res.ok,
-    status: res.status,
-    statusText: res.statusText,
-    text: text.slice(0, 700),
-  };
-}
-
-async function postForm(
-  url: string,
-  body: Record<string, string>,
-  serverId: string,
-): Promise<any> {
-  const form = new URLSearchParams(body);
-
-  const res = await trackedNitradoFetch(url, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${getNitradoToken(serverId)}`,
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body: form.toString(),
-  });
-
-  if (!res.ok) {
-    throw new Error(`Nitrado HTTP ${res.status}: ${await res.text()}`);
-  }
-
-  return (await res.json()) as any;
-}
-
-async function postWithQueryParams(
-  url: string,
-  params: Record<string, string>,
-  serverId: string,
-): Promise<any> {
-  const fullUrl = `${url}?${new URLSearchParams(params).toString()}`;
-
-  const res = await trackedNitradoFetch(fullUrl, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${getNitradoToken(serverId)}`,
-    },
-  });
-
-  if (!res.ok) {
-    throw new Error(`Nitrado HTTP ${res.status}: ${await res.text()}`);
-  }
-
-  return (await res.json()) as any;
-}
-
-function splitRemoteFilePath(filePath: string) {
-  const normalized = normalizeNitradoFileServerPath(filePath);
-  const parts = normalized.split("/").filter(Boolean);
-  const file = parts.pop();
-
-  if (!file) {
-    throw new Error(`Invalid Nitrado file path: ${filePath}`);
-  }
-
-  return {
-    path: parts.join("/"),
-    file,
-  };
+  return resolved;
 }
 
 function uniqueStrings(values: string[]) {
   return Array.from(new Set(values.filter(Boolean)));
 }
 
-function getNoFtpRootFromAdmBaseDir(serverId = getActiveServerId()) {
-      const baseDir = getServerRuntimeContext(serverId).nitrado.baseDir || "";
-      const marker = "/noftp/";
-      const index = baseDir.indexOf(marker);
-      if (index === -1) return "";
-      return baseDir.slice(0, index + marker.length - 1);
-    }
-
-    function getFtpRootFromAdmBaseDir(serverId = getActiveServerId()) {
-      const baseDir = String(getServerRuntimeContext(serverId).nitrado.baseDir || "").replace(/\\/g, "/");
-      const match = baseDir.match(/^(\/games\/[^/]+)\/(?:noftp|ftproot)(?:\/|$)/i);
-      return match?.[1] ? `${match[1]}/ftproot` : "";
-    }
-
-    function withDayzMissionFolderVariants(pathValue: string) {
-  const normalized = normalizeNitradoFileServerPath(pathValue);
-  const variants = [normalized];
-
-  // The Nitrado File Browser exposes the editable console mission directory
-  // using the logical path (for example dayzps_missions/dayzOffline.chernarusplus).
-  // Keep the persisted/discovered path in that namespace. Singular variants are
-  // retained only as a narrow compatibility fallback for older tenants.
-  if (normalized.startsWith("dayzps_missions/")) {
-    variants.push(normalized.replace(/^dayzps_missions\//, "dayzps_mission/"));
-  }
-
-  if (normalized.startsWith("dayzps_mission/")) {
-    variants.push(normalized.replace(/^dayzps_mission\//, "dayzps_missions/"));
-  }
-
-  return uniqueStrings(variants);
-}
-
-function buildUploadPathCandidates(pathValue: string, serverId = getActiveServerId()) {
-  const logicalVariants = withDayzMissionFolderVariants(pathValue);
-  const noFtpRoot = getNoFtpRootFromAdmBaseDir(serverId);
-  const ftpRoot = getFtpRootFromAdmBaseDir(serverId);
-  const candidates: string[] = [];
-
-  for (const variant of logicalVariants) {
-    // Keep the logical File Browser namespace first. This is the canonical
-    // form and avoids changing behavior for servers where Nitrado accepts it.
-    candidates.push(variant);
-
-    // The legacy single-server implementation also resolved the same logical
-    // mission path against the server's actual noftp/ftproot roots. Restore
-    // those candidates, but derive them from the requested server only.
-    if (noFtpRoot) candidates.push(`${noFtpRoot}/${variant}`);
-    if (ftpRoot) candidates.push(`${ftpRoot}/${variant}`);
-  }
-
-  return uniqueStrings(candidates);
-}
-
-async function getUploadToken(
-  filePath: string,
-  serverId = getActiveServerId(),
-): Promise<{ url: string; token: string }> {
+async function getUploadToken(filePath: string, serverId = getActiveServerId()): Promise<{ url: string; token: string }> {
   const serviceId = getNitradoServiceId(serverId);
-  const { path, file } = splitRemoteFilePath(filePath);
+  const { path: requestedDirectory, file } = splitRemoteFilePath(filePath);
+  const directory = resolveDayzUploadDirectory(requestedDirectory, serverId);
   const url = `https://api.nitrado.net/services/${serviceId}/gameservers/file_server/upload`;
-  const errors: string[] = [];
-  const pathCandidates = buildUploadPathCandidates(path, serverId);
 
-  console.log(`📤 Nitrado upload token request: file=${file}`);
-  console.log(`📤 Nitrado canonical upload path candidates: ${pathCandidates.join(" | ")}`);
+  console.log(`📤 Nitrado upload token request: file=${file} path=${directory}`);
 
-  // Query and form are two parameter encodings for the same canonical logical
-  // path. Keep both, but never expand into internal absolute filesystem roots.
-  for (const pathCandidate of pathCandidates) {
-    for (const strategy of ["query", "form"] as const) {
-      const body = { path: pathCandidate, file };
+  const json = await postWithQueryParams(url, { path: directory, file }, serverId);
+  const token = json?.data?.token;
+  if (!token?.url || !token?.token) throw new Error(`Nitrado did not return an upload token for ${filePath}`);
 
-      try {
-        console.log(
-          `📤 Nitrado upload token strategy=${strategy} path=${pathCandidate} file=${file}`,
-        );
-
-        const json =
-          strategy === "form"
-            ? await postForm(url, body, serverId)
-            : await postWithQueryParams(url, body, serverId);
-
-        const token = json?.data?.token;
-
-        if (!token?.url || !token?.token) {
-          throw new Error(
-            `Nitrado did not return an upload token for ${filePath}`,
-          );
-        }
-
-        console.log(
-          `✅ Nitrado upload token received: strategy=${strategy} path=${pathCandidate}`,
-        );
-
-        return {
-          url: token.url,
-          token: token.token,
-        };
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        errors.push(`${strategy} ${pathCandidate}: ${message}`);
-        console.warn(
-          `⚠️ Nitrado upload token failed (${strategy}, ${pathCandidate}): ${message}`,
-        );
-      }
-    }
-  }
-
-  throw new Error(
-    `Nitrado upload token failed for ${filePath}. Attempts: ${errors.join(" | ")}`,
-  );
+  console.log(`✅ Nitrado upload token received: path=${directory} file=${file}`);
+  return { url: token.url, token: token.token };
 }
 
-export async function uploadNitradoTextFile(
-  filePath: string,
-  content: string,
-  serverId = getActiveServerId(),
-) {
-  getNitradoToken(serverId);
+async function postWithQueryParams(url: string, params: Record<string, string>, serverId: string): Promise<any> {
+  const fullUrl = `${url}?${new URLSearchParams(params).toString()}`;
+  const res = await trackedNitradoFetch(fullUrl, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${getNitradoToken(serverId)}` },
+  });
+  if (!res.ok) throw new Error(`Nitrado HTTP ${res.status}: ${await res.text()}`);
+  return (await res.json()) as any;
+}
 
+export async function listNitradoDirectory(dir: string, serverId = getActiveServerId()): Promise<NitradoEntry[]> {
+  getNitradoToken(serverId);
+  const serviceId = getNitradoServiceId(serverId);
+  const normalizedDir = normalizeNitradoFileServerPath(dir);
+  console.log(`📂 Nitrado list request: dir=${normalizedDir || "/"}`);
+  const json = await fetchJson(`https://api.nitrado.net/services/${serviceId}/gameservers/file_server/list?dir=${encodeURIComponent(normalizedDir)}`, serverId);
+  return json?.data?.entries || [];
+}
+
+export async function debugNitradoListRaw(dir: string, serverId = getActiveServerId()): Promise<{ dir: string; ok: boolean; status: number; statusText: string; text: string; entriesCount: number | null }> {
+  getNitradoToken(serverId);
+  const serviceId = getNitradoServiceId(serverId);
+  const normalizedDir = normalizeNitradoFileServerPath(dir);
+  const url = `https://api.nitrado.net/services/${serviceId}/gameservers/file_server/list?dir=${encodeURIComponent(normalizedDir)}`;
+  const res = await trackedNitradoFetch(url, { headers: { Authorization: `Bearer ${getNitradoToken(serverId)}` } });
+  const text = await res.text();
+  let entriesCount: number | null = null;
+  try {
+    const json = JSON.parse(text);
+    const entries = json?.data?.entries;
+    entriesCount = Array.isArray(entries) ? entries.length : null;
+  } catch {}
+  return { dir: normalizedDir || "/", ok: res.ok, status: res.status, statusText: res.statusText, text: text.slice(0, 900), entriesCount };
+}
+
+export async function probeNitradoUploadTokenForDirectory(dir: string, file = "shop_pending.json", serverId = getActiveServerId()): Promise<{ dir: string; file: string; ok: boolean; status: number; statusText: string; text: string }> {
+  getNitradoToken(serverId);
+  const serviceId = getNitradoServiceId(serverId);
+  const normalizedDir = String(dir || "").replace(/\\/g, "/").replace(/\/+$/g, "");
+  const baseUrl = `https://api.nitrado.net/services/${serviceId}/gameservers/file_server/upload`;
+  const url = `${baseUrl}?${new URLSearchParams({ path: normalizedDir, file }).toString()}`;
+  const res = await trackedNitradoFetch(url, { method: "POST", headers: { Authorization: `Bearer ${getNitradoToken(serverId)}` } });
+  const text = await res.text();
+  return { dir: normalizedDir || "/", file, ok: res.ok, status: res.status, statusText: res.statusText, text: text.slice(0, 700) };
+}
+
+export async function uploadNitradoTextFile(filePath: string, content: string, serverId = getActiveServerId()): Promise<void> {
+  getNitradoToken(serverId);
   const { url, token } = await getUploadToken(filePath, serverId);
   const res = await trackedNitradoFetch(url, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/binary",
-      token,
-    },
+    headers: { "Content-Type": "application/binary", token },
     body: content,
   });
-
-  if (!res.ok) {
-    throw new Error(`Nitrado upload HTTP ${res.status}: ${await res.text()}`);
-  }
-
-  console.log(`✅ Nitrado text uploaded [${serverId}]: ${filePath} (${content.length} chars)`);
-}
-
-export async function uploadShopSpawnerFile(
-  filePath: string,
-  payload: unknown,
-  serverId = getActiveServerId(),
-) {
-  getNitradoToken(serverId);
-
-  const { url, token } = await getUploadToken(filePath, serverId);
-  const body = JSON.stringify(payload, null, 2);
-
-  const res = await trackedNitradoFetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/binary",
-      token,
-    },
-    body,
-  });
-
-  if (!res.ok) {
-    throw new Error(`Nitrado upload HTTP ${res.status}: ${await res.text()}`);
-  }
-
-  console.log(`✅ Shop spawner uploaded: ${filePath} (${body.length} chars)`);
+  if (!res.ok) throw new Error(`Nitrado file upload HTTP ${res.status}: ${await res.text()}`);
+  console.log(`✅ Nitrado file uploaded: ${filePath}`);
 }
