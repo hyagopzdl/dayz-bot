@@ -3,7 +3,7 @@ import { logger } from "./lib/logger";
 import { startDiscordBot } from "./lib/discordBot";
 import { installNitradoHttpTransport } from "./lib/nitradoHttpTransport";
 import { flushExecutableManagedServerStates, startManagedServerRuntimeScheduler } from "./lib/serverRuntimeCoordinator";
-import { refreshManagedServerRegistryFromDb } from "./lib/state";
+import { ensureManagedServerRegistryMetadata } from "./lib/state";
 
 function formatMb(bytes: number) { return `${(bytes / 1024 / 1024).toFixed(1)} MB`; }
 function logMemory(stage: string) {
@@ -45,7 +45,7 @@ function startServer(port: number) {
 
     setImmediate(() => {
       logMemory("post-listen-before-discord");
-      void refreshManagedServerRegistryFromDb()
+      void ensureManagedServerRegistryMetadata()
         .then(() => {
           const registry = require("./lib/serverRegistry") as typeof import("./lib/serverRegistry");
           console.log("🗂️ SERVER REGISTRY HYDRATED", {
@@ -55,7 +55,7 @@ function startServer(port: number) {
           });
         })
         .catch((err) => {
-          console.error("❌ erro ao hidratar registry multi-tenant no startup:", err);
+          console.error("❌ erro ao inicializar metadata multi-tenant no startup:", err);
         })
         .finally(() => {
           logMemory("post-registry-before-discord");
