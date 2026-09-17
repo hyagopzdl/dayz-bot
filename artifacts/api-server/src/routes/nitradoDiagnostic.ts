@@ -96,6 +96,11 @@ async function diagnoseServer(serverId: string) {
   console.log("🔬 NITRADO FILE SERVER ROOT DIAGNOSTIC", { serverId, roots });
   const directories: Record<string, unknown> = {};
   for (const root of roots) directories[root] = await inspectDirectory(serverId, root);
+  const integrationStatus = getOrganizationIntegrationStatus(descriptor.organizationId);
+  const credentialCheck = await safeCall(async () => {
+    const credential = getOrganizationNitradoCredential(descriptor.organizationId);
+    return { source: credential.source, tokenAvailable: Boolean(String(credential.token || "").trim()) };
+  });
   const status = await safeCall(() => getNitradoGameserverStatus(serverId));
   return {
     serverId, descriptor,
