@@ -132,10 +132,11 @@ jobs:
       - name: Typecheck
         run: corepack pnpm install --frozen-lockfile && corepack pnpm run typecheck
 
-      - name: Commit cleanup
+      - name: Commit cleanup and remove one-time workflow
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add artifacts/api-server/src
+          git rm .github/workflows/one-time-clean-multiserver.yml artifacts/api-server/src/lib/.gitkeep
           git diff --cached --quiet || git commit -m "refactor: remove legacy primary server runtime"
           git push
