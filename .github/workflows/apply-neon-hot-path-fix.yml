@@ -1,0 +1,40 @@
+name: Apply Neon hot-path fix
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Patch state.ts and remove workflow
+        shell: python
+        run: |
+          from pathlib import Path
+          import re, subprocess
+          p = Path('artifacts/api-server/src/lib/state.ts')
+          t = p.read_text()
+          pattern = re.compile(r'(export async function getStateAsync\(\): Promise<AppState> \{)(.*?)(\n  if \(!sql\) \{)', re.S)
+          m = pattern.search(t)
+          if not m:
+              raise SystemExit('getStateAsync block not found')
+          body = m.group(2)
+          body = re.sub(r'\n  const existingCachedState = getCachedState\(\);\n  if \(existingCachedState\) \{\n    return existingCachedState;\n  \}\n', '\n', body, count=1)
+          body = re.sub(r'^\n', '\n  const existingCachedState = getCachedState();\n  if (existingCachedState) {\n    return existingCachedState;\n  }\n', body, count=1)
+          t = t[:m.start()] + m.group(1) + body + m.group(3) + t[m.end():]
+          p.write_text(t)
+          subprocess.run(['git','diff','--check'], check=True)
+          subprocess.run(['git','config','user.name','github-actions[bot]'], check=True)
+          subprocess.run(['git','config','user.email','41898282+github-actions[bot]@users.noreply.github.com'], check=True)
+          subprocess.run(['git','add',str(p)], check=True)
+          subprocess.run(['git','rm','.github/workflows/apply-neon-hot-path-fix.yml'], check=True)
+          subprocess.run(['git','commit','-m','fix: avoid Neon schema probe on cached state reads'], check=True)
+          subprocess.run(['git','push'], check=True)
