@@ -130,10 +130,22 @@ export async function uploadDayzMissionTextFile(filePath: string, content: strin
 
   const directory = await discoverMissionDirectory(relativeDirectory, serverId);
   const serviceId = getServiceId(serverId);
-  const tokenUrl = `https://api.nitrado.net/services/${serviceId}/gameservers/file_server/upload?${new URLSearchParams({ path: directory, file }).toString()}`;
+  const tokenUrl = `https://api.nitrado.net/services/${serviceId}/gameservers/file_server/upload`;
+  const form = new URLSearchParams({ path: directory, file });
 
-  console.log("📤 NITRADO DAYZ UPLOAD TOKEN", { serverId, serviceId, directory, file });
-  const tokenResponse = await nitradoRequest(tokenUrl, serverId, { method: "POST" });
+  console.log("📤 NITRADO DAYZ UPLOAD TOKEN", {
+    serverId,
+    serviceId,
+    directory,
+    file,
+    transport: "application/x-www-form-urlencoded",
+  });
+
+  const tokenResponse = await nitradoRequest(tokenUrl, serverId, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: form.toString(),
+  });
   const json = await tokenResponse.json() as any;
   const token = json?.data?.token;
   if (!token?.url || !token?.token) throw new Error(`Nitrado did not return an upload token for ${filePath}`);
