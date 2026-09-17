@@ -2,7 +2,7 @@ import crypto from "crypto";
 import fs from "fs";
 import path from "path";
 import { byteLengthOfBody, recordNetworkTransfer } from "./networkMetrics";
-import { getManagedServerById, getPrimaryServerDescriptor, getPrimaryServerId } from "./serverRegistry";
+import { getManagedServerById } from "./serverRegistry";
 import { getActiveServerId, getServerRuntimeContext } from "./serverRuntime";
 import { getServerNitradoConfig } from "./serverNitrado";
 
@@ -60,7 +60,7 @@ function getAdmPerServerMetric(serverId: string): AdmPerServerMetric {
   return metric;
 }
 
-function getAdmServerStrategy(serverId = getPrimaryServerId()): AdmServerStrategyState {
+function getAdmServerStrategy(serverId = getActiveServerId()): AdmServerStrategyState {
   let state = admServerStrategies.get(serverId);
   if (!state) {
     state = { mode: "shadow", cycles: 0, optimizedAuditCursor: 0, previousFileTracker: {} };
@@ -69,12 +69,12 @@ function getAdmServerStrategy(serverId = getPrimaryServerId()): AdmServerStrateg
   return state;
 }
 
-export function setAdmDownloadMode(mode: AdmDownloadMode, serverId = getPrimaryServerId()) {
+export function setAdmDownloadMode(mode: AdmDownloadMode, serverId = getActiveServerId()) {
   getAdmServerStrategy(serverId).mode = mode;
-  if (serverId === getPrimaryServerId()) admDownloadMetrics.strategy.mode = mode;
+  if (serverId === getActiveServerId()) admDownloadMetrics.strategy.mode = mode;
 }
 
-export function getAdmDownloadMode(serverId = getPrimaryServerId()): AdmDownloadMode {
+export function getAdmDownloadMode(serverId = getActiveServerId()): AdmDownloadMode {
   return getAdmServerStrategy(serverId).mode;
 }
 
@@ -317,7 +317,7 @@ function firstString(...values: any[]) {
   return null;
 }
 
-export async function getNitradoGameserverStatus(serverId = getPrimaryServerId()): Promise<NitradoGameserverStatus> {
+export async function getNitradoGameserverStatus(serverId = getActiveServerId()): Promise<NitradoGameserverStatus> {
   getNitradoToken(serverId);
   const serviceId = getNitradoServiceId(serverId);
   const candidates = [`https://api.nitrado.net/services/${serviceId}/gameservers`, `https://api.nitrado.net/services/${serviceId}`];
@@ -338,14 +338,14 @@ export async function getNitradoGameserverStatus(serverId = getPrimaryServerId()
   throw new Error(`Unable to read Nitrado server status. ${errors.join(" | ")}`);
 }
 
-async function getDownloadUrl(filePath: string, serverId = getPrimaryServerId()): Promise<string | null> {
+async function getDownloadUrl(filePath: string, serverId = getActiveServerId()): Promise<string | null> {
   admDownloadMetrics.downloadUrlRequests += 1;
   const serviceId = getNitradoServiceId(serverId);
   const json = await fetchJson(`https://api.nitrado.net/services/${serviceId}/gameservers/file_server/download?file=${encodeURIComponent(filePath)}`, serverId);
   return json?.data?.token?.url || null;
 }
 
-async function downloadText(filePath: string, serverId = getPrimaryServerId()): Promise<string | null> {
+async function downloadText(filePath: string, serverId = getActiveServerId()): Promise<string | null> {
   const url = await getDownloadUrl(filePath, serverId);
   if (!url) return null;
   const res = await trackedNitradoFetch(`${url}&t=${Date.now()}`);
@@ -441,7 +441,7 @@ function getOptimizedDecision(
   return { decision: "skip" as const, reason: "optimized-stable-old-file" };
 }
 
-function triggerAutomaticFallback(reason: string, serverId = getPrimaryServerId()) {
+function triggerAutomaticFallback(reason: string, serverId = getActiveServerId()) {
   admDownloadMetrics.strategy.automaticFallbacks += 1;
   admDownloadMetrics.strategy.lastFallbackAt = new Date().toISOString();
   admDownloadMetrics.strategy.lastFallbackReason = reason;
@@ -449,7 +449,7 @@ function triggerAutomaticFallback(reason: string, serverId = getPrimaryServerId(
   console.error(`🚨 ADM optimized downloader fallback para Legacy: ${reason}`);
 }
 
-export async function downloadADM(serverId = getPrimaryServerId()) {
+export async function downloadADM(serverId = getActiveServerId()) {
   const runtime = getServerRuntimeContext(serverId);
   const strategy = getAdmServerStrategy(serverId);
   const serverMetric = getAdmPerServerMetric(serverId);

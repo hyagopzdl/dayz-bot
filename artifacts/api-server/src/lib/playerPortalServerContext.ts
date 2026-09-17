@@ -1,7 +1,5 @@
 import type { NextFunction, Request, Response } from "express";
 import {
-  getPrimaryServerDescriptor,
-  getPrimaryServerId,
   listExecutableManagedServers,
   listManagedServers,
   setServerRuntimeIsolationStatus,
@@ -44,27 +42,24 @@ function requestedServerId(req: Request) {
   return String(queryValue || headerValue || cookieValue || "").trim() || undefined;
 }
 
-export function listPlayerPortalServers(organizationId = getPrimaryServerDescriptor().organizationId) {
+export function listPlayerPortalServers(organizationId?: string) {
   // Phase 16 keeps discovery tenant-scoped. A player enters another tenant only
   // through an explicit server entrypoint (?server=<id>); once inside, the
   // switcher lists only active servers owned by that same organization.
   return listManagedServers()
-    .filter((server) => server.enabled && server.organizationId === organizationId)
+    .filter((server) => server.enabled && (!organizationId || server.organizationId === organizationId))
     .map(publicServer);
 }
 
 export function resolvePlayerPortalServerContext(req: Request): PlayerPortalServerContext {
   const available = listManagedServers().filter((server) => server.enabled);
-  const primaryId = getPrimaryServerId();
   const requested = requestedServerId(req);
   const requestedDescriptor = requested ? available.find((server) => server.id === requested) : undefined;
   if (requested && !requestedDescriptor) {
     invalidSelections += 1;
     throw new Error("PLAYER_PORTAL_SERVER_NOT_FOUND");
   }
-  const seed = requestedDescriptor
-    || available.find((server) => server.id === primaryId)
-    || available[0];
+  const seed = requestedDescriptor || available[0];
 
   if (!seed) {
     throw new Error("No managed server is available for the Player Portal.");
@@ -139,11 +134,11 @@ export function getPlayerPortalContextDiagnostics() {
     enabled: true,
     cookie: PLAYER_SERVER_COOKIE,
     executableServers: listExecutableManagedServers().length,
-    primaryOrganizationServers: listPlayerPortalServers().length,
+    organizationServers: listPlayerPortalServers().length,
     contextResolutions,
     contextSwitches,
     invalidSelections,
     policy: "explicit-server-entrypoint+same-organization-switcher+invalid-server-fail-closed",
-    organizationId: getPrimaryServerDescriptor().organizationId,
+    organizationId: listManagedServers()[0]?.organizationId,
   };
 }

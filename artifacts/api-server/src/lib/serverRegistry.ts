@@ -150,10 +150,6 @@ export function canExecuteManagedServerRuntime(serverId: unknown) {
 }
 export function listExecutableManagedServers() { return listManagedServers().filter((server) => canExecuteManagedServerRuntime(server.id)); }
 
-/** @deprecated No runtime fallback; retained until all historical callers are migrated. */
-export function getPrimaryServerId() { return ""; }
-/** @deprecated Never returns a synthetic server. Historical callers must stop using this API. */
-export function getPrimaryServerDescriptor(): ManagedServerDescriptor { throw new Error("Primary server fallback has been removed; resolve a managed server context first."); }
 
 export function listManagedServers() { return persistedServers.map(cloneServer); }
 export function setPersistedManagedServers(servers: ManagedServerDescriptor[]) {

@@ -7,8 +7,6 @@ import {
 import { getOrganizationIntegrationStatus } from "../lib/organizationIntegrations";
 import {
   getManagedServerById,
-  getPrimaryServerDescriptor,
-  getPrimaryServerId,
   getServerRuntimeIsolationStatus,
   getServerRegistryPersistenceStatus,
   getServerNamespacePersistenceStatus,
@@ -69,8 +67,7 @@ async function safeCall<T>(fn: () => Promise<T>) {
 }
 
 function descriptorSnapshot(serverId: string) {
-  const descriptor = getManagedServerById(serverId)
-    || (serverId === getPrimaryServerId() ? getPrimaryServerDescriptor() : undefined);
+  const descriptor = getManagedServerById(serverId);
 
   if (!descriptor) return null;
 
@@ -162,8 +159,8 @@ router.get("/nitrado-diagnostic", async (req, res) => {
     generatedAt: new Date().toISOString(),
     durationMs: Date.now() - startedAt,
     targetServers: TARGET_SERVERS,
-    primaryServerId: getPrimaryServerId(),
-    primaryServer: descriptorSnapshot(getPrimaryServerId()),
+    activeServerId: getActiveServerId(),
+    activeServer: descriptorSnapshot(getActiveServerId()),
     managedServers: listManagedServers().map((server) => descriptorSnapshot(server.id)),
     registry: getServerRegistryPersistenceStatus(),
     namespace: getServerNamespacePersistenceStatus(),

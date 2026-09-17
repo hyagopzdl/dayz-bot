@@ -11,7 +11,6 @@ import { normalizeServiceSettings, type ServiceSettings } from "./serviceSetting
 import { recordNetworkTransfer } from "./networkMetrics";
 import {
   buildManagedServerId,
-  getPrimaryServerDescriptor,
   getPrimaryServerId,
   getManagedServerActivationConfigSignature,
   getServerRegistryPersistenceStatus,
@@ -497,29 +496,25 @@ function deriveServerOnboardingStatus(descriptor: Pick<ManagedServerDescriptor, 
   return hasMatchingManagedServerNitradoValidation(descriptor) ? "configured" as const : "draft" as const;
 }
 
-function mapManagedServerRow(row: any, primary: ManagedServerDescriptor): ManagedServerDescriptor {
+function mapManagedServerRow(row: any): ManagedServerDescriptor {
   const id = String(row.id || "").trim();
-  const isPrimary = id === primary.id;
   const runtimeConfig = parseManagedServerRuntimeConfig(row.runtime_config);
   const descriptor: ManagedServerDescriptor = {
     id,
     name: String(row.name || row.id || "Server"),
-    organizationId: buildOrganizationId(row.organization_id || (isPrimary ? getDefaultOrganizationId() : "")) || getDefaultOrganizationId(),
+    organizationId: buildOrganizationId(row.organization_id) || getDefaultOrganizationId(),
     enabled: row.enabled !== false,
-    primary: isPrimary,
-    runtimeEnabled: isPrimary ? true : Boolean(row.runtime_enabled),
-    onboardingStatus: isPrimary ? "active" : "draft",
+    primary: false,
+    runtimeEnabled: Boolean(row.runtime_enabled),
+    onboardingStatus: normalizeServerOnboardingStatus(row.onboarding_status),
     mode: "multi-server-native",
     integrations: {
       nitradoServiceId: String(row.nitrado_service_id || "").trim() || undefined,
       discordGuildId: String(row.discord_guild_id || "").trim() || undefined,
     },
     runtime: {
-      // Only the production primary may inherit legacy ENV defaults. A draft
-      // must stay empty when a field is not explicitly configured, otherwise
-      // it could silently point at PZ paths/channels during a future activation.
-      nitradoBaseDir: String(runtimeConfig?.nitradoBaseDir || (isPrimary ? primary.runtime.nitradoBaseDir : "") || "").trim() || undefined,
-      nitradoValidation: !isPrimary && runtimeConfig?.nitradoValidation && typeof runtimeConfig.nitradoValidation === "object"
+      nitradoBaseDir: String(runtimeConfig?.nitradoBaseDir || "").trim() || undefined,
+      nitradoValidation: runtimeConfig?.nitradoValidation && typeof runtimeConfig.nitradoValidation === "object"
         ? {
             serviceId: String(runtimeConfig.nitradoValidation.serviceId || "").trim(),
             baseDir: String(runtimeConfig.nitradoValidation.baseDir || "").trim(),
@@ -527,10 +522,7 @@ function mapManagedServerRow(row: any, primary: ManagedServerDescriptor): Manage
             source: "phase10-on-demand",
           }
         : undefined,
-      activationPreflight: !isPrimary
-        && runtimeConfig?.activationPreflight
-        && typeof runtimeConfig.activationPreflight === "object"
-        && runtimeConfig.activationPreflight.passed === true
+      activationPreflight: runtimeConfig?.activationPreflight?.passed === true
         ? {
             version: "phase11-v1",
             source: "phase11-on-demand",
@@ -548,10 +540,7 @@ function mapManagedServerRow(row: any, primary: ManagedServerDescriptor): Manage
             warningCount: Number(runtimeConfig.activationPreflight.warningCount || 0),
           }
         : undefined,
-      activation: !isPrimary
-        && runtimeConfig?.activation
-        && typeof runtimeConfig.activation === "object"
-        && runtimeConfig.activation.everActivated === true
+      activation: runtimeConfig?.activation?.everActivated === true
         ? {
             source: "phase12-admin",
             everActivated: true,
@@ -561,9 +550,7 @@ function mapManagedServerRow(row: any, primary: ManagedServerDescriptor): Manage
             activationCount: Math.max(1, Number(runtimeConfig.activation.activationCount || 1)),
           }
         : undefined,
-      operations: !isPrimary
-        && runtimeConfig?.operations
-        && typeof runtimeConfig.operations === "object"
+      operations: runtimeConfig?.operations && typeof runtimeConfig.operations === "object"
         ? {
             paused: runtimeConfig.operations.paused === true,
             pausedAt: String(runtimeConfig.operations.pausedAt || "").trim() || undefined,
@@ -572,52 +559,42 @@ function mapManagedServerRow(row: any, primary: ManagedServerDescriptor): Manage
             source: runtimeConfig.operations.source === "phase14-admin" ? "phase14-admin" : undefined,
           }
         : undefined,
-      settings: normalizeServerScopedSettingsDraft(
-        runtimeConfig?.settings,
-        {
-          ...(isPrimary ? primary.runtime.settings || {} : {}),
-          ...(String(runtimeConfig?.settings?.shopDeliveryConfiguredAt || "").trim()
-            ? { shopDeliveryConfiguredAt: String(runtimeConfig.settings.shopDeliveryConfiguredAt).trim() }
-            : {}),
-        },
-      ),
-      discord: isPrimary
-        ? { ...(primary.runtime.discord || {}), ...(runtimeConfig?.discord || {}) }
-        : { ...(runtimeConfig?.discord || {}) },
+      settings: normalizeServerScopedSettingsDraft(runtimeConfig?.settings, {
+        ...(String(runtimeConfig?.settings?.shopDeliveryConfiguredAt || "").trim()
+          ? { shopDeliveryConfiguredAt: String(runtimeConfig.settings.shopDeliveryConfiguredAt).trim() }
+          : {}),
+      }),
+      discord: { ...(runtimeConfig?.discord || {}) },
     },
   };
-
-  if (!isPrimary) {
-    const storedStatus = String(row.onboarding_status || "draft").trim().toLowerCase();
-    descriptor.onboardingStatus = storedStatus === "ready"
-      && hasMatchingManagedServerNitradoValidation(descriptor)
-      && hasMatchingActivationPreflight(descriptor)
-      ? "ready"
-      : deriveServerOnboardingStatus(descriptor);
-  }
+  const storedStatus = String(row.onboarding_status || "draft").trim().toLowerCase();
+  descriptor.onboardingStatus = storedStatus === "ready"
+    && hasMatchingManagedServerNitradoValidation(descriptor)
+    && hasMatchingActivationPreflight(descriptor)
+    ? "ready"
+    : deriveServerOnboardingStatus(descriptor);
   return descriptor;
 }
 
-async function reloadManagedServerRegistryFromDb(primary = getPrimaryServerDescriptor()) {
-  if (!sql) return [primary];
+async function reloadManagedServerRegistryFromDb() {
+  if (!sql) return [] as ManagedServerDescriptor[];
   const rows = await sql`
     SELECT id, name, organization_id, enabled, primary_server, runtime_enabled, onboarding_status,
            mode, nitrado_service_id, discord_guild_id, runtime_config
     FROM managed_servers
-    ORDER BY primary_server DESC, created_at ASC, id ASC
+    ORDER BY created_at ASC, id ASC
   `;
-  const descriptors = (rows as any[]).map((row) => mapManagedServerRow(row, primary));
-  const next = descriptors.length ? descriptors : [primary];
-  setPersistedManagedServers(next);
+  const descriptors = (rows as any[]).map((row) => mapManagedServerRow(row));
+  setPersistedManagedServers(descriptors);
   setServerRegistryPersistenceStatus({
-    rowsLoaded: next.length,
-    draftRows: next.filter((server) => !server.primary && server.onboardingStatus === "draft").length,
-    configuredRows: next.filter((server) => !server.primary && server.onboardingStatus === "configured").length,
-    readyRows: next.filter((server) => !server.primary && server.onboardingStatus === "ready").length,
-    runtimeEnabledRows: next.filter((server) => server.runtimeEnabled).length,
+    rowsLoaded: descriptors.length,
+    draftRows: descriptors.filter((server) => server.onboardingStatus === "draft").length,
+    configuredRows: descriptors.filter((server) => server.onboardingStatus === "configured").length,
+    readyRows: descriptors.filter((server) => server.onboardingStatus === "ready").length,
+    runtimeEnabledRows: descriptors.filter((server) => server.runtimeEnabled).length,
     lastLoadedAt: new Date().toISOString(),
   });
-  return next;
+  return descriptors;
 }
 
 export async function refreshManagedServerRegistryFromDb() {
@@ -680,371 +657,59 @@ async function reloadOrganizationRegistryFromDb() {
   });
 }
 
-async function ensurePrimaryServerRegistryMetadata() {
+async function ensureManagedServerRegistryMetadata() {
   if (!sql) {
     setOrganizationRegistryPersistenceStatus({ enabled: false, initialized: true });
     setPersistedOrganizations([getDefaultOrganizationDescriptor()], []);
-    setServerRegistryPersistenceStatus({
-      enabled: false,
-      initialized: true,
-      tableReady: false,
-      primarySeeded: false,
-      rowsLoaded: 0,
-    });
+    setServerRegistryPersistenceStatus({ enabled: false, initialized: true, tableReady: false, primarySeeded: false, rowsLoaded: 0 });
     return;
   }
   if (serverRegistryReadyPromise) return serverRegistryReadyPromise;
-
   serverRegistryReadyPromise = (async () => {
-    const primary = getPrimaryServerDescriptor();
     const defaultOrganization = getDefaultOrganizationDescriptor();
     try {
-      // Phase 16 keeps ownership around the existing server-scoped runtime. It does
-      // not rename state rows, ADM paths, parser cursors or runtime identifiers.
-      await sql`
-        CREATE TABLE IF NOT EXISTS organizations (
-          id TEXT PRIMARY KEY,
-          name TEXT NOT NULL,
-          active BOOLEAN NOT NULL DEFAULT TRUE,
-          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-        )
-      `;
-      await sql`
-        CREATE TABLE IF NOT EXISTS organization_members (
-          organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-          discord_id TEXT NOT NULL,
-          role TEXT NOT NULL DEFAULT 'viewer' CHECK (role IN ('owner','admin','moderator','viewer')),
-          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-          PRIMARY KEY (organization_id, discord_id)
-        )
-      `;
+      await sql`CREATE TABLE IF NOT EXISTS organizations (id TEXT PRIMARY KEY, name TEXT NOT NULL, active BOOLEAN NOT NULL DEFAULT TRUE, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`;
+      await sql`CREATE TABLE IF NOT EXISTS organization_members (organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE, discord_id TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'viewer' CHECK (role IN ('owner','admin','moderator','viewer')), created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), PRIMARY KEY (organization_id, discord_id))`;
       await sql`CREATE INDEX IF NOT EXISTS organization_members_discord_id_idx ON organization_members (discord_id)`;
-      await sql`
-        CREATE TABLE IF NOT EXISTS organization_integrations (
-          organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-          provider TEXT NOT NULL CHECK (provider IN ('nitrado')),
-          encrypted_secret TEXT NOT NULL,
-          iv TEXT NOT NULL,
-          auth_tag TEXT NOT NULL,
-          key_version INTEGER NOT NULL DEFAULT 1,
-          metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
-          active BOOLEAN NOT NULL DEFAULT TRUE,
-          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-          PRIMARY KEY (organization_id, provider)
-        )
-      `;
-      await sql`
-        INSERT INTO organizations (id, name, active, created_at, updated_at)
-        VALUES (${defaultOrganization.id}, ${defaultOrganization.name}, TRUE, NOW(), NOW())
-        ON CONFLICT (id) DO NOTHING
-        RETURNING id
-      `;
-      setOrganizationRegistryPersistenceStatus({
-        enabled: true,
-        organizationsTableReady: true,
-        membershipsTableReady: true,
-        defaultOrganizationSeeded: true,
-      });
+      await sql`CREATE TABLE IF NOT EXISTS organization_integrations (organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE, provider TEXT NOT NULL CHECK (provider IN ('nitrado')), encrypted_secret TEXT NOT NULL, iv TEXT NOT NULL, auth_tag TEXT NOT NULL, key_version INTEGER NOT NULL DEFAULT 1, metadata JSONB NOT NULL DEFAULT '{}'::jsonb, active BOOLEAN NOT NULL DEFAULT TRUE, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), PRIMARY KEY (organization_id, provider))`;
+      await sql`INSERT INTO organizations (id, name, active, created_at, updated_at) VALUES (${defaultOrganization.id}, ${defaultOrganization.name}, TRUE, NOW(), NOW()) ON CONFLICT (id) DO NOTHING`;
+      await reloadOrganizationRegistryFromDb();
+      setOrganizationRegistryPersistenceStatus({ enabled: true, organizationsTableReady: true, membershipsTableReady: true, defaultOrganizationSeeded: true, initialized: true });
 
-      // Phase 5 keeps the registry metadata behavior unchanged. No bot_state ids,
-      // ADM cursors, granular stats, Discord routing or Nitrado routing are
-      // renamed or moved in this deploy.
-      await sql`
-        CREATE TABLE IF NOT EXISTS managed_servers (
-          id TEXT PRIMARY KEY,
-          name TEXT NOT NULL,
-          organization_id TEXT,
-          enabled BOOLEAN NOT NULL DEFAULT TRUE,
-          primary_server BOOLEAN NOT NULL DEFAULT FALSE,
-          runtime_enabled BOOLEAN NOT NULL DEFAULT FALSE,
-          onboarding_status TEXT NOT NULL DEFAULT 'draft',
-          mode TEXT NOT NULL DEFAULT 'multi-server-native',
-          nitrado_service_id TEXT,
-          discord_guild_id TEXT,
-          runtime_config JSONB,
-          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-        )
-      `;
+      await sql`CREATE TABLE IF NOT EXISTS managed_servers (id TEXT PRIMARY KEY, name TEXT NOT NULL, organization_id TEXT NOT NULL DEFAULT ${defaultOrganization.id}, enabled BOOLEAN NOT NULL DEFAULT TRUE, primary_server BOOLEAN NOT NULL DEFAULT FALSE, runtime_enabled BOOLEAN NOT NULL DEFAULT FALSE, onboarding_status TEXT NOT NULL DEFAULT 'draft', mode TEXT NOT NULL DEFAULT 'multi-server-native', nitrado_service_id TEXT, discord_guild_id TEXT, runtime_config JSONB, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`;
       await sql`ALTER TABLE managed_servers ADD COLUMN IF NOT EXISTS runtime_config JSONB`;
       await sql`ALTER TABLE managed_servers ADD COLUMN IF NOT EXISTS runtime_enabled BOOLEAN NOT NULL DEFAULT FALSE`;
       await sql`ALTER TABLE managed_servers ADD COLUMN IF NOT EXISTS onboarding_status TEXT NOT NULL DEFAULT 'draft'`;
       await sql`ALTER TABLE managed_servers ADD COLUMN IF NOT EXISTS organization_id TEXT`;
-      const ownershipBackfill = await sql`
-        UPDATE managed_servers
-        SET organization_id = ${defaultOrganization.id}, updated_at = NOW()
-        WHERE organization_id IS NULL OR BTRIM(organization_id) = ''
-        RETURNING id
-      `;
-      await sql`ALTER TABLE managed_servers ALTER COLUMN organization_id SET NOT NULL`;
+      await sql`UPDATE managed_servers SET organization_id = ${defaultOrganization.id}, updated_at = NOW() WHERE organization_id IS NULL OR BTRIM(organization_id) = ''`;
       await sql`CREATE INDEX IF NOT EXISTS managed_servers_organization_id_idx ON managed_servers (organization_id)`;
-      const ownershipCounts = await sql`
-        SELECT COUNT(*)::int AS missing
-        FROM managed_servers
-        WHERE organization_id IS NULL OR BTRIM(organization_id) = ''
-      `;
-      const missingOwnership = Number((ownershipCounts as any[])[0]?.missing || 0);
-      setOrganizationRegistryPersistenceStatus({
-        serverOwnershipColumnReady: missingOwnership === 0,
-        serversBackfilled: (ownershipBackfill as any[]).length,
-        serversWithoutOrganization: missingOwnership,
-      });
+      await sql`ALTER TABLE managed_servers ALTER COLUMN organization_id SET NOT NULL`;
+      const ownership = await sql`SELECT COUNT(*)::int AS missing FROM managed_servers WHERE organization_id IS NULL OR BTRIM(organization_id) = ''`;
+      setOrganizationRegistryPersistenceStatus({ serverOwnershipColumnReady: Number((ownership as any[])[0]?.missing || 0) === 0, serversWithoutOrganization: Number((ownership as any[])[0]?.missing || 0) });
       setServerRegistryPersistenceStatus({ tableReady: true });
 
-      // Never overwrite an existing registry row from environment variables.
-      // This avoids a deploy unexpectedly remapping the production server.
-      const inserted = await sql`
-        INSERT INTO managed_servers (
-          id, name, organization_id, enabled, primary_server, runtime_enabled, onboarding_status, mode, nitrado_service_id, discord_guild_id, runtime_config, created_at, updated_at
-        )
-        VALUES (
-          ${primary.id}, ${primary.name}, ${defaultOrganization.id}, TRUE, TRUE, TRUE, 'active', ${primary.mode},
-          ${primary.integrations.nitradoServiceId || null}, ${primary.integrations.discordGuildId || null}, ${JSON.stringify(primary.runtime)}::jsonb, NOW(), NOW()
-        )
-        ON CONFLICT (id) DO NOTHING
-        RETURNING id
-      `;
+      const descriptors = await reloadManagedServerRegistryFromDb();
+      setServerRegistryPersistenceStatus({ enabled: true, initialized: true, tableReady: true, primarySeeded: false, rowsLoaded: descriptors.length, draftRows: descriptors.filter((server) => server.onboardingStatus === 'draft').length, configuredRows: descriptors.filter((server) => server.onboardingStatus === 'configured').length, readyRows: descriptors.filter((server) => server.onboardingStatus === 'ready').length, runtimeEnabledRows: descriptors.filter((server) => server.runtimeEnabled).length, lastLoadedAt: new Date().toISOString(), lastError: undefined });
 
-      const runtimeBackfill = await sql`
-        UPDATE managed_servers
-        SET
-          organization_id = COALESCE(NULLIF(BTRIM(organization_id), ''), ${defaultOrganization.id}),
-          nitrado_service_id = COALESCE(nitrado_service_id, ${primary.integrations.nitradoServiceId || null}),
-          discord_guild_id = COALESCE(discord_guild_id, ${primary.integrations.discordGuildId || null}),
-          runtime_config = CASE
-            WHEN runtime_config IS NULL OR runtime_config = '{}'::jsonb THEN ${JSON.stringify(primary.runtime)}::jsonb
-            ELSE runtime_config
-          END,
-          runtime_enabled = TRUE,
-          onboarding_status = 'active',
-          updated_at = NOW()
-        WHERE id = ${primary.id}
-          AND (
-            organization_id IS NULL
-            OR BTRIM(organization_id) = ''
-            OR nitrado_service_id IS NULL
-            OR discord_guild_id IS NULL
-            OR runtime_config IS NULL
-            OR runtime_config = '{}'::jsonb
-            OR runtime_enabled IS DISTINCT FROM TRUE
-            OR onboarding_status IS DISTINCT FROM 'active'
-          )
-        RETURNING id
-      `;
-
-
-      // Phase 16 snapshots the legacy process-wide commerce settings into each
-      // existing server row once. From this point forward they can diverge
-      // without one server inheriting changes made for another tenant.
-      const defaultServerSettings = primary.runtime.settings || {
-        shopRestartTimes: String(process.env.SHOP_RESTART_TIMES || process.env.SERVER_RESTART_TIMES || "00:00,04:00,08:00,12:00,16:00,20:00"),
-        shopRestartTimezone: String(process.env.SHOP_RESTART_TIMEZONE || "America/Sao_Paulo"),
-        dayzMissionDir: String(process.env.DAYZ_MISSION_DIR || "dayzps_missions/dayzOffline.chernarusplus"),
-      };
-      await sql`
-        UPDATE managed_servers
-        SET runtime_config = CASE
-              WHEN runtime_config IS NULL THEN jsonb_build_object(
-                'settings', ${JSON.stringify(defaultServerSettings)}::jsonb
-              )
-              WHEN jsonb_typeof(runtime_config) = 'object' THEN jsonb_set(
-                runtime_config,
-                '{settings}',
-                ${JSON.stringify(defaultServerSettings)}::jsonb,
-                TRUE
-              )
-              ELSE runtime_config
-            END,
-            updated_at = NOW()
-        WHERE runtime_config IS NULL
-           OR (jsonb_typeof(runtime_config) = 'object' AND runtime_config->'settings' IS NULL)
-      `;
-      const bootstrapAdminIds = Array.from(new Set(
-        String(process.env.DISCORD_ADMIN_USER_IDS || "")
-          .split(",")
-          .map((value) => value.trim())
-          .filter(Boolean),
-      ));
-      let seededOwnerMemberships = 0;
-      const existingMembershipCountRows = await sql`
-        SELECT COUNT(*)::int AS count
-        FROM organization_members
-        WHERE organization_id = ${defaultOrganization.id}
-      `;
-      const existingMembershipCount = Number((existingMembershipCountRows as any[])[0]?.count || 0);
-      // Environment admins are a one-time bootstrap only. Once the organization
-      // has persisted memberships, later removals/demotions must not be silently
-      // reversed by a Render restart or deploy.
-      if (existingMembershipCount === 0) {
-        for (const discordId of bootstrapAdminIds) {
-          const insertedMembership = await sql`
-            INSERT INTO organization_members (organization_id, discord_id, role, created_at, updated_at)
-            VALUES (${defaultOrganization.id}, ${discordId}, 'owner', NOW(), NOW())
-            ON CONFLICT (organization_id, discord_id) DO NOTHING
-            RETURNING discord_id
-          `;
-          seededOwnerMemberships += (insertedMembership as any[]).length;
-        }
-      }
-      await reloadOrganizationRegistryFromDb();
-      setOrganizationRegistryPersistenceStatus({
-        initialized: true,
-        seededOwnerMemberships,
-      });
-
-      // Phase 12 preserves explicitly activated runtimes across deploys, but still
-      // fails closed on stale/manual runtime_enabled values that do not have a
-      // matching Nitrado validation + Phase 11 preflight for the saved config.
-      let descriptors = await reloadManagedServerRegistryFromDb(primary);
-      const invalidRuntimeIds = descriptors
-        .filter((server) => !server.primary && server.runtimeEnabled)
-        .filter((server) => !(
-          server.enabled
-          && server.onboardingStatus === "ready"
-          && hasMatchingManagedServerNitradoValidation(server)
-          && hasMatchingActivationPreflight(server)
-          && hasManagedServerRuntimeActivation(server)
-        ))
-        .map((server) => server.id);
-      for (const invalidRuntimeId of invalidRuntimeIds) {
-        await sql`
-          UPDATE managed_servers
-          SET runtime_enabled = FALSE, updated_at = NOW()
-          WHERE id = ${invalidRuntimeId} AND id <> ${primary.id}
-        `;
-      }
-      if (invalidRuntimeIds.length) descriptors = await reloadManagedServerRegistryFromDb(primary);
-
-      const persistedPrimary = descriptors.find((server) => server.id === primary.id) || descriptors.find((server) => server.primary);
-      setServerRegistryPersistenceStatus({
-        enabled: true,
-        initialized: true,
-        tableReady: true,
-        primarySeeded: Boolean(persistedPrimary),
-        rowsLoaded: descriptors.length,
-        draftRows: descriptors.filter((server) => !server.primary && server.onboardingStatus === "draft").length,
-        configuredRows: descriptors.filter((server) => !server.primary && server.onboardingStatus === "configured").length,
-        readyRows: descriptors.filter((server) => !server.primary && server.onboardingStatus === "ready").length,
-        runtimeEnabledRows: descriptors.filter((server) => server.runtimeEnabled).length,
-        lastLoadedAt: new Date().toISOString(),
-        lastError: undefined,
-        configDrift: persistedPrimary ? {
-          name: persistedPrimary.name !== primary.name,
-          nitradoServiceId: (persistedPrimary.integrations.nitradoServiceId || "") !== (primary.integrations.nitradoServiceId || ""),
-          discordGuildId: (persistedPrimary.integrations.discordGuildId || "") !== (primary.integrations.discordGuildId || ""),
-        } : undefined,
-      });
-
-      // One tiny metadata INSERT is expected only on the first Phase 2 boot.
-      // Existing deployments thereafter perform reads only here.
-      if ((inserted as any[]).length || (runtimeBackfill as any[]).length) {
-        recordNetworkTransfer({
-          service: "neon-server-registry",
-          operation: (inserted as any[]).length ? "seed_primary_server_metadata" : "backfill_primary_runtime_config",
-          direction: "outbound",
-          bytes: Buffer.byteLength(JSON.stringify(primary), "utf8"),
-          ok: true,
-        });
-      }
-
-      // Phase 5 promotes the prepared (server_id, id) namespace to the real
-      // primary key. The migration is transactional and only runs after every
-      // existing row has a server_id, so a failure leaves the old key intact.
-      try {
-        const tableCheck = await sql`SELECT to_regclass('public.bot_state') IS NOT NULL AS exists`;
-        const botStateExists = Boolean((tableCheck as any[])[0]?.exists);
-        let taggedRows = 0;
-        let untaggedRows = 0;
-        if (botStateExists) {
-          await sql`ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS server_id TEXT`;
-          await sql`UPDATE bot_state SET server_id = ${primary.id} WHERE server_id IS NULL`;
-          await sql`CREATE INDEX IF NOT EXISTS bot_state_server_id_idx ON bot_state (server_id)`;
-          const counts = await sql`
-            SELECT
-              COUNT(*) FILTER (WHERE server_id = ${primary.id})::int AS tagged_rows,
-              COUNT(*) FILTER (WHERE server_id IS NULL)::int AS untagged_rows
-            FROM bot_state
-          `;
-          taggedRows = Number((counts as any[])[0]?.tagged_rows || 0);
-          untaggedRows = Number((counts as any[])[0]?.untagged_rows || 0);
-
-          const pkRows = await sql`
-            SELECT array_agg(a.attname ORDER BY keycols.ordinality) AS columns
-            FROM pg_index i
-            JOIN pg_class t ON t.oid = i.indrelid
-            JOIN unnest(i.indkey) WITH ORDINALITY AS keycols(attnum, ordinality) ON TRUE
-            JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = keycols.attnum
-            WHERE t.relname = 'bot_state' AND i.indisprimary
-            GROUP BY i.indexrelid
-          `;
-          const pkColumns = Array.isArray((pkRows as any[])[0]?.columns)
-            ? (pkRows as any[])[0].columns.map((value: unknown) => String(value))
-            : [];
-
-          if (pkColumns.join(',') === 'server_id,id') {
-            botStatePrimaryKeyReady = true;
-          } else if (pkColumns.join(',') === 'id' && untaggedRows === 0) {
-            await sql`CREATE UNIQUE INDEX IF NOT EXISTS bot_state_server_id_id_uidx ON bot_state (server_id, id)`;
-            await sql.begin(async (tx: any) => {
-              await tx`ALTER TABLE bot_state ALTER COLUMN server_id SET NOT NULL`;
-              await tx`ALTER TABLE bot_state DROP CONSTRAINT bot_state_pkey`;
-              await tx`ALTER TABLE bot_state ADD CONSTRAINT bot_state_pkey PRIMARY KEY USING INDEX bot_state_server_id_id_uidx`;
-            });
-            botStatePrimaryKeyReady = true;
-          } else if (pkColumns.length === 0 && untaggedRows === 0) {
-            await sql.begin(async (tx: any) => {
-              await tx`ALTER TABLE bot_state ALTER COLUMN server_id SET NOT NULL`;
-              await tx`ALTER TABLE bot_state ADD CONSTRAINT bot_state_pkey PRIMARY KEY (server_id, id)`;
-            });
-            botStatePrimaryKeyReady = true;
-          } else {
-            throw new Error(`bot_state primary key is not safe to migrate: ${pkColumns.join(',') || 'none'}; untagged=${untaggedRows}`);
-          }
-          botStateScopedPersistenceReady = botStatePrimaryKeyReady;
-        }
-        setServerNamespacePersistenceStatus({
-          enabled: true,
-          initialized: true,
-          botStateTableReady: botStateExists,
-          botStateCompositeKeyReady: botStateExists && botStateScopedPersistenceReady,
-          botStatePrimaryKeyReady,
-          primaryKeyCutoverComplete: botStatePrimaryKeyReady && (!GRANULAR_PLAYER_STATS_ENABLED || playerStatsPrimaryKeyReady),
-          scopedReadsEnabled: botStateExists && botStateScopedPersistenceReady,
-          scopedReadFallbacks,
-          lastScopedReadSource,
-          botStateTaggedRows: taggedRows,
-          botStateUntaggedRows: untaggedRows,
-          lastCheckedAt: new Date().toISOString(),
-          lastError: undefined,
-        });
-      } catch (namespaceErr) {
-        setServerNamespacePersistenceStatus({
-          initialized: true,
-          lastCheckedAt: new Date().toISOString(),
-          lastError: namespaceErr instanceof Error ? namespaceErr.message : String(namespaceErr),
-        });
-        // Primary-key promotion is non-blocking in Phase 5. Because the DDL is
-        // transactional, failure keeps the Phase 4 single-server key/path valid.
-        console.error("❌ erro preparando namespace multi-server:", namespaceErr);
+      const tableCheck = await sql`SELECT to_regclass('public.bot_state') IS NOT NULL AS exists`;
+      if (Boolean((tableCheck as any[])[0]?.exists)) {
+        await sql`ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS server_id TEXT`;
+        const untagged = await sql`SELECT COUNT(*)::int AS count FROM bot_state WHERE server_id IS NULL`;
+        if (Number((untagged as any[])[0]?.count || 0) > 0) throw new Error('Legacy bot_state rows without server_id remain; assign them explicitly before enabling multi-server runtime.');
+        await sql`CREATE UNIQUE INDEX IF NOT EXISTS bot_state_server_id_id_uidx ON bot_state (server_id, id)`;
+        botStatePrimaryKeyReady = true;
+        botStateScopedPersistenceReady = true;
+        setServerNamespacePersistenceStatus({ enabled: true, initialized: true, botStateTableReady: true, botStateCompositeKeyReady: true, botStatePrimaryKeyReady: true, scopedReadsEnabled: true, scopedReadFallbacks: 0, botStateTaggedRows: 0, botStateUntaggedRows: 0, lastScopedReadSource: 'server-scoped', lastCheckedAt: new Date().toISOString(), lastError: undefined });
+      } else {
+        setServerNamespacePersistenceStatus({ enabled: true, initialized: true, botStateTableReady: false, botStateCompositeKeyReady: false, botStatePrimaryKeyReady: false, scopedReadsEnabled: false, lastCheckedAt: new Date().toISOString() });
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setOrganizationRegistryPersistenceStatus({ initialized: true, lastError: message });
-      setServerRegistryPersistenceStatus({
-        initialized: true,
-        lastError: message,
-      });
-      // Registry metadata must never block the current production state path.
-      console.error("❌ erro inicializando metadata multi-server:", err);
+      setServerRegistryPersistenceStatus({ initialized: true, lastError: message });
+      console.error('❌ erro inicializando metadata multi-server:', err);
     }
-  })().finally(() => {
-    // Keep the resolved promise cached so repeated getStateAsync calls do not
-    // query Neon again during the lifetime of this process.
-  });
-
+  })();
   return serverRegistryReadyPromise;
 }
 
@@ -1947,7 +1612,7 @@ function queueGranularPlayerStats(data: AppState) {
 
 export async function createManagedServerDraft(input: ManagedServerDraftInput) {
   assertNoServerSecrets(input);
-  await ensurePrimaryServerRegistryMetadata();
+  await ensureManagedServerRegistryMetadata();
   if (!sql || !getServerRegistryPersistenceStatus().tableReady) {
     throw new Error("Server registry is unavailable. DATABASE_URL and managed_servers must be ready.");
   }
@@ -2021,7 +1686,7 @@ export async function createManagedServerDraft(input: ManagedServerDraftInput) {
 
 export async function updateManagedServerDraft(serverId: string, input: ManagedServerDraftInput) {
   assertNoServerSecrets(input);
-  await ensurePrimaryServerRegistryMetadata();
+  await ensureManagedServerRegistryMetadata();
   if (!sql || !getServerRegistryPersistenceStatus().tableReady) {
     throw new Error("Server registry is unavailable. DATABASE_URL and managed_servers must be ready.");
   }
@@ -2105,7 +1770,7 @@ export async function updateManagedServerDraft(serverId: string, input: ManagedS
 }
 
 export async function bindManagedServerDiscordGuild(serverIdInput: unknown, guildIdInput: unknown) {
-  await ensurePrimaryServerRegistryMetadata();
+  await ensureManagedServerRegistryMetadata();
   if (!sql || !getServerRegistryPersistenceStatus().tableReady) {
     throw new Error("Server registry is unavailable. DATABASE_URL and managed_servers must be ready.");
   }
@@ -2150,7 +1815,7 @@ export async function bindManagedServerDiscordGuild(serverIdInput: unknown, guil
 }
 
 export async function updateManagedServerDiscordChannels(serverIdInput: unknown, discordInput: unknown) {
-  await ensurePrimaryServerRegistryMetadata();
+  await ensureManagedServerRegistryMetadata();
   if (!sql || !getServerRegistryPersistenceStatus().tableReady) throw new Error("Server registry is unavailable.");
   const id = buildManagedServerId(serverIdInput);
   if (!id) throw new Error("Server ID invalido.");
@@ -2175,7 +1840,7 @@ export async function updateManagedServerDiscordChannels(serverIdInput: unknown,
 }
 
 export async function updateManagedServerScopedSettings(serverIdInput: unknown, settingsInput: unknown) {
-  await ensurePrimaryServerRegistryMetadata();
+  await ensureManagedServerRegistryMetadata();
   if (!sql || !getServerRegistryPersistenceStatus().tableReady) throw new Error("Server registry is unavailable.");
   const id = buildManagedServerId(serverIdInput);
   const currentServers = await reloadManagedServerRegistryFromDb();
@@ -2213,10 +1878,10 @@ export async function ensureManagedServerShopDeliveryConfiguration(
   serverIdInput: unknown,
   input: { missionDir: string; restartTimes?: string; restartTimezone?: string },
 ) {
-  await ensurePrimaryServerRegistryMetadata();
+  await ensureManagedServerRegistryMetadata();
   if (!sql || !getServerRegistryPersistenceStatus().tableReady) throw new Error("Server registry is unavailable.");
   const id = buildManagedServerId(serverIdInput);
-  if (!id || id === getPrimaryServerId()) return getPrimaryServerDescriptor();
+  if (!id) throw new Error("Server ID invalido.");
 
   const currentServers = await reloadManagedServerRegistryFromDb();
   const current = currentServers.find((server) => server.id === id);
@@ -2255,10 +1920,10 @@ export async function ensureManagedServerShopDeliveryRoutingConfiguration(
   serverIdInput: unknown,
   input: { serviceId: string; baseDir: string; missionDir: string; restartTimes?: string; restartTimezone?: string },
 ) {
-  await ensurePrimaryServerRegistryMetadata();
+  await ensureManagedServerRegistryMetadata();
   if (!sql || !getServerRegistryPersistenceStatus().tableReady) throw new Error("Server registry is unavailable.");
   const id = buildManagedServerId(serverIdInput);
-  if (!id || id === getPrimaryServerId()) return getPrimaryServerDescriptor();
+  if (!id) throw new Error("Server ID invalido.");
 
   const currentServers = await reloadManagedServerRegistryFromDb();
   const current = currentServers.find((server) => server.id === id);
@@ -2337,7 +2002,7 @@ export async function markManagedServerNitradoValidated(
   serverId: string,
   validation: { serviceId: string; baseDir: string; missionDir?: string },
 ) {
-  await ensurePrimaryServerRegistryMetadata();
+  await ensureManagedServerRegistryMetadata();
   if (!sql || !getServerRegistryPersistenceStatus().tableReady) {
     throw new Error("Server registry is unavailable. DATABASE_URL and managed_servers must be ready.");
   }
@@ -2423,7 +2088,7 @@ export async function markManagedServerNitradoValidated(
 }
 
 export async function inspectManagedServerNamespaceRows(serverId: string) {
-  await ensurePrimaryServerRegistryMetadata();
+  await ensureManagedServerRegistryMetadata();
   if (!sql) throw new Error("DATABASE_URL nao esta disponivel para o preflight.");
   const id = buildManagedServerId(serverId);
   if (!id || id === getPrimaryServerId()) throw new Error("O preflight de namespace aceita somente servidores adicionais.");
@@ -2446,7 +2111,7 @@ export async function markManagedServerActivationPreflightReady(
   serverId: string,
   preflight: ServerActivationPreflight,
 ) {
-  await ensurePrimaryServerRegistryMetadata();
+  await ensureManagedServerRegistryMetadata();
   if (!sql || !getServerRegistryPersistenceStatus().tableReady) {
     throw new Error("Server registry is unavailable. DATABASE_URL and managed_servers must be ready.");
   }
@@ -2503,7 +2168,7 @@ export async function markManagedServerActivationPreflightReady(
 }
 
 export async function setManagedServerRuntimeEnabled(serverId: string, enabled: boolean) {
-  await ensurePrimaryServerRegistryMetadata();
+  await ensureManagedServerRegistryMetadata();
   if (!sql || !getServerRegistryPersistenceStatus().tableReady) {
     throw new Error("Server registry is unavailable. DATABASE_URL and managed_servers must be ready.");
   }
@@ -2592,7 +2257,7 @@ export async function setManagedServerRuntimeEnabled(serverId: string, enabled: 
 }
 
 export async function setManagedServerRuntimePaused(serverId: string, paused: boolean, reason?: string) {
-  await ensurePrimaryServerRegistryMetadata();
+  await ensureManagedServerRegistryMetadata();
   if (!sql || !getServerRegistryPersistenceStatus().tableReady) {
     throw new Error("Server registry is unavailable. DATABASE_URL and managed_servers must be ready.");
   }
@@ -2651,7 +2316,7 @@ export async function setManagedServerRuntimePaused(serverId: string, paused: bo
 }
 
 export async function createManagedOrganization(input: { id?: unknown; name?: unknown }) {
-  await ensurePrimaryServerRegistryMetadata();
+  await ensureManagedServerRegistryMetadata();
   if (!sql) throw new Error("Organization registry is unavailable.");
   const name = normalizeOrganizationName(input?.name);
   const id = buildOrganizationId(input?.id || name);
@@ -2701,7 +2366,7 @@ export async function saveOrganizationNitradoCredential(organizationIdInput: unk
 }
 
 export async function removeOrganizationNitradoCredential(organizationIdInput: unknown) {
-  await ensurePrimaryServerRegistryMetadata();
+  await ensureManagedServerRegistryMetadata();
   if (!sql) throw new Error("Organization integration registry is unavailable.");
   const organizationId = buildOrganizationId(organizationIdInput);
   if (!organizationId) throw new Error("Organization nao encontrada.");
@@ -2717,7 +2382,7 @@ export async function removeOrganizationNitradoCredential(organizationIdInput: u
 }
 
 export async function createManagedOrganizationForOwner(input: { id?: unknown; name?: unknown }, ownerDiscordIdInput: unknown) {
-  await ensurePrimaryServerRegistryMetadata();
+  await ensureManagedServerRegistryMetadata();
   if (!sql) throw new Error("Organization registry is unavailable.");
   const ownerDiscordId = String(ownerDiscordIdInput || "").trim();
   if (!/^\d{5,32}$/.test(ownerDiscordId)) throw new Error("Discord ID invalido.");
@@ -2750,7 +2415,7 @@ export async function createManagedOrganizationForOwner(input: { id?: unknown; n
 }
 
 export async function upsertOrganizationMembership(organizationIdInput: unknown, discordIdInput: unknown, roleInput: unknown) {
-  await ensurePrimaryServerRegistryMetadata();
+  await ensureManagedServerRegistryMetadata();
   if (!sql) throw new Error("Organization registry is unavailable.");
   const organizationId = buildOrganizationId(organizationIdInput);
   const discordId = String(discordIdInput || "").trim();
@@ -2783,7 +2448,7 @@ export async function upsertOrganizationMembership(organizationIdInput: unknown,
 }
 
 export async function removeOrganizationMembership(organizationIdInput: unknown, discordIdInput: unknown) {
-  await ensurePrimaryServerRegistryMetadata();
+  await ensureManagedServerRegistryMetadata();
   if (!sql) throw new Error("Organization registry is unavailable.");
   const organizationId = buildOrganizationId(organizationIdInput);
   const discordId = String(discordIdInput || "").trim();
@@ -3765,7 +3430,7 @@ export async function getStateAsync(): Promise<AppState> {
   if (existingCachedState) {
     return existingCachedState;
   }
-  await ensurePrimaryServerRegistryMetadata();
+  await ensureManagedServerRegistryMetadata();
   // Registry onboarding can fail independently from gameplay persistence.
   // Re-probe the already-existing bot_state unique key so a registry failure
   // can never downgrade gameplay reads to an ambiguous cross-server scan.

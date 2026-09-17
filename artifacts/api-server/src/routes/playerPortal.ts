@@ -35,7 +35,7 @@ import { ensureShopCatalogLoaded } from "../lib/shopCatalog";
 import { requirePortalAuth } from "../middlewares/portalAuth";
 import { renderPlayerPortal } from "./playerPortalView";
 import { renderSaasOnboarding } from "./saasOnboardingView";
-import { getManagedServerById, getPrimaryServerDescriptor, getPrimaryServerId } from "../lib/serverRegistry";
+import { getManagedServerById } from "../lib/serverRegistry";
 import { isSaasSelfServiceEnabled } from "../lib/organizationRegistry";
 import { isOrganizationSecretEncryptionConfigured } from "../lib/organizationIntegrations";
 import { getActiveServerId, runInServerDataContext } from "../lib/serverRuntime";
@@ -57,27 +57,8 @@ function getRouteParam(value: string | string[] | undefined, name: string): stri
   return param;
 }
 
-async function getPrimaryIdentityImportOptions(state: AppState, session: PortalSession) {
-  const selectedServerId = getActiveServerId();
-  const primaryServerId = getPrimaryServerId();
-  if (selectedServerId === primaryServerId) return null;
-
-  const selectedServer = getManagedServerById(selectedServerId);
-  const primaryServer = getPrimaryServerDescriptor();
-  if (!selectedServer || selectedServer.organizationId !== primaryServer.organizationId) return null;
-
-  const primaryState = await runInServerDataContext(primaryServerId, () => getStateAsync());
-  const primaryLink = getPlayerLinkByDiscordId(primaryState, session.discordId);
-  if (!primaryLink) return null;
-
-  const candidates = (getPlayerAccountGamertags(primaryState, session.discordId) as string[])
-    .map((gamertag) => findKnownGamertag(state, gamertag))
-    .filter((gamertag): gamertag is string => Boolean(gamertag));
-
-  return {
-    sourceServer: { id: primaryServerId, name: getPrimaryServerDescriptor().name },
-    candidates: Array.from(new Set(candidates)),
-  };
+async function getPrimaryIdentityImportOptions(_state: AppState, _session: PortalSession) {
+  return null;
 }
 
 router.get("/saas", requirePortalAuth, (req, res) => {
@@ -222,9 +203,6 @@ router.post("/api/player/accounts/link", requirePortalAuth, async (req: Request,
 router.post("/api/player/accounts/import-primary", requirePortalAuth, async (req: Request, res: Response) => {
   try {
     const state = await getStateAsync();
-    if (getActiveServerId() === getPrimaryServerId()) {
-      throw new Error("Primary identity import is only available on secondary servers.");
-    }
 
     const importOptions = await getPrimaryIdentityImportOptions(state, req.portalSession!);
     const requested = String(req.body?.gamertag || "").trim();

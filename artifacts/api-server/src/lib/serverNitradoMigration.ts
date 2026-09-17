@@ -1,7 +1,6 @@
 import postgres from "postgres";
 import { encryptOrganizationSecret, getOrganizationNitradoCredential } from "./organizationIntegrations";
 import {
-  getPrimaryServerDescriptor,
   getManagedServerById,
   listManagedServers,
   setPersistedManagedServers,

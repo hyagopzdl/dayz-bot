@@ -88,7 +88,7 @@ import { downloadTextFile, uploadTextFile } from "../lib/nitradoFtp";
 import { getAdmDownloadMetrics, setAdmDownloadMode } from "../lib/nitradoDownloader";
 import { getRuntimePerformanceMetrics } from "../lib/runtimeMetrics";
 import { getNetworkMetrics } from "../lib/networkMetrics";
-import { getManagedServerById, getPrimaryServerDescriptor, getPrimaryServerId, getServerFoundationDiagnostics, listManagedServers } from "../lib/serverRegistry";
+import { getManagedServerById, getServerFoundationDiagnostics, listExecutableManagedServers, listManagedServers } from "../lib/serverRegistry";
 import { getActiveServerId, isServerRuntimeLocked, runInServerDataContext, runInServerMaintenanceContext, runInServerRuntimeContext, runWithServerMaintenanceLock } from "../lib/serverRuntime";
 import {
   discoverNitradoServices,
@@ -1223,10 +1223,7 @@ function startSpawnZoneAutomationScheduler() {
   if (spawnZoneAutomationStarted) return;
   spawnZoneAutomationStarted = true;
   const intervalMs = getSpawnZoneAutomationIntervalMs();
-  const primaryServerId = getPrimaryServerId();
-  const run = () => runInServerRuntimeContext(primaryServerId, () =>
-    runSpawnZoneAutomationNow().catch((err) => console.error("spawn zones automation failed", err)),
-  );
+  const run = () => Promise.all(listExecutableManagedServers().map((server) => runInServerRuntimeContext(server.id, () => runSpawnZoneAutomationNow().catch((err) => console.error(`spawn zones automation failed [${server.id}]`, err))));
   const initialTimer = setTimeout(run, 5_000);
   const timer = setInterval(run, intervalMs);
   if (typeof (initialTimer as any).unref === "function") (initialTimer as any).unref();
@@ -1433,7 +1430,9 @@ function requireAdmin(req: Request, res: Response, capability?: OrganizationCapa
   }
   const resolvedCapability: OrganizationCapability = capability
     || (req.method === "GET" || req.method === "HEAD" ? "view" : "manage");
-  return requireOrganizationAccess(req, res, getPrimaryServerDescriptor().organizationId, resolvedCapability);
+  const server = getManagedServerById(getActiveServerId());
+  if (!server) { res.status(403).json({ error: "SERVER_CONTEXT_REQUIRED" }); return false; }
+  return requireOrganizationAccess(req, res, server.organizationId, resolvedCapability);
 }
 
 function requireServerAdmin(req: Request, res: Response, serverIdInput: unknown, capability: OrganizationCapability = "view") {
@@ -1476,9 +1475,9 @@ function authorizedServersForRequest(req: Request, organizationIdInput?: unknown
 
 function currentOrganizationIdForRequest(req: Request) {
   if (req.adminSession?.serverId) {
-    return getManagedServerById(req.adminSession.serverId)?.organizationId || getPrimaryServerDescriptor().organizationId;
+    return getManagedServerById(req.adminSession.serverId)?.organizationId || "";
   }
-  return getPrimaryServerDescriptor().organizationId;
+  return req.portalSession ? listUserOrganizationMemberships(req.portalSession.discordId)[0]?.organizationId || "" : "";
 }
 
 function organizationDiagnosticsForRequest(req: Request) {
@@ -8728,7 +8727,7 @@ router.patch("/api/service-settings", async (req, res) => {
     const effectiveCommandSettings = applyServiceSettingsToCommandSettings(state.discordCommandSettings, next);
     const client = getDiscordClient();
     if (client.isReady()) {
-      await registerDiscordCommands(client, effectiveCommandSettings, getActiveServerId(), getActiveServerId() === getPrimaryServerId() ? "full" : "core");
+      await registerDiscordCommands(client, effectiveCommandSettings, getActiveServerId(), "full");
     }
 
     res.json({
@@ -8793,7 +8792,7 @@ router.patch("/api/discord-commands/:commandName", async (req, res) => {
     }
 
     const effectiveCommandSettings = applyServiceSettingsToCommandSettings(state.discordCommandSettings, state.serviceSettings);
-    await registerDiscordCommands(client, effectiveCommandSettings, getActiveServerId(), getActiveServerId() === getPrimaryServerId() ? "full" : "core");
+    await registerDiscordCommands(client, effectiveCommandSettings, getActiveServerId(), "full");
     res.json({ commands: listDiscordCommandDescriptors(effectiveCommandSettings) });
   } catch (err) {
     res.status(500).json({ error: String(err) });
@@ -9448,7 +9447,8 @@ router.post("/api/servers/:serverId/runtime/retry", async (req, res) => {
 
 router.get("/api/servers/current", async (req, res) => {
   if (!requireAdmin(req, res)) return;
-  const server = getManagedServerById(getActiveServerId()) || getPrimaryServerDescriptor();
+  const server = getManagedServerById(getActiveServerId());
+  if (!server) return res.status(404).json({ error: "SERVER_CONTEXT_REQUIRED" });
   res.json({ server, foundation: foundationForRequest(req) });
 });
 
@@ -9458,7 +9458,8 @@ router.get("/api/overview", async (req, res) => {
   try {
     const state = await getStateAsync();
     const overview = await buildOverviewPayload(state as AdminState);
-    const serverDescriptor = getManagedServerById(getActiveServerId()) || getPrimaryServerDescriptor();
+    const serverDescriptor = getManagedServerById(getActiveServerId());
+    if (!serverDescriptor) return res.status(404).json({ error: "SERVER_CONTEXT_REQUIRED" });
     res.json({
       ...overview,
       server: {
