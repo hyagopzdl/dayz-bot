@@ -1,0 +1,1 @@
+Registry readiness deployment marker: main source now contains the database-backed managed_servers readiness path. This file intentionally contains no runtime logic.
