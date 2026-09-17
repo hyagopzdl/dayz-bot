@@ -3762,15 +3762,15 @@ async function refreshBotStateScopedReadCapability() {
 }
 
 export async function getStateAsync(): Promise<AppState> {
+  const existingCachedState = getCachedState();
+  if (existingCachedState) {
+    return existingCachedState;
+  }
   await ensurePrimaryServerRegistryMetadata();
   // Registry onboarding can fail independently from gameplay persistence.
   // Re-probe the already-existing bot_state unique key so a registry failure
   // can never downgrade gameplay reads to an ambiguous cross-server scan.
   await refreshBotStateScopedReadCapability();
-  const existingCachedState = getCachedState();
-  if (existingCachedState) {
-    return existingCachedState;
-  }
 
   if (!sql) {
     domainPersistenceMetrics.bootSource = "local-file";
