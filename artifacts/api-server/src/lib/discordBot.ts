@@ -18,10 +18,10 @@ const registeredInteractionServers = new Set<string>();
 let discordLoginInFlight: Promise<unknown> | null = null;
 let discordReadyAt: string | null = null;
 let discordLastLoginError: string | null = null;
+let discordGatewayReady = false;
 
 function getDiscordToken() {
-  const token = String(process.env.DISCORD_TOKEN || "").trim();
-  return token;
+  return String(process.env.DISCORD_TOKEN || "").trim();
 }
 
 function describeDiscordError(error: unknown) {
@@ -36,11 +36,21 @@ function getRequestedIntentBitfield() {
     : null;
 }
 
+function isDiscordReady() {
+  return discordGatewayReady && client.isReady();
+}
+
 client.on("error", (error) => console.error("❌ Discord client error:", describeDiscordError(error)));
 client.on("shardError", (error, shardId) => console.error(`❌ Discord shard error [${shardId}]:`, describeDiscordError(error)));
 client.on("warn", (message) => console.warn("⚠️ Discord warning:", message));
-client.on("invalidated", () => console.error("❌ Discord session invalidated; Gateway authentication/session was rejected."));
-client.on("disconnect", (event) => console.warn("⚠️ Discord Gateway disconnected:", event));
+client.on("invalidated", () => {
+  discordGatewayReady = false;
+  console.error("❌ Discord session invalidated; Gateway authentication/session was rejected.");
+});
+client.on("disconnect", (event) => {
+  discordGatewayReady = false;
+  console.warn("⚠️ Discord Gateway disconnected:", event);
+});
 client.on("debug", (message) => {
   if (/4014|privileged|intent|invalid token|authentication|session/i.test(message)) {
     console.warn("🔎 Discord Gateway diagnostic:", message);
@@ -53,7 +63,9 @@ export function getDiscordClient() {
 
 export function getDiscordGatewayDiagnostics() {
   return {
-    ready: client.isReady(),
+    ready: isDiscordReady(),
+    clientIsReady: client.isReady(),
+    gatewayReadyFlag: discordGatewayReady,
     readyAt: discordReadyAt,
     loginInFlight: Boolean(discordLoginInFlight),
     tokenConfigured: Boolean(getDiscordToken()),
@@ -66,30 +78,21 @@ export function getDiscordGatewayDiagnostics() {
 
 export { registerKillStreakFromKill } from "./discord/modules/killstreak/service";
 
-/**
- * Command registration is deliberately state-free. Every server has the same
- * command surface and tenant state is hydrated only when a real interaction or
- * runtime cycle needs it. This keeps Discord READY cheap as the number of linked servers grows.
- */
 export async function syncDiscordCommandsForManagedServer(serverId: string) {
   const server = listManagedServers().find((item) => item.id === serverId);
   if (!server?.enabled || !server.integrations.discordGuildId) return false;
-
   const settings = applyServiceSettingsToCommandSettings(
     normalizeDiscordCommandSettings({}),
     DEFAULT_SERVICE_SETTINGS,
   );
-
   await registerDiscordCommands(client, settings, serverId, "core");
   return true;
 }
 
 async function ensureManagedServerFeedRuntime(serverId: string) {
   if (managedFeedRuntimes.has(serverId)) return managedFeedRuntimes.get(serverId);
-
   const server = listManagedServers().find((item) => item.id === serverId);
   if (!server?.enabled || !server.integrations.discordGuildId) return undefined;
-
   try {
     const channels = await resolveDiscordChannels(client, serverId);
     const stateAccess = createDiscordStateAccess(serverId);
@@ -110,28 +113,22 @@ async function ensureManagedServerFeedRuntime(serverId: string) {
       saveState: stateAccess.saveState,
       saveRuntimeState: stateAccess.saveRuntimeState,
     });
-
     managedFeedRuntimes.set(serverId, feeds);
-
     const memberConfig = getServerRuntimeContext(serverId).discord;
     if (!registeredMemberFeedServers.has(serverId) && memberConfig.memberFeedEnabled !== false && memberConfig.memberFeedChannelId) {
       registerMemberFeed(client, serverId);
       registeredMemberFeedServers.add(serverId);
     }
-
     console.log(`✅ Discord feed runtime preparado [${serverId}]`);
     return feeds;
   } catch (error) {
-    console.log(
-      `ℹ️ Discord feed runtime aguardando canais [${serverId}]`,
-      error instanceof Error ? error.message : String(error),
-    );
+    console.log(`ℹ️ Discord feed runtime aguardando canais [${serverId}]`, error instanceof Error ? error.message : String(error));
     return undefined;
   }
 }
 
 export async function refreshDiscordFeedsForManagedServer(serverId: string) {
-  if (!client.isReady?.()) return false;
+  if (!isDiscordReady()) return false;
   const feeds = managedFeedRuntimes.get(serverId) || await ensureManagedServerFeedRuntime(serverId);
   if (!feeds) return false;
   await feeds.updateLeaderboard();
@@ -140,56 +137,33 @@ export async function refreshDiscordFeedsForManagedServer(serverId: string) {
 
 async function registerManagedServerInteractions(serverId: string) {
   if (registeredInteractionServers.has(serverId)) return;
-
   const server = listManagedServers().find((item) => item.id === serverId);
   if (!server?.enabled || !server.integrations.discordGuildId) return;
-
   try {
     const channels = await resolveDiscordChannels(client, serverId);
     const stateAccess = createDiscordStateAccess(serverId);
     const feeds = await ensureManagedServerFeedRuntime(serverId);
     if (!feeds) return;
-
     registerInteractionHandlers({
-      client,
-      serverId,
-      getState: stateAccess.getState,
-      saveState: stateAccess.saveState,
-      longShotChannel: channels.longShotChannel,
-      killfeedChannel: channels.killfeedChannel,
-      killStreakChannel: channels.killStreakChannel,
-      createPlayerStatsEmbed: feeds.createPlayerStatsEmbed,
-      updateMatchRanking: feeds.updateMatchRanking,
-      updateLeaderboard: feeds.updateLeaderboard,
-      resetRankings: feeds.resetRankings,
-      resetDaily: feeds.resetDaily,
-      resetWeekly: feeds.resetWeekly,
-      resetStreaks: feeds.resetStreaks,
-      wipePlayer: feeds.wipePlayer,
-      sendOrEdit: feeds.sendOrEdit,
-      deleteBotMessagesFromChannel: feeds.deleteBotMessagesFromChannel,
-      killfeedPageKey: feeds.killfeedPageKey,
-      killStreakPageKey: feeds.killStreakPageKey,
-      longShotPageKey: feeds.longShotPageKey,
-      createKillFeedEmptyEmbed: feeds.createKillFeedEmptyEmbed,
-      createKillStreakEmptyEmbed: feeds.createKillStreakEmptyEmbed,
+      client, serverId, getState: stateAccess.getState, saveState: stateAccess.saveState,
+      longShotChannel: channels.longShotChannel, killfeedChannel: channels.killfeedChannel,
+      killStreakChannel: channels.killStreakChannel, createPlayerStatsEmbed: feeds.createPlayerStatsEmbed,
+      updateMatchRanking: feeds.updateMatchRanking, updateLeaderboard: feeds.updateLeaderboard,
+      resetRankings: feeds.resetRankings, resetDaily: feeds.resetDaily, resetWeekly: feeds.resetWeekly,
+      resetStreaks: feeds.resetStreaks, wipePlayer: feeds.wipePlayer, sendOrEdit: feeds.sendOrEdit,
+      deleteBotMessagesFromChannel: feeds.deleteBotMessagesFromChannel, killfeedPageKey: feeds.killfeedPageKey,
+      killStreakPageKey: feeds.killStreakPageKey, longShotPageKey: feeds.longShotPageKey,
+      createKillFeedEmptyEmbed: feeds.createKillFeedEmptyEmbed, createKillStreakEmptyEmbed: feeds.createKillStreakEmptyEmbed,
       createLongShotEmptyEmbed: feeds.createLongShotEmptyEmbed,
     });
-
     registeredInteractionServers.add(serverId);
   } catch (error) {
-    console.log(
-      `ℹ️ interações Discord aguardando configuração [${serverId}]`,
-      error instanceof Error ? error.message : String(error),
-    );
+    console.log(`ℹ️ interações Discord aguardando configuração [${serverId}]`, error instanceof Error ? error.message : String(error));
   }
 }
 
 async function syncAllManagedServers() {
-  const servers = listManagedServers().filter(
-    (server) => server.enabled && server.integrations.discordGuildId,
-  );
-
+  const servers = listManagedServers().filter((server) => server.enabled && server.integrations.discordGuildId);
   for (const server of servers) {
     try {
       await syncDiscordCommandsForManagedServer(server.id);
@@ -215,6 +189,7 @@ function registerManagedServerMemberFeeds() {
 }
 
 async function handleDiscordReady() {
+  discordGatewayReady = true;
   discordReadyAt = new Date().toISOString();
   discordLastLoginError = null;
   console.log("🤖 Discord conectado; inicializando servidores vinculados...", {
@@ -224,8 +199,8 @@ async function handleDiscordReady() {
     oauthClientId: process.env.DISCORD_OAUTH_CLIENT_ID || process.env.DISCORD_CLIENT_ID || null,
     requestedIntentBitfield: getRequestedIntentBitfield(),
     guildCount: client.guilds.cache.size,
+    diagnostics: getDiscordGatewayDiagnostics(),
   });
-
   try {
     registerSecondaryManagedServerInteractions(client);
     registerManagedServerMemberFeeds();
@@ -236,9 +211,6 @@ async function handleDiscordReady() {
   }
 }
 
-// discord.js exposes the clientReady event on current supported versions. Keep
-// the listener on that event so readiness diagnostics cannot depend on the
-// deprecated Gateway `ready` alias.
 client.once("clientReady", handleDiscordReady);
 
 export async function startDiscordBot() {
@@ -247,15 +219,11 @@ export async function startDiscordBot() {
     console.error("❌ DISCORD_TOKEN não definido; OAuth do Discord não substitui o token do bot Gateway.");
     return;
   }
-
-  if (client.isReady?.()) return;
+  if (isDiscordReady()) return;
   if (discordLoginInFlight) return discordLoginInFlight;
-
   discordLoginInFlight = (async () => {
     try {
-      console.log("🔐 iniciando login Discord Gateway...", {
-        requestedIntentBitfield: getRequestedIntentBitfield(),
-      });
+      console.log("🔐 iniciando login Discord Gateway...", { requestedIntentBitfield: getRequestedIntentBitfield() });
       await client.login(token);
       console.log("✅ login Discord OK; aguardando READY...", getDiscordGatewayDiagnostics());
     } catch (error) {
@@ -266,6 +234,5 @@ export async function startDiscordBot() {
       discordLoginInFlight = null;
     }
   })();
-
   return discordLoginInFlight;
 }
