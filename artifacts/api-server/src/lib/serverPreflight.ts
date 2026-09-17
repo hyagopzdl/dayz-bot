@@ -46,13 +46,32 @@ const DISCORD_CHANNEL_EXPECTATIONS: Array<{ key: keyof ServerDiscordRuntimeConfi
   { key: "matchCategoryId", label: "Match category", type: "category" }, { key: "memberFeedChannelId", label: "Member feed", type: "text" },
 ];
 
+async function waitForDiscordReady(timeoutMs = 5000) {
+  const client = await import("./discordBot").then(({ getDiscordClient }) => getDiscordClient());
+  if (client.isReady()) return true;
+  if (!process.env.DISCORD_TOKEN) return false;
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    if (client.isReady()) return true;
+  }
+  return client.isReady();
+}
+
 async function validateOptionalDiscord(server: ManagedServerDescriptor, checks: ServerActivationPreflightCheck[]) {
   const guildId = text(server.integrations.discordGuildId);
   if (!guildId) { pushCheck(checks, "discord", "Discord", "skipped", "Discord nao esta configurado e continua opcional para o runtime core."); return; }
-  const options = await listDiscordGuildOptions(server.id);
-  if (!options.ready) { pushCheck(checks, "discord", "Discord", "fail", "Uma guild foi configurada, mas o bot Discord nao esta conectado."); return; }
+  const ready = await waitForDiscordReady();
+  const options = ready ? await listDiscordGuildOptions(server.id) : { ready: false, guilds: [] as DiscordGuildOption[], message: process.env.DISCORD_TOKEN ? "O bot Discord ainda nao ficou pronto apos aguardar 5s." : "DISCORD_TOKEN nao esta configurado no processo." };
+  if (!options.ready) {
+    pushCheck(checks, "discord", "Discord", "fail", options.message || "Uma guild foi configurada, mas o bot Discord nao esta conectado.", {
+      tokenConfigured: Boolean(process.env.DISCORD_TOKEN),
+      clientReady: ready,
+    });
+    return;
+  }
   const guild = options.guilds.find((candidate: DiscordGuildOption) => candidate.id === guildId);
-  if (!guild) { pushCheck(checks, "discord", "Discord", "fail", "A guild configurada nao esta acessivel pelo bot atual.", { guildId }); return; }
+  if (!guild) { pushCheck(checks, "discord", "Discord", "fail", "A guild configurada nao esta acessivel pelo bot atual.", { guildId, accessibleGuildCount: options.guilds.length }); return; }
   let channelsResult: Awaited<ReturnType<typeof listDiscordGuildChannels>>;
   try { channelsResult = await listDiscordGuildChannels(server.id, guildId); }
   catch (error) { pushCheck(checks, "discord", "Discord", "fail", error instanceof Error ? error.message : String(error)); return; }
@@ -129,6 +148,15 @@ export async function runManagedServerActivationPreflight(serverIdInput: string)
         });
         foundation = getServerFoundationDiagnostics();
       }
+      pushCheck(checks, "database-live", "Database live foundation", liveFoundation.safe ? "pass" : "fail", liveFoundation.safe ? "PostgreSQL confirma registry, tabelas, PKs compostas e ausencia de rows sem server_id." : "PostgreSQL ainda reporta uma garantia estrutural pendente.", {
+        registryPersisted: liveFoundation.registryPersisted,
+        botStateTableReady: liveFoundation.botStateTableReady,
+        playerStatsTableReady: liveFoundation.playerStatsTableReady,
+        botStatePrimaryKeyReady: liveFoundation.botStatePrimaryKeyReady,
+        playerStatsPrimaryKeyReady: liveFoundation.playerStatsPrimaryKeyReady,
+        botStateUntaggedRows: liveFoundation.botStateUntaggedRows,
+        playerStatsUntaggedRows: liveFoundation.playerStatsUntaggedRows,
+      });
     } catch (error) {
       pushCheck(checks, "database-live", "Database live foundation", "fail", error instanceof Error ? error.message : String(error));
     }
@@ -139,27 +167,22 @@ export async function runManagedServerActivationPreflight(serverIdInput: string)
   const namespace = foundation.namespace;
   const databaseFoundationSafe = Boolean(
     liveFoundation?.safe &&
-    foundation.registryPersisted &&
-    foundation.persistenceNamespaced &&
-    foundation.persistenceTaggedWithServerId &&
-    foundation.safety?.compositePrimaryKeysActive &&
-    (!namespace?.playerStatsTableReady || namespace.playerStatsPrimaryKeyReady) &&
-    namespace?.botStatePrimaryKeyReady &&
     namespace?.scopedReadsEnabled &&
+    namespace?.botStatePrimaryKeyReady &&
+    (!namespace?.playerStatsTableReady || namespace.playerStatsPrimaryKeyReady) &&
     namespace?.botStateUntaggedRows === 0 &&
-    (!namespace?.playerStatsTableReady || namespace.playerStatsUntaggedRows === 0),
+    (!namespace?.playerStatsTableReady || namespace.playerStatsUntaggedRows === 0)
   );
   pushCheck(checks, "database-foundation", "Isolation foundation", databaseFoundationSafe ? "pass" : "fail", databaseFoundationSafe ? "PKs, scoped persistence, server-tagged rows e caches persistidos estao preparados para isolamento por servidor." : "A fundacao persistida de isolamento por servidor ainda possui uma garantia estrutural pendente.", {
-    registryPersisted: foundation.registryPersisted,
-    persistenceNamespaced: foundation.persistenceNamespaced,
-    persistenceTaggedWithServerId: foundation.persistenceTaggedWithServerId,
-    compositePrimaryKeysActive: foundation.safety?.compositePrimaryKeysActive,
+    liveFoundationSafe: liveFoundation?.safe,
     liveRegistryPersisted: liveFoundation?.registryPersisted,
     liveBotStatePrimaryKeyReady: liveFoundation?.botStatePrimaryKeyReady,
     livePlayerStatsPrimaryKeyReady: liveFoundation?.playerStatsPrimaryKeyReady,
     liveBotStateUntaggedRows: liveFoundation?.botStateUntaggedRows,
     livePlayerStatsUntaggedRows: liveFoundation?.playerStatsUntaggedRows,
     scopedReadsEnabled: namespace?.scopedReadsEnabled,
+    botStatePrimaryKeyReady: namespace?.botStatePrimaryKeyReady,
+    playerStatsPrimaryKeyReady: namespace?.playerStatsPrimaryKeyReady,
     botStateUntaggedRows: namespace?.botStateUntaggedRows,
     playerStatsUntaggedRows: namespace?.playerStatsUntaggedRows,
   });
@@ -178,7 +201,6 @@ export async function runManagedServerActivationPreflight(serverIdInput: string)
   if (passed) {
     const preflight: ServerActivationPreflight = { version: "phase11-v1", source: "phase11-on-demand", checkedAt, passed: true, configurationSignature: getManagedServerActivationConfigSignature(server), serviceId, baseDir, discordGuildId: text(server.integrations.discordGuildId) || undefined, namespaceRows, warningCount };
     readyServer = await markManagedServerActivationPreflightReady(server.id, preflight);
-    pushCheck(checks, "ready-gate", "Activation gate", "pass", "Preflight aprovado. O servidor esta Ready e pode ser ativado manualmente na Fase 12; runtime_enabled continua false ate essa acao explicita.");
-  } else pushCheck(checks, "ready-gate", "Activation gate", "fail", "Preflight reprovado. O servidor permanece Draft/Configured e nenhum runtime foi iniciado.");
-  return { serverId: server.id, passed, checkedAt, ready: Boolean(readyServer?.onboardingStatus === "ready"), warningCount, failureCount, checks, runtimeActivationBlocked: false, activationEndpointAvailable: true, ...(readyServer ? { server: readyServer } : {}) };
+  }
+  return { serverId, passed, checkedAt, ready: passed, warningCount, failureCount, checks, runtimeActivationBlocked: !passed, activationEndpointAvailable: true, server: readyServer || getManagedServerById(server.id) };
 }
