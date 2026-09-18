@@ -364,7 +364,48 @@ function renderDashboardHtml(token: string) {
       setText("nitradoHint", payload.meta.lastResetCheckedAt ? "Última checagem: " + payload.meta.lastResetCheckedAt : "Sem checagem"); setText("online", payload.online);
       setText("catalog", payload.catalog.items + " itens"); setText("catalogHint", payload.catalog.categories + " categorias / " + payload.catalog.enabledItems + " ativos / " + payload.catalog.dayzItems + " classNames");
     }
-    loadDashboard(); setInterval(loadDashboard, 120000);
+    let shopResetServers = [];
+    let shopResetTimes = [];
+    function renderShopResetTimes() {
+      const container = document.getElementById("shopResetTimes");
+      if (!container) return;
+      if (!shopResetTimes.length) { container.innerHTML = '<span class="hint">Nenhum horário configurado.</span>'; return; }
+      container.innerHTML = shopResetTimes.map(function (time, index) {
+        return '<div style="display:flex;gap:6px;align-items:center"><input type="time" value="' + escapeHtml(time) + '" data-reset-index="' + index + '" style="width:125px" /><button type="button" class="danger" data-remove-reset="' + index + '">Remover</button></div>';
+      }).join("");
+      Array.from(container.querySelectorAll("input[data-reset-index]")).forEach(function (input) { input.addEventListener("change", function () { shopResetTimes[Number(input.getAttribute("data-reset-index"))] = input.value; }); });
+      Array.from(container.querySelectorAll("button[data-remove-reset]")).forEach(function (button) { button.addEventListener("click", function () { shopResetTimes.splice(Number(button.getAttribute("data-remove-reset")), 1); renderShopResetTimes(); }); });
+    }
+    function addShopResetTime() { shopResetTimes.push("00:00"); renderShopResetTimes(); }
+    async function loadShopResetSettings() {
+      const response = await apiFetch("/admin/api/shop-reset-settings");
+      if (!response.ok) { setText("shopResetMessage", await response.text()); return; }
+      const payload = await response.json(); shopResetServers = Array.isArray(payload.servers) ? payload.servers : [];
+      const select = document.getElementById("shopResetServer");
+      select.innerHTML = shopResetServers.map(function (server) { return '<option value="' + escapeHtml(server.id) + '">' + escapeHtml(server.name) + ' (' + escapeHtml(server.id) + ')</option>'; }).join("");
+      if (!shopResetServers.length) { setText("shopResetMessage", "Nenhum servidor configurável."); return; }
+      select.value = payload.activeServerId || shopResetServers[0].id; applyShopResetServerSettings(select.value);
+      select.onchange = function () { applyShopResetServerSettings(select.value); };
+    }
+    function applyShopResetServerSettings(serverId) {
+      const server = shopResetServers.find(function (entry) { return entry.id === serverId; }); if (!server) return;
+      document.getElementById("shopResetTimezone").value = server.shopRestartTimezone || "America/Sao_Paulo";
+      shopResetTimes = Array.isArray(server.shopRestartTimes) ? server.shopRestartTimes.slice() : []; renderShopResetTimes();
+      setText("shopResetMessage", shopResetTimes.length ? "Horários salvos neste servidor." : "Nenhum horário configurado neste servidor.");
+    }
+    async function saveShopResetSettings() {
+      const serverId = document.getElementById("shopResetServer").value; const timezone = document.getElementById("shopResetTimezone").value;
+      const times = Array.from(document.querySelectorAll("#shopResetTimes input[data-reset-index]")).map(function (input) { return input.value; }).filter(Boolean);
+      const unique = Array.from(new Set(times)).sort();
+      if (unique.some(function (value) { return !/^([01]\\d|2[0-3]):[0-5]\\d$/.test(value); })) { alert("Informe horários válidos."); return; }
+      const response = await apiFetch("/admin/api/shop-reset-settings/" + encodeURIComponent(serverId), { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ shopRestartTimes: unique.join(","), shopRestartTimezone: timezone }) });
+      if (!response.ok) { setText("shopResetMessage", await response.text()); return; }
+      const index = shopResetServers.findIndex(function (entry) { return entry.id === serverId; });
+      if (index >= 0) { shopResetServers[index].shopRestartTimes = unique; shopResetServers[index].shopRestartTimezone = timezone; }
+      shopResetTimes = unique.slice(); renderShopResetTimes();
+      setText("shopResetMessage", unique.length ? "Resets salvos e scheduler atualizado." : "Resets removidos. O reset automático está desativado neste servidor.");
+    }
+    loadDashboard(); loadShopResetSettings(); setInterval(loadDashboard, 120000);
     </script>`,
   });
 }
