@@ -959,8 +959,9 @@ function getShopDeployGraceMinutes() {
 
 function isWithinScheduledDeployWindow(now: Date, restartAt: Date) {
   const deployAt = restartAt.getTime() - getShopDeployMinutesBeforeReset() * 60_000;
-  const graceUntil = restartAt.getTime() + getShopDeployGraceMinutes() * 60_000;
-  return now.getTime() >= deployAt && now.getTime() < graceUntil;
+  // Never deploy after the scheduled reset has already happened. Doing so
+  // would require an unnecessary second restart just to apply the XML.
+  return now.getTime() >= deployAt && now.getTime() < restartAt.getTime();
 }
 
 const scheduledShopRestartLocks = new Set<string>();
