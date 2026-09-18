@@ -2093,7 +2093,9 @@ export async function ensureManagedServerShopDeliveryConfiguration(
   const runtime = { ...current.runtime, settings };
   await getSql()`
     UPDATE managed_servers
-    SET runtime_config = ${JSON.stringify(runtime)}::jsonb, updated_at = NOW()
+    SET server_reset_times = ${settings.serverResetTimes || settings.shopRestartTimes || null},
+        server_reset_timezone = ${settings.serverResetTimezone || settings.shopRestartTimezone || null},
+        runtime_config = ${JSON.stringify(runtime)}::jsonb, updated_at = NOW()
     WHERE id = ${id}
   `;
   const servers = await reloadManagedServerRegistryFromDb();
@@ -2155,6 +2157,8 @@ export async function ensureManagedServerShopDeliveryRoutingConfiguration(
     nitradoValidation,
     settings,
   };
+  const canonicalRoutingResetTimes = String(settings.serverResetTimes || settings.shopRestartTimes || current.resetSchedule?.times || "").trim();
+  const canonicalRoutingResetTimezone = String(settings.serverResetTimezone || settings.shopRestartTimezone || current.resetSchedule?.timezone || "America/Sao_Paulo").trim();
 
   // A live discovery proves the recovered base dir belongs to the exact same
   // Nitrado service. Preserve a previously-passed isolation preflight while
@@ -2175,7 +2179,9 @@ export async function ensureManagedServerShopDeliveryRoutingConfiguration(
 
   await getSql()`
     UPDATE managed_servers
-    SET runtime_config = ${JSON.stringify(runtime)}::jsonb, updated_at = NOW()
+    SET server_reset_times = ${canonicalRoutingResetTimes || null},
+        server_reset_timezone = ${canonicalRoutingResetTimezone || null},
+        runtime_config = ${JSON.stringify(runtime)}::jsonb, updated_at = NOW()
     WHERE id = ${id}
   `;
   const servers = await reloadManagedServerRegistryFromDb();
@@ -2214,12 +2220,17 @@ export async function markManagedServerNitradoValidated(
     .replace(/\\/g, "/")
     .replace(/^\/+|\/+$/g, "");
   const currentSettings = current.runtime.settings || {};
+  // Nitrado validation must never invent or overwrite the server reset schedule.
+  // The canonical cadence lives in managed_servers.server_reset_* and is already
+  // loaded into current.resetSchedule by the registry.
+  const canonicalResetTimes = String(current.resetSchedule?.times || currentSettings.serverResetTimes || currentSettings.shopRestartTimes || "").trim();
+  const canonicalResetTimezone = String(current.resetSchedule?.timezone || currentSettings.serverResetTimezone || currentSettings.shopRestartTimezone || "America/Sao_Paulo").trim();
   const initialSettings: ServerScopedSettings = discoveredMissionDir
     ? {
         ...currentSettings,
         dayzMissionDir: currentSettings.dayzMissionDir || discoveredMissionDir,
-        shopRestartTimes: currentSettings.shopRestartTimes || "00:00,04:00,08:00,12:00,16:00,20:00",
-        shopRestartTimezone: currentSettings.shopRestartTimezone || "America/Sao_Paulo",
+        ...(canonicalResetTimes ? { serverResetTimes: canonicalResetTimes, shopRestartTimes: canonicalResetTimes } : {}),
+        ...(canonicalResetTimezone ? { serverResetTimezone: canonicalResetTimezone, shopRestartTimezone: canonicalResetTimezone } : {}),
         shopDeliveryConfiguredAt: currentSettings.shopDeliveryConfiguredAt || new Date().toISOString(),
       }
     : { ...currentSettings };
@@ -2257,6 +2268,8 @@ export async function markManagedServerNitradoValidated(
         runtime_enabled = FALSE,
         onboarding_status = ${next.onboardingStatus},
         nitrado_service_id = ${serviceId},
+        server_reset_times = ${canonicalResetTimes || null},
+        server_reset_timezone = ${canonicalResetTimezone || null},
         runtime_config = ${JSON.stringify(next.runtime)}::jsonb,
         updated_at = NOW()
     WHERE id = ${id} AND id <> ${getPrimaryServerId()}
