@@ -121,14 +121,25 @@ export async function uploadDayzMissionTextFile(filePath: string, content: strin
     throw new Error(`Nitrado did not return an upload token for ${filePath}`);
   }
 
+  const body = Buffer.from(content, "utf8");
   const uploadResponse = await globalThis.fetch(token.url, {
     method: "POST",
     headers: { "Content-Type": "application/binary", token: token.token },
-    body: content,
+    body,
+  });
+  const uploadResponseText = await uploadResponse.text();
+
+  console.log("NITRADO DAYZ FILE UPLOAD RESPONSE", {
+    serverId,
+    directory,
+    uploadPath,
+    file,
+    status: uploadResponse.status,
+    responseBytes: Buffer.byteLength(uploadResponseText, "utf8"),
   });
 
   if (!uploadResponse.ok) {
-    throw new Error(`Nitrado file upload HTTP ${uploadResponse.status}: ${await uploadResponse.text()}`);
+    throw new Error(`Nitrado file upload HTTP ${uploadResponse.status}: ${uploadResponseText}`);
   }
 
   console.log("NITRADO DAYZ FILE UPLOADED", {
@@ -136,5 +147,6 @@ export async function uploadDayzMissionTextFile(filePath: string, content: strin
     directory,
     uploadPath,
     file,
+    bytes: body.length,
   });
 }
