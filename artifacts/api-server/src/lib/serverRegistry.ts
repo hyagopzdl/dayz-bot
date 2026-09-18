@@ -24,7 +24,15 @@ export type ServerActivationPreflight = {
   serviceId: string; baseDir: string; discordGuildId?: string;
   namespaceRows: { botState: number; playerStats: number; positionHistory: number }; warningCount: number;
 };
-export type ServerScopedSettings = { shopRestartTimes?: string; shopRestartTimezone?: string; dayzMissionDir?: string; shopDeliveryConfiguredAt?: string };
+export type ServerScopedSettings = {
+  /** Canonical server reset cadence. Legacy shopRestart* fields remain for backward compatibility. */
+  serverResetTimes?: string;
+  serverResetTimezone?: string;
+  shopRestartTimes?: string;
+  shopRestartTimezone?: string;
+  dayzMissionDir?: string;
+  shopDeliveryConfiguredAt?: string;
+};
 export type ServerRuntimeConfig = {
   nitradoBaseDir?: string;
   nitradoApiTokenEncrypted?: { encryptedSecret: string; iv: string; authTag: string; keyVersion: number };
@@ -114,9 +122,15 @@ export function getServerScopedSettings(serverId?: string): Required<ServerScope
   const server = getManagedServerById(resolved);
   if (!server) throw new Error(`Servidor ${resolved} nao encontrado para resolver configuracoes.`);
   const settings = server.runtime.settings || {};
+  const serverResetTimes = String(settings.serverResetTimes || settings.shopRestartTimes || "").trim();
+  const serverResetTimezone = String(settings.serverResetTimezone || settings.shopRestartTimezone || "America/Sao_Paulo").trim();
   return {
-    shopRestartTimes: String(settings.shopRestartTimes || "").trim(),
-    shopRestartTimezone: String(settings.shopRestartTimezone || "America/Sao_Paulo").trim(),
+    serverResetTimes,
+    serverResetTimezone,
+    // Keep legacy aliases readable so older integrations continue to work while
+    // the server reset scheduler becomes the canonical owner of this config.
+    shopRestartTimes: serverResetTimes,
+    shopRestartTimezone: serverResetTimezone,
     dayzMissionDir: String(settings.dayzMissionDir || "dayzps_missions/dayzOffline.chernarusplus").trim(),
     shopDeliveryConfiguredAt: String(settings.shopDeliveryConfiguredAt || "").trim(),
   };
