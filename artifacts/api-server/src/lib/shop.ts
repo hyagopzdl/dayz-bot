@@ -1035,7 +1035,7 @@ export async function syncShopWithNitradoServer(
   if (pending.length && !included.length) {
     const deployResult = await autoDeployPendingShopOrdersIfNeeded(state, observedServerStatus);
     return deployResult
-      ? { deployResult, clearResult: null, stateChanged: Boolean(deployResult.stateChanged) }
+      ? { deployResult, clearResult: null, stateChanged: true }
       : null;
   }
 
