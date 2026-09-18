@@ -142,7 +142,7 @@ function buildDashboardPayload(state: DashboardState) {
       reason: runtime.reason,
       nextRestart: runtime.nextRestartLabel || null,
       minutesUntilRestart: runtime.minutesUntilRestart ?? null,
-      freezeWindowActive: runtime.state === "FROZEN",
+      freezeWindowActive: false,
 
       pending: pending.length,
       includedInRestart: included.length,
