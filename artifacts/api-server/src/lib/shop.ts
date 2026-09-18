@@ -206,6 +206,94 @@ export function getShopEventSpawnsPath(serverId = getServerRuntimeContext().serv
   return getShopFilePaths(serverId).eventSpawnsPath;
 }
 
+function getLegacyShopEventSpawnsPath(serverId = getServerRuntimeContext().serverId) {
+  const missionDir = getShopFilePaths(serverId).missionDir;
+  return missionDir + "/db/cfgeventspawns.xml";
+}
+
+function buildExpectedShopEventNamesForOrders(orders: ShopOrder[]) {
+  return orders.map((order, index) => {
+    const item = String(order.itemClass || order.itemName || "Item")
+      .replace(/[^a-zA-Z0-9_]/g, "_")
+      .replace(/_+/g, "_")
+      .replace(/^_+|_+$/g, "")
+      .slice(0, 48) || "Item";
+    const id = String(order.id || index)
+      .replace(/[^a-zA-Z0-9_]/g, "_")
+      .replace(/_+/g, "_")
+      .replace(/^_+|_+$/g, "")
+      .slice(-16) || String(index);
+    const vehicle = order.deliveryKind === "vehicle" || String(order.spawnEventName || "").startsWith("Vehicle");
+    return (vehicle ? "VehicleShop_" : "Static_") + item + "_" + id;
+  });
+}
+
+async function repairLegacyShopEventSpawnsIfNeeded(state: AppState) {
+  const includedOrders = getIncludedShopOrders(state);
+  if (!includedOrders.length) return false;
+
+  const paths = getShopFilePaths();
+  const legacyPath = getLegacyShopEventSpawnsPath();
+  let rootXml: string;
+  let legacyXml: string | null = null;
+
+  try {
+    rootXml = await downloadServerTextFile(paths.eventSpawnsPath);
+  } catch (error) {
+    console.error("❌ SHOP recovery could not read root cfgeventspawns.xml:", error);
+    return false;
+  }
+
+  try {
+    legacyXml = await downloadServerTextFile(legacyPath);
+  } catch {
+    // The legacy path may not exist. That is fine.
+  }
+
+  const expectedNames = buildExpectedShopEventNamesForOrders(includedOrders);
+  const rootHasShopBlock = hasShopBotBlock(rootXml);
+  const rootHasAllExpectedEvents = expectedNames.every((name) => rootXml.includes('event name="' + name + '"'));
+  const legacyHasShopBlock = Boolean(legacyXml && hasShopBotBlock(legacyXml));
+
+  if (rootHasShopBlock && rootHasAllExpectedEvents) {
+    if (legacyHasShopBlock) {
+      console.warn("⚠️ SHOP recovery removing stale SHOP_BOT block from legacy path: " + legacyPath);
+      await uploadServerTextFile(legacyPath, removeShopBotBlock(legacyXml!));
+    }
+    return false;
+  }
+
+  if (legacyHasShopBlock) {
+    console.warn("🚑 SHOP recovery migrating SHOP_BOT cfgeventspawns.xml from legacy db/ path to mission root: " + legacyPath + " -> " + paths.eventSpawnsPath);
+  } else {
+    console.warn("🚑 SHOP recovery restoring missing SHOP_BOT block in mission-root cfgeventspawns.xml for " + includedOrders.length + " included order(s).");
+  }
+
+  const repairedRoot = injectShopEventSpawnsXml(rootXml, includedOrders);
+  const eventsXml = await downloadServerTextFile(paths.eventsPath);
+  const eventNames = expectedNames;
+  validateInjectedShopXml({
+    eventsXml: eventsXml,
+    eventSpawnsXml: repairedRoot,
+    expectedOrders: includedOrders,
+    eventNames,
+    stage: "generated",
+  });
+
+  await uploadServerTextFile(paths.eventSpawnsPath, repairedRoot);
+  const verifiedRoot = await downloadServerTextFile(paths.eventSpawnsPath);
+  if (!hasShopBotBlock(verifiedRoot) || !expectedNames.every((name) => verifiedRoot.includes('event name="' + name + '"'))) {
+    throw new Error("SHOP recovery failed verification of mission-root cfgeventspawns.xml.");
+  }
+
+  if (legacyHasShopBlock) {
+    await uploadServerTextFile(legacyPath, removeShopBotBlock(legacyXml!));
+  }
+
+  console.log("✅ SHOP recovery verified mission-root cfgeventspawns.xml for " + includedOrders.length + " included order(s).");
+  return true;
+}
+
 
 
 function hasShopBotBlock(xml: string) {
@@ -923,6 +1011,12 @@ export async function syncShopWithNitradoServer(
   observedServerStatus?: string | null,
 ): Promise<{ deployResult: unknown; clearResult: unknown; stateChanged: boolean } | null> {
   ensureShopState(state);
+
+  try {
+    await repairLegacyShopEventSpawnsIfNeeded(state);
+  } catch (recoveryError) {
+    console.error("❌ SHOP recovery failed:", recoveryError);
+  }
 
   const pending = getPendingShopOrders(state);
   const included = getIncludedShopOrders(state);
