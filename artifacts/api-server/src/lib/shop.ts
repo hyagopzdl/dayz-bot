@@ -511,6 +511,11 @@ export function getShopRuntimeStatus(state: AppState): ShopRuntimeStatus {
     return { state: "BLOCKED", canAcceptPurchase: false, reason: delivery.reason || "Shop delivery routing is not ready for this server." };
   }
 
+  const nextRestart = getNextConfiguredRestart(new Date());
+  const minutesUntilRestart = nextRestart
+    ? Math.max(0, Math.ceil((nextRestart.at.getTime() - Date.now()) / 60_000))
+    : undefined;
+
   const included = getIncludedShopOrders(state);
   if (included.length) {
     const monitor = state.shopResetMonitor;
@@ -521,10 +526,18 @@ export function getShopRuntimeStatus(state: AppState): ShopRuntimeStatus {
       reason: waitingClear
         ? "Shop delivery is being finalized after the server restart. Try again in a few minutes."
         : "Shop delivery is prepared and waiting for the server restart. Try again after the restart.",
+      nextRestartLabel: nextRestart?.label,
+      minutesUntilRestart,
     };
   }
 
-  return { state: "READY", canAcceptPurchase: true, reason: "Shop is open." };
+  return {
+    state: "READY",
+    canAcceptPurchase: true,
+    reason: "Shop is open.",
+    nextRestartLabel: nextRestart?.label,
+    minutesUntilRestart,
+  };
 }
 export function assertShopCanAcceptPurchase(state: AppState) {
   const status = getShopRuntimeStatus(state);
