@@ -1250,12 +1250,8 @@ export async function tryAutoClearShopAfterAdmReset(
 export function formatShopQueue(state: AppState) {
   const shopOrders = ensureShopState(state).shopOrders;
 
-  const pending = shopOrders.filter(
-    (order) => order.status === "pending_spawn",
-  );
-  const included = shopOrders.filter(
-    (order) => order.status === "included_in_restart",
-  );
+  const pending = shopOrders.filter((order) => order.status === "pending_spawn");
+  const included = shopOrders.filter((order) => order.status === "included_in_restart");
   const spawned = shopOrders.filter((order) => order.status === "spawned");
   const failed = shopOrders.filter((order) => order.status === "failed");
 
@@ -1277,6 +1273,41 @@ export function formatShopQueue(state: AppState) {
         `Saw online: \`${monitor.sawOnlineAt || "no"}\``,
       ]
     : [];
+
+  const autoDeployLines = autoDeploy
+    ? [
+        "",
+        "**Auto deploy**",
+        `Last server status: \`${autoDeploy.lastServerStatus || "unknown"}\``,
+        `Last deploy: \`${autoDeploy.lastDeployAt || "no"}\``,
+        `Last action: \`${autoDeploy.lastAction || "none"}\``,
+      ]
+    : [];
+
+  const lines = [
+    "🛒 **Shop Queue**",
+    "",
+    `Shop status: **${runtime.state}**`,
+    runtime.nextRestartLabel
+      ? `Next restart window: **${runtime.nextRestartLabel}** (${runtime.minutesUntilRestart} min)`
+      : "Next restart window: unknown",
+    runtime.canAcceptPurchase ? "Checkout: **open**" : `Checkout: **closed** — ${runtime.reason}`,
+    "",
+    `Pending: **${pending.length}**`,
+    `Included in next restart: **${included.length}**`,
+    `Spawned: **${spawned.length}**`,
+    `Failed: **${failed.length}**`,
+    ...monitorLines,
+    ...autoDeployLines,
+    "",
+    "**Catalog**",
+    ...getShopItems(true).map((item) => `• \`${item.id}\` → ${item.className}`),
+    "",
+    "**Latest orders**",
+  ];
+
+  if (!latest.length) {
+    lines.push("No shop orders yet.");
   } else {
     for (const order of latest) {
       lines.push(
