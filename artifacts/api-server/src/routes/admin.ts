@@ -19,8 +19,6 @@ import {
   upsertDayzItemImage,
 } from "../lib/dayzItemDatabase";
 import { getStateAsync, saveStateAsync, type AppState } from "../lib/state";
-import { updateManagedServerShopResetSettings } from "../lib/state";
-import { getManagedServerById, getServerScopedSettings, listManagedServers } from "../lib/serverRegistry";
 
 const router = Router();
 
@@ -755,22 +753,6 @@ async function handleDashboard(req: any, res: any) {
 
 router.get("/dashboard", handleDashboard);
 router.get("/api/dashboard", handleDashboard);
-
-router.put("/api/shop-reset-settings/:serverId", async (req, res) => {
-  if (!requireAdmin(req, res)) return;
-  try {
-    const serverId = String(req.params.serverId || "").trim();
-    if (!getManagedServerById(serverId)) { res.status(404).send("Servidor não encontrado."); return; }
-    const times = String(req.body?.shopRestartTimes || "").split(",").map((value) => value.trim()).filter(Boolean);
-    const normalizedTimes = Array.from(new Set(times)).sort();
-    if (normalizedTimes.some((value) => !/^([01]\d|2[0-3]):[0-5]\d$/.test(value))) { res.status(400).send("Horário de reset inválido. Use HH:MM."); return; }
-    const timezone = String(req.body?.shopRestartTimezone || "America/Sao_Paulo").trim();
-    try { new Intl.DateTimeFormat("en-US", { timeZone: timezone }).format(); } catch { res.status(400).send("Timezone inválido."); return; }
-    const updated = await updateManagedServerShopResetSettings(serverId, { shopRestartTimes: normalizedTimes.join(","), shopRestartTimezone: timezone });
-    scheduleShopAutomationForServer(updated);
-    res.json({ ok: true, serverId, shopRestartTimes: normalizedTimes, shopRestartTimezone: timezone });
-  } catch (err) { res.status(500).send(String(err)); }
-});
 
 router.get("/api/dayz-items", (req, res) => {
   if (!requireAdmin(req, res)) return;
