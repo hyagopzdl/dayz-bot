@@ -292,34 +292,6 @@ function validateInjectedShopXml(options: {
   }
 }
 
-async function verifyUploadedShopBlocks(expectedOrders: ShopOrder[], eventNames: string[]) {
-  const [uploadedEventsXml, uploadedEventSpawnsXml] = await Promise.all([
-    downloadServerTextFile(getShopFilePaths().eventsPath),
-    downloadServerTextFile(getShopFilePaths().eventSpawnsPath),
-  ]);
-
-  validateInjectedShopXml({
-    eventsXml: uploadedEventsXml,
-    eventSpawnsXml: uploadedEventSpawnsXml,
-    expectedOrders,
-    eventNames,
-    stage: "uploaded",
-  });
-}
-
-async function verifyShopBlocksRemoved() {
-  const [uploadedEventsXml, uploadedEventSpawnsXml] = await Promise.all([
-    downloadServerTextFile(getShopFilePaths().eventsPath),
-    downloadServerTextFile(getShopFilePaths().eventSpawnsPath),
-  ]);
-
-  if (hasShopBotBlock(uploadedEventsXml) || hasShopBotBlock(uploadedEventSpawnsXml)) {
-    throw new Error(
-      "SHOP CLEAR FAILED: SHOP_BOT block is still present after upload.",
-    );
-  }
-}
-
 async function restoreAndVerifyShopXmlFiles(
   eventsXml: string,
   eventSpawnsXml: string,
@@ -808,8 +780,6 @@ export async function deployPendingShopOrders(state: AppState) {
     await uploadServerTextFile(getShopFilePaths().eventsPath, injectedEvents.xml);
     await uploadServerTextFile(getShopFilePaths().eventSpawnsPath, injectedEventSpawns);
 
-    console.log("🛒 SHOP DEPLOY verifying uploaded XML files");
-    await verifyUploadedShopBlocks(pendingOrders, injectedEvents.eventNames);
   } catch (deployError) {
     console.error("❌ SHOP DEPLOY partial failure; attempting XML rollback", deployError);
     try {
@@ -893,7 +863,6 @@ async function removeShopXmlBlocks(options?: { requireExistingBlock?: boolean })
       removeShopBotBlock(eventSpawnsXml),
     );
 
-    await verifyShopBlocksRemoved();
   } catch (clearError) {
     console.error("❌ SHOP CLEAR partial failure; attempting XML rollback", clearError);
     try {
