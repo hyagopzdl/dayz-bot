@@ -1009,9 +1009,56 @@ export async function syncShopWithNitradoServer(
   observedServerStatus?: string | null,
 ) {
   ensureShopState(state);
+
   const pending = getPendingShopOrders(state);
   const included = getIncludedShopOrders(state);
   if (!pending.length && !included.length) return null;
+
+  const now = new Date();
+  const nextRestart = getNextConfiguredRestart(now);
+  const monitor = state.shopResetMonitor;
+
+  // Pending orders are scheduled purely from the configured reset time. There is
+  // no reason to query Nitrado while waiting for the deploy window.
+  if (pending.length && !included.length) {
+    const deployResult = await autoDeployPendingShopOrdersIfNeeded(state, observedServerStatus);
+    return deployResult
+      ? { deployResult, clearResult: null, stateChanged: Boolean(deployResult.stateChanged) }
+      : null;
+  }
+
+  // A bot-managed batch does not need status polling before its target. At the
+  // target we own the whole STOP -> stopped -> START -> started lifecycle.
+  if (
+    monitor?.autoRestartManaged &&
+    monitor.targetRestartAt &&
+    monitor.restartPhase === "scheduled" &&
+    Date.now() < Date.parse(monitor.targetRestartAt)
+  ) {
+    return null;
+  }
+
+  if (
+    monitor?.autoRestartManaged &&
+    monitor.restartPhase === "completed"
+  ) {
+    const beforeKey = getShopResetMonitorPersistenceKey(state);
+    const clearResult = await pollShopResetStatusAndAutoClear(state, monitor.lastStatus || "started");
+    const afterKey = getShopResetMonitorPersistenceKey(state);
+    return {
+      deployResult: null,
+      clearResult,
+      stateChanged: beforeKey !== afterKey,
+    };
+  }
+
+  // Manually deployed batches are still supported. We only watch Nitrado around
+  // the next configured reset instead of polling the server all day.
+  if (!monitor?.autoRestartManaged && nextRestart) {
+    const watchStartsAt = nextRestart.at.getTime() - 2 * 60_000;
+    const watchEndsAt = nextRestart.at.getTime() + 10 * 60_000;
+    if (now.getTime() < watchStartsAt || now.getTime() > watchEndsAt) return null;
+  }
 
   let status = observedServerStatus;
   if (status === undefined) {
@@ -1020,9 +1067,8 @@ export async function syncShopWithNitradoServer(
   }
 
   const beforeKey = getShopResetMonitorPersistenceKey(state);
-  const deployResult = await autoDeployPendingShopOrdersIfNeeded(state, status);
-  const monitor = state.shopResetMonitor;
 
+  // If the scheduled target has arrived, initiate the deterministic reset.
   if (
     monitor?.autoRestartManaged &&
     monitor.targetRestartAt &&
@@ -1073,11 +1119,12 @@ export async function syncShopWithNitradoServer(
   const clearResult = await pollShopResetStatusAndAutoClear(state, status);
   const afterKey = getShopResetMonitorPersistenceKey(state);
   return {
-    deployResult,
+    deployResult: null,
     clearResult,
-    stateChanged: beforeKey !== afterKey || Boolean(deployResult?.stateChanged),
+    stateChanged: beforeKey !== afterKey,
   };
 }
+
 
 export async function pollShopResetStatusAndAutoClear(
   state: AppState,
