@@ -119,7 +119,10 @@ export async function runConfiguredServerResetIfDue(state: AppState, serverId: s
   }
 
   const resetState = state.serverReset || null;
-  if (resetState?.lastCompletedAt === recent.at.toISOString() || resetState?.lastAttemptedAt === recent.at.toISOString()) {
+  // An attempted reset is not a completed reset. If STOP/START fails, the
+  // recovery window must keep retrying on the next runtime cycle instead of
+  // treating the failed attempt as proof that this reset was handled.
+  if (resetState?.lastCompletedAt === recent.at.toISOString()) {
     return { due: true, executed: false, stateChanged: false, scheduledReset: recent };
   }
 
