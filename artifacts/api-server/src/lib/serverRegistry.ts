@@ -115,7 +115,7 @@ export function getServerScopedSettings(serverId?: string): Required<ServerScope
   if (!server) throw new Error(`Servidor ${resolved} nao encontrado para resolver configuracoes.`);
   const settings = server.runtime.settings || {};
   return {
-    shopRestartTimes: String(settings.shopRestartTimes || "00:00,04:00,08:00,12:00,16:00,20:00").trim(),
+    shopRestartTimes: String(settings.shopRestartTimes || "").trim(),
     shopRestartTimezone: String(settings.shopRestartTimezone || "America/Sao_Paulo").trim(),
     dayzMissionDir: String(settings.dayzMissionDir || "dayzps_missions/dayzOffline.chernarusplus").trim(),
     shopDeliveryConfiguredAt: String(settings.shopDeliveryConfiguredAt || "").trim(),
