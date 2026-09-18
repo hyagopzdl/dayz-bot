@@ -19,6 +19,9 @@ import {
   upsertDayzItemImage,
 } from "../lib/dayzItemDatabase";
 import { getStateAsync, saveStateAsync, type AppState } from "../lib/state";
+import { updateManagedServerShopResetSettings } from "../lib/state";
+import { getManagedServerById, getServerScopedSettings, listManagedServers } from "../lib/serverRegistry";
+import { scheduleShopAutomationForServer } from "../lib/serverRuntimeCoordinator";
 
 const router = Router();
 
@@ -340,6 +343,7 @@ function renderDashboardHtml(token: string) {
       <div class="card"><h2>Nitrado status</h2><div id="nitrado" class="value">-</div><div id="nitradoHint" class="hint"></div></div>
       <div class="card"><h2>Online</h2><div id="online" class="value">-</div><div class="hint">Jogadores online pelo state atual.</div></div>
       <div class="card"><h2>Catálogo</h2><div id="catalog" class="value">-</div><div id="catalogHint" class="hint"></div></div>
+      <div class="card wide"><h2>Resets da Shop</h2><div class="form-grid" style="margin-top:12px"><div><label>Servidor</label><select id="shopResetServer"></select></div><div><label>Timezone</label><select id="shopResetTimezone"><option value="America/Sao_Paulo">America/Sao_Paulo (Brasília)</option><option value="UTC">UTC</option><option value="America/New_York">America/New_York</option><option value="America/Los_Angeles">America/Los_Angeles</option><option value="Europe/Lisbon">Europe/Lisbon</option></select></div><div class="span-2"><label>Horários de reset</label><div id="shopResetTimes" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"></div><div class="hint">Nenhum horário significa que a Shop não fará deploy/reset automático.</div></div><div class="span-2" style="display:flex;gap:8px;align-items:end"><button type="button" class="secondary" onclick="addShopResetTime()">Adicionar horário</button><button type="button" onclick="saveShopResetSettings()">Salvar resets</button></div></div><div id="shopResetMessage" class="hint"></div></div>
     </section>`,
     script: `<script>
     function setText(id, value) { const element = document.getElementById(id); if (element) element.textContent = value; }
