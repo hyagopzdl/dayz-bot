@@ -5059,6 +5059,7 @@ function renderAdminPanelHtml(token: string) {
                   <button id="performanceMetricsRefresh" class="ghost-btn" type="button">Refresh metrics</button>
                 </div>
                 <div id="neonPersistenceMetrics" class="settings-list"><div class="skeleton"></div></div>
+              </div>
               <div class="card">
                 <div class="section-title">
                   <div><h2>Resets</h2><div class="member-meta">Defina os horários em que o Shop prepara o deploy e executa o restart automático deste servidor.</div></div>
