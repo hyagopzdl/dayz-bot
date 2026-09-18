@@ -1,8 +1,8 @@
 import { downloadADM, setAdmDownloadMode } from "./nitradoDownloader";
 import { getLeaderboard } from "./parser";
-import { flushServerRuntimePendingStateAsync, getCachedStateForServer, getStateAsync, saveStateAsync, setManagedServerRuntimeEnabled } from "./state";
+import { flushServerRuntimePendingStateAsync, getStateAsync, saveStateAsync, setManagedServerRuntimeEnabled } from "./state";
 import { isShopServiceEnabled, normalizeServiceSettings } from "./serviceSettings";
-import { syncShopWithNitradoServer } from "./shop";
+import { getNextConfiguredRestart, syncShopWithNitradoServer } from "./shop";
 import { getPlaytimeRewardConfig, processPlaytimeRewards } from "./discord/modules/economy/rewards";
 import { refreshDiscordFeedsForManagedServer } from "./discordBot";
 import {
@@ -20,7 +20,6 @@ import { hydrateKnownServerPlayers, scheduleTenantCommerceMirror } from "./tenan
 import { runInServerMaintenanceContext, runInServerRuntimeContext, runWithServerRuntimeLock } from "./serverRuntime";
 
 const RUNTIME_CYCLE_INTERVAL_MS = 5 * 60 * 1000;
-const SHOP_SERVER_WATCH_INTERVAL_MS = 30 * 1000;
 const CIRCUIT_FAILURE_THRESHOLD = 3;
 const CIRCUIT_COOLDOWN_MS = 15 * 60 * 1000;
 const RUNTIME_STALE_AFTER_MS = 12 * 60 * 1000;
@@ -54,7 +53,6 @@ const statuses = new Map<string, ServerRuntimeCycleStatus>();
 const requestedImmediateRuns = new Set<string>();
 const rewardLastTick = new Map<string, number>();
 let schedulerTimer: NodeJS.Timeout | null = null;
-let shopServerWatchTimer: NodeJS.Timeout | null = null;
 
 function getStatus(serverId: string) {
   const descriptor = getManagedServerById(serverId);
@@ -291,30 +289,51 @@ export async function runManagedServerRuntimeBatch(reason: RuntimeCycleReason = 
   }
 }
 
-async function runShopServerStatusWatchBatch() {
-  const executable: ManagedServerDescriptor[] = listExecutableManagedServers()
-    .sort((a: ManagedServerDescriptor, b: ManagedServerDescriptor) => a.id.localeCompare(b.id));
 
-  for (const server of executable) {
-    try {
-      // Critical Neon guard: this high-frequency scheduler only inspects the
-      // already-loaded in-memory state. If a server has not loaded state yet,
-      // the normal 5-minute runtime cycle will hydrate it. Never call
-      // getStateAsync() from this loop.
-      const cachedState = getCachedStateForServer(server.id);
-      if (!cachedState || !isShopServiceEnabled(cachedState)) continue;
 
-      await runWithServerRuntimeLock(server.id, async () => runInServerRuntimeContext(server.id, async () => {
-        const state = getCachedStateForServer(server.id);
-        if (!state) return;
-        const result = await syncShopWithNitradoServer(state);
-        if (result?.stateChanged) {
-          await saveStateAsync(state, `runtime:shop-server-watch:${server.id}`);
-        }
-      }));
-    } catch (error) {
-      console.error(`❌ erro no watcher de status da Shop [${server.id}]:`, error);
-    }
+const shopAutomationTimers = new Map<string, NodeJS.Timeout[]>();
+
+function clearShopAutomationTimers(serverId: string) {
+  for (const timer of shopAutomationTimers.get(serverId) || []) clearTimeout(timer);
+  shopAutomationTimers.delete(serverId);
+}
+
+function scheduleShopAutomationForServer(server: ManagedServerDescriptor) {
+  const serverId = server.id;
+  clearShopAutomationTimers(serverId);
+
+  const restart = runInServerRuntimeContext(serverId, async () => getNextConfiguredRestart(new Date(), serverId));
+  restart.then((nextRestart) => {
+    if (!nextRestart) return;
+    const deployAt = nextRestart.at.getTime() - 5 * 60_000;
+    const resetAt = nextRestart.at.getTime();
+    const now = Date.now();
+
+    const schedule = (at: number, label: string) => {
+      const delay = Math.max(0, at - now);
+      const timer = setTimeout(() => {
+        runManagedServerRuntimeCycle(serverId, "scheduler")
+          .catch((error) => console.error(`❌ erro no Shop agendado [${serverId}] ${label}:`, error))
+          .finally(() => {
+            if (label === "reset") scheduleShopAutomationForServer(server);
+          });
+      }, delay);
+      timer.unref?.();
+      const timers = shopAutomationTimers.get(serverId) || [];
+      timers.push(timer);
+      shopAutomationTimers.set(serverId, timers);
+    };
+
+    if (deployAt > now) schedule(deployAt, "deploy");
+    if (resetAt > now) schedule(resetAt, "reset");
+  }).catch((error) => {
+    console.error(`❌ erro calculando próximo reset da Shop [${serverId}]:`, error);
+  });
+}
+
+function scheduleShopAutomationForAllServers() {
+  for (const server of listExecutableManagedServers()) {
+    scheduleShopAutomationForServer(server);
   }
 }
 
@@ -328,18 +347,7 @@ export function startManagedServerRuntimeScheduler() {
     schedulerTimer.unref?.();
   }
 
-  if (!shopServerWatchTimer) {
-    shopServerWatchTimer = setInterval(() => {
-      runShopServerStatusWatchBatch().catch((err) => {
-        console.error("❌ erro no watcher de status da Shop:", err);
-      });
-    }, SHOP_SERVER_WATCH_INTERVAL_MS);
-    shopServerWatchTimer.unref?.();
-
-    // Do one immediate observation. The watcher reads only the in-memory state;
-    // idle/unhydrated servers cause no Neon read and no Nitrado request.
-    void runShopServerStatusWatchBatch();
-  }
+  scheduleShopAutomationForAllServers();
 }
 export function requestManagedServerRuntimeCycle(
   serverId: string,
