@@ -338,17 +338,28 @@ export async function getNitradoGameserverStatus(serverId = getActiveServerId())
   throw new Error(`Unable to read Nitrado server status. ${errors.join(" | ")}`);
 }
 
-async function getDownloadUrl(filePath: string, serverId = getActiveServerId()): Promise<string | null> {
+async function getDownloadToken(filePath: string, serverId = getActiveServerId()): Promise<{ url: string; token: string } | null> {
   admDownloadMetrics.downloadUrlRequests += 1;
   const serviceId = getNitradoServiceId(serverId);
   const json = await fetchJson(`https://api.nitrado.net/services/${serviceId}/gameservers/file_server/download?file=${encodeURIComponent(filePath)}`, serverId);
-  return json?.data?.token?.url || null;
+  const token = json?.data?.token;
+  if (!token?.url || !token?.token) return null;
+  return { url: token.url, token: token.token };
 }
 
 async function downloadText(filePath: string, serverId = getActiveServerId()): Promise<string | null> {
-  const url = await getDownloadUrl(filePath, serverId);
-  if (!url) return null;
-  const res = await trackedNitradoFetch(`${url}&t=${Date.now()}`);
+  const download = await getDownloadToken(filePath, serverId);
+  if (!download) return null;
+
+  // Nitrado's official SDK sends the download token as a query parameter to
+  // the token URL. Do not discard token.token: a 200 from the token endpoint
+  // without the token can return an invalid/stale response and break upload
+  // verification.
+  const url = new URL(download.url);
+  url.searchParams.set("token", download.token);
+  url.searchParams.set("t", String(Date.now()));
+
+  const res = await trackedNitradoFetch(url.toString());
   if (!res.ok) throw new Error(`ADM download HTTP ${res.status}: ${await res.text()}`);
   return res.text();
 }
