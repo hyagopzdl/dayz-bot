@@ -715,6 +715,50 @@ export async function ensureManagedServerRegistryMetadata() {
       await getSql()`ALTER TABLE managed_servers ADD COLUMN IF NOT EXISTS runtime_config JSONB`;
       await getSql()`ALTER TABLE managed_servers ADD COLUMN IF NOT EXISTS server_reset_times TEXT`;
       await getSql()`ALTER TABLE managed_servers ADD COLUMN IF NOT EXISTS server_reset_timezone TEXT`;
+      // Server reset cadence is authoritative in dedicated columns. Keep the
+      // legacy runtime_config mirror synchronized so deploys/reloads cannot
+      // resurrect a stale runtime settings object and hide the saved schedule.
+      await getSql()`
+        UPDATE managed_servers
+        SET server_reset_times = COALESCE(
+              NULLIF(BTRIM(server_reset_times), ''),
+              NULLIF(BTRIM(runtime_config->'settings'->>'serverResetTimes'), ''),
+              NULLIF(BTRIM(runtime_config->'settings'->>'shopRestartTimes'), '')
+            ),
+            server_reset_timezone = COALESCE(
+              NULLIF(BTRIM(server_reset_timezone), ''),
+              NULLIF(BTRIM(runtime_config->'settings'->>'serverResetTimezone'), ''),
+              NULLIF(BTRIM(runtime_config->'settings'->>'shopRestartTimezone'), '')
+            )
+        WHERE (NULLIF(BTRIM(server_reset_times), '') IS NULL
+               AND NULLIF(BTRIM(runtime_config->'settings'->>'serverResetTimes'), '') IS NOT NULL)
+           OR (NULLIF(BTRIM(server_reset_times), '') IS NULL
+               AND NULLIF(BTRIM(runtime_config->'settings'->>'shopRestartTimes'), '') IS NOT NULL)
+           OR (NULLIF(BTRIM(server_reset_timezone), '') IS NULL
+               AND NULLIF(BTRIM(runtime_config->'settings'->>'serverResetTimezone'), '') IS NOT NULL)
+           OR (NULLIF(BTRIM(server_reset_timezone), '') IS NULL
+               AND NULLIF(BTRIM(runtime_config->'settings'->>'shopRestartTimezone'), '') IS NOT NULL)
+      `;
+      await getSql()`
+        UPDATE managed_servers
+        SET runtime_config = jsonb_set(
+              jsonb_set(
+                COALESCE(runtime_config, '{}'::jsonb),
+                '{settings,serverResetTimes}',
+                to_jsonb(server_reset_times),
+                TRUE
+              ),
+              '{settings,serverResetTimezone}',
+              to_jsonb(server_reset_timezone),
+              TRUE
+            )
+        WHERE NULLIF(BTRIM(server_reset_times), '') IS NOT NULL
+          AND NULLIF(BTRIM(server_reset_timezone), '') IS NOT NULL
+          AND (
+            COALESCE(runtime_config->'settings'->>'serverResetTimes', '') <> server_reset_times
+            OR COALESCE(runtime_config->'settings'->>'serverResetTimezone', '') <> server_reset_timezone
+          )
+      `;
       await getSql()`ALTER TABLE managed_servers ADD COLUMN IF NOT EXISTS runtime_enabled BOOLEAN NOT NULL DEFAULT FALSE`;
       await getSql()`ALTER TABLE managed_servers ADD COLUMN IF NOT EXISTS onboarding_status TEXT NOT NULL DEFAULT 'draft'`;
       await getSql()`ALTER TABLE managed_servers ADD COLUMN IF NOT EXISTS organization_id TEXT`;
