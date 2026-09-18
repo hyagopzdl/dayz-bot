@@ -184,7 +184,7 @@ function buildDashboardPayload(state: DashboardState) {
       lastResetStatus: state.shopResetMonitor?.lastStatus || null,
       lastResetCheckedAt: formatDateTime(state.shopResetMonitor?.lastCheckedAt),
       lastAutoDeployAt: formatDateTime(state.shopAutoDeploy?.lastDeployAt),
-      lastAutoDeployWindow: state.shopAutoDeploy?.lastWindowId || null,
+      lastAutoDeployWindow: state.shopAutoDeploy?.lastAction || null,
     },
   };
 }
