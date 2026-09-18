@@ -893,9 +893,10 @@ export type ShopResetMonitor = {
 };
 
 export type ShopAutoDeployState = {
-  lastWindowId?: string;
+  lastServerStatus?: string;
   lastCheckedAt?: string;
   lastDeployAt?: string;
+  lastAction?: string;
 };
 
 export type ShopSavedLocation = {
