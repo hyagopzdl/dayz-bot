@@ -105,7 +105,7 @@ import {
   getManagedServerRuntimeCoordinatorDiagnostics,
   requestManagedServerRuntimeCycle,
   resetManagedServerRuntimeCircuit,
-  scheduleShopAutomationForServer,
+  scheduleServerResetAutomationForServer,
 } from "../lib/serverRuntimeCoordinator";
 import {
   buildOrganizationId,
@@ -7295,7 +7295,7 @@ function renderAdminPanelHtml(token: string) {
       finally { if (button) button.disabled = false; }
     }
     const shopResetAddButton = document.getElementById('shopResetAddTime');
-    if (shopResetAddButton) shopResetAddButton.addEventListener('click', function() { shopResetTimes.push('00:00'); renderShopResetTimes(); });
+    if (shopResetAddButton) shopResetAddButton.addEventListener('click', function() { shopResetTimes.push(''); renderShopResetTimes(); });
     const shopResetSaveButton = document.getElementById('shopResetSave');
     if (shopResetSaveButton) shopResetSaveButton.addEventListener('click', saveShopResetSettings);
 
@@ -9151,7 +9151,7 @@ router.patch("/api/shop-reset-settings", async (req, res) => {
   if (!server) { res.status(403).json({ error: "SERVER_CONTEXT_REQUIRED" }); return; }
   try {
     const updated = await updateManagedServerScopedSettings(server.id, req.body || {});
-    if (updated) scheduleShopAutomationForServer(updated);
+    if (updated) scheduleServerResetAutomationForServer(updated);
     res.json({ server: updated, settings: updated?.runtime.settings || {} });
   } catch (err) {
     res.status(400).send(err instanceof Error ? err.message : String(err));
@@ -9169,7 +9169,7 @@ router.patch("/api/servers/:serverId/settings", async (req, res) => {
   if (!requireServerAdmin(req, res, req.params.serverId, "manage")) return;
   try {
     const server = await updateManagedServerScopedSettings(req.params.serverId, req.body || {});
-    if (server) scheduleShopAutomationForServer(server);
+    if (server) scheduleServerResetAutomationForServer(server);
     res.json({ server, settings: server?.runtime.settings || {} });
   } catch (err) {
     res.status(400).send(err instanceof Error ? err.message : String(err));
