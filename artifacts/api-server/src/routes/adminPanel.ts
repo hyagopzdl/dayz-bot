@@ -105,6 +105,7 @@ import {
   getManagedServerRuntimeCoordinatorDiagnostics,
   requestManagedServerRuntimeCycle,
   resetManagedServerRuntimeCircuit,
+  scheduleShopAutomationForServer,
 } from "../lib/serverRuntimeCoordinator";
 import {
   buildOrganizationId,
@@ -9043,6 +9044,7 @@ router.patch("/api/servers/:serverId/settings", async (req, res) => {
   if (!requireServerAdmin(req, res, req.params.serverId, "manage")) return;
   try {
     const server = await updateManagedServerScopedSettings(req.params.serverId, req.body || {});
+    if (server) scheduleShopAutomationForServer(server);
     res.json({ server, settings: server?.runtime.settings || {} });
   } catch (err) {
     res.status(400).send(err instanceof Error ? err.message : String(err));
