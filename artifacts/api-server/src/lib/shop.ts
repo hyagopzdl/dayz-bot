@@ -1024,7 +1024,13 @@ export async function syncShopWithNitradoServer(
 
   const pending = getPendingShopOrders(state);
   const included = getIncludedShopOrders(state);
-  if (!pending.length && !included.length) return null;
+  if (!pending.length && !included.length) {
+    const configuredReset = getNextConfiguredRestart(new Date());
+    if (configuredReset) {
+      console.log(`🛒 SHOP SYNC [${getServerRuntimeContext().serverId}] sem pedidos pendentes/incluídos; nenhum STOP/START será enviado à Nitrado neste ciclo. próximo reset=${configuredReset.at.toISOString()} (${configuredReset.label})`);
+    }
+    return null;
+  }
 
   const now = new Date();
   const nextRestart = getNextConfiguredRestart(now);
