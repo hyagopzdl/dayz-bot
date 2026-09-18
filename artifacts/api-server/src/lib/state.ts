@@ -1532,6 +1532,7 @@ function buildStateDomains(data: AppState): Record<StateDomainName, StateDomainP
       dayzItems: Array.isArray(data.dayzItems) ? data.dayzItems : undefined,
       shopResetMonitor: data.shopResetMonitor || null,
       shopAutoDeploy: data.shopAutoDeploy || null,
+      serverReset: data.serverReset || null,
     },
     config: {
       mapVoteUserLocales: data.mapVoteUserLocales && typeof data.mapVoteUserLocales === "object" ? data.mapVoteUserLocales : {},
@@ -1584,6 +1585,7 @@ function applyStateDomain(state: AppState, domain: StateDomainName, payload: any
     state.dayzItems = Array.isArray(payload.dayzItems) ? payload.dayzItems : undefined;
     state.shopResetMonitor = payload.shopResetMonitor || null;
     state.shopAutoDeploy = payload.shopAutoDeploy || null;
+    state.serverReset = payload.serverReset || null;
   } else if (domain === "config") {
     state.mapVoteUserLocales = payload.mapVoteUserLocales && typeof payload.mapVoteUserLocales === "object" ? payload.mapVoteUserLocales : {};
     state.discordCommandSettings = normalizeDiscordCommandSettings(payload.discordCommandSettings);
@@ -4278,6 +4280,7 @@ export async function saveStateAsync(data: AppState, reason?: string) {
     dayzItems: Array.isArray(data.dayzItems) ? data.dayzItems : undefined,
     shopResetMonitor: data.shopResetMonitor || null,
     shopAutoDeploy: data.shopAutoDeploy || null,
+    serverReset: data.serverReset || null,
     mapRotation: shouldProtectMapRotation ? persistedState?.mapRotation : data.mapRotation || undefined,
     mapVoteUserLocales: data.mapVoteUserLocales && typeof data.mapVoteUserLocales === "object" ? data.mapVoteUserLocales : {},
     discordCommandSettings: normalizeDiscordCommandSettings(data.discordCommandSettings),
