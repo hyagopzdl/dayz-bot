@@ -42,6 +42,8 @@ export type ServerRuntimeConfig = {
 };
 export type ManagedServerDescriptor = {
   id: string; name: string; organizationId: string; enabled: boolean; runtimeEnabled: boolean;
+  /** Canonical persisted reset schedule. Loaded from managed_servers dedicated columns. */
+  resetSchedule?: { times: string; timezone: string };
   onboardingStatus: ServerOnboardingStatus; mode: ServerFoundationMode;
   integrations: { nitradoServiceId?: string; discordGuildId?: string }; runtime: ServerRuntimeConfig;
   /** @deprecated Persistence no longer creates or selects a primary server. */
@@ -100,6 +102,7 @@ export function normalizeServerOnboardingStatus(value: unknown): ServerOnboardin
 function cloneServer(server: ManagedServerDescriptor): ManagedServerDescriptor {
   return {
     ...server,
+    resetSchedule: server.resetSchedule ? { ...server.resetSchedule } : undefined,
     integrations: { ...server.integrations },
     runtime: {
       ...server.runtime,
@@ -122,8 +125,8 @@ export function getServerScopedSettings(serverId?: string): Required<ServerScope
   const server = getManagedServerById(resolved);
   if (!server) throw new Error(`Servidor ${resolved} nao encontrado para resolver configuracoes.`);
   const settings = server.runtime.settings || {};
-  const serverResetTimes = String(settings.serverResetTimes || settings.shopRestartTimes || "").trim();
-  const serverResetTimezone = String(settings.serverResetTimezone || settings.shopRestartTimezone || "America/Sao_Paulo").trim();
+  const serverResetTimes = String(server.resetSchedule?.times || "").trim();
+  const serverResetTimezone = String(server.resetSchedule?.timezone || "America/Sao_Paulo").trim();
   return {
     serverResetTimes,
     serverResetTimezone,
@@ -176,7 +179,9 @@ export function setPersistedManagedServers(servers: ManagedServerDescriptor[]) {
     seen.add(id);
     return {
       id, name: normalizeManagedServerName(server.name), organizationId: String(server.organizationId || getDefaultOrganizationId()).trim() || getDefaultOrganizationId(),
-      enabled: server.enabled !== false, runtimeEnabled: server.runtimeEnabled === true, onboardingStatus: normalizeServerOnboardingStatus(server.onboardingStatus), mode: "multi-server-native",
+      enabled: server.enabled !== false, runtimeEnabled: server.runtimeEnabled === true,
+      resetSchedule: server.resetSchedule ? { times: String(server.resetSchedule.times || "").trim(), timezone: String(server.resetSchedule.timezone || "America/Sao_Paulo").trim() } : undefined,
+      onboardingStatus: normalizeServerOnboardingStatus(server.onboardingStatus), mode: "multi-server-native",
       integrations: { nitradoServiceId: String(server.integrations?.nitradoServiceId || "").trim() || undefined, discordGuildId: String(server.integrations?.discordGuildId || "").trim() || undefined },
       runtime: {
         nitradoBaseDir: String(server.runtime?.nitradoBaseDir || "").trim() || undefined,
