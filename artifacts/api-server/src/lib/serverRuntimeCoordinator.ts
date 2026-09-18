@@ -298,7 +298,7 @@ function clearShopAutomationTimers(serverId: string) {
   shopAutomationTimers.delete(serverId);
 }
 
-function scheduleShopAutomationForServer(server: ManagedServerDescriptor) {
+export function scheduleShopAutomationForServer(server: ManagedServerDescriptor) {
   const serverId = server.id;
   clearShopAutomationTimers(serverId);
 
@@ -325,6 +325,7 @@ function scheduleShopAutomationForServer(server: ManagedServerDescriptor) {
     };
 
     if (deployAt > now) schedule(deployAt, "deploy");
+    else if (now < resetAt) schedule(now, "deploy");
     if (resetAt > now) schedule(resetAt, "reset");
   }).catch((error) => {
     console.error(`❌ erro calculando próximo reset da Shop [${serverId}]:`, error);
