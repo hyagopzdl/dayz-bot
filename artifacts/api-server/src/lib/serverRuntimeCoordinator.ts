@@ -2,7 +2,8 @@ import { downloadADM, setAdmDownloadMode } from "./nitradoDownloader";
 import { getLeaderboard } from "./parser";
 import { flushServerRuntimePendingStateAsync, getStateAsync, saveStateAsync, setManagedServerRuntimeEnabled } from "./state";
 import { isShopServiceEnabled, normalizeServiceSettings } from "./serviceSettings";
-import { getNextConfiguredRestart, syncShopWithNitradoServer } from "./shop";
+import { syncShopWithNitradoServer } from "./shop";
+import { getNextServerReset, runConfiguredServerResetIfDue, scheduleServerResetForServer, clearServerResetTimer } from "./serverResetScheduler";
 import { getPlaytimeRewardConfig, processPlaytimeRewards } from "./discord/modules/economy/rewards";
 import { refreshDiscordFeedsForManagedServer } from "./discordBot";
 import {
@@ -159,9 +160,20 @@ export async function runManagedServerRuntimeCycle(
         downloadDurationMs = Date.now() - downloadStarted;
       }
 
-      // Shop reset/deploy housekeeping is independent from the parser. A parser,
-      // leaderboard or feed failure must not leave a deployed batch stuck in
-      // WAITING_RESET indefinitely.
+      // The server reset is core runtime infrastructure. It must execute
+      // regardless of whether the Shop service is enabled or there are orders.
+      try {
+        const resetResult = await runConfiguredServerResetIfDue(state, serverId);
+        if (resetResult.stateChanged) {
+          await saveStateAsync(state, `runtime:server-reset:${serverId}`);
+        }
+      } catch (resetError) {
+        console.error(`❌ erro na rotina de reset do servidor [${serverId}]:`, resetError);
+      }
+
+      // Shop housekeeping is an integration layered on top of the server reset.
+      // A parser, leaderboard or feed failure must not leave a deployed batch
+      // stuck in WAITING_RESET indefinitely.
       if (isShopServiceEnabled(state)) {
         try {
           const shopResult = await syncShopWithNitradoServer(state);
@@ -291,56 +303,57 @@ export async function runManagedServerRuntimeBatch(reason: RuntimeCycleReason = 
 
 
 
-const shopAutomationTimers = new Map<string, NodeJS.Timeout[]>();
+const serverResetAutomationTimers = new Map<string, NodeJS.Timeout[]>();
 
-function clearShopAutomationTimers(serverId: string) {
-  for (const timer of shopAutomationTimers.get(serverId) || []) clearTimeout(timer);
-  shopAutomationTimers.delete(serverId);
+function clearServerResetAutomationTimers(serverId: string) {
+  for (const timer of serverResetAutomationTimers.get(serverId) || []) clearTimeout(timer);
+  serverResetAutomationTimers.delete(serverId);
+  clearServerResetTimer(serverId);
 }
 
-export function scheduleShopAutomationForServer(server: ManagedServerDescriptor) {
+export function scheduleServerResetAutomationForServer(server: ManagedServerDescriptor) {
   const serverId = server.id;
-  clearShopAutomationTimers(serverId);
+  clearServerResetAutomationTimers(serverId);
 
-  const restart = runInServerRuntimeContext(serverId, async () => getNextConfiguredRestart(new Date(), serverId));
-  restart.then((nextRestart) => {
-    if (!nextRestart) {
-      console.log(`🛒 SHOP SCHEDULER [${serverId}] nenhum horário de reset configurado`);
-      return;
-    }
-    const deployAt = nextRestart.at.getTime() - 5 * 60_000;
-    const resetAt = nextRestart.at.getTime();
-    const now = Date.now();
-    console.log(`🛒 SHOP SCHEDULER [${serverId}] próximo reset=${nextRestart.at.toISOString()} label=${nextRestart.label} deployAt=${new Date(deployAt).toISOString()}`);
+  const next = getNextServerReset(new Date(), serverId);
+  if (!next) {
+    console.log(`🗓️ SERVER RESET SCHEDULER [${serverId}] nenhum horário de reset configurado`);
+    return;
+  }
 
-    const schedule = (at: number, label: string) => {
-      const delay = Math.max(0, at - now);
-      console.log(`🛒 SHOP TIMER SET [${serverId}] label=${label} at=${new Date(at).toISOString()} delayMs=${delay}`);
-      const timer = setTimeout(() => {
-        console.log(`⏰ SHOP TIMER FIRED [${serverId}] label=${label} target=${new Date(at).toISOString()}`);
-        runManagedServerRuntimeCycle(serverId, "scheduler")
-          .catch((error) => console.error(`❌ erro no Shop agendado [${serverId}] ${label}:`, error))
-          .finally(() => {
-            if (label === "reset") scheduleShopAutomationForServer(server);
-          });
-      }, delay);
-      timer.unref?.();
-      const timers = shopAutomationTimers.get(serverId) || [];
-      timers.push(timer);
-      shopAutomationTimers.set(serverId, timers);
-    };
+  // The server reset scheduler owns the actual reset timer. The Shop only gets
+  // a five-minute integration window before the same recurring reset.
+  const deployAt = next.at.getTime() - 5 * 60_000;
+  const resetAt = next.at.getTime();
+  const now = Date.now();
 
-    if (deployAt > now) schedule(deployAt, "deploy");
-    else if (now < resetAt) schedule(now, "deploy");
-    if (resetAt > now) schedule(resetAt, "reset");
-  }).catch((error) => {
-    console.error(`❌ erro calculando próximo reset da Shop [${serverId}]:`, error);
-  });
+  const scheduleCycle = (at: number, label: string) => {
+    const delay = Math.max(0, at - Date.now());
+    console.log(`🗓️ SERVER TIMER SET [${serverId}] label=${label} at=${new Date(at).toISOString()} delayMs=${delay}`);
+    const timer = setTimeout(() => {
+      console.log(`⏰ SERVER TIMER FIRED [${serverId}] label=${label} target=${new Date(at).toISOString()}`);
+      runManagedServerRuntimeCycle(serverId, "scheduler")
+        .catch((error) => console.error(`❌ erro na rotina agendada do servidor [${serverId}] ${label}:`, error))
+        .finally(() => {
+          if (label === "reset") scheduleServerResetAutomationForServer(server);
+        });
+    }, delay);
+    timer.unref?.();
+    const timers = serverResetAutomationTimers.get(serverId) || [];
+    timers.push(timer);
+    serverResetAutomationTimers.set(serverId, timers);
+  };
+
+  if (deployAt > now) scheduleCycle(deployAt, "shop-pre-reset");
+  else if (now < resetAt) scheduleCycle(now, "shop-pre-reset");
+  if (resetAt > now) scheduleCycle(resetAt, "reset");
+
+  scheduleServerResetForServer(serverId);
 }
 
-function scheduleShopAutomationForAllServers() {
+function scheduleServerResetAutomationForAllServers() {
   for (const server of listExecutableManagedServers()) {
-    scheduleShopAutomationForServer(server);
+    scheduleServerResetAutomationForServer(server);
   }
 }
 
@@ -354,7 +367,7 @@ export function startManagedServerRuntimeScheduler() {
     schedulerTimer.unref?.();
   }
 
-  scheduleShopAutomationForAllServers();
+  scheduleServerResetAutomationForAllServers();
 }
 export function requestManagedServerRuntimeCycle(
   serverId: string,
