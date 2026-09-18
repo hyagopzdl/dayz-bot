@@ -488,13 +488,27 @@ function normalizeServerDiscordDraft(value: unknown, existing: ServerDiscordRunt
 function normalizeServerScopedSettingsDraft(value: unknown, existing: ServerScopedSettings = {}): ServerScopedSettings {
   const source = value && typeof value === "object" ? value as Record<string, unknown> : {};
   const next: ServerScopedSettings = { ...existing };
-  if ("shopRestartTimes" in source) {
-    const normalized = optionalServerText(source.shopRestartTimes, 240);
-    if (normalized) next.shopRestartTimes = normalized; else delete next.shopRestartTimes;
+  const resetTimesInput = "serverResetTimes" in source ? source.serverResetTimes : source.shopRestartTimes;
+  if ("serverResetTimes" in source || "shopRestartTimes" in source) {
+    const normalized = optionalServerText(resetTimesInput, 240);
+    if (normalized) {
+      next.serverResetTimes = normalized;
+      next.shopRestartTimes = normalized;
+    } else {
+      delete next.serverResetTimes;
+      delete next.shopRestartTimes;
+    }
   }
-  if ("shopRestartTimezone" in source) {
-    const normalized = optionalServerText(source.shopRestartTimezone, 100);
-    if (normalized) next.shopRestartTimezone = normalized; else delete next.shopRestartTimezone;
+  const resetTimezoneInput = "serverResetTimezone" in source ? source.serverResetTimezone : source.shopRestartTimezone;
+  if ("serverResetTimezone" in source || "shopRestartTimezone" in source) {
+    const normalized = optionalServerText(resetTimezoneInput, 100);
+    if (normalized) {
+      next.serverResetTimezone = normalized;
+      next.shopRestartTimezone = normalized;
+    } else {
+      delete next.serverResetTimezone;
+      delete next.shopRestartTimezone;
+    }
   }
   if ("dayzMissionDir" in source) {
     const normalized = optionalServerText(source.dayzMissionDir, 300);
@@ -2000,14 +2014,20 @@ export async function ensureManagedServerShopDeliveryConfiguration(
   const settings: ServerScopedSettings = {
     ...existing,
     dayzMissionDir: missionDir,
-    shopRestartTimezone: String(existing.shopRestartTimezone || input.restartTimezone || "America/Sao_Paulo").trim(),
+    serverResetTimezone: String(existing.serverResetTimezone || existing.shopRestartTimezone || input.restartTimezone || "America/Sao_Paulo").trim(),
     shopDeliveryConfiguredAt: String(existing.shopDeliveryConfiguredAt || new Date().toISOString()).trim(),
   };
-  // A new server must start with Shop resets disabled. Only persist restart
-  // times when they were explicitly provided by an existing setting or caller.
-  const restartTimes = String(existing.shopRestartTimes ?? input.restartTimes ?? "").trim();
-  if (restartTimes) settings.shopRestartTimes = restartTimes;
-  else delete settings.shopRestartTimes;
+  settings.shopRestartTimezone = settings.serverResetTimezone;
+  // A new server must start with resets disabled. Preserve an explicit existing
+  // cadence and never invent one during Shop delivery/routing bootstrap.
+  const restartTimes = String(existing.serverResetTimes ?? existing.shopRestartTimes ?? input.restartTimes ?? "").trim();
+  if (restartTimes) {
+    settings.serverResetTimes = restartTimes;
+    settings.shopRestartTimes = restartTimes;
+  } else {
+    delete settings.serverResetTimes;
+    delete settings.shopRestartTimes;
+  }
 
   const runtime = { ...current.runtime, settings };
   await getSql()`
