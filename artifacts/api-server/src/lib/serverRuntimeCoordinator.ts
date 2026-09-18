@@ -159,6 +159,23 @@ export async function runManagedServerRuntimeCycle(
         downloadDurationMs = Date.now() - downloadStarted;
       }
 
+      // Shop reset/deploy housekeeping is independent from the parser. A parser,
+      // leaderboard or feed failure must not leave a deployed batch stuck in
+      // WAITING_RESET indefinitely.
+      if (isShopServiceEnabled(state)) {
+        try {
+          const deployResult = await autoDeployPendingShopOrdersIfNeeded(state);
+          const resetKeyBefore = getShopResetMonitorPersistenceKey(state);
+          const clearResult = await pollShopResetStatusAndAutoClear(state);
+          const resetChanged = resetKeyBefore !== getShopResetMonitorPersistenceKey(state);
+          if (deployResult || clearResult || resetChanged) {
+            await saveStateAsync(state, `runtime:shop-housekeeping:${serverId}`);
+          }
+        } catch (shopError) {
+          console.error(`❌ erro no housekeeping da shop [${serverId}]:`, shopError);
+        }
+      }
+
       const parserStarted = Date.now();
       try {
         console.log(`🔥 PARSER AUTOMÁTICO [${serverId}]`);
@@ -169,20 +186,6 @@ export async function runManagedServerRuntimeCycle(
           await refreshDiscordFeedsForManagedServer(serverId);
         } catch (discordFeedError) {
           console.error(`❌ erro atualizando feeds Discord [${serverId}]:`, discordFeedError);
-        }
-
-        if (isShopServiceEnabled(state)) {
-          try {
-            const deployResult = await autoDeployPendingShopOrdersIfNeeded(state);
-            const resetKeyBefore = getShopResetMonitorPersistenceKey(state);
-            const clearResult = await pollShopResetStatusAndAutoClear(state);
-            const resetChanged = resetKeyBefore !== getShopResetMonitorPersistenceKey(state);
-            if (deployResult || clearResult || resetChanged) {
-              await saveStateAsync(state, `runtime:shop-housekeeping:${serverId}`);
-            }
-          } catch (shopError) {
-            console.error(`❌ erro no housekeeping da shop [${serverId}]:`, shopError);
-          }
         }
 
         const rewardConfig = getPlaytimeRewardConfig();
