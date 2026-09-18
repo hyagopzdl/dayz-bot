@@ -83,14 +83,9 @@ export function getShopDeliveryReadiness(serverId = getServerRuntimeContext().se
   if (!missionDir) {
     return { ready: false, serverId: server.id, transport: "nitrado-file-server", reason: "Shop delivery is blocked until a mission path is explicitly saved for this server." };
   }
-  const restartTimes = String(server.runtime.settings?.shopRestartTimes || "").trim();
-  const restartTimezone = String(server.runtime.settings?.shopRestartTimezone || "").trim();
   const deliveryConfiguredAt = String(server.runtime.settings?.shopDeliveryConfiguredAt || "").trim();
   if (!deliveryConfiguredAt) {
-    return { ready: false, serverId: server.id, transport: "nitrado-file-server", reason: "Shop delivery is blocked until mission path/restart settings are explicitly saved for this server." };
-  }
-  if (!restartTimes || !restartTimezone) {
-    return { ready: false, serverId: server.id, transport: "nitrado-file-server", reason: "Shop delivery is blocked until restart times and timezone are explicitly saved for this server." };
+    return { ready: false, serverId: server.id, transport: "nitrado-file-server", reason: "Shop delivery is blocked until the mission/filesystem routing is explicitly saved for this server." };
   }
   if (!getOrganizationIntegrationStatus(server.organizationId).configured) {
     return { ready: false, serverId: server.id, transport: "nitrado-file-server", reason: "Shop delivery is blocked because this organization has no usable Nitrado credential." };
@@ -351,28 +346,8 @@ function isOnlineLikeStatus(status: string | null | undefined) {
   );
 }
 
-function addMinutes(date: Date, minutes: number) {
-  return new Date(date.getTime() + minutes * 60 * 1000);
-}
-
-function getShopResetFallbackMinutes() {
-  // Legacy fallback retained as a safety ceiling. The normal boot-only fallback
-  // now uses the scheduled restart timestamp plus SHOP_CLEAR_MINUTES_AFTER_RESET.
-  return Math.max(1, numberEnv("SHOP_RESET_CONFIRM_FALLBACK_MINUTES", 45));
-}
-
 function getShopClearMinutesAfterReset() {
   return Math.max(0, numberEnv("SHOP_CLEAR_MINUTES_AFTER_RESET", 5));
-}
-
-function isBootOnlyResetFallbackEnabled() {
-  return boolEnv("SHOP_RESET_ALLOW_BOOT_ONLY_FALLBACK", true);
-}
-
-function getShopResetExpectedDelayMinutes() {
-  const deployBefore = numberEnv("SHOP_DEPLOY_MINUTES_BEFORE_RESET", 15);
-  const graceAfter = numberEnv("SHOP_DEPLOY_GRACE_MINUTES_AFTER_SCHEDULE", 15);
-  return Math.max(1, deployBefore + graceAfter);
 }
 
 function getMonitorDeployDate(monitor: NonNullable<AppState["shopResetMonitor"]>, includedOrders: ShopOrder[]) {
@@ -381,37 +356,13 @@ function getMonitorDeployDate(monitor: NonNullable<AppState["shopResetMonitor"]>
   return Number.isNaN(date.getTime()) ? new Date() : date;
 }
 
-function ensureResetMonitorDeadlines(
+function ensureResetMonitorState(
   monitor: NonNullable<AppState["shopResetMonitor"]>,
   includedOrders: ShopOrder[],
 ) {
   const deployedAt = getMonitorDeployDate(monitor, includedOrders);
-
-  if (!monitor.deployedAt) {
-    monitor.deployedAt = deployedAt.toISOString();
-  }
-
-  if (!monitor.expectedRestartAt) {
-    monitor.expectedRestartAt = addMinutes(
-      deployedAt,
-      getShopResetExpectedDelayMinutes(),
-    ).toISOString();
-  }
-
-  if (!monitor.restartFallbackAt) {
-    monitor.restartFallbackAt = addMinutes(
-      deployedAt,
-      getShopResetFallbackMinutes(),
-    ).toISOString();
-  }
+  if (!monitor.deployedAt) monitor.deployedAt = deployedAt.toISOString();
 }
-
-function isPastIsoDate(value: string | null | undefined, now: Date) {
-  if (!value) return false;
-  const time = new Date(value).getTime();
-  return Number.isFinite(time) && now.getTime() >= time;
-}
-
 export function getShopResetMonitorPersistenceKey(state: Pick<AppState, "shopResetMonitor">) {
   const monitor = state.shopResetMonitor || null;
   if (!monitor) return "null";
@@ -433,7 +384,7 @@ export function getShopResetMonitorPersistenceKey(state: Pick<AppState, "shopRes
 }
 
 export type ShopRuntimeStatus = {
-  state: "READY" | "BLOCKED" | "FROZEN" | "WAITING_RESET" | "WAITING_CLEAR";
+  state: "READY" | "BLOCKED" | "WAITING_RESET" | "WAITING_CLEAR";
   canAcceptPurchase: boolean;
   reason: string;
   nextRestartLabel?: string;
@@ -550,18 +501,13 @@ export function getShopRuntimeStatus(state: AppState): ShopRuntimeStatus {
 
   const delivery = getShopDeliveryReadiness();
   if (!delivery.ready) {
-    return {
-      state: "BLOCKED",
-      canAcceptPurchase: false,
-      reason: delivery.reason || "Shop delivery routing is not ready for this server.",
-    };
+    return { state: "BLOCKED", canAcceptPurchase: false, reason: delivery.reason || "Shop delivery routing is not ready for this server." };
   }
 
   const included = getIncludedShopOrders(state);
   if (included.length) {
     const monitor = state.shopResetMonitor;
     const waitingClear = Boolean(monitor?.sawOnlineAt);
-
     return {
       state: waitingClear ? "WAITING_CLEAR" : "WAITING_RESET",
       canAcceptPurchase: false,
@@ -571,34 +517,8 @@ export function getShopRuntimeStatus(state: AppState): ShopRuntimeStatus {
     };
   }
 
-  const freezeWindow = getActiveAutoDeployWindow(new Date(), {
-    requireAutoDeployEnabled: true,
-    allowFreezeWindow: true,
-  });
-
-  if (freezeWindow) {
-    const freezeMinutes = numberEnv("SHOP_DEPLOY_FREEZE_MINUTES", 2);
-    if (freezeWindow.minutesUntilRestart <= freezeMinutes) {
-      return {
-        state: "FROZEN",
-        canAcceptPurchase: false,
-        reason:
-          "Shop is temporarily closed while the server restart window is active. Try again after the delivery cycle finishes.",
-        nextRestartLabel: freezeWindow.restartLabel,
-        minutesUntilRestart: freezeWindow.minutesUntilRestart,
-      };
-    }
-  }
-
-  return {
-    state: "READY",
-    canAcceptPurchase: true,
-    reason: "Shop is open.",
-    nextRestartLabel: freezeWindow?.restartLabel,
-    minutesUntilRestart: freezeWindow?.minutesUntilRestart,
-  };
+  return { state: "READY", canAcceptPurchase: true, reason: "Shop is open." };
 }
-
 export function assertShopCanAcceptPurchase(state: AppState) {
   const status = getShopRuntimeStatus(state);
   if (!status.canAcceptPurchase) {
@@ -942,7 +862,10 @@ export async function clearShopSpawnerAndMarkSpawned(
   };
 }
 
-export async function pollShopResetStatusAndAutoClear(state: AppState) {
+export async function pollShopResetStatusAndAutoClear(
+  state: AppState,
+  observedServerStatus?: string | null,
+) {
   ensureShopState(state);
 
   if (!systems.shop) {
@@ -970,15 +893,17 @@ export async function pollShopResetStatusAndAutoClear(state: AppState) {
     } as NonNullable<AppState["shopResetMonitor"]>);
 
   state.shopResetMonitor = monitor;
-  ensureResetMonitorDeadlines(monitor, includedOrders);
+  ensureResetMonitorState(monitor, includedOrders);
 
-  let status: string | null = null;
+  let status: string | null = observedServerStatus ?? null;
 
-  try {
-    const response = await getNitradoGameserverStatus(getServerRuntimeContext().serverId);
-    status = response.status;
-  } catch (err) {
-    console.error("❌ shop auto-clear status poll failed:", err);
+  if (observedServerStatus === undefined) {
+    try {
+      const response = await getNitradoGameserverStatus(getServerRuntimeContext().serverId);
+      status = response.status;
+    } catch (err) {
+      console.error("❌ shop auto-clear status poll failed:", err);
+    }
   }
 
   const now = new Date();
@@ -1001,25 +926,6 @@ export async function pollShopResetStatusAndAutoClear(state: AppState) {
     console.log(`🛒 shop reset monitor: server came back online (${normalized})`);
     return null;
   }
-
-  const fallbackExpired = isPastIsoDate(monitor.restartFallbackAt, now);
-
-  if (!monitor.sawOnlineAt && fallbackExpired) {
-    if (!isBootOnlyResetFallbackEnabled()) {
-      console.warn(
-        `⚠️ shop reset monitor: scheduled restart fallback expired, but SHOP_RESET_ALLOW_BOOT_ONLY_FALLBACK is false. status=${normalized} deployedAt=${monitor.deployedAt || "unknown"} expectedRestartAt=${monitor.expectedRestartAt || "unknown"} fallbackAt=${monitor.restartFallbackAt || "unknown"}`,
-      );
-    } else if (isOnlineLikeStatus(normalized) || !monitor.sawOfflineAt) {
-      monitor.sawOnlineAt = nowIso;
-      monitor.autoConfirmedAt = nowIso;
-      monitor.confirmationReason = monitor.sawOfflineAt
-        ? "scheduled_restart_fallback_after_offline"
-        : "scheduled_restart_fallback_boot_only";
-
-      console.warn(
-        `⚠️ shop reset monitor: auto-confirming scheduled restart after the configured restart time. status=${normalized} expectedRestartAt=${monitor.expectedRestartAt || "unknown"} fallbackAt=${monitor.restartFallbackAt || "unknown"}`,
-      );
-    }
 
   if (!monitor.sawOfflineAt && !monitor.sawOnlineAt) {
     console.log(
@@ -1090,172 +996,6 @@ export async function tryAutoClearShopAfterAdmReset(
   return pollShopResetStatusAndAutoClear(state);
 }
 
-function parseRestartTimes() {
-  const raw = String(
-    getManagedServerById(getServerRuntimeContext().serverId)?.runtime.settings?.shopRestartTimes || ""
-  );
-
-  return raw
-    .split(",")
-    .map((value) => value.trim())
-    .filter(Boolean)
-    .map((value) => {
-      const [hourRaw, minuteRaw = "0"] = value.split(":");
-      const hour = Number(hourRaw);
-      const minute = Number(minuteRaw);
-
-      if (
-        !Number.isInteger(hour) ||
-        !Number.isInteger(minute) ||
-        hour < 0 ||
-        hour > 23 ||
-        minute < 0 ||
-        minute > 59
-      ) {
-        throw new Error(`Invalid SHOP_RESTART_TIMES entry: ${value}`);
-      }
-
-      return { label: `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`, minutes: hour * 60 + minute };
-    })
-    .sort((a, b) => a.minutes - b.minutes);
-}
-
-function getLocalDateParts(date: Date, timeZone: string) {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).formatToParts(date);
-
-  const values: Record<string, string> = {};
-  for (const part of parts) {
-    if (part.type !== "literal") values[part.type] = part.value;
-  }
-
-  const year = values.year;
-  const month = values.month;
-  const day = values.day;
-  let hour = Number(values.hour || 0);
-  const minute = Number(values.minute || 0);
-
-  // Some runtimes format midnight as 24:00. Treat it as 00:00 for window math.
-  if (hour === 24) hour = 0;
-
-  return {
-    dateKey: `${year}-${month}-${day}`,
-    hour,
-    minute,
-    minuteOfDay: hour * 60 + minute,
-  };
-}
-
-type AutoDeployWindow = {
-  windowId: string;
-  restartLabel: string;
-  minutesUntilRestart: number;
-};
-
-function getActiveAutoDeployWindow(
-  now = new Date(),
-  options: { requireAutoDeployEnabled?: boolean; allowFreezeWindow?: boolean } = {},
-): AutoDeployWindow | null {
-  const requireAutoDeployEnabled = options.requireAutoDeployEnabled ?? true;
-  const allowFreezeWindow = options.allowFreezeWindow ?? false;
-
-  if (requireAutoDeployEnabled && !boolEnv("SHOP_AUTO_DEPLOY_ENABLED", true)) return null;
-
-  const times = parseRestartTimes();
-  if (!times.length) return null;
-
-  const deployBefore = numberEnv("SHOP_DEPLOY_MINUTES_BEFORE_RESET", 15);
-  const deployGraceAfter = numberEnv("SHOP_DEPLOY_GRACE_MINUTES_AFTER_SCHEDULE", 15);
-  const freezeMinutes = numberEnv("SHOP_DEPLOY_FREEZE_MINUTES", 2);
-  const timeZone = String(
-    getManagedServerById(getServerRuntimeContext().serverId)?.runtime.settings?.shopRestartTimezone || "UTC"
-  ).trim() || "UTC";
-  const local = getLocalDateParts(now, timeZone);
-
-  for (const restart of times) {
-    let diff = restart.minutes - local.minuteOfDay;
-
-    // If the restart is just after midnight and now is late in the previous day,
-    // treat it as the next occurrence.
-    if (diff < -deployGraceAfter) diff += 24 * 60;
-
-    const inDeployWindow = diff <= deployBefore && diff >= -deployGraceAfter;
-    const inFreezeWindow = diff <= freezeMinutes && diff >= -deployGraceAfter;
-
-    if (inDeployWindow && (allowFreezeWindow || !inFreezeWindow)) {
-      const windowDateKey = diff < 0 ? `${local.dateKey}` : local.dateKey;
-      return {
-        windowId: `${windowDateKey}_${restart.label}`,
-        restartLabel: restart.label,
-        minutesUntilRestart: diff,
-      };
-    }
-  }
-
-  return null;
-}
-
-export async function autoDeployPendingShopOrdersIfNeeded(state: AppState) {
-  ensureShopState(state);
-
-  if (!systems.shop) {
-    return null;
-  }
-
-  if (!systems.nitrado) {
-    return null;
-  }
-
-  const pendingOrders = getPendingShopOrders(state);
-  if (!pendingOrders.length) return null;
-
-  // Never inject a new batch while a previous one is waiting for restart/clear.
-  if (getIncludedShopOrders(state).length) {
-    return null;
-  }
-
-  if (!boolEnv("SHOP_AUTO_DEPLOY_ENABLED", true)) return null;
-
-  const window = getActiveAutoDeployWindow();
-  if (!window) return null;
-
-  const autoDeployState = state.shopAutoDeploy || {};
-  state.shopAutoDeploy = autoDeployState;
-  autoDeployState.lastCheckedAt = new Date().toISOString();
-
-  if (window && autoDeployState.lastWindowId === window.windowId) {
-    console.log(`🛒 shop auto-deploy já executado para janela ${window.windowId}.`);
-    return null;
-  }
-
-  console.log(
-    `🛒 shop auto-deploy iniciado para restart ${window.restartLabel} (${window.minutesUntilRestart} min). pending=${pendingOrders.length}`,
-  );
-
-  const result = await deployPendingShopOrders(state);
-  if (!result) return null;
-
-  autoDeployState.lastWindowId = window.windowId;
-  autoDeployState.lastDeployAt = new Date().toISOString();
-
-  console.log(
-    `✅ SHOP_BOT auto-deploy completed: deployed=${result.deployed} batch=${result.batchId || "none"} window=${window.windowId}`,
-  );
-
-  return {
-    ...result,
-    windowId: window.windowId,
-    restartLabel: window.restartLabel,
-  };
-}
-
 export function formatShopQueue(state: AppState) {
   const shopOrders = ensureShopState(state).shopOrders;
 
@@ -1291,8 +1031,9 @@ export function formatShopQueue(state: AppState) {
     ? [
         "",
         "**Auto deploy**",
-        `Last window: \`${autoDeploy.lastWindowId || "none"}\``,
+        `Last server status: \`${autoDeploy.lastServerStatus || "unknown"}\``,
         `Last deploy: \`${autoDeploy.lastDeployAt || "no"}\``,
+        `Last action: \`${autoDeploy.lastAction || "none"}\``,
       ]
     : [];
 
