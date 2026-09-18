@@ -7254,7 +7254,7 @@ function renderAdminPanelHtml(token: string) {
         }).filter(Boolean);
         renderShopResetTimes();
         const message = document.getElementById('shopResetMessage');
-        if (message) message.textContent = shopResetTimes.length ? 'Horários salvos neste servidor.' : 'Nenhum horário configurado neste servidor.';
+        if (message) message.textContent = shopResetTimes.length ? 'Horários de reset salvos neste servidor.' : 'Nenhum horário de reset configurado neste servidor.';
       } catch (error) { showToast(error instanceof Error ? error.message : String(error)); }
     }
     async function saveShopResetSettings() {
@@ -7286,8 +7286,8 @@ function renderAdminPanelHtml(token: string) {
         shopResetTimes = normalizedTimes.slice();
         renderShopResetTimes();
         const message = document.getElementById('shopResetMessage');
-        if (message) message.textContent = 'Resets salvos e scheduler atualizado.';
-        showToast('Configurações de reset da Shop salvas.');
+        if (message) message.textContent = 'Resets do servidor salvos e scheduler atualizado.';
+        showToast('Configurações de reset do servidor salvas.');
         if (payload.server && Array.isArray(state.managedServers)) {
           state.managedServers = state.managedServers.map(function(server) { return server.id === payload.server.id ? payload.server : server; });
         }
