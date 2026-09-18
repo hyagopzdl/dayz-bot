@@ -7242,8 +7242,8 @@ function renderAdminPanelHtml(token: string) {
         const payload = await response.json();
         const settings = payload.settings || {};
         const timezone = document.getElementById('shopResetTimezone');
-        if (timezone) timezone.value = settings.shopRestartTimezone || 'America/Sao_Paulo';
-        shopResetTimes = String(settings.shopRestartTimes || '').split(',').map(function(value) {
+        if (timezone) timezone.value = settings.serverResetTimezone || settings.shopRestartTimezone || 'America/Sao_Paulo';
+        shopResetTimes = String(settings.serverResetTimes || settings.shopRestartTimes || '').split(',').map(function(value) {
           const match = String(value || '').trim().match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
           if (!match) return '';
           const hour = Number(match[1]);
@@ -7280,7 +7280,7 @@ function renderAdminPanelHtml(token: string) {
 
       const button = document.getElementById('shopResetSave'); if (button) button.disabled = true;
       try {
-        const response = await apiFetch('/admin-panel/api/shop-reset-settings', { method: 'PATCH', body: JSON.stringify({ shopRestartTimes: normalizedTimes.join(','), shopRestartTimezone: timezone }) });
+        const response = await apiFetch('/admin-panel/api/shop-reset-settings', { method: 'PATCH', body: JSON.stringify({ serverResetTimes: normalizedTimes.join(','), serverResetTimezone: timezone }) });
         if (!response.ok) { showToast(await response.text()); return; }
         const payload = await response.json();
         shopResetTimes = normalizedTimes.slice();
