@@ -5061,11 +5061,10 @@ function renderAdminPanelHtml(token: string) {
                 <div id="neonPersistenceMetrics" class="settings-list"><div class="skeleton"></div></div>
               <div class="card">
                 <div class="section-title">
-                  <div><h2>Resets da Shop</h2><div class="member-meta">Defina, por servidor, os horários em que o Shop prepara o deploy e executa o restart automático. O timezone também é específico do servidor.</div></div>
+                  <div><h2>Resets</h2><div class="member-meta">Defina os horários em que o Shop prepara o deploy e executa o restart automático deste servidor.</div></div>
                   <span class="chip">server scoped</span>
                 </div>
                 <div class="form-grid" style="margin-top:14px">
-                  <label>Servidor<select id="shopResetServer"></select></label>
                   <label>Timezone<select id="shopResetTimezone"><option value="America/Sao_Paulo">America/Sao_Paulo (Brasília)</option><option value="UTC">UTC</option><option value="America/New_York">America/New_York</option><option value="America/Los_Angeles">America/Los_Angeles</option><option value="Europe/Lisbon">Europe/Lisbon</option></select></label>
                   <div class="full">
                     <label>Horários de reset</label>
@@ -7235,25 +7234,12 @@ function renderAdminPanelHtml(token: string) {
         button.addEventListener('click', function() { shopResetTimes.splice(Number(button.getAttribute('data-shop-reset-remove')), 1); renderShopResetTimes(); });
       });
     }
-    function renderShopResetServerOptions() {
-      const select = document.getElementById('shopResetServer');
-      if (!select) return;
-      const servers = Array.isArray(state.managedServers) ? state.managedServers.filter(function(server) { return !server.primary; }) : [];
-      select.innerHTML = servers.map(function(server) { return '<option value="' + escapeHtml(server.id) + '">' + escapeHtml(server.name || server.id) + '</option>'; }).join('');
-      if (state.selectedManagedServerId && servers.some(function(server) { return server.id === state.selectedManagedServerId; })) select.value = state.selectedManagedServerId;
-      else if (servers.length) { select.value = servers[0].id; state.selectedManagedServerId = servers[0].id; }
-    }
-    async function loadShopResetSettings(serverId) {
-      const select = document.getElementById('shopResetServer');
-      const id = serverId || select?.value || state.selectedManagedServerId;
-      if (!id) { renderShopResetTimes(); return; }
+    async function loadShopResetSettings() {
       try {
-        const response = await apiFetch('/admin-panel/api/servers/' + encodeURIComponent(id) + '/settings');
+        const response = await apiFetch('/admin-panel/api/shop-reset-settings');
         if (!response.ok) { showToast(await response.text()); return; }
         const payload = await response.json();
         const settings = payload.settings || {};
-        if (select) select.value = id;
-        state.selectedManagedServerId = id;
         const timezone = document.getElementById('shopResetTimezone');
         if (timezone) timezone.value = settings.shopRestartTimezone || 'America/Sao_Paulo';
         shopResetTimes = String(settings.shopRestartTimes || '').split(',').map(function(value) { return value.trim(); }).filter(Boolean);
@@ -7263,29 +7249,26 @@ function renderAdminPanelHtml(token: string) {
       } catch (error) { showToast(error instanceof Error ? error.message : String(error)); }
     }
     async function saveShopResetSettings() {
-      const select = document.getElementById('shopResetServer');
-      const id = select?.value || state.selectedManagedServerId;
       const timezone = document.getElementById('shopResetTimezone')?.value || 'America/Sao_Paulo';
-      if (!id) { showToast('Selecione um servidor.'); return; }
       const times = Array.from(document.querySelectorAll('#shopResetTimes input[data-shop-reset-index]')).map(function(input) { return input.value; }).filter(Boolean);
       const unique = Array.from(new Set(times)).sort();
       if (unique.some(function(value) { return !/^([01]\d|2[0-3]):[0-5]\d$/.test(value); })) { showToast('Informe horários válidos.'); return; }
       const button = document.getElementById('shopResetSave'); if (button) button.disabled = true;
       try {
-        const response = await apiFetch('/admin-panel/api/servers/' + encodeURIComponent(id) + '/settings', { method: 'PATCH', body: JSON.stringify({ shopRestartTimes: unique.join(','), shopRestartTimezone: timezone }) });
+        const response = await apiFetch('/admin-panel/api/shop-reset-settings', { method: 'PATCH', body: JSON.stringify({ shopRestartTimes: unique.join(','), shopRestartTimezone: timezone }) });
         if (!response.ok) { showToast(await response.text()); return; }
         const payload = await response.json();
-        state.managedServers = (state.managedServers || []).map(function(server) { return server.id === id ? payload.server : server; });
-        state.selectedManagedServerId = id;
-        shopResetTimes = unique.slice(); renderShopResetTimes();
+        shopResetTimes = unique.slice();
+        renderShopResetTimes();
         const message = document.getElementById('shopResetMessage');
         if (message) message.textContent = unique.length ? 'Resets salvos e scheduler atualizado.' : 'Resets removidos. O reset automático está desativado neste servidor.';
         showToast('Configurações de reset da Shop salvas.');
+        if (payload.server && Array.isArray(state.managedServers)) {
+          state.managedServers = state.managedServers.map(function(server) { return server.id === payload.server.id ? payload.server : server; });
+        }
       } catch (error) { showToast(error instanceof Error ? error.message : String(error)); }
       finally { if (button) button.disabled = false; }
     }
-    const shopResetServerSelect = document.getElementById('shopResetServer');
-    if (shopResetServerSelect) shopResetServerSelect.addEventListener('change', function() { state.selectedManagedServerId = shopResetServerSelect.value; loadShopResetSettings(shopResetServerSelect.value); });
     const shopResetAddButton = document.getElementById('shopResetAddTime');
     if (shopResetAddButton) shopResetAddButton.addEventListener('click', function() { shopResetTimes.push('00:00'); renderShopResetTimes(); });
     const shopResetSaveButton = document.getElementById('shopResetSave');
@@ -8189,7 +8172,7 @@ function renderAdminPanelHtml(token: string) {
       if (view === "map-events") { if (!state.mapEventPresets.length) loadMapEventPresets(); loadScheduledMapEvents(); }
       if (view === "spawn-zones") { if (!state.spawnZones) loadSpawnZones(); else renderSpawnZones(); }
       if (view === "player-map") { if (!state.playerMap) loadPlayerMap(); else renderPlayerMap(); }
-      if (view === "settings") renderLockedContainerCards();
+      if (view === "settings") { renderLockedContainerCards(); loadShopResetSettings(); }
     }
     function openCoinModal(action, memberCardEl) {
       const discordId = memberCardEl.getAttribute("data-discord-id");
@@ -9125,6 +9108,28 @@ router.patch("/api/servers/:serverId", async (req, res) => {
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     res.status(/nao encontrado/i.test(message) ? 404 : 400).send(message);
+  }
+});
+
+router.get("/api/shop-reset-settings", async (req, res) => {
+  if (!requireAdmin(req, res, "view")) return;
+  const serverId = String(req.adminSession?.serverId || getActiveServerId() || "").trim();
+  const server = getManagedServerById(serverId);
+  if (!server) { res.status(403).json({ error: "SERVER_CONTEXT_REQUIRED" }); return; }
+  res.json({ serverId: server.id, serverName: server.name, settings: server.runtime.settings || {} });
+});
+
+router.patch("/api/shop-reset-settings", async (req, res) => {
+  if (!requireAdmin(req, res, "manage")) return;
+  const serverId = String(req.adminSession?.serverId || getActiveServerId() || "").trim();
+  const server = getManagedServerById(serverId);
+  if (!server) { res.status(403).json({ error: "SERVER_CONTEXT_REQUIRED" }); return; }
+  try {
+    const updated = await updateManagedServerScopedSettings(server.id, req.body || {});
+    if (updated) scheduleShopAutomationForServer(updated);
+    res.json({ server: updated, settings: updated?.runtime.settings || {} });
+  } catch (err) {
+    res.status(400).send(err instanceof Error ? err.message : String(err));
   }
 });
 
