@@ -913,21 +913,19 @@ export async function pollShopResetStatusAndAutoClear(
 
   if (!monitor.sawOfflineAt && !monitor.sawOnlineAt) {
     console.log(
-      `🛒 shop auto-clear aguardando reset. status=${normalized} fallbackAt=${monitor.restartFallbackAt || "unknown"}`,
+      `🛒 shop auto-clear aguardando reset. status=${normalized}` ,
     );
     return null;
   }
 
   if (monitor.sawOfflineAt && !monitor.sawOnlineAt) {
     console.log(
-      `🛒 shop auto-clear aguardando servidor voltar online. status=${normalized} fallbackAt=${monitor.restartFallbackAt || "unknown"}`,
+      `🛒 shop auto-clear aguardando servidor voltar online. status=${normalized}` ,
     );
     return null;
   }
 
-  const clearDelayMinutes = monitor.autoConfirmedAt
-    ? 0
-    : getShopClearMinutesAfterReset();
+  const clearDelayMinutes = getShopClearMinutesAfterReset();
   const onlineAtMs = new Date(monitor.sawOnlineAt || nowIso).getTime();
   const elapsedMs = Date.now() - onlineAtMs;
   const requiredMs = clearDelayMinutes * 60 * 1000;
