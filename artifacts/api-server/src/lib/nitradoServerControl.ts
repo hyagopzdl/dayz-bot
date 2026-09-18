@@ -4,6 +4,7 @@ import { getNitradoGameserverStatus } from "./nitradoDownloader";
 const STOP_TIMEOUT_MS = 120_000;
 const START_TIMEOUT_MS = 180_000;
 const POLL_INTERVAL_MS = 5_000;
+const STOP_TO_START_DELAY_MS = 60_000;
 
 function normalizeStatus(status: string | null | undefined) {
   return String(status || "unknown").trim().toLowerCase();
@@ -95,6 +96,12 @@ export async function stopAndStartNitradoServer(serverId: string) {
 
   await postAction(serverId, "stop");
   const stopped = await waitForStatus(serverId, isStopped, STOP_TIMEOUT_MS, "stop");
+
+  // Give Nitrado/DayZ a full minute in the stopped state before starting again.
+  // This creates a deliberate reset gap and reduces the chance of the new
+  // process coming up while the previous server instance is still settling.
+  console.log(`⏸️ NITRADO RESET DELAY [${serverId}] waiting ${STOP_TO_START_DELAY_MS / 1000}s before START`);
+  await new Promise((resolve) => setTimeout(resolve, STOP_TO_START_DELAY_MS));
 
   await postAction(serverId, "start");
   const started = await waitForStatus(serverId, isStarted, START_TIMEOUT_MS, "start");
