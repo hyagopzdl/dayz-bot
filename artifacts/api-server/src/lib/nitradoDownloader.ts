@@ -358,28 +358,28 @@ export async function downloadNitradoTextFile(
 ): Promise<string> {
   const normalized = normalizeNitradoFileServerPath(filePath);
   const { path: directory, file } = splitRemoteFilePath(normalized);
-  const noFtpRoot = getNoFtpRootFromAdmBaseDir(serverId);
-  const ftpRoot = getFtpRootFromAdmBaseDir(serverId);
-  const candidates: string[] = [normalized];
 
-  for (const variant of withDayzMissionFolderVariants(directory)) {
-    candidates.push(`${variant}/${file}`);
-    if (noFtpRoot) candidates.push(`${noFtpRoot}/${variant}/${file}`);
-    if (ftpRoot) candidates.push(`${ftpRoot}/${variant}/${file}`);
-  }
-
-  const errors: string[] = [];
-  for (const candidate of uniqueStrings(candidates)) {
-    try {
-      const content = await downloadText(candidate, serverId);
-      if (content !== null) return content;
-      errors.push(`${candidate}: no download token`);
-    } catch (error) {
-      errors.push(`${candidate}: ${error instanceof Error ? error.message : String(error)}`);
+  // DayZ mission files use the canonical File Server namespace exposed by Nitrado bookmarks.
+  if (/^dayzps_missions\//i.test(directory)) {
+    const bookmarks = await getNitradoFileServerBookmarks(serverId);
+    const missionRoot = bookmarks
+      .map((bookmark) => "/" + normalizeNitradoFileServerPath(String(bookmark || "")))
+      .find((bookmark) => /\/dayzps_missions$/i.test(bookmark));
+    if (!missionRoot) {
+      throw new Error(`Nitrado File Server did not expose a dayzps_missions bookmark for ${serverId}.`);
     }
+    const canonicalPath = `${missionRoot}/${directory.replace(/^dayzps_missions\//i, "")}/${file}`;
+    console.log("📥 NITRADO DAYZ DOWNLOAD PATH RESOLVED FROM BOOKMARK", {
+      serverId, requestedPath: normalized, canonicalPath, source: "nitrado-file-server-bookmark",
+    });
+    const content = await downloadText(canonicalPath, serverId);
+    if (content !== null) return content;
+    throw new Error(`Nitrado returned no download token for canonical DayZ path ${canonicalPath}`);
   }
 
-  throw new Error(`Nitrado text download failed for ${filePath}. Attempts: ${errors.join(" | ")}`);
+  const content = await downloadText(normalized, serverId);
+  if (content !== null) return content;
+  throw new Error(`Nitrado text download returned no token for ${normalized}`);
 }
 
 function saveManifest(files: string[], manifestFile = MANIFEST_FILE) {
