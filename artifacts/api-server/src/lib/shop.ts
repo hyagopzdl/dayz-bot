@@ -312,11 +312,6 @@ async function restoreAndVerifyShopXmlFiles(
   }
 }
 
-function isShopResetFallbackEnabled() {
-  return boolEnv("SHOP_RESET_CONFIRM_FALLBACK_ENABLED", false);
-}
-
-
 function boolEnv(name: string, defaultValue: boolean) {
   const value = process.env[name];
   if (value === undefined || value === null || value === "") return defaultValue;
@@ -361,12 +356,17 @@ function addMinutes(date: Date, minutes: number) {
 }
 
 function getShopResetFallbackMinutes() {
-  // DayZ console/Nitrado may keep returning "started" during restarts.
-  // This timeout is a safety valve so WAITING_RESET never becomes permanent.
-  return Math.max(
-    1,
-    numberEnv("SHOP_RESET_CONFIRM_FALLBACK_MINUTES", 45),
-  );
+  // Legacy fallback retained as a safety ceiling. The normal boot-only fallback
+  // now uses the scheduled restart timestamp plus SHOP_CLEAR_MINUTES_AFTER_RESET.
+  return Math.max(1, numberEnv("SHOP_RESET_CONFIRM_FALLBACK_MINUTES", 45));
+}
+
+function getShopClearMinutesAfterReset() {
+  return Math.max(0, numberEnv("SHOP_CLEAR_MINUTES_AFTER_RESET", 5));
+}
+
+function isBootOnlyResetFallbackEnabled() {
+  return boolEnv("SHOP_RESET_ALLOW_BOOT_ONLY_FALLBACK", true);
 }
 
 function getShopResetExpectedDelayMinutes() {
@@ -806,6 +806,17 @@ export async function deployPendingShopOrders(state: AppState) {
   }
 
   const deployedAt = new Date(now);
+  const deployWindow = getActiveAutoDeployWindow(deployedAt, {
+    requireAutoDeployEnabled: false,
+    allowFreezeWindow: true,
+  });
+  const expectedRestartAt = deployWindow
+    ? addMinutes(deployedAt, Math.max(0, deployWindow.minutesUntilRestart)).toISOString()
+    : addMinutes(deployedAt, getShopResetExpectedDelayMinutes()).toISOString();
+  const restartFallbackAt = addMinutes(
+    new Date(expectedRestartAt),
+    getShopResetClearDelayMinutes(),
+  ).toISOString();
 
   state.shopResetMonitor = {
     batchId,
@@ -815,15 +826,8 @@ export async function deployPendingShopOrders(state: AppState) {
     sawOnlineAt: undefined,
     lastStatus: null,
     lastCheckedAt: now,
-    clearedAt: undefined,
-    expectedRestartAt: addMinutes(
-      deployedAt,
-      getShopResetExpectedDelayMinutes(),
-    ).toISOString(),
-    restartFallbackAt: addMinutes(
-      deployedAt,
-      getShopResetFallbackMinutes(),
-    ).toISOString(),
+    expectedRestartAt,
+    restartFallbackAt,
     autoConfirmedAt: undefined,
     confirmationReason: undefined,
   };
@@ -1001,22 +1005,21 @@ export async function pollShopResetStatusAndAutoClear(state: AppState) {
   const fallbackExpired = isPastIsoDate(monitor.restartFallbackAt, now);
 
   if (!monitor.sawOnlineAt && fallbackExpired) {
-    if (!isShopResetFallbackEnabled()) {
+    if (!isBootOnlyResetFallbackEnabled()) {
       console.warn(
-        `⚠️ shop reset monitor: fallback expired, but SHOP_RESET_CONFIRM_FALLBACK_ENABLED is false. Not clearing XML automatically. status=${normalized} deployedAt=${monitor.deployedAt || "unknown"} fallbackAt=${monitor.restartFallbackAt || "unknown"}`,
+        `⚠️ shop reset monitor: scheduled restart fallback expired, but SHOP_RESET_ALLOW_BOOT_ONLY_FALLBACK is false. status=${normalized} deployedAt=${monitor.deployedAt || "unknown"} expectedRestartAt=${monitor.expectedRestartAt || "unknown"} fallbackAt=${monitor.restartFallbackAt || "unknown"}`,
       );
-    } else {
+    } else if (isOnlineLikeStatus(normalized) || !monitor.sawOfflineAt) {
       monitor.sawOnlineAt = nowIso;
       monitor.autoConfirmedAt = nowIso;
       monitor.confirmationReason = monitor.sawOfflineAt
-        ? "fallback_timeout_after_offline"
-        : "fallback_timeout_no_status_transition";
+        ? "scheduled_restart_fallback_after_offline"
+        : "scheduled_restart_fallback_boot_only";
 
       console.warn(
-        `⚠️ shop reset monitor: auto-confirming restart by timeout. status=${normalized} deployedAt=${monitor.deployedAt || "unknown"} fallbackAt=${monitor.restartFallbackAt || "unknown"}`,
+        `⚠️ shop reset monitor: auto-confirming scheduled restart after the configured restart time. status=${normalized} expectedRestartAt=${monitor.expectedRestartAt || "unknown"} fallbackAt=${monitor.restartFallbackAt || "unknown"}`,
       );
     }
-  }
 
   if (!monitor.sawOfflineAt && !monitor.sawOnlineAt) {
     console.log(
@@ -1034,7 +1037,7 @@ export async function pollShopResetStatusAndAutoClear(state: AppState) {
 
   const clearDelayMinutes = monitor.autoConfirmedAt
     ? 0
-    : numberEnv("SHOP_CLEAR_MINUTES_AFTER_RESET", 5);
+    : getShopClearMinutesAfterReset();
   const onlineAtMs = new Date(monitor.sawOnlineAt || nowIso).getTime();
   const elapsedMs = Date.now() - onlineAtMs;
   const requiredMs = clearDelayMinutes * 60 * 1000;
