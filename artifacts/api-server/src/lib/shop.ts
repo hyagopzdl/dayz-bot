@@ -22,6 +22,7 @@ import { getOrganizationIntegrationStatus } from "./organizationIntegrations";
 import { discoverNitradoMissionDir, discoverNitradoShopDeliveryRouting } from "./serverIntegrations";
 import { getServerScopedSettings } from "./serverRegistry";
 import { getNextServerReset as getNextConfiguredRestart } from "./serverResetScheduler";
+import { hasShopEffectAreas, injectShopEffectAreas, removeShopEffectAreas } from "./shopEffectArea";
 export { getNextServerReset as getNextConfiguredRestart } from "./serverResetScheduler";
 
 import {
@@ -195,6 +196,7 @@ export function getShopFilePaths(serverId = getServerRuntimeContext().serverId) 
     missionDir,
     eventsPath: `${missionDir}/db/events.xml`,
     eventSpawnsPath: `${missionDir}/cfgeventspawns.xml`,
+    effectAreaPath: `${missionDir}/cfgEffectArea.json`,
   };
 }
 
@@ -704,7 +706,7 @@ function getIncludedBatchOrders(state: AppState) {
   return included.filter((order) => order.restartTarget === batchId);
 }
 
-async function backupShopXmlFiles(_eventsXml: string, _eventSpawnsXml: string) {
+async function backupShopXmlFiles(_eventsXml: string, _eventSpawnsXml: string, _effectAreaJson?: string) {
   // Backup generation was intentionally disabled for DayZ console/Nitrado.
   // The automatic shop cycle rewrites XML often, and keeping a backup on every
   // deploy/clear made the FTP directory too large.
@@ -719,6 +721,12 @@ async function backupShopXmlFiles(_eventsXml: string, _eventSpawnsXml: string) {
       `${getShopFilePaths().eventSpawnsPath}.shop-backup-${stamp}`,
       _eventSpawnsXml,
     );
+    if (_effectAreaJson !== undefined) {
+      await uploadServerTextFile(
+        `${getShopFilePaths().effectAreaPath}.shop-backup-${stamp}`,
+        _effectAreaJson,
+      );
+    }
   }
 }
 
@@ -743,7 +751,7 @@ export async function deployPendingShopOrders(state: AppState) {
   if (getIncludedShopOrders(state).length) {
     return {
       deployed: 0,
-      path: `${getShopFilePaths().eventsPath} + ${getShopFilePaths().eventSpawnsPath}`,
+      path: `${getShopFilePaths().eventsPath} + ${getShopFilePaths().eventSpawnsPath} + ${getShopFilePaths().effectAreaPath}`,
       reason: "A shop batch is already waiting for restart/clear.",    };
   }
 
@@ -752,13 +760,13 @@ export async function deployPendingShopOrders(state: AppState) {
   if (!pendingOrders.length) {
     return {
       deployed: 0,
-      path: `${getShopFilePaths().eventsPath} + ${getShopFilePaths().eventSpawnsPath}`,
+      path: `${getShopFilePaths().eventsPath} + ${getShopFilePaths().eventSpawnsPath} + ${getShopFilePaths().effectAreaPath}`,
       reason: "No pending shop orders to deploy.",
     };
   }
 
   console.log(
-    `🛒 SHOP DEPLOY START pending=${pendingOrders.length} events=${getShopFilePaths().eventsPath} spawns=${getShopFilePaths().eventSpawnsPath}`,
+    `🛒 SHOP DEPLOY START pending=${pendingOrders.length} events=${getShopFilePaths().eventsPath} spawns=${getShopFilePaths().eventSpawnsPath} effects=${getShopFilePaths().effectAreaPath}`,
   );
 
   validateOrdersReadyForXml(pendingOrders);
@@ -766,23 +774,26 @@ export async function deployPendingShopOrders(state: AppState) {
   console.log("🛒 SHOP DEPLOY downloading XML files");
   let eventsXml: string;
   let eventSpawnsXml: string;
+  let effectAreaJson: string;
   try {
-    [eventsXml, eventSpawnsXml] = await Promise.all([
+    [eventsXml, eventSpawnsXml, effectAreaJson] = await Promise.all([
       downloadServerTextFile(getShopFilePaths().eventsPath),
       downloadServerTextFile(getShopFilePaths().eventSpawnsPath),
+      downloadServerTextFile(getShopFilePaths().effectAreaPath),
     ]);
   } catch (firstError) {
     const serverId = getServerRuntimeContext().serverId;
     console.warn(`[shop-delivery][${serverId}] configured XML route failed; rediscovering before one retry: ${firstError instanceof Error ? firstError.message : String(firstError)}`);
     const repaired = await repairShopDeliveryRouting(serverId);
     if (!repaired.ready) throw firstError;
-    [eventsXml, eventSpawnsXml] = await Promise.all([
+    [eventsXml, eventSpawnsXml, effectAreaJson] = await Promise.all([
       downloadServerTextFile(getShopFilePaths().eventsPath),
       downloadServerTextFile(getShopFilePaths().eventSpawnsPath),
+      downloadServerTextFile(getShopFilePaths().effectAreaPath),
     ]);
   }
 
-  await backupShopXmlFiles(eventsXml, eventSpawnsXml);
+  await backupShopXmlFiles(eventsXml, eventSpawnsXml, effectAreaJson);
 
   console.log("🛒 SHOP DEPLOY injecting SHOP_BOT XML blocks");
   const injectedEvents = injectShopEventsXml(eventsXml, pendingOrders);
@@ -790,6 +801,7 @@ export async function deployPendingShopOrders(state: AppState) {
     eventSpawnsXml,
     pendingOrders,
   );
+  const injectedEffectAreaJson = injectShopEffectAreas(effectAreaJson, pendingOrders);
 
   validateInjectedShopXml({
     eventsXml: injectedEvents.xml,
@@ -798,6 +810,9 @@ export async function deployPendingShopOrders(state: AppState) {
     eventNames: injectedEvents.eventNames,
     stage: "generated",
   });
+  if (!hasShopEffectAreas(injectedEffectAreaJson, pendingOrders)) {
+    throw new Error("SHOP DEPLOY FAILED: cfgEffectArea.json is missing one or more generated Shop fire markers.");
+  }
 
   console.log(
     `🛒 SHOP DEPLOY uploading XML files events=${injectedEvents.eventNames.length}`,
@@ -805,11 +820,17 @@ export async function deployPendingShopOrders(state: AppState) {
   try {
     await uploadServerTextFile(getShopFilePaths().eventsPath, injectedEvents.xml);
     await uploadServerTextFile(getShopFilePaths().eventSpawnsPath, injectedEventSpawns);
+    await uploadServerTextFile(getShopFilePaths().effectAreaPath, injectedEffectAreaJson);
 
   } catch (deployError) {
     console.error("❌ SHOP DEPLOY partial failure; attempting XML rollback", deployError);
     try {
       await restoreAndVerifyShopXmlFiles(eventsXml, eventSpawnsXml, "DEPLOY");
+      await uploadServerTextFile(getShopFilePaths().effectAreaPath, effectAreaJson);
+      const restoredEffectAreaJson = await downloadServerTextFile(getShopFilePaths().effectAreaPath);
+      if (restoredEffectAreaJson !== effectAreaJson) {
+        throw new Error("SHOP DEPLOY ROLLBACK FAILED: cfgEffectArea.json could not be restored.");
+      }
       console.log("✅ SHOP DEPLOY rollback verified by restoring and re-downloading both original XML payloads");
     } catch (rollbackError) {
       console.error("❌ SHOP DEPLOY rollback failed or could not be verified", rollbackError);
@@ -848,34 +869,37 @@ export async function deployPendingShopOrders(state: AppState) {
 
   return {
     deployed: pendingOrders.length,
-    path: `${getShopFilePaths().eventsPath} + ${getShopFilePaths().eventSpawnsPath}`,
+    path: `${getShopFilePaths().eventsPath} + ${getShopFilePaths().eventSpawnsPath} + ${getShopFilePaths().effectAreaPath}`,
     batchId,
   };
 }
 
 async function removeShopXmlBlocks() {
-  const [eventsXml, eventSpawnsXml] = await Promise.all([
+  const [eventsXml, eventSpawnsXml, effectAreaJson] = await Promise.all([
     downloadServerTextFile(getShopFilePaths().eventsPath),
     downloadServerTextFile(getShopFilePaths().eventSpawnsPath),
+    downloadServerTextFile(getShopFilePaths().effectAreaPath),
   ]);
 
   const eventsHasBlock = hasShopBotBlock(eventsXml);
   const spawnsHasBlock = hasShopBotBlock(eventSpawnsXml);
+  const effectAreaHasShopMarkers = hasShopEffectAreas(effectAreaJson);
 
   // A restart may already have consumed/removed the Shop block before the bot
   // gets a chance to run its clear step. Clearing must be idempotent: absence
   // of the block is a recoverable state, not a fatal error that can permanently
   // lock the checkout behind included_in_restart orders.
-  if (!eventsHasBlock && !spawnsHasBlock) {
+  if (!eventsHasBlock && !spawnsHasBlock && !effectAreaHasShopMarkers) {
     console.warn("⚠️ SHOP CLEAR: SHOP_BOT block already absent from both XML files; no XML changes required.");
     return {
       eventsHasBlock,
       spawnsHasBlock,
+      effectAreaHasShopMarkers,
       blockWasPresent: false,
     };
   }
 
-  await backupShopXmlFiles(eventsXml, eventSpawnsXml);
+  await backupShopXmlFiles(eventsXml, eventSpawnsXml, effectAreaJson);
 
   try {
     await uploadServerTextFile(getShopFilePaths().eventsPath, removeShopBotBlock(eventsXml));
@@ -883,11 +907,18 @@ async function removeShopXmlBlocks() {
       getShopFilePaths().eventSpawnsPath,
       removeShopBotBlock(eventSpawnsXml),
     );
+    const clearedEffectArea = removeShopEffectAreas(effectAreaJson);
+    await uploadServerTextFile(getShopFilePaths().effectAreaPath, clearedEffectArea.json);
 
   } catch (clearError) {
     console.error("❌ SHOP CLEAR partial failure; attempting XML rollback", clearError);
     try {
       await restoreAndVerifyShopXmlFiles(eventsXml, eventSpawnsXml, "CLEAR");
+      await uploadServerTextFile(getShopFilePaths().effectAreaPath, effectAreaJson);
+      const restoredEffectAreaJson = await downloadServerTextFile(getShopFilePaths().effectAreaPath);
+      if (restoredEffectAreaJson !== effectAreaJson) {
+        throw new Error("SHOP CLEAR ROLLBACK FAILED: cfgEffectArea.json could not be restored.");
+      }
       console.log("✅ SHOP CLEAR rollback verified by restoring and re-downloading both original XML payloads");
     } catch (rollbackError) {
       console.error("❌ SHOP CLEAR rollback failed or could not be verified", rollbackError);
@@ -903,6 +934,7 @@ async function removeShopXmlBlocks() {
   return {
     eventsHasBlock,
     spawnsHasBlock,
+    effectAreaHasShopMarkers,
     blockWasPresent: true,
   };
 }
@@ -919,7 +951,7 @@ export async function clearShopSpawnerAndMarkSpawned(
     return {
       cleared: 0,
       cancelled: 0,
-      path: `${getShopFilePaths().eventsPath} + ${getShopFilePaths().eventSpawnsPath}`,
+      path: `${getShopFilePaths().eventsPath} + ${getShopFilePaths().eventSpawnsPath} + ${getShopFilePaths().effectAreaPath}`,
     };
   }
 
@@ -928,7 +960,7 @@ export async function clearShopSpawnerAndMarkSpawned(
     return {
       cleared: 0,
       cancelled: 0,
-      path: `${getShopFilePaths().eventsPath} + ${getShopFilePaths().eventSpawnsPath}`,
+      path: `${getShopFilePaths().eventsPath} + ${getShopFilePaths().eventSpawnsPath} + ${getShopFilePaths().effectAreaPath}`,
     };
   }
   const cancelPending = options?.cancelPending ?? true;
@@ -941,7 +973,7 @@ export async function clearShopSpawnerAndMarkSpawned(
 
   const now = new Date().toISOString();
 
-  if (clearState.eventsHasBlock && clearState.spawnsHasBlock) {
+  if (clearState.eventsHasBlock && clearState.spawnsHasBlock && (clearState.effectAreaHasShopMarkers || clearState.blockWasPresent === false)) {
     // Both files contained the expected Shop block, so the batch can be
     // considered successfully finalized.
     for (const order of includedOrders) {
@@ -985,7 +1017,7 @@ export async function clearShopSpawnerAndMarkSpawned(
   return {
     cleared: includedOrders.length,
     cancelled: pendingOrders.length,
-    path: `${getShopFilePaths().eventsPath} + ${getShopFilePaths().eventSpawnsPath}`,
+    path: `${getShopFilePaths().eventsPath} + ${getShopFilePaths().eventSpawnsPath} + ${getShopFilePaths().effectAreaPath}`,
   };
 }
 
