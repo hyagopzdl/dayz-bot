@@ -5059,6 +5059,27 @@ function renderAdminPanelHtml(token: string) {
                   <button id="performanceMetricsRefresh" class="ghost-btn" type="button">Refresh metrics</button>
                 </div>
                 <div id="neonPersistenceMetrics" class="settings-list"><div class="skeleton"></div></div>
+              <div class="card">
+                <div class="section-title">
+                  <div><h2>Resets da Shop</h2><div class="member-meta">Defina, por servidor, os horários em que o Shop prepara o deploy e executa o restart automático. O timezone também é específico do servidor.</div></div>
+                  <span class="chip">server scoped</span>
+                </div>
+                <div class="form-grid" style="margin-top:14px">
+                  <label>Servidor<select id="shopResetServer"></select></label>
+                  <label>Timezone<select id="shopResetTimezone"><option value="America/Sao_Paulo">America/Sao_Paulo (Brasília)</option><option value="UTC">UTC</option><option value="America/New_York">America/New_York</option><option value="America/Los_Angeles">America/Los_Angeles</option><option value="Europe/Lisbon">Europe/Lisbon</option></select></label>
+                  <div class="full">
+                    <label>Horários de reset</label>
+                    <div id="shopResetTimes" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px"></div>
+                    <div class="settings-empty-note" style="margin-top:10px">Sem horários configurados, o deploy/reset automático da Shop fica desativado neste servidor.</div>
+                  </div>
+                  <div class="full" style="display:flex;gap:8px;align-items:center">
+                    <button type="button" class="ghost-btn" id="shopResetAddTime">Adicionar horário</button>
+                    <button type="button" class="primary-btn" id="shopResetSave">Salvar resets</button>
+                    <span id="shopResetMessage" class="member-meta"></span>
+                  </div>
+                </div>
+              </div>
+
               </div>
             </div>
 
@@ -7198,6 +7219,78 @@ function renderAdminPanelHtml(token: string) {
       }
 
     }
+    let shopResetTimes = [];
+
+    function renderShopResetTimes() {
+      const container = document.getElementById('shopResetTimes');
+      if (!container) return;
+      if (!shopResetTimes.length) { container.innerHTML = '<span class="member-meta">Nenhum horário configurado.</span>'; return; }
+      container.innerHTML = shopResetTimes.map(function(time, index) {
+        return '<div style="display:flex;gap:6px;align-items:center"><input type="time" value="' + escapeHtml(time) + '" data-shop-reset-index="' + index + '" style="width:125px" /><button type="button" class="ghost-btn" data-shop-reset-remove="' + index + '">Remover</button></div>';
+      }).join('');
+      Array.from(container.querySelectorAll('input[data-shop-reset-index]')).forEach(function(input) {
+        input.addEventListener('change', function() { shopResetTimes[Number(input.getAttribute('data-shop-reset-index'))] = input.value; });
+      });
+      Array.from(container.querySelectorAll('button[data-shop-reset-remove]')).forEach(function(button) {
+        button.addEventListener('click', function() { shopResetTimes.splice(Number(button.getAttribute('data-shop-reset-remove')), 1); renderShopResetTimes(); });
+      });
+    }
+    function renderShopResetServerOptions() {
+      const select = document.getElementById('shopResetServer');
+      if (!select) return;
+      const servers = Array.isArray(state.managedServers) ? state.managedServers.filter(function(server) { return !server.primary; }) : [];
+      select.innerHTML = servers.map(function(server) { return '<option value="' + escapeHtml(server.id) + '">' + escapeHtml(server.name || server.id) + '</option>'; }).join('');
+      if (state.selectedManagedServerId && servers.some(function(server) { return server.id === state.selectedManagedServerId; })) select.value = state.selectedManagedServerId;
+      else if (servers.length) { select.value = servers[0].id; state.selectedManagedServerId = servers[0].id; }
+    }
+    async function loadShopResetSettings(serverId) {
+      const select = document.getElementById('shopResetServer');
+      const id = serverId || select?.value || state.selectedManagedServerId;
+      if (!id) { renderShopResetTimes(); return; }
+      try {
+        const response = await apiFetch('/admin-panel/api/servers/' + encodeURIComponent(id) + '/settings');
+        if (!response.ok) { showToast(await response.text()); return; }
+        const payload = await response.json();
+        const settings = payload.settings || {};
+        if (select) select.value = id;
+        state.selectedManagedServerId = id;
+        const timezone = document.getElementById('shopResetTimezone');
+        if (timezone) timezone.value = settings.shopRestartTimezone || 'America/Sao_Paulo';
+        shopResetTimes = String(settings.shopRestartTimes || '').split(',').map(function(value) { return value.trim(); }).filter(Boolean);
+        renderShopResetTimes();
+        const message = document.getElementById('shopResetMessage');
+        if (message) message.textContent = shopResetTimes.length ? 'Horários salvos neste servidor.' : 'Nenhum horário configurado neste servidor.';
+      } catch (error) { showToast(error instanceof Error ? error.message : String(error)); }
+    }
+    async function saveShopResetSettings() {
+      const select = document.getElementById('shopResetServer');
+      const id = select?.value || state.selectedManagedServerId;
+      const timezone = document.getElementById('shopResetTimezone')?.value || 'America/Sao_Paulo';
+      if (!id) { showToast('Selecione um servidor.'); return; }
+      const times = Array.from(document.querySelectorAll('#shopResetTimes input[data-shop-reset-index]')).map(function(input) { return input.value; }).filter(Boolean);
+      const unique = Array.from(new Set(times)).sort();
+      if (unique.some(function(value) { return !/^([01]\d|2[0-3]):[0-5]\d$/.test(value); })) { showToast('Informe horários válidos.'); return; }
+      const button = document.getElementById('shopResetSave'); if (button) button.disabled = true;
+      try {
+        const response = await apiFetch('/admin-panel/api/servers/' + encodeURIComponent(id) + '/settings', { method: 'PATCH', body: JSON.stringify({ shopRestartTimes: unique.join(','), shopRestartTimezone: timezone }) });
+        if (!response.ok) { showToast(await response.text()); return; }
+        const payload = await response.json();
+        state.managedServers = (state.managedServers || []).map(function(server) { return server.id === id ? payload.server : server; });
+        state.selectedManagedServerId = id;
+        shopResetTimes = unique.slice(); renderShopResetTimes();
+        const message = document.getElementById('shopResetMessage');
+        if (message) message.textContent = unique.length ? 'Resets salvos e scheduler atualizado.' : 'Resets removidos. O reset automático está desativado neste servidor.';
+        showToast('Configurações de reset da Shop salvas.');
+      } catch (error) { showToast(error instanceof Error ? error.message : String(error)); }
+      finally { if (button) button.disabled = false; }
+    }
+    const shopResetServerSelect = document.getElementById('shopResetServer');
+    if (shopResetServerSelect) shopResetServerSelect.addEventListener('change', function() { state.selectedManagedServerId = shopResetServerSelect.value; loadShopResetSettings(shopResetServerSelect.value); });
+    const shopResetAddButton = document.getElementById('shopResetAddTime');
+    if (shopResetAddButton) shopResetAddButton.addEventListener('click', function() { shopResetTimes.push('00:00'); renderShopResetTimes(); });
+    const shopResetSaveButton = document.getElementById('shopResetSave');
+    if (shopResetSaveButton) shopResetSaveButton.addEventListener('click', saveShopResetSettings);
+
     async function loadServiceSettings() {
       if (state.serviceSettingsLoading) return;
       state.serviceSettingsLoading = true;
@@ -7651,6 +7744,8 @@ function renderAdminPanelHtml(token: string) {
         state.serverFoundation = payload.foundation || state.serverFoundation;
         state.runtimeCoordinator = payload.runtimeCoordinator || state.runtimeCoordinator;
         renderManagedServers();
+        renderShopResetServerOptions();
+        loadShopResetSettings(state.selectedManagedServerId || undefined);
         const selected = (state.managedServers || []).find((server) => server.id === state.selectedManagedServerId && !server.primary);
         if (selected) renderManagedServerSetup(selected);
       } finally { state.managedServersLoading = false; }
