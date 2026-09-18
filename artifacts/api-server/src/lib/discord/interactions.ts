@@ -19,6 +19,7 @@ import { handleEconomyAdminAutocomplete, handleEconomyAdminCommand } from "./mod
 import { DISABLED_COMMAND_MESSAGE, isDiscordCommandEnabled } from "./commandSettings";
 import { isShopServiceEnabled, SHOP_COMMAND_NAMES } from "../serviceSettings";
 import { ensureShopCatalogLoaded } from "../shopCatalog";
+import { runInServerDataContext } from "../serverRuntime";
 import {
   KILLFEED_MESSAGE_PREFIX,
   KILLSTREAK_MESSAGE_PREFIX,
@@ -78,6 +79,7 @@ export function registerInteractionHandlers(ctx: RegisterInteractionHandlersCont
   } = ctx;
 
   client.on("interactionCreate", async (interaction) => {
+    await runInServerDataContext(serverId, async () => {
   try {
     // The legacy/full handler is bound to exactly one managed guild. Never let
     // an interaction from another tenant/server fall through to the PZ state.
@@ -608,6 +610,7 @@ export function registerInteractionHandlers(ctx: RegisterInteractionHandlersCont
       "❌ Command failed. Check Render logs for details.",
     );
   }
-});
+    });
+  });
 
 }
