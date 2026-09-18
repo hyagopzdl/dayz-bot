@@ -38,6 +38,7 @@ async function postAction(
   );
 
   const url = `https://api.nitrado.net/services/${config.serviceId}/gameservers/${endpoint}?${params.toString()}`;
+  console.log(`🎮 NITRADO ACTION REQUEST [${serverId}] action=${action.toUpperCase()} service=${config.serviceId} endpoint=${endpoint} url=${url}`);
   const response = await fetch(url, {
     method: "POST",
     headers: {
@@ -47,6 +48,7 @@ async function postAction(
   });
 
   const body = await response.text();
+  console.log(`🎮 NITRADO ACTION RESPONSE [${serverId}] action=${action.toUpperCase()} http=${response.status} ok=${response.ok} body=${body.slice(0, 320)}`);
   if (!response.ok) {
     throw new Error(`Nitrado ${action.toUpperCase()} HTTP ${response.status}: ${body.slice(0, 320)}`);
   }
