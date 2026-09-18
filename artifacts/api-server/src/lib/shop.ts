@@ -874,7 +874,7 @@ export async function deployPendingShopOrders(state: AppState) {
   };
 }
 
-async function removeShopXmlBlocks() {
+async function removeShopXmlBlocks(expectedOrders: ShopOrder[] = []) {
   const [eventsXml, eventSpawnsXml, effectAreaJson] = await Promise.all([
     downloadServerTextFile(getShopFilePaths().eventsPath),
     downloadServerTextFile(getShopFilePaths().eventSpawnsPath),
@@ -884,6 +884,9 @@ async function removeShopXmlBlocks() {
   const eventsHasBlock = hasShopBotBlock(eventsXml);
   const spawnsHasBlock = hasShopBotBlock(eventSpawnsXml);
   const effectAreaHasShopMarkers = hasShopEffectAreas(effectAreaJson);
+  const effectAreaHasExpectedMarkers = expectedOrders.length
+    ? hasShopEffectAreas(effectAreaJson, expectedOrders)
+    : effectAreaHasShopMarkers;
 
   // A restart may already have consumed/removed the Shop block before the bot
   // gets a chance to run its clear step. Clearing must be idempotent: absence
@@ -895,6 +898,7 @@ async function removeShopXmlBlocks() {
       eventsHasBlock,
       spawnsHasBlock,
       effectAreaHasShopMarkers,
+      effectAreaHasExpectedMarkers,
       blockWasPresent: false,
     };
   }
@@ -935,6 +939,7 @@ async function removeShopXmlBlocks() {
     eventsHasBlock,
     spawnsHasBlock,
     effectAreaHasShopMarkers,
+    effectAreaHasExpectedMarkers,
     blockWasPresent: true,
   };
 }
@@ -969,11 +974,11 @@ export async function clearShopSpawnerAndMarkSpawned(
     : getIncludedShopOrders(state);
   const pendingOrders = cancelPending ? getPendingShopOrders(state) : [];
 
-  const clearState = await removeShopXmlBlocks();
+  const clearState = await removeShopXmlBlocks(includedOrders);
 
   const now = new Date().toISOString();
 
-  if (clearState.eventsHasBlock && clearState.spawnsHasBlock && (clearState.effectAreaHasShopMarkers || clearState.blockWasPresent === false)) {
+  if (clearState.eventsHasBlock && clearState.spawnsHasBlock && (clearState.effectAreaHasExpectedMarkers || !clearState.effectAreaHasShopMarkers)) {
     // Both files contained the expected Shop block, so the batch can be
     // considered successfully finalized.
     for (const order of includedOrders) {
