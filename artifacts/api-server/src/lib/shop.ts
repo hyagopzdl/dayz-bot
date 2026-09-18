@@ -1137,14 +1137,56 @@ export async function pollShopResetStatusAndAutoClear(
   const includedOrders = getIncludedShopOrders(state);
   if (!includedOrders.length) return null;
 
-  const monitor =
-    state.shopResetMonitor ||
-    ({
+  let monitor = state.shopResetMonitor || null;
+
+  // The Shop monitor is operational state, not the source of truth for orders.
+  // A process restart/deploy can legitimately lose the in-memory monitor while
+  // server_shop_orders still contains included orders. Reconstruct the monitor
+  // from the persisted order timestamp and the canonical server reset state so a
+  // successful reset cannot leave a batch stuck in included_in_restart forever.
+  if (!monitor) {
+    const serverReset = state.serverReset;
+    const recentReset = serverReset?.lastCompletedAt && serverReset?.lastCompletedAtRuntime
+      ? {
+          targetAt: Date.parse(serverReset.lastCompletedAt),
+          completedAt: Date.parse(serverReset.lastCompletedAtRuntime),
+        }
+      : null;
+    const oldestIncludedAt = includedOrders
+      .map((order) => Date.parse(String(order.includedAt || order.createdAt || "")))
+      .filter(Number.isFinite)
+      .sort((a, b) => a - b)[0];
+
+    if (recentReset && Number.isFinite(oldestIncludedAt) && recentReset.targetAt >= oldestIncludedAt) {
+      const completedIso = new Date(recentReset.completedAt).toISOString();
+      const targetIso = new Date(recentReset.targetAt).toISOString();
+      monitor = {
+        batchId: includedOrders[0]?.restartTarget,
+        deployedAt: includedOrders[0]?.includedAt,
+        lastStatus: "started",
+        lastCheckedAt: completedIso,
+        sawOfflineAt: serverReset?.lastAttemptedAtRuntime,
+        sawOnlineAt: completedIso,
+        autoRestartManaged: true,
+        targetRestartAt: targetIso,
+        restartPhase: "completed",
+        restartCompletedAt: completedIso,
+        confirmationReason: "reconstructed_from_persisted_server_reset",
+      } as NonNullable<AppState["shopResetMonitor"]>;
+      console.log(
+        `♻️ SHOP reset monitor reconstructed from persisted server reset: batch=\${monitor.batchId || "unknown"} target=\${targetIso} completed=\${completedIso}`,
+      );
+    }
+  }
+
+  if (!monitor) {
+    monitor = {
       batchId: includedOrders[0]?.restartTarget,
       deployedAt: includedOrders[0]?.includedAt,
       lastStatus: null,
       lastCheckedAt: new Date().toISOString(),
-    } as NonNullable<AppState["shopResetMonitor"]>);
+    } as NonNullable<AppState["shopResetMonitor"]>;
+  }
 
   state.shopResetMonitor = monitor;
   ensureResetMonitorState(monitor, includedOrders);
