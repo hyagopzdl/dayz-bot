@@ -890,6 +890,15 @@ export type ShopResetMonitor = {
   restartFallbackAt?: string;
   autoConfirmedAt?: string;
   confirmationReason?: string;
+  /** True only when the DayZ Bot itself scheduled the restart for this batch. */
+  autoRestartManaged?: boolean;
+  /** Exact scheduled reset instant used to deploy the XML and trigger STOP/START. */
+  targetRestartAt?: string;
+  /** stop -> stopped -> start -> started lifecycle for bot-managed resets. */
+  restartPhase?: "scheduled" | "stopping" | "stopped" | "starting" | "completed" | "failed";
+  restartRequestedAt?: string;
+  restartCompletedAt?: string;
+  restartError?: string;
 };
 
 export type ShopAutoDeployState = {
