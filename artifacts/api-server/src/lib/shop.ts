@@ -1,5 +1,5 @@
 import type { AppState, ShopOrder, ShopSavedLocation } from "./state";
-import { ensureManagedServerShopDeliveryConfiguration, ensureManagedServerShopDeliveryRoutingConfiguration, getStateAsync, saveStateAsync } from "./state";
+import { ensureManagedServerShopDeliveryConfiguration, ensureManagedServerShopDeliveryRoutingConfiguration } from "./state";
 import { getNitradoGameserverStatus } from "./nitradoDownloader";
 import { downloadServerTextFile, uploadServerTextFile } from "./serverFileTransport";
 import {
@@ -10,7 +10,7 @@ import {
   SHOP_BOT_START,
 } from "./shopXml";
 import { systems } from "./systems";
-import { getServerRuntimeContext, runInServerRuntimeContext } from "./serverRuntime";
+import { getServerRuntimeContext } from "./serverRuntime";
 import {
   getManagedServerById,
   hasManagedServerRuntimeActivation,
@@ -434,52 +434,6 @@ function isOnlineLikeStatus(status: string | null | undefined) {
     normalized.includes("online") ||
     normalized.includes("running")
   );
-}
-
-const shopAutoClearTimers = new Map<string, NodeJS.Timeout>();
-
-function getShopClearMinutesAfterReset() {
-  return Math.max(0, numberEnv("SHOP_CLEAR_MINUTES_AFTER_RESET", 5));
-}
-
-function scheduleShopAutoClear(state: AppState, monitor: NonNullable<AppState["shopResetMonitor"]>) {
-  const serverId = getServerRuntimeContext().serverId;
-  const onlineAt = Date.parse(String(monitor.sawOnlineAt || ""));
-  if (!Number.isFinite(onlineAt)) return;
-
-  const requiredMs = getShopClearMinutesAfterReset() * 60_000;
-  const remainingMs = Math.max(0, onlineAt + requiredMs - Date.now());
-  const existing = shopAutoClearTimers.get(serverId);
-  if (existing) clearTimeout(existing);
-
-  if (remainingMs <= 0) return;
-
-  console.log(
-    `🛒 SHOP auto-clear timer scheduled [${serverId}] in ${Math.ceil(remainingMs / 1000)}s after online confirmation.`,
-  );
-
-  const timer = setTimeout(() => {
-    shopAutoClearTimers.delete(serverId);
-    void runInServerRuntimeContext(serverId, async () => {
-      try {
-        const freshState = await getStateAsync();
-        const beforeKey = getShopResetMonitorPersistenceKey(freshState);
-        const result = await pollShopResetStatusAndAutoClear(freshState);
-        const afterKey = getShopResetMonitorPersistenceKey(freshState);
-        if (beforeKey !== afterKey) {
-          await saveStateAsync(freshState, `runtime:shop-auto-clear:${serverId}`);
-        }
-        if (result) {
-          console.log(`🛒 SHOP auto-clear timer finished [${serverId}]`, result);
-        }
-      } catch (error) {
-        console.error(`❌ SHOP auto-clear timer failed [${serverId}]:`, error);
-      }
-    });
-  }, remainingMs);
-
-  timer.unref?.();
-  shopAutoClearTimers.set(serverId, timer);
 }
 
 function getMonitorDeployDate(monitor: NonNullable<AppState["shopResetMonitor"]>, includedOrders: ShopOrder[]) {
@@ -1261,7 +1215,6 @@ export async function pollShopResetStatusAndAutoClear(
   if (monitor.sawOfflineAt && !monitor.sawOnlineAt && isOnlineLikeStatus(normalized)) {
     monitor.sawOnlineAt = nowIso;
     monitor.confirmationReason = `nitrado_status_online:${normalized}`;
-    scheduleShopAutoClear(state, monitor);
     console.log(`🛒 shop reset monitor: server came back online (${normalized})`);
     return null;
   }
@@ -1287,7 +1240,6 @@ export async function pollShopResetStatusAndAutoClear(
 
   if (elapsedMs < requiredMs) {
     const remainingSeconds = Math.ceil((requiredMs - elapsedMs) / 1000);
-    scheduleShopAutoClear(state, monitor);
     console.log(
       `🛒 shop auto-clear aguardando janela segura pós-online (${remainingSeconds}s restantes).`,
     );
