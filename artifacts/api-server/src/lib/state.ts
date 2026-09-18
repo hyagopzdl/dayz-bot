@@ -917,6 +917,17 @@ export type ShopAutoDeployState = {
   lastAction?: string;
 };
 
+export type ServerResetState = {
+  lastAttemptedAt?: string;
+  lastAttemptedLabel?: string;
+  lastAttemptedAtRuntime?: string;
+  lastCompletedAt?: string;
+  lastCompletedAtRuntime?: string;
+  lastStatus?: string;
+  lastAction?: string;
+  lastError?: string;
+};
+
 export type ShopSavedLocation = {
   id: string;
   discordUserId: string;
@@ -1104,6 +1115,8 @@ export type AppState = {
   dayzItems?: DayzItemDefinition[];
   shopResetMonitor?: ShopResetMonitor | null;
   shopAutoDeploy?: ShopAutoDeployState | null;
+  /** Persistent lifecycle state for the server's own recurring reset routine. */
+  serverReset?: ServerResetState | null;
 
   files: Record<string, FileCursor>;
   recentEventIds: string[];
@@ -1195,6 +1208,7 @@ function defaultState(): AppState {
     dayzItems: undefined,
     shopResetMonitor: null,
     shopAutoDeploy: null,
+    serverReset: null,
     files: {},
     recentEventIds: [],
     killFeedEvents: [],
