@@ -1801,6 +1801,54 @@ export async function updateManagedServerDraft(serverId: string, input: ManagedS
   return servers.find((server) => server.id === id) || next;
 }
 
+export async function updateManagedServerShopResetSettings(
+  serverIdInput: unknown,
+  settingsInput: Partial<Record<keyof ServerScopedSettings, unknown>>,
+) {
+  assertNoServerSecrets(settingsInput);
+  await ensureManagedServerRegistryReady();
+
+  const id = buildManagedServerId(serverIdInput);
+  if (!id || id === getPrimaryServerId()) throw new Error("Servidor invalido para atualizar configuracoes da Shop.");
+
+  const currentServers = await reloadManagedServerRegistryFromDb();
+  const current = currentServers.find((server) => server.id === id);
+  if (!current) throw new Error(`Servidor ${id} nao encontrado.`);
+
+  const nextSettings = normalizeServerScopedSettingsDraft(
+    settingsInput,
+    current.runtime.settings || {},
+  );
+
+  const nextRuntime = {
+    ...current.runtime,
+    settings: nextSettings,
+  };
+
+  await getSql()`
+    UPDATE managed_servers
+    SET runtime_config = ${JSON.stringify(nextRuntime)}::jsonb,
+        updated_at = NOW()
+    WHERE id = ${id}
+  `;
+
+  const servers = await reloadManagedServerRegistryFromDb();
+  const updated = servers.find((server) => server.id === id) || {
+    ...current,
+    runtime: nextRuntime,
+  };
+
+  recordNetworkTransfer({
+    service: "neon-server-registry",
+    operation: "update_shop_reset_settings",
+    direction: "outbound",
+    bytes: Buffer.byteLength(JSON.stringify(nextSettings), "utf8"),
+    ok: true,
+  });
+
+  return updated;
+}
+
 export async function bindManagedServerDiscordGuild(serverIdInput: unknown, guildIdInput: unknown) {
   await ensureManagedServerRegistryReady();
 
