@@ -408,6 +408,10 @@ function numberEnv(name: string, defaultValue: number) {
   return Number.isFinite(value) ? value : defaultValue;
 }
 
+function getShopClearMinutesAfterReset() {
+  return Math.max(0, numberEnv("SHOP_CLEAR_MINUTES_AFTER_RESET", 5));
+}
+
 function normalizeServerStatus(status: string | null | undefined) {
   return String(status || "unknown").trim().toLowerCase();
 }
