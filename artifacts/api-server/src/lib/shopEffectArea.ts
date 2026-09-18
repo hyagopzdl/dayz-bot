@@ -1,7 +1,7 @@
 import type { ShopOrder } from "./state";
 
 export const SHOP_EFFECT_AREA_PREFIX = "SHOP_BOT_";
-export const SHOP_EFFECT_AREA_PARTICLE = "graphics/particles/fire_medium_camp_01";
+export const SHOP_EFFECT_AREA_PARTICLE = "graphics/particles/fire_bonfire";
 
 type EffectArea = {
   AreaName?: string;
