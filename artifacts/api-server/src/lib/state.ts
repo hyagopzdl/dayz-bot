@@ -592,6 +592,12 @@ function mapManagedServerRow(row: any): ManagedServerDescriptor {
         ...(String(runtimeConfig?.settings?.shopDeliveryConfiguredAt || "").trim()
           ? { shopDeliveryConfiguredAt: String(runtimeConfig.settings.shopDeliveryConfiguredAt).trim() }
           : {}),
+        ...(String(row.server_reset_times || "").trim()
+          ? { serverResetTimes: String(row.server_reset_times).trim(), shopRestartTimes: String(row.server_reset_times).trim() }
+          : {}),
+        ...(String(row.server_reset_timezone || "").trim()
+          ? { serverResetTimezone: String(row.server_reset_timezone).trim(), shopRestartTimezone: String(row.server_reset_timezone).trim() }
+          : {}),
       }),
       discord: { ...(runtimeConfig?.discord || {}) },
     },
@@ -609,7 +615,7 @@ async function reloadManagedServerRegistryFromDb() {
   if (!sql) return [] as ManagedServerDescriptor[];
   const rows = await getSql()`
     SELECT id, name, organization_id, enabled, primary_server, runtime_enabled, onboarding_status,
-           mode, nitrado_service_id, discord_guild_id, runtime_config
+           mode, nitrado_service_id, discord_guild_id, server_reset_times, server_reset_timezone, runtime_config
     FROM managed_servers
     ORDER BY created_at ASC, id ASC
   `;
@@ -705,8 +711,10 @@ export async function ensureManagedServerRegistryMetadata() {
       await reloadOrganizationRegistryFromDb();
       setOrganizationRegistryPersistenceStatus({ enabled: true, organizationsTableReady: true, membershipsTableReady: true, defaultOrganizationSeeded: true, initialized: true });
 
-      await getSql()`CREATE TABLE IF NOT EXISTS managed_servers (id TEXT PRIMARY KEY, name TEXT NOT NULL, organization_id TEXT NOT NULL, enabled BOOLEAN NOT NULL DEFAULT TRUE, primary_server BOOLEAN NOT NULL DEFAULT FALSE, runtime_enabled BOOLEAN NOT NULL DEFAULT FALSE, onboarding_status TEXT NOT NULL DEFAULT 'draft', mode TEXT NOT NULL DEFAULT 'multi-server-native', nitrado_service_id TEXT, discord_guild_id TEXT, runtime_config JSONB, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`;
+      await getSql()`CREATE TABLE IF NOT EXISTS managed_servers (id TEXT PRIMARY KEY, name TEXT NOT NULL, organization_id TEXT NOT NULL, enabled BOOLEAN NOT NULL DEFAULT TRUE, primary_server BOOLEAN NOT NULL DEFAULT FALSE, runtime_enabled BOOLEAN NOT NULL DEFAULT FALSE, onboarding_status TEXT NOT NULL DEFAULT 'draft', mode TEXT NOT NULL DEFAULT 'multi-server-native', nitrado_service_id TEXT, discord_guild_id TEXT, server_reset_times TEXT, server_reset_timezone TEXT, runtime_config JSONB, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW() )`;
       await getSql()`ALTER TABLE managed_servers ADD COLUMN IF NOT EXISTS runtime_config JSONB`;
+      await getSql()`ALTER TABLE managed_servers ADD COLUMN IF NOT EXISTS server_reset_times TEXT`;
+      await getSql()`ALTER TABLE managed_servers ADD COLUMN IF NOT EXISTS server_reset_timezone TEXT`;
       await getSql()`ALTER TABLE managed_servers ADD COLUMN IF NOT EXISTS runtime_enabled BOOLEAN NOT NULL DEFAULT FALSE`;
       await getSql()`ALTER TABLE managed_servers ADD COLUMN IF NOT EXISTS onboarding_status TEXT NOT NULL DEFAULT 'draft'`;
       await getSql()`ALTER TABLE managed_servers ADD COLUMN IF NOT EXISTS organization_id TEXT`;
@@ -1727,10 +1735,11 @@ export async function createManagedServerDraft(input: ManagedServerDraftInput) {
   const inserted = await getSql()`
     INSERT INTO managed_servers (
       id, name, organization_id, enabled, primary_server, runtime_enabled, onboarding_status,
-      mode, nitrado_service_id, discord_guild_id, runtime_config, created_at, updated_at
+      mode, nitrado_service_id, discord_guild_id, server_reset_times, server_reset_timezone, runtime_config, created_at, updated_at
     ) VALUES (
       ${descriptor.id}, ${descriptor.name}, ${descriptor.organizationId}, TRUE, FALSE, FALSE, ${descriptor.onboardingStatus},
       ${descriptor.mode}, ${descriptor.integrations.nitradoServiceId || null}, ${descriptor.integrations.discordGuildId || null},
+      ${descriptor.runtime.settings?.serverResetTimes || descriptor.runtime.settings?.shopRestartTimes || null}, ${descriptor.runtime.settings?.serverResetTimezone || descriptor.runtime.settings?.shopRestartTimezone || null},
       ${JSON.stringify(descriptor.runtime)}::jsonb, NOW(), NOW()
     )
     ON CONFLICT (id) DO NOTHING
@@ -1815,6 +1824,8 @@ export async function updateManagedServerDraft(serverId: string, input: ManagedS
         mode = ${next.mode},
         nitrado_service_id = ${next.integrations.nitradoServiceId || null},
         discord_guild_id = ${next.integrations.discordGuildId || null},
+        server_reset_times = ${next.runtime.settings?.serverResetTimes || next.runtime.settings?.shopRestartTimes || null},
+        server_reset_timezone = ${next.runtime.settings?.serverResetTimezone || next.runtime.settings?.shopRestartTimezone || null},
         runtime_config = ${JSON.stringify(next.runtime)}::jsonb,
         updated_at = NOW()
     WHERE id = ${id} AND id <> ${getPrimaryServerId()}
@@ -1857,7 +1868,9 @@ export async function updateManagedServerShopResetSettings(
 
   await getSql()`
     UPDATE managed_servers
-    SET runtime_config = ${JSON.stringify(nextRuntime)}::jsonb,
+    SET server_reset_times = ${nextSettings.serverResetTimes || nextSettings.shopRestartTimes || null},
+        server_reset_timezone = ${nextSettings.serverResetTimezone || nextSettings.shopRestartTimezone || null},
+        runtime_config = ${JSON.stringify(nextRuntime)}::jsonb,
         updated_at = NOW()
     WHERE id = ${id}
   `;
@@ -1983,7 +1996,9 @@ export async function updateManagedServerScopedSettings(serverIdInput: unknown, 
   const runtime = { ...current.runtime, settings };
   await getSql()`
     UPDATE managed_servers
-    SET runtime_config = ${JSON.stringify(runtime)}::jsonb, updated_at = NOW()
+    SET server_reset_times = ${settings.serverResetTimes || settings.shopRestartTimes || null},
+        server_reset_timezone = ${settings.serverResetTimezone || settings.shopRestartTimezone || null},
+        runtime_config = ${JSON.stringify(runtime)}::jsonb, updated_at = NOW()
     WHERE id = ${id}
   `;
   const servers = await reloadManagedServerRegistryFromDb();
