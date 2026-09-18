@@ -108,6 +108,15 @@ function getCachedState(): AppState | null {
   return cachedStates.get(getActiveServerId()) || null;
 }
 
+/**
+ * Returns only the in-memory state for a server.
+ * Runtime schedulers must use this instead of getStateAsync() so a frequent
+ * Nitrado watcher never turns into a Neon read loop.
+ */
+export function getCachedStateForServer(serverId: string): AppState | null {
+  return cachedStates.get(String(serverId || "").trim()) || null;
+}
+
 function setCachedState(state: AppState) {
   cachedStates.set(getActiveServerId(), state);
 }
