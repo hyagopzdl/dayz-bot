@@ -247,8 +247,7 @@ async function repairLegacyShopEventSpawnsIfNeeded(state: AppState) {
   try {
     legacyXml = await downloadServerTextFile(legacyPath);
   } catch {
-    // The legacy path may not exist. That is fine.
-  }
+    // The legacy path may not exist. That is fine.  }
 
   const expectedNames = buildExpectedShopEventNamesForOrders(includedOrders);
   const rootHasShopBlock = hasShopBotBlock(rootXml);
@@ -499,7 +498,6 @@ export function ensureShopState(state: AppState) {
 }
 
 
-
 export function getSavedShopLocations(state: AppState, discordUserId: string) {
   ensureShopState(state);
   return (state.shopSavedLocations || [])
@@ -747,8 +745,7 @@ export async function deployPendingShopOrders(state: AppState) {
     return {
       deployed: 0,
       path: `${getShopFilePaths().eventsPath} + ${getShopFilePaths().eventSpawnsPath}`,
-      reason: "A shop batch is already waiting for restart/clear.",
-    };
+      reason: "A shop batch is already waiting for restart/clear.",    };
   }
 
   const pendingOrders = getPendingShopOrders(state);
@@ -857,7 +854,7 @@ export async function deployPendingShopOrders(state: AppState) {
   };
 }
 
-async function removeShopXmlBlocks(options?: { requireExistingBlock?: boolean }) {
+async function removeShopXmlBlocks() {
   const [eventsXml, eventSpawnsXml] = await Promise.all([
     downloadServerTextFile(getShopFilePaths().eventsPath),
     downloadServerTextFile(getShopFilePaths().eventSpawnsPath),
@@ -866,10 +863,17 @@ async function removeShopXmlBlocks(options?: { requireExistingBlock?: boolean })
   const eventsHasBlock = hasShopBotBlock(eventsXml);
   const spawnsHasBlock = hasShopBotBlock(eventSpawnsXml);
 
-  if (options?.requireExistingBlock && (!eventsHasBlock || !spawnsHasBlock)) {
-    throw new Error(
-      `SHOP CLEAR ABORTED: SHOP_BOT block missing before clear. events=${eventsHasBlock ? "yes" : "no"} spawns=${spawnsHasBlock ? "yes" : "no"}. Orders were not marked as spawned.`,
-    );
+  // A restart may already have consumed/removed the Shop block before the bot
+  // gets a chance to run its clear step. Clearing must be idempotent: absence
+  // of the block is a recoverable state, not a fatal error that can permanently
+  // lock the checkout behind included_in_restart orders.
+  if (!eventsHasBlock && !spawnsHasBlock) {
+    console.warn("⚠️ SHOP CLEAR: SHOP_BOT block already absent from both XML files; no XML changes required.");
+    return {
+      eventsHasBlock,
+      spawnsHasBlock,
+      blockWasPresent: false,
+    };
   }
 
   await backupShopXmlFiles(eventsXml, eventSpawnsXml);
@@ -896,6 +900,12 @@ async function removeShopXmlBlocks(options?: { requireExistingBlock?: boolean })
     }
     throw clearError;
   }
+
+  return {
+    eventsHasBlock,
+    spawnsHasBlock,
+    blockWasPresent: true,
+  };
 }
 
 export async function clearShopSpawnerAndMarkSpawned(
@@ -928,13 +938,37 @@ export async function clearShopSpawnerAndMarkSpawned(
     : getIncludedShopOrders(state);
   const pendingOrders = cancelPending ? getPendingShopOrders(state) : [];
 
-  await removeShopXmlBlocks({ requireExistingBlock: includedOrders.length > 0 });
+  const clearState = await removeShopXmlBlocks();
 
   const now = new Date().toISOString();
 
-  for (const order of includedOrders) {
-    order.status = "spawned";
-    order.spawnedAt = now;
+  if (clearState.eventsHasBlock && clearState.spawnsHasBlock) {
+    // Both files contained the expected Shop block, so the batch can be
+    // considered successfully finalized.
+    for (const order of includedOrders) {
+      order.status = "spawned";
+      order.spawnedAt = now;
+      order.failReason = undefined;
+    }
+  } else {
+    // The XML was already partially/fully absent. We must never claim that the
+    // items spawned just because the queue was unlocked. Preserve the history
+    // as a failed/unverified batch while allowing new purchases immediately.
+    const reason = clearState.blockWasPresent
+      ? "Shop XML block was partially missing before clear; delivery could not be verified."
+      : "Shop XML block was already absent before clear; delivery could not be verified.";
+
+    for (const order of includedOrders) {
+      order.status = "failed";
+      order.failedAt = now;
+      order.failReason = reason;
+    }
+
+    if (includedOrders.length) {
+      console.warn(
+        `⚠️ SHOP CLEAR finalized stale/unverified batch as failed: orders=${includedOrders.length} reason=${reason}`,
+      );
+    }
   }
 
   for (const order of pendingOrders) {
@@ -997,8 +1031,7 @@ export async function autoDeployPendingShopOrdersIfNeeded(
 
   state.shopAutoDeploy = {
     lastServerStatus: normalizeServerStatus(observedServerStatus),
-    lastCheckedAt: now.toISOString(),
-    lastDeployAt: now.toISOString(),
+    lastCheckedAt: now.toISOString(),    lastDeployAt: now.toISOString(),
     lastAction: `shop_deploy_before_${restart.label}`,
   };
 
@@ -1248,46 +1281,3 @@ export function formatShopQueue(state: AppState) {
     : [];
 
   const autoDeployLines = autoDeploy
-    ? [
-        "",
-        "**Auto deploy**",
-        `Last server status: \`${autoDeploy.lastServerStatus || "unknown"}\``,
-        `Last deploy: \`${autoDeploy.lastDeployAt || "no"}\``,
-        `Last action: \`${autoDeploy.lastAction || "none"}\``,
-      ]
-    : [];
-
-  const lines = [
-    "🛒 **Shop Queue**",
-    "",
-    `Shop status: **${runtime.state}**`,
-    runtime.nextRestartLabel
-      ? `Next restart window: **${runtime.nextRestartLabel}** (${runtime.minutesUntilRestart} min)`
-      : "Next restart window: unknown",
-    runtime.canAcceptPurchase ? "Checkout: **open**" : `Checkout: **closed** — ${runtime.reason}`,
-    "",
-    `Pending: **${pending.length}**`,
-    `Included in next restart: **${included.length}**`,
-    `Spawned: **${spawned.length}**`,
-    `Failed: **${failed.length}**`,
-    ...monitorLines,
-    ...autoDeployLines,
-    "",
-    "**Catalog**",
-    ...getShopItems(true).map((item) => `• \`${item.id}\` → ${item.className}`),
-    "",
-    "**Latest orders**",
-  ];
-
-  if (!latest.length) {
-    lines.push("No shop orders yet.");
-  } else {
-    for (const order of latest) {
-      lines.push(
-        `• \`${order.status}\` ${order.itemClass} @ \`${order.x}, ${order.y}, ${order.z}\``,
-      );
-    }
-  }
-
-  return lines.join("\n");
-}
