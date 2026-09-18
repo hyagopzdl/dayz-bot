@@ -725,19 +725,6 @@ export async function deployPendingShopOrders(state: AppState) {
     order.includedAt = now;
   }
 
-  const deployedAt = new Date(now);
-  const deployWindow = getActiveAutoDeployWindow(deployedAt, {
-    requireAutoDeployEnabled: false,
-    allowFreezeWindow: true,
-  });
-  const expectedRestartAt = deployWindow
-    ? addMinutes(deployedAt, Math.max(0, deployWindow.minutesUntilRestart)).toISOString()
-    : addMinutes(deployedAt, getShopResetExpectedDelayMinutes()).toISOString();
-  const restartFallbackAt = addMinutes(
-    new Date(expectedRestartAt),
-    getShopResetClearDelayMinutes(),
-  ).toISOString();
-
   state.shopResetMonitor = {
     batchId,
     deployedAt: now,
@@ -746,9 +733,6 @@ export async function deployPendingShopOrders(state: AppState) {
     sawOnlineAt: undefined,
     lastStatus: null,
     lastCheckedAt: now,
-    expectedRestartAt,
-    restartFallbackAt,
-    autoConfirmedAt: undefined,
     confirmationReason: undefined,
   };
 
