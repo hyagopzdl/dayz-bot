@@ -382,7 +382,6 @@ export function getManagedServerRuntimeCoordinatorDiagnostics() {
   return {
     scheduler: "centralized",
     intervalMs: RUNTIME_CYCLE_INTERVAL_MS,
-    shopServerWatchIntervalMs: SHOP_SERVER_WATCH_INTERVAL_MS,
     healthPolicy: {
       staleAfterMs: RUNTIME_STALE_AFTER_MS,
       circuitFailureThreshold: CIRCUIT_FAILURE_THRESHOLD,
