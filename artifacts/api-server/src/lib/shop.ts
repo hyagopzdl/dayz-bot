@@ -1,5 +1,5 @@
 import type { AppState, ShopOrder, ShopSavedLocation } from "./state";
-import { ensureManagedServerShopDeliveryConfiguration, ensureManagedServerShopDeliveryRoutingConfiguration, getServerScopedSettings } from "./state";
+import { ensureManagedServerShopDeliveryConfiguration, ensureManagedServerShopDeliveryRoutingConfiguration } from "./state";
 import { getNitradoGameserverStatus } from "./nitradoDownloader";
 import { downloadServerTextFile, uploadServerTextFile } from "./serverFileTransport";
 import {
@@ -21,6 +21,7 @@ import {
 import { getOrganizationIntegrationStatus } from "./organizationIntegrations";
 import { stopAndStartNitradoServer } from "./nitradoServerControl";
 import { discoverNitradoMissionDir, discoverNitradoShopDeliveryRouting } from "./serverIntegrations";
+import { getServerScopedSettings } from "./serverRegistry";
 
 import {
   findShopItem,
@@ -929,7 +930,7 @@ function parseShopRestartTimes(value: string) {
     .filter((entry): entry is { hour: number; minute: number; label: string } => Boolean(entry));
 }
 
-function getNextConfiguredRestart(
+export function getNextConfiguredRestart(
   now = new Date(),
   serverId = getServerRuntimeContext().serverId,
 ): ScheduledRestart | null {
@@ -1018,7 +1019,7 @@ export async function autoDeployPendingShopOrdersIfNeeded(
 export async function syncShopWithNitradoServer(
   state: AppState,
   observedServerStatus?: string | null,
-) {
+): Promise<{ deployResult: unknown; clearResult: unknown; stateChanged: boolean } | null> {
   ensureShopState(state);
 
   const pending = getPendingShopOrders(state);
