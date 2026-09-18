@@ -1921,10 +1921,24 @@ export async function updateManagedServerScopedSettings(serverIdInput: unknown, 
   const currentServers = await reloadManagedServerRegistryFromDb();
   const current = currentServers.find((server) => server.id === id);
   if (!current) throw new Error(`Servidor ${id || String(serverIdInput || "")} nao encontrado.`);
-  if (current.runtimeEnabled && !current.runtime.operations?.paused) {
-    throw new Error("Pause o processamento deste servidor antes de alterar restart/timezone/mission path.");
+  const existingSettings = current.runtime.settings || {};
+  const settingsInputRecord = settingsInput && typeof settingsInput === "object"
+    ? settingsInput as Record<string, unknown>
+    : {};
+  const settings = normalizeServerScopedSettingsDraft(settingsInput, existingSettings);
+
+  // Reset times/timezone are scheduler configuration and can be changed while
+  // runtime is active because the caller reschedules the server after saving.
+  // Mission path is different: changing it while processing is active can make
+  // the runtime read/write the wrong DayZ filesystem. Keep that operation gated.
+  if (
+    current.runtimeEnabled &&
+    !current.runtime.operations?.paused &&
+    "dayzMissionDir" in settingsInputRecord &&
+    String(settings.dayzMissionDir || "") !== String(existingSettings.dayzMissionDir || "")
+  ) {
+    throw new Error("Pause o processamento deste servidor antes de alterar o mission path.");
   }
-  const settings = normalizeServerScopedSettingsDraft(settingsInput, current.runtime.settings || {});
   const restartTimes = String(settings.shopRestartTimes || "").split(",").map((value) => value.trim()).filter(Boolean);
   if (restartTimes.some((value) => !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value))) {
     throw new Error("Restart times deve usar HH:MM separado por virgulas.");
