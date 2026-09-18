@@ -347,8 +347,7 @@ function validateInjectedShopXml(options: {
     throw new Error(missingShopBotError(`cfgeventspawns.xml (${stage})`));
   }
 
-  for (const order of expectedOrders) {
-    const itemClass = String(order.itemClass || "").trim();
+  for (const order of expectedOrders) {    const itemClass = String(order.itemClass || "").trim();
     if (!eventsXml.includes(`type="${itemClass}"`)) {
       throw new Error(
         `SHOP DEPLOY FAILED: events.xml (${stage}) is missing item class ${itemClass} for order ${order.id}.`,
@@ -698,7 +697,6 @@ export function getIncludedShopOrders(state: AppState) {
 function getIncludedBatchOrders(state: AppState) {
   const included = getIncludedShopOrders(state);
   if (!included.length) return [];
-
   const batchId = state.shopResetMonitor?.batchId || included[0]?.restartTarget;
   if (!batchId) return included;
 
@@ -1047,8 +1045,7 @@ export async function syncShopWithNitradoServer(
   ensureShopState(state);
 
   try {
-    await repairLegacyShopEventSpawnsIfNeeded(state);
-  } catch (recoveryError) {
+    await repairLegacyShopEventSpawnsIfNeeded(state);  } catch (recoveryError) {
     console.error("❌ SHOP recovery failed:", recoveryError);
   }
 
@@ -1280,5 +1277,13 @@ export function formatShopQueue(state: AppState) {
         `Saw online: \`${monitor.sawOnlineAt || "no"}\``,
       ]
     : [];
+  } else {
+    for (const order of latest) {
+      lines.push(
+        `• \`${order.status}\` ${order.itemClass} @ \`${order.x}, ${order.y}, ${order.z}\``,
+      );
+    }
+  }
 
-  const autoDeployLines = autoDeploy
+  return lines.join("\n");
+}
