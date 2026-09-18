@@ -1926,9 +1926,10 @@ export async function updateManagedServerScopedSettings(serverIdInput: unknown, 
   }
   const settings = normalizeServerScopedSettingsDraft(settingsInput, current.runtime.settings || {});
   const restartTimes = String(settings.shopRestartTimes || "").split(",").map((value) => value.trim()).filter(Boolean);
-  if (!restartTimes.length || restartTimes.some((value) => !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value))) {
+  if (restartTimes.some((value) => !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value))) {
     throw new Error("Restart times deve usar HH:MM separado por virgulas.");
   }
+  if (!restartTimes.length) delete settings.shopRestartTimes;
   try { new Intl.DateTimeFormat("en-US", { timeZone: settings.shopRestartTimezone || "UTC" }).format(new Date()); }
   catch { throw new Error("Timezone invalido. Use um timezone IANA, por exemplo America/Sao_Paulo."); }
   const missionDir = String(settings.dayzMissionDir || "").replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
@@ -1971,10 +1972,14 @@ export async function ensureManagedServerShopDeliveryConfiguration(
   const settings: ServerScopedSettings = {
     ...existing,
     dayzMissionDir: missionDir,
-    shopRestartTimes: String(existing.shopRestartTimes || input.restartTimes || "00:00,04:00,08:00,12:00,16:00,20:00").trim(),
     shopRestartTimezone: String(existing.shopRestartTimezone || input.restartTimezone || "America/Sao_Paulo").trim(),
     shopDeliveryConfiguredAt: String(existing.shopDeliveryConfiguredAt || new Date().toISOString()).trim(),
   };
+  // A new server must start with Shop resets disabled. Only persist restart
+  // times when they were explicitly provided by an existing setting or caller.
+  const restartTimes = String(existing.shopRestartTimes ?? input.restartTimes ?? "").trim();
+  if (restartTimes) settings.shopRestartTimes = restartTimes;
+  else delete settings.shopRestartTimes;
 
   const runtime = { ...current.runtime, settings };
   await getSql()`
