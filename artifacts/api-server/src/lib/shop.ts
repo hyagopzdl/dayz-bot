@@ -22,6 +22,7 @@ import { getOrganizationIntegrationStatus } from "./organizationIntegrations";
 import { discoverNitradoMissionDir, discoverNitradoShopDeliveryRouting } from "./serverIntegrations";
 import { getServerScopedSettings } from "./serverRegistry";
 import { getNextServerReset as getNextConfiguredRestart } from "./serverResetScheduler";
+export { getNextServerReset as getNextConfiguredRestart } from "./serverResetScheduler";
 
 import {
   findShopItem,
