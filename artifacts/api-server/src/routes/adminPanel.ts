@@ -7259,29 +7259,43 @@ function renderAdminPanelHtml(token: string) {
     }
     async function saveShopResetSettings() {
       const timezone = document.getElementById('shopResetTimezone')?.value || 'America/Sao_Paulo';
-      const times = Array.from(document.querySelectorAll('#shopResetTimes input[data-shop-reset-index]'))
-        .map(function(input) {
-          const value = String(input.value || '').trim();
-          const match = value.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
-          if (!match) return '';
-          const hour = Number(match[1]);
-          const minute = Number(match[2]);
-          if (!Number.isInteger(hour) || !Number.isInteger(minute) || hour < 0 || hour > 23 || minute < 0 || minute > 59) return '';
-          return String(hour).padStart(2, '0') + ':' + String(minute).padStart(2, '0');
-        })
-        .filter(Boolean);
-      const unique = Array.from(new Set(times)).sort();
-      const invalidCount = document.querySelectorAll('#shopResetTimes input[data-shop-reset-index]').length - times.length;
-      if (!unique.length || invalidCount > 0) { showToast('Informe horários válidos no formato HH:MM.'); return; }
+      // Keep the editable list as the source of truth. Reading input.value back
+      // from a native <input type="time"> can differ between browsers/locales.
+      const unique = Array.from(new Set(shopResetTimes.map(function(value) {
+        const normalized = String(value || '').trim().match(/^(\\d{1,2}):(\\d{2})(?::\\d{2})?$/);
+        if (!normalized) return '';
+        const hour = Number(normalized[1]);
+        const minute = Number(normalized[2]);
+        if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return '';
+        return String(hour).padStart(2, '0') + ':' + String(minute).padStart(2, '0');
+      }).filter(Boolean))).sort();
+
+      // Sync any edits made in the native time controls before saving.
+      Array.from(document.querySelectorAll('#shopResetTimes input[data-shop-reset-index]')).forEach(function(input) {
+        const index = Number(input.getAttribute('data-shop-reset-index'));
+        if (Number.isInteger(index)) shopResetTimes[index] = input.value || '';
+      });
+      const normalizedTimes = Array.from(new Set(shopResetTimes.map(function(value) {
+        const match = String(value || '').trim().match(/^(\\d{1,2}):(\\d{2})(?::\\d{2})?$/);
+        if (!match) return '';
+        const hour = Number(match[1]);
+        const minute = Number(match[2]);
+        return hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59
+          ? String(hour).padStart(2, '0') + ':' + String(minute).padStart(2, '0')
+          : '';
+      }).filter(Boolean))).sort();
+
+      if (!normalizedTimes.length) { showToast('Adicione pelo menos um horário válido.'); return; }
+
       const button = document.getElementById('shopResetSave'); if (button) button.disabled = true;
       try {
-        const response = await apiFetch('/admin-panel/api/shop-reset-settings', { method: 'PATCH', body: JSON.stringify({ shopRestartTimes: unique.join(','), shopRestartTimezone: timezone }) });
+        const response = await apiFetch('/admin-panel/api/shop-reset-settings', { method: 'PATCH', body: JSON.stringify({ shopRestartTimes: normalizedTimes.join(','), shopRestartTimezone: timezone }) });
         if (!response.ok) { showToast(await response.text()); return; }
         const payload = await response.json();
-        shopResetTimes = unique.slice();
+        shopResetTimes = normalizedTimes.slice();
         renderShopResetTimes();
         const message = document.getElementById('shopResetMessage');
-        if (message) message.textContent = unique.length ? 'Resets salvos e scheduler atualizado.' : 'Resets removidos. O reset automático está desativado neste servidor.';
+        if (message) message.textContent = 'Resets salvos e scheduler atualizado.';
         showToast('Configurações de reset da Shop salvas.');
         if (payload.server && Array.isArray(state.managedServers)) {
           state.managedServers = state.managedServers.map(function(server) { return server.id === payload.server.id ? payload.server : server; });
