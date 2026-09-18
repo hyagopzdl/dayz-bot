@@ -118,6 +118,18 @@ function cloneServer(server: ManagedServerDescriptor): ManagedServerDescriptor {
   };
 }
 
+export function getServerResetScheduleConfig(serverId?: string): { times: string; timezone: string } {
+  const requested = normalizeServerId(serverId);
+  const resolved = requested || (persistedServers.length === 1 ? persistedServers[0].id : "");
+  if (!resolved) throw new Error("Contexto de servidor obrigatorio para resolver configuracoes.");
+  const server = getManagedServerById(resolved);
+  if (!server) throw new Error(`Servidor ${resolved} nao encontrado para resolver configuracoes.`);
+  return {
+    times: String(server.resetSchedule?.times || "").trim(),
+    timezone: String(server.resetSchedule?.timezone || "America/Sao_Paulo").trim(),
+  };
+}
+
 export function getServerScopedSettings(serverId?: string): Required<ServerScopedSettings> {
   const requested = normalizeServerId(serverId);
   const resolved = requested || (persistedServers.length === 1 ? persistedServers[0].id : "");
@@ -125,8 +137,9 @@ export function getServerScopedSettings(serverId?: string): Required<ServerScope
   const server = getManagedServerById(resolved);
   if (!server) throw new Error(`Servidor ${resolved} nao encontrado para resolver configuracoes.`);
   const settings = server.runtime.settings || {};
-  const serverResetTimes = String(server.resetSchedule?.times || "").trim();
-  const serverResetTimezone = String(server.resetSchedule?.timezone || "America/Sao_Paulo").trim();
+  const resetSchedule = getServerResetScheduleConfig(resolved);
+  const serverResetTimes = resetSchedule.times;
+  const serverResetTimezone = resetSchedule.timezone;
   return {
     serverResetTimes,
     serverResetTimezone,
