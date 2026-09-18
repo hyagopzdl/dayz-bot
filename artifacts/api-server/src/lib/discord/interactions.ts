@@ -18,6 +18,7 @@ import { handleEconomyCommand } from "./modules/economy/interactions";
 import { handleEconomyAdminAutocomplete, handleEconomyAdminCommand } from "./modules/economy-admin/interactions";
 import { DISABLED_COMMAND_MESSAGE, isDiscordCommandEnabled } from "./commandSettings";
 import { isShopServiceEnabled, SHOP_COMMAND_NAMES } from "../serviceSettings";
+import { ensureShopCatalogLoaded } from "../shopCatalog";
 import {
   KILLFEED_MESSAGE_PREFIX,
   KILLSTREAK_MESSAGE_PREFIX,
@@ -91,6 +92,9 @@ export function registerInteractionHandlers(ctx: RegisterInteractionHandlersCont
       if (SHOP_COMMAND_NAMES.has(interaction.commandName) && !isShopServiceEnabled(commandState)) {
         await interaction.reply({ content: "The shop is currently disabled on this server.", ephemeral: true });
         return;
+      }
+      if (SHOP_COMMAND_NAMES.has(interaction.commandName)) {
+        await ensureShopCatalogLoaded();
       }
       if (!isDiscordCommandEnabled(commandState.discordCommandSettings, interaction.commandName)) {
         await interaction.reply({ content: DISABLED_COMMAND_MESSAGE, ephemeral: true });
