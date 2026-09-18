@@ -953,10 +953,6 @@ function getShopDeployMinutesBeforeReset() {
   return Math.max(1, numberEnv("SHOP_DEPLOY_MINUTES_BEFORE_RESET", 5));
 }
 
-function getShopDeployGraceMinutes() {
-  return Math.max(0, numberEnv("SHOP_DEPLOY_GRACE_MINUTES_AFTER_SCHEDULE", 5));
-}
-
 function isWithinScheduledDeployWindow(now: Date, restartAt: Date) {
   const deployAt = restartAt.getTime() - getShopDeployMinutesBeforeReset() * 60_000;
   // Never deploy after the scheduled reset has already happened. Doing so
