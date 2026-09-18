@@ -247,7 +247,8 @@ async function repairLegacyShopEventSpawnsIfNeeded(state: AppState) {
   try {
     legacyXml = await downloadServerTextFile(legacyPath);
   } catch {
-    // The legacy path may not exist. That is fine.  }
+    // The legacy path may not exist. That is fine.
+  }
 
   const expectedNames = buildExpectedShopEventNamesForOrders(includedOrders);
   const rootHasShopBlock = hasShopBotBlock(rootXml);
