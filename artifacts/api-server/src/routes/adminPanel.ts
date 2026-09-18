@@ -7261,15 +7261,6 @@ function renderAdminPanelHtml(token: string) {
       const timezone = document.getElementById('shopResetTimezone')?.value || 'America/Sao_Paulo';
       // Keep the editable list as the source of truth. Reading input.value back
       // from a native <input type="time"> can differ between browsers/locales.
-      const unique = Array.from(new Set(shopResetTimes.map(function(value) {
-        const normalized = String(value || '').trim().match(/^(\\d{1,2}):(\\d{2})(?::\\d{2})?$/);
-        if (!normalized) return '';
-        const hour = Number(normalized[1]);
-        const minute = Number(normalized[2]);
-        if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return '';
-        return String(hour).padStart(2, '0') + ':' + String(minute).padStart(2, '0');
-      }).filter(Boolean))).sort();
-
       // Sync any edits made in the native time controls before saving.
       Array.from(document.querySelectorAll('#shopResetTimes input[data-shop-reset-index]')).forEach(function(input) {
         const index = Number(input.getAttribute('data-shop-reset-index'));
