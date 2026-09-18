@@ -1568,6 +1568,7 @@ function applyStateDomain(state: AppState, domain: StateDomainName, payload: any
     state.activeMatch = payload.activeMatch || null;
     state.lastLine = payload.lastLine;
     state.lastFileName = payload.lastFileName;
+    state.serverReset = payload.serverReset || null;
   } else if (domain === "social") {
     state.playerLinks = payload.playerLinks || {};
     state.playerLinksByGamertag = payload.playerLinksByGamertag || {};
