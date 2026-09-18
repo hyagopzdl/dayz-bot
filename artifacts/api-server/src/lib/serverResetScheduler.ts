@@ -64,8 +64,8 @@ function parseConfiguredResetTimes(value: string) {
 function getConfiguredResetTimes(serverId: string) {
   const settings = getServerScopedSettings(serverId);
   return {
-    timeZone: settings.shopRestartTimezone || "America/Sao_Paulo",
-    times: parseConfiguredResetTimes(settings.shopRestartTimes || ""),
+    timeZone: settings.serverResetTimezone || settings.shopRestartTimezone || "America/Sao_Paulo",
+    times: parseConfiguredResetTimes(settings.serverResetTimes || settings.shopRestartTimes || ""),
   };
 }
 
