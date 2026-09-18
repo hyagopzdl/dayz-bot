@@ -2,7 +2,7 @@ import { downloadADM, setAdmDownloadMode } from "./nitradoDownloader";
 import { getLeaderboard } from "./parser";
 import { flushServerRuntimePendingStateAsync, getStateAsync, saveStateAsync, setManagedServerRuntimeEnabled } from "./state";
 import { isShopServiceEnabled, normalizeServiceSettings } from "./serviceSettings";
-import { autoDeployPendingShopOrdersIfNeeded, getShopResetMonitorPersistenceKey, pollShopResetStatusAndAutoClear } from "./shop";
+import { syncShopWithNitradoServer } from "./shop";
 import { getPlaytimeRewardConfig, processPlaytimeRewards } from "./discord/modules/economy/rewards";
 import { refreshDiscordFeedsForManagedServer } from "./discordBot";
 import {
@@ -20,6 +20,7 @@ import { hydrateKnownServerPlayers, scheduleTenantCommerceMirror } from "./tenan
 import { runInServerMaintenanceContext, runInServerRuntimeContext, runWithServerRuntimeLock } from "./serverRuntime";
 
 const RUNTIME_CYCLE_INTERVAL_MS = 5 * 60 * 1000;
+const SHOP_SERVER_WATCH_INTERVAL_MS = 30 * 1000;
 const CIRCUIT_FAILURE_THRESHOLD = 3;
 const CIRCUIT_COOLDOWN_MS = 15 * 60 * 1000;
 const RUNTIME_STALE_AFTER_MS = 12 * 60 * 1000;
@@ -53,6 +54,7 @@ const statuses = new Map<string, ServerRuntimeCycleStatus>();
 const requestedImmediateRuns = new Set<string>();
 const rewardLastTick = new Map<string, number>();
 let schedulerTimer: NodeJS.Timeout | null = null;
+let shopServerWatchTimer: NodeJS.Timeout | null = null;
 
 function getStatus(serverId: string) {
   const descriptor = getManagedServerById(serverId);
@@ -292,16 +294,49 @@ export async function runManagedServerRuntimeBatch(reason: RuntimeCycleReason = 
   }
 }
 
-export function startManagedServerRuntimeScheduler() {
-  if (schedulerTimer) return;
-  schedulerTimer = setInterval(() => {
-    runManagedServerRuntimeBatch("scheduler").catch((err) => {
-      console.error("❌ erro no scheduler central multi-server:", err);
-    });
-  }, RUNTIME_CYCLE_INTERVAL_MS);
-  schedulerTimer.unref?.();
+async function runShopServerStatusWatchBatch() {
+  const executable: ManagedServerDescriptor[] = listExecutableManagedServers()
+    .sort((a: ManagedServerDescriptor, b: ManagedServerDescriptor) => a.id.localeCompare(b.id));
+
+  for (const server of executable) {
+    try {
+      await runWithServerRuntimeLock(server.id, async () => runInServerRuntimeContext(server.id, async () => {
+        const state = await getStateAsync();
+        const result = await syncShopWithNitradoServer(state);
+        if (result?.stateChanged) {
+          await saveStateAsync(state, `runtime:shop-server-watch:${server.id}`);
+        }
+      }));
+    } catch (error) {
+      console.error(`❌ erro no watcher de status da Shop [${server.id}]:`, error);
+    }
+  }
 }
 
+export function startManagedServerRuntimeScheduler() {
+  if (!schedulerTimer) {
+    schedulerTimer = setInterval(() => {
+      runManagedServerRuntimeBatch("scheduler").catch((err) => {
+        console.error("❌ erro no scheduler central multi-server:", err);
+      });
+    }, RUNTIME_CYCLE_INTERVAL_MS);
+    schedulerTimer.unref?.();
+  }
+
+  if (!shopServerWatchTimer) {
+    shopServerWatchTimer = setInterval(() => {
+      runShopServerStatusWatchBatch().catch((err) => {
+        console.error("❌ erro no watcher de status da Shop:", err);
+      });
+    }, SHOP_SERVER_WATCH_INTERVAL_MS);
+    shopServerWatchTimer.unref?.();
+
+    // Do one immediate server-state observation instead of waiting for the first
+    // 30-second tick. The watcher only calls Nitrado when the cached state has
+    // pending/included Shop orders, so idle servers do not generate API traffic.
+    void runShopServerStatusWatchBatch();
+  }
+}
 export function requestManagedServerRuntimeCycle(
   serverId: string,
   reason: RuntimeCycleReason = "activation",
