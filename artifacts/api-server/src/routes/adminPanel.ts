@@ -7243,7 +7243,15 @@ function renderAdminPanelHtml(token: string) {
         const settings = payload.settings || {};
         const timezone = document.getElementById('shopResetTimezone');
         if (timezone) timezone.value = settings.shopRestartTimezone || 'America/Sao_Paulo';
-        shopResetTimes = String(settings.shopRestartTimes || '').split(',').map(function(value) { return value.trim(); }).filter(Boolean);
+        shopResetTimes = String(settings.shopRestartTimes || '').split(',').map(function(value) {
+          const match = String(value || '').trim().match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+          if (!match) return '';
+          const hour = Number(match[1]);
+          const minute = Number(match[2]);
+          return hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59
+            ? String(hour).padStart(2, '0') + ':' + String(minute).padStart(2, '0')
+            : '';
+        }).filter(Boolean);
         renderShopResetTimes();
         const message = document.getElementById('shopResetMessage');
         if (message) message.textContent = shopResetTimes.length ? 'Horários salvos neste servidor.' : 'Nenhum horário configurado neste servidor.';
