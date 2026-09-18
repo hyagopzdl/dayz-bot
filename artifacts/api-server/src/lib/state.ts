@@ -2055,7 +2055,9 @@ export async function ensureManagedServerShopDeliveryRoutingConfiguration(
   const settings: ServerScopedSettings = {
     ...existing,
     dayzMissionDir: missionDir,
-    shopRestartTimes: String(existing.shopRestartTimes || input.restartTimes || "00:00,04:00,08:00,12:00,16:00,20:00").trim(),
+    // Reset cadence belongs to the server. Never invent a cadence during
+    // Shop delivery/routing bootstrap: preserve an explicit value and otherwise
+    // leave the schedule disabled until an administrator configures it.
     shopRestartTimezone: String(existing.shopRestartTimezone || input.restartTimezone || "America/Sao_Paulo").trim(),
     shopDeliveryConfiguredAt: String(existing.shopDeliveryConfiguredAt || now).trim(),
   };
