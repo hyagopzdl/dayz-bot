@@ -1,5 +1,5 @@
 import type { AppState } from "./state";
-import { getServerScopedSettings, getManagedServerById } from "./serverRegistry";
+import { getServerResetScheduleConfig, getManagedServerById } from "./serverRegistry";
 import { stopAndStartNitradoServer } from "./nitradoServerControl";
 
 export type ScheduledServerReset = {
@@ -62,10 +62,10 @@ function parseConfiguredResetTimes(value: string) {
 }
 
 function getConfiguredResetTimes(serverId: string) {
-  const settings = getServerScopedSettings(serverId);
+  const schedule = getServerResetScheduleConfig(serverId);
   return {
-    timeZone: settings.serverResetTimezone || settings.shopRestartTimezone || "America/Sao_Paulo",
-    times: parseConfiguredResetTimes(settings.serverResetTimes || settings.shopRestartTimes || ""),
+    timeZone: schedule.timezone,
+    times: parseConfiguredResetTimes(schedule.times),
   };
 }
 
