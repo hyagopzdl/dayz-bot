@@ -102,8 +102,7 @@ export function injectShopEffectAreas(json: string, orders: ShopOrder[]) {
   const injected = orders.map((order, index) => buildShopEffectArea(order, index));
   root.Areas = [...retained, ...injected];
 
-  return JSON.stringify(root, null, 2) + "
-";
+  return JSON.stringify(root, null, 2) + "\n";
 }
 
 export function removeShopEffectAreas(json: string) {
@@ -115,8 +114,7 @@ export function removeShopEffectAreas(json: string) {
   root.Areas = retained;
 
   return {
-    json: JSON.stringify(root, null, 2) + "
-",
+    json: JSON.stringify(root, null, 2) + "\n",
     removed: areas.length - retained.length,
   };
 }
