@@ -1024,17 +1024,54 @@ export async function syncShopWithNitradoServer(
 
   const pending = getPendingShopOrders(state);
   const included = getIncludedShopOrders(state);
-  if (!pending.length && !included.length) {
-    const configuredReset = getNextConfiguredRestart(new Date());
-    if (configuredReset) {
-      console.log(`🛒 SHOP SYNC [${getServerRuntimeContext().serverId}] sem pedidos pendentes/incluídos; nenhum STOP/START será enviado à Nitrado neste ciclo. próximo reset=${configuredReset.at.toISOString()} (${configuredReset.label})`);
-    }
-    return null;
-  }
-
   const now = new Date();
   const nextRestart = getNextConfiguredRestart(now);
   const monitor = state.shopResetMonitor;
+
+  // Configured resets are independent of Shop orders. Pending orders only add
+  // the delivery step before the same scheduled server reset.
+  if (!pending.length && !included.length) {
+    if (
+      nextRestart &&
+      now.getTime() >= nextRestart.at.getTime() &&
+      now.getTime() <= nextRestart.at.getTime() + 10 * 60_000
+    ) {
+      const serverId = getServerRuntimeContext().serverId;
+      const resetKey = "standalone:" + serverId + ":" + nextRestart.at.toISOString();
+      const currentResetKey = String((state.shopAutoDeploy as any)?.lastStandaloneResetKey || "");
+
+      if (currentResetKey !== resetKey && !scheduledShopRestartLocks.has(serverId)) {
+        scheduledShopRestartLocks.add(serverId);
+        try {
+          console.log("♻️ SERVER RESET START [" + serverId + "] target=" + nextRestart.at.toISOString() + " (" + nextRestart.label + ")");
+          const restartResult = await stopAndStartNitradoServer(serverId);
+          const completedAt = new Date().toISOString();
+          state.shopAutoDeploy = {
+            ...(state.shopAutoDeploy || {}),
+            lastServerStatus: normalizeServerStatus(restartResult.startedStatus),
+            lastCheckedAt: completedAt,
+            lastAction: "standalone_scheduled_reset_completed",
+            lastStandaloneResetKey: resetKey,
+          } as any;
+          console.log("✅ SERVER RESET COMPLETE [" + serverId + "] status=" + normalizeServerStatus(restartResult.startedStatus));
+          return { deployResult: null, clearResult: null, stateChanged: true };
+        } catch (error) {
+          const failedAt = new Date().toISOString();
+          state.shopAutoDeploy = {
+            ...(state.shopAutoDeploy || {}),
+            lastCheckedAt: failedAt,
+            lastAction: "standalone_scheduled_reset_failed",
+            lastStandaloneResetKey: resetKey,
+          } as any;
+          console.error("❌ SERVER RESET FAILED [" + serverId + "]", error);
+          return { deployResult: null, clearResult: null, stateChanged: true };
+        } finally {
+          scheduledShopRestartLocks.delete(serverId);
+        }
+      }
+    }
+    return null;
+  }
 
   // Pending orders are scheduled purely from the configured reset time. There is
   // no reason to query Nitrado while waiting for the deploy window.
