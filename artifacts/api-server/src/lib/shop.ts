@@ -1,5 +1,5 @@
 import type { AppState, ShopOrder, ShopSavedLocation } from "./state";
-import { ensureManagedServerShopDeliveryConfiguration, ensureManagedServerShopDeliveryRoutingConfiguration } from "./state";
+import { ensureManagedServerShopDeliveryConfiguration, ensureManagedServerShopDeliveryRoutingConfiguration, getServerScopedSettings } from "./state";
 import { getNitradoGameserverStatus } from "./nitradoDownloader";
 import { downloadServerTextFile, uploadServerTextFile } from "./serverFileTransport";
 import {
@@ -19,6 +19,7 @@ import {
   isManagedServerRuntimePaused,
 } from "./serverRegistry";
 import { getOrganizationIntegrationStatus } from "./organizationIntegrations";
+import { stopAndStartNitradoServer } from "./nitradoServerControl";
 import { discoverNitradoMissionDir, discoverNitradoShopDeliveryRouting } from "./serverIntegrations";
 
 import {
@@ -380,6 +381,12 @@ export function getShopResetMonitorPersistenceKey(state: Pick<AppState, "shopRes
     restartFallbackAt: monitor.restartFallbackAt,
     autoConfirmedAt: monitor.autoConfirmedAt,
     confirmationReason: monitor.confirmationReason,
+    autoRestartManaged: monitor.autoRestartManaged,
+    targetRestartAt: monitor.targetRestartAt,
+    restartPhase: monitor.restartPhase,
+    restartRequestedAt: monitor.restartRequestedAt,
+    restartCompletedAt: monitor.restartCompletedAt,
+    restartError: monitor.restartError,
   });
 }
 
@@ -843,6 +850,232 @@ export async function clearShopSpawnerAndMarkSpawned(
     cleared: includedOrders.length,
     cancelled: pendingOrders.length,
     path: `${getShopFilePaths().eventsPath} + ${getShopFilePaths().eventSpawnsPath}`,
+  };
+}
+
+type ScheduledRestart = {
+  at: Date;
+  label: string;
+};
+
+function getTimeZoneParts(date: Date, timeZone: string) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(date);
+
+  const values: Record<string, number> = {};
+  for (const part of parts) {
+    if (part.type !== "literal") values[part.type] = Number(part.value);
+  }
+  return values;
+}
+
+function getTimeZoneOffsetMs(date: Date, timeZone: string) {
+  const parts = getTimeZoneParts(date, timeZone);
+  const asUtc = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, 0, 0);
+  return asUtc - date.getTime();
+}
+
+function localDateTimeToUtc(
+  year: number,
+  month: number,
+  day: number,
+  hour: number,
+  minute: number,
+  timeZone: string,
+) {
+  let candidate = Date.UTC(year, month - 1, day, hour, minute, 0, 0);
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const offset = getTimeZoneOffsetMs(new Date(candidate), timeZone);
+    const corrected = Date.UTC(year, month - 1, day, hour, minute, 0, 0) - offset;
+    if (corrected === candidate) break;
+    candidate = corrected;
+  }
+  return new Date(candidate);
+}
+
+function parseShopRestartTimes(value: string) {
+  return String(value || "")
+    .split(",")
+    .map((raw) => raw.trim())
+    .map((raw) => {
+      const match = raw.match(/^(\\d{1,2}):(\\d{2})$/);
+      if (!match) return null;
+      const hour = Number(match[1]);
+      const minute = Number(match[2]);
+      if (hour > 23 || minute > 59) return null;
+      return { hour, minute, label: `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}` };
+    })
+    .filter((entry): entry is { hour: number; minute: number; label: string } => Boolean(entry));
+}
+
+function getNextConfiguredRestart(
+  now = new Date(),
+  serverId = getServerRuntimeContext().serverId,
+): ScheduledRestart | null {
+  const settings = getServerScopedSettings(serverId);
+  const timeZone = settings.shopRestartTimezone || "America/Sao_Paulo";
+  const times = parseShopRestartTimes(settings.shopRestartTimes);
+  if (!times.length) return null;
+
+  const local = getTimeZoneParts(now, timeZone);
+  const baseUtc = Date.UTC(local.year, local.month - 1, local.day, 0, 0, 0, 0);
+
+  let best: ScheduledRestart | null = null;
+  for (let dayOffset = 0; dayOffset <= 2; dayOffset += 1) {
+    const day = new Date(baseUtc + dayOffset * 86_400_000);
+    const dayParts = getTimeZoneParts(day, "UTC");
+    for (const time of times) {
+      const candidate = localDateTimeToUtc(
+        dayParts.year,
+        dayParts.month,
+        dayParts.day,
+        time.hour,
+        time.minute,
+        timeZone,
+      );
+      if (candidate.getTime() <= now.getTime() - 30_000) continue;
+      if (!best || candidate.getTime() < best.at.getTime()) {
+        best = { at: candidate, label: time.label };
+      }
+    }
+  }
+  return best;
+}
+
+function getShopDeployMinutesBeforeReset() {
+  return Math.max(1, numberEnv("SHOP_DEPLOY_MINUTES_BEFORE_RESET", 5));
+}
+
+function getShopDeployGraceMinutes() {
+  return Math.max(0, numberEnv("SHOP_DEPLOY_GRACE_MINUTES_AFTER_SCHEDULE", 5));
+}
+
+function isWithinScheduledDeployWindow(now: Date, restartAt: Date) {
+  const deployAt = restartAt.getTime() - getShopDeployMinutesBeforeReset() * 60_000;
+  const graceUntil = restartAt.getTime() + getShopDeployGraceMinutes() * 60_000;
+  return now.getTime() >= deployAt && now.getTime() < graceUntil;
+}
+
+const scheduledShopRestartLocks = new Set<string>();
+
+export async function autoDeployPendingShopOrdersIfNeeded(
+  state: AppState,
+  observedServerStatus?: string | null,
+) {
+  ensureShopState(state);
+  if (!systems.shop || !systems.nitrado || !boolEnv("SHOP_AUTO_DEPLOY_ENABLED", true)) return null;
+
+  const pending = getPendingShopOrders(state);
+  if (!pending.length || getIncludedShopOrders(state).length) return null;
+
+  const restart = getNextConfiguredRestart();
+  if (!restart) return null;
+
+  const now = new Date();
+  if (!isWithinScheduledDeployWindow(now, restart.at)) return null;
+
+  const result = await deployPendingShopOrders(state);
+  if (!result?.deployed) return result;
+
+  const monitor = state.shopResetMonitor;
+  if (monitor) {
+    monitor.autoRestartManaged = true;
+    monitor.targetRestartAt = restart.at.toISOString();
+    monitor.restartPhase = "scheduled";
+    monitor.restartError = undefined;
+    monitor.confirmationReason = `scheduled_restart:${restart.label}`;
+  }
+
+  state.shopAutoDeploy = {
+    lastServerStatus: normalizeServerStatus(observedServerStatus),
+    lastCheckedAt: now.toISOString(),
+    lastDeployAt: now.toISOString(),
+    lastAction: `shop_deploy_before_${restart.label}`,
+  };
+
+  console.log(`🛒 SHOP AUTO-DEPLOY scheduled for ${restart.at.toISOString()} (${restart.label})`);
+  return { ...result, scheduledRestartAt: restart.at.toISOString(), stateChanged: true };
+}
+
+export async function syncShopWithNitradoServer(
+  state: AppState,
+  observedServerStatus?: string | null,
+) {
+  ensureShopState(state);
+  const pending = getPendingShopOrders(state);
+  const included = getIncludedShopOrders(state);
+  if (!pending.length && !included.length) return null;
+
+  let status = observedServerStatus;
+  if (status === undefined) {
+    const response = await getNitradoGameserverStatus(getServerRuntimeContext().serverId);
+    status = response.status;
+  }
+
+  const beforeKey = getShopResetMonitorPersistenceKey(state);
+  const deployResult = await autoDeployPendingShopOrdersIfNeeded(state, status);
+  const monitor = state.shopResetMonitor;
+
+  if (
+    monitor?.autoRestartManaged &&
+    monitor.targetRestartAt &&
+    monitor.restartPhase === "scheduled" &&
+    Date.now() >= Date.parse(monitor.targetRestartAt)
+  ) {
+    const serverId = getServerRuntimeContext().serverId;
+    if (!scheduledShopRestartLocks.has(serverId)) {
+      scheduledShopRestartLocks.add(serverId);
+      monitor.restartPhase = "stopping";
+      monitor.restartRequestedAt = new Date().toISOString();
+      monitor.restartError = undefined;
+
+      try {
+        console.log(`♻️ SHOP RESET START [${serverId}] target=${monitor.targetRestartAt}`);
+        const restartResult = await stopAndStartNitradoServer(serverId);
+        const completedAt = new Date().toISOString();
+        monitor.sawOfflineAt = monitor.sawOfflineAt || monitor.restartRequestedAt;
+        monitor.sawOnlineAt = completedAt;
+        monitor.restartPhase = "completed";
+        monitor.restartCompletedAt = completedAt;
+        monitor.lastStatus = normalizeServerStatus(restartResult.startedStatus);
+        monitor.lastCheckedAt = completedAt;
+        monitor.confirmationReason = "nitrado_stop_then_start";
+        state.shopAutoDeploy = {
+          ...(state.shopAutoDeploy || {}),
+          lastServerStatus: monitor.lastStatus,
+          lastCheckedAt: completedAt,
+          lastAction: "nitrado_stop_start_completed",
+        };
+        console.log(`✅ SHOP RESET COMPLETE [${serverId}] status=${monitor.lastStatus}`);
+      } catch (error) {
+        monitor.restartPhase = "failed";
+        monitor.restartError = error instanceof Error ? error.message : String(error);
+        monitor.lastCheckedAt = new Date().toISOString();
+        state.shopAutoDeploy = {
+          ...(state.shopAutoDeploy || {}),
+          lastCheckedAt: monitor.lastCheckedAt,
+          lastAction: "nitrado_stop_start_failed",
+        };
+        console.error(`❌ SHOP RESET FAILED [${serverId}]`, error);
+      } finally {
+        scheduledShopRestartLocks.delete(serverId);
+      }
+    }
+  }
+
+  const clearResult = await pollShopResetStatusAndAutoClear(state, status);
+  const afterKey = getShopResetMonitorPersistenceKey(state);
+  return {
+    deployResult,
+    clearResult,
+    stateChanged: beforeKey !== afterKey || Boolean(deployResult?.stateChanged),
   };
 }
 
