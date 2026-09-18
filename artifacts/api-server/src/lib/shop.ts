@@ -513,7 +513,7 @@ export function getShopRuntimeStatus(state: AppState): ShopRuntimeStatus {
     return { state: "BLOCKED", canAcceptPurchase: false, reason: delivery.reason || "Shop delivery routing is not ready for this server." };
   }
 
-  const nextRestart = getNextConfiguredRestart(new Date());
+  const nextRestart = getNextConfiguredRestart(new Date(), getServerRuntimeContext().serverId);
   const minutesUntilRestart = nextRestart
     ? Math.max(0, Math.ceil((nextRestart.at.getTime() - Date.now()) / 60_000))
     : undefined;
@@ -889,7 +889,7 @@ export async function autoDeployPendingShopOrdersIfNeeded(
   const pending = getPendingShopOrders(state);
   if (!pending.length || getIncludedShopOrders(state).length) return null;
 
-  const restart = getNextConfiguredRestart();
+  const restart = getNextConfiguredRestart(new Date(), getServerRuntimeContext().serverId);
   if (!restart) return null;
 
   const now = new Date();
@@ -927,7 +927,7 @@ export async function syncShopWithNitradoServer(
   const pending = getPendingShopOrders(state);
   const included = getIncludedShopOrders(state);
   const now = new Date();
-  const nextRestart = getNextConfiguredRestart(now);
+  const nextRestart = getNextConfiguredRestart(now, getServerRuntimeContext().serverId);
   const monitor = state.shopResetMonitor;
 
   // Pending orders are scheduled purely from the configured reset time. There is
