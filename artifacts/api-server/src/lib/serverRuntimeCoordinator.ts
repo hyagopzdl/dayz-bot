@@ -304,14 +304,20 @@ export function scheduleShopAutomationForServer(server: ManagedServerDescriptor)
 
   const restart = runInServerRuntimeContext(serverId, async () => getNextConfiguredRestart(new Date(), serverId));
   restart.then((nextRestart) => {
-    if (!nextRestart) return;
+    if (!nextRestart) {
+      console.log(`🛒 SHOP SCHEDULER [${serverId}] nenhum horário de reset configurado`);
+      return;
+    }
     const deployAt = nextRestart.at.getTime() - 5 * 60_000;
     const resetAt = nextRestart.at.getTime();
     const now = Date.now();
+    console.log(`🛒 SHOP SCHEDULER [${serverId}] próximo reset=${nextRestart.at.toISOString()} label=${nextRestart.label} deployAt=${new Date(deployAt).toISOString()}`);
 
     const schedule = (at: number, label: string) => {
       const delay = Math.max(0, at - now);
+      console.log(`🛒 SHOP TIMER SET [${serverId}] label=${label} at=${new Date(at).toISOString()} delayMs=${delay}`);
       const timer = setTimeout(() => {
+        console.log(`⏰ SHOP TIMER FIRED [${serverId}] label=${label} target=${new Date(at).toISOString()}`);
         runManagedServerRuntimeCycle(serverId, "scheduler")
           .catch((error) => console.error(`❌ erro no Shop agendado [${serverId}] ${label}:`, error))
           .finally(() => {
