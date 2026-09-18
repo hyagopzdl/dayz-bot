@@ -50,7 +50,13 @@ async function discoverMissionDirectory(relativeDirectory: string, serverId: str
     throw new Error(`Nitrado DayZ mission directory is invalid for ${serverId}: ${relativeDirectory}`);
   }
 
-  const cached = resolvedDirectoryCache.get(serverId);
+  // The resolved path depends on the requested mission subdirectory.
+  // Caching only by serverId is unsafe: events.xml is uploaded from /db,
+  // while cfgeventspawns.xml must be uploaded from the mission root. If the
+  // first request cached /db, every subsequent mission file was incorrectly
+  // uploaded into /db until the cache expired.
+  const cacheKey = serverId + ":" + normalizedRelative;
+  const cached = resolvedDirectoryCache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) return cached.directory;
 
   const bookmarks = await getNitradoFileServerBookmarks(serverId);
@@ -68,7 +74,7 @@ async function discoverMissionDirectory(relativeDirectory: string, serverId: str
   const directory = absolutePath(`${missionRoot}/${missionMarker[1]}`);
   const entries = await listDirectory(directory, serverId);
 
-  resolvedDirectoryCache.set(serverId, {
+  resolvedDirectoryCache.set(cacheKey, {
     directory,
     expiresAt: Date.now() + DIRECTORY_CACHE_TTL_MS,
   });
