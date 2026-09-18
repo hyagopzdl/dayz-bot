@@ -346,9 +346,10 @@ export function scheduleServerResetAutomationForServer(server: ManagedServerDesc
 
   if (deployAt > now) scheduleCycle(deployAt, "shop-pre-reset");
   else if (now < resetAt) scheduleCycle(now, "shop-pre-reset");
-  if (resetAt > now) scheduleCycle(resetAt, "reset");
-
-  scheduleServerResetForServer(serverId);
+  scheduleServerResetForServer(serverId, () => {
+    runManagedServerRuntimeCycle(serverId, "scheduler")
+      .catch((error) => console.error(`❌ erro no reset agendado do servidor [${serverId}]:`, error));
+  });
 }
 
 function scheduleServerResetAutomationForAllServers() {
