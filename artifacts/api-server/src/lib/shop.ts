@@ -1031,7 +1031,8 @@ export async function autoDeployPendingShopOrdersIfNeeded(
 
   state.shopAutoDeploy = {
     lastServerStatus: normalizeServerStatus(observedServerStatus),
-    lastCheckedAt: now.toISOString(),    lastDeployAt: now.toISOString(),
+    lastCheckedAt: now.toISOString(),
+    lastDeployAt: now.toISOString(),
     lastAction: `shop_deploy_before_${restart.label}`,
   };
 
