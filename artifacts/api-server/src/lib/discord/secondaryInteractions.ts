@@ -74,6 +74,9 @@ async function handleSecondaryInteraction(interaction: any, serverId: string) {
       await interaction.reply({ content: "The shop is currently disabled on this server.", ephemeral: true });
       return;
     }
+    if (SHOP_COMMAND_NAMES.has(interaction.commandName)) {
+      await ensureShopCatalogLoaded();
+    }
     if (!isDiscordCommandEnabled(state.discordCommandSettings, interaction.commandName)) {
       await interaction.reply({ content: DISABLED_COMMAND_MESSAGE, ephemeral: true });
       return;
@@ -125,7 +128,6 @@ async function handleSecondaryInteraction(interaction: any, serverId: string) {
   if (!acknowledged || !(await assertAdmin(interaction))) return;
 
   if (interaction.commandName === "shop-catalog") {
-    await ensureShopCatalogLoaded();
     await interaction.editReply([
       "🛒 **Shop Catalog**",
       "",
