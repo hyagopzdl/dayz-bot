@@ -1074,6 +1074,8 @@ export type ShopPendingCheckout = {
   serverId?: string;
   discordUserId: string;
   itemId: string;
+  itemKind?: "item" | "kit";
+  kitId?: string;
   itemClass: string;
   itemName?: string;
   price?: number;
@@ -1092,6 +1094,9 @@ export type ShopOrder = {
   serverId?: string;
   discordUserId: string;
   itemClass: string;
+  itemKind?: "item" | "kit";
+  kitId?: string;
+  kitItems?: Array<{ className: string; name?: string; quantity: number }>;
   itemName?: string;
   spawnEventName?: string;
   deliveryKind?: "item" | "vehicle";
