@@ -37,6 +37,11 @@ import {
   upsertShopCatalogItem,
   type ShopCatalog,
   type ShopItem,
+  type ShopKit,
+  getShopKits,
+  upsertShopKit,
+  deleteShopKit,
+  toggleShopKit,
 } from "../lib/shopCatalog";
 import {
   addCoins,
@@ -4504,7 +4509,7 @@ function renderAdminPanelHtml(token: string) {
               <div class="card">
                 <div class="section-title">
                   <h2>Categorias</h2>
-                  <div style="display:flex;align-items:center;gap:8px"><span class="chip">Neon</span><button id="shopQueueOpen" class="ghost-btn">Queue</button><button id="shopHistoryOpen" class="ghost-btn">Transactions</button><button id="catalogCategoryCreate" class="primary-btn"><svg class="icon"><use href="#icon-plus"></use></svg>Nova categoria</button><button id="catalogRefresh" class="ghost-btn">Refresh</button></div>
+                  <div style="display:flex;align-items:center;gap:8px"><span class="chip">Neon</span><button id="shopQueueOpen" class="ghost-btn">Queue</button><button id="shopHistoryOpen" class="ghost-btn">Transactions</button><button id="catalogCategoryCreate" class="primary-btn"><svg class="icon"><use href="#icon-plus"></use></svg>Nova categoria</button><button id="catalogKitCreate" class="primary-btn">＋ Novo kit</button><button id="catalogRefresh" class="ghost-btn">Refresh</button></div>
                 </div>
                 <div class="catalog-breadcrumb">Escolha uma categoria para gerenciar os itens vendidos no shop.</div>
               </div>
@@ -4514,7 +4519,7 @@ function renderAdminPanelHtml(token: string) {
               <div class="card">
                 <div class="section-title">
                   <h2 id="catalogCurrentCategoryTitle">Itens</h2>
-                  <div style="display:flex;align-items:center;gap:8px"><button id="catalogBack" class="ghost-btn"><svg class="icon"><use href="#icon-arrow-left"></use></svg>Categorias</button><button id="shopQueueOpenFromItems" class="ghost-btn">Queue</button><button id="shopHistoryOpenFromItems" class="ghost-btn">Transactions</button><button id="catalogCreate" class="primary-btn"><svg class="icon"><use href="#icon-plus"></use></svg>Novo item</button></div>
+                  <div style="display:flex;align-items:center;gap:8px"><button id="catalogBack" class="ghost-btn"><svg class="icon"><use href="#icon-arrow-left"></use></svg>Categorias</button><button id="shopQueueOpenFromItems" class="ghost-btn">Queue</button><button id="shopHistoryOpenFromItems" class="ghost-btn">Transactions</button><button id="catalogCreate" class="primary-btn"><svg class="icon"><use href="#icon-plus"></use></svg>Novo item</button><button id="catalogKitCreateFromItems" class="primary-btn">＋ Novo kit</button></div>
                 </div>
                 <div class="catalog-breadcrumb"><span>Shop</span><span>›</span><b id="catalogCurrentCategoryLabel">Categoria</b></div>
                 <div class="catalog-toolbar" style="margin-top:12px">
@@ -5207,6 +5212,26 @@ function renderAdminPanelHtml(token: string) {
       <div class="modal-actions"><button class="ghost-btn" id="catalogModalCancel">Cancelar</button><button class="primary-btn" id="catalogModalConfirm">Salvar item</button></div>
     </div>
   </div>
+  <div id="catalogKitModalBackdrop" class="modal-backdrop">
+    <div class="modal">
+      <h2 id="catalogKitModalTitle">Novo kit</h2>
+      <p>Monte um produto com vários itens da base DayZ. A composição fica isolada por servidor.</p>
+      <div class="form-grid two">
+        <label>ID<input id="catalogKitId" placeholder="kit_starter" /></label>
+        <label>Nome<input id="catalogKitName" placeholder="Kit Starter" /></label>
+        <label>Categoria<input id="catalogKitCategory" value="kits" /></label>
+        <label>Preço<input id="catalogKitPrice" type="number" min="0" step="1" value="0" /></label>
+        <label class="full">URL da imagem<input id="catalogKitImage" placeholder="https://..." /></label>
+        <label class="full">Descrição<textarea id="catalogKitDescription"></textarea></label>
+        <label class="full">Itens do kit <small style="display:block;color:var(--text-3);margin-top:4px">Use uma linha por item: ClassName | quantidade</small>
+          <textarea id="catalogKitItems" rows="8" placeholder="M4A1 | 1&#10;Mag_STANAG_30Rnd | 4&#10;Ammo_556x45 | 120"></textarea>
+        </label>
+        <label class="toggle-row full"><span><b>Disponível no shop</b></span><input id="catalogKitEnabled" type="checkbox" checked /></label>
+      </div>
+      <div class="modal-actions"><button class="ghost-btn" id="catalogKitModalCancel">Cancelar</button><button class="primary-btn" id="catalogKitModalConfirm">Salvar kit</button></div>
+    </div>
+  </div>
+
   <div id="itemModalBackdrop" class="modal-backdrop">
     <div class="modal">
       <h2 id="itemModalTitle">Item DayZ</h2>
@@ -5289,7 +5314,7 @@ function renderAdminPanelHtml(token: string) {
       coinAmount: document.getElementById("coinAmount"), coinReason: document.getElementById("coinReason"), toast: document.getElementById("toast"),
       detailDrawer: document.getElementById("detailDrawer"), drawerBody: document.getElementById("drawerBody"), drawerAvatar: document.getElementById("drawerAvatar"), drawerName: document.getElementById("drawerName"), drawerMeta: document.getElementById("drawerMeta"),
       catalogGrid: document.getElementById("catalogGrid"), catalogLoading: document.getElementById("catalogLoading"), catalogEmpty: document.getElementById("catalogEmpty"), catalogSearch: document.getElementById("catalogSearch"), catalogCategoryView: document.getElementById("catalogCategoryView"), catalogItemsView: document.getElementById("catalogItemsView"), catalogCategoryGrid: document.getElementById("catalogCategoryGrid"), catalogCurrentCategoryTitle: document.getElementById("catalogCurrentCategoryTitle"), catalogCurrentCategoryLabel: document.getElementById("catalogCurrentCategoryLabel"), shopQueueView: document.getElementById("shopQueueView"), shopQueueStats: document.getElementById("shopQueueStats"), shopQueueList: document.getElementById("shopQueueList"), shopQueueEmpty: document.getElementById("shopQueueEmpty"), shopQueueRuntime: document.getElementById("shopQueueRuntime"),
-      catalogModalBackdrop: document.getElementById("catalogModalBackdrop"), catalogModalTitle: document.getElementById("catalogModalTitle"), catalogModalSubtitle: document.getElementById("catalogModalSubtitle"), catalogItemId: document.getElementById("catalogItemId"), catalogItemAutocomplete: document.getElementById("catalogItemAutocomplete"), catalogItemCategory: document.getElementById("catalogItemCategory"), catalogItemName: document.getElementById("catalogItemName"), catalogItemPrice: document.getElementById("catalogItemPrice"), catalogItemImage: document.getElementById("catalogItemImage"), catalogItemDescription: document.getElementById("catalogItemDescription"), catalogItemEnabled: document.getElementById("catalogItemEnabled"), catalogCategoryModalBackdrop: document.getElementById("catalogCategoryModalBackdrop"), catalogCategoryName: document.getElementById("catalogCategoryName"), catalogCategoryId: document.getElementById("catalogCategoryId"), catalogCategoryDescription: document.getElementById("catalogCategoryDescription"), catalogCategoryEnabled: document.getElementById("catalogCategoryEnabled"),
+      catalogModalBackdrop: document.getElementById("catalogModalBackdrop"), catalogModalTitle: document.getElementById("catalogModalTitle"), catalogModalSubtitle: document.getElementById("catalogModalSubtitle"), catalogItemId: document.getElementById("catalogItemId"), catalogItemAutocomplete: document.getElementById("catalogItemAutocomplete"), catalogItemCategory: document.getElementById("catalogItemCategory"), catalogItemName: document.getElementById("catalogItemName"), catalogItemPrice: document.getElementById("catalogItemPrice"), catalogItemImage: document.getElementById("catalogItemImage"), catalogItemDescription: document.getElementById("catalogItemDescription"), catalogItemEnabled: document.getElementById("catalogItemEnabled"), catalogCategoryModalBackdrop: document.getElementById("catalogCategoryModalBackdrop"), catalogCategoryName: document.getElementById("catalogCategoryName"), catalogCategoryId: document.getElementById("catalogCategoryId"), catalogCategoryDescription: document.getElementById("catalogCategoryDescription"), catalogCategoryEnabled: document.getElementById("catalogCategoryEnabled"), catalogKitCreate: document.getElementById("catalogKitCreate"), catalogKitCreateFromItems: document.getElementById("catalogKitCreateFromItems"), catalogKitModalBackdrop: document.getElementById("catalogKitModalBackdrop"), catalogKitModalTitle: document.getElementById("catalogKitModalTitle"), catalogKitId: document.getElementById("catalogKitId"), catalogKitName: document.getElementById("catalogKitName"), catalogKitCategory: document.getElementById("catalogKitCategory"), catalogKitPrice: document.getElementById("catalogKitPrice"), catalogKitImage: document.getElementById("catalogKitImage"), catalogKitDescription: document.getElementById("catalogKitDescription"), catalogKitEnabled: document.getElementById("catalogKitEnabled"), catalogKitItems: document.getElementById("catalogKitItems"),
       itemsList: document.getElementById("itemsList"), itemsLoading: document.getElementById("itemsLoading"), itemsEmpty: document.getElementById("itemsEmpty"), itemsSearch: document.getElementById("itemsSearch"), itemsFilter: document.getElementById("itemsFilter"), itemsRefresh: document.getElementById("itemsRefresh"), itemsSentinel: document.getElementById("itemsSentinel"),
       lockedContainerSetupStatus: document.getElementById("lockedContainerSetupStatus"), lockedContainerModalStatus: document.getElementById("lockedContainerModalStatus"), lockedContainerInstalledSection: document.getElementById("lockedContainerInstalledSection"), lockedContainerInstalledGrid: document.getElementById("lockedContainerInstalledGrid"), lockedContainerAvailableGrid: document.getElementById("lockedContainerAvailableGrid"), eventIntegrationModalBackdrop: document.getElementById("eventIntegrationModalBackdrop"), eventIntegrationModalClose: document.getElementById("eventIntegrationModalClose"),
       itemModalBackdrop: document.getElementById("itemModalBackdrop"), itemModalTitle: document.getElementById("itemModalTitle"), itemModalSubtitle: document.getElementById("itemModalSubtitle"), itemModalPreviewImage: document.getElementById("itemModalPreviewImage"), itemModalPreviewName: document.getElementById("itemModalPreviewName"), itemModalPreviewClass: document.getElementById("itemModalPreviewClass"), itemModalPopularName: document.getElementById("itemModalPopularName"), itemModalImageUrl: document.getElementById("itemModalImageUrl"), itemModalSpawnEventName: document.getElementById("itemModalSpawnEventName"), itemModalEnabled: document.getElementById("itemModalEnabled"),
@@ -5699,6 +5724,14 @@ function renderAdminPanelHtml(token: string) {
 
       const selectedCategory = state.catalogCategory;
       const category = findCatalogCategory(selectedCategory);
+      if (selectedCategory === "__kits") {
+        const kits = state.catalog.kits || [];
+        els.catalogCurrentCategoryTitle.textContent = "Kits";
+        els.catalogCurrentCategoryLabel.textContent = "Kits";
+        els.catalogGrid.innerHTML = kits.map((kit) => '<article class="catalog-item"><div class="catalog-item-top"><div class="catalog-thumb">' + (kit.imageUrl ? '<img src="' + escapeHtml(kit.imageUrl) + '" />' : icon("package", "entity-icon")) + '</div><div><div class="catalog-name">' + escapeHtml(kit.name) + '</div><div class="catalog-class">' + escapeHtml((kit.items || []).map((i) => i.className + " × " + i.quantity).join(", ")) + '</div></div><div class="catalog-price">' + formatCoins(kit.price) + '</div></div><div class="catalog-description">' + escapeHtml(kit.description || "Kit") + '</div><div class="catalog-actions"><button class="mini-btn" data-kit-action="edit" data-kit-id="' + escapeHtml(kit.id) + '">Editar</button><button class="mini-btn" data-kit-action="toggle" data-kit-id="' + escapeHtml(kit.id) + '">' + (kit.enabled ? "Desativar" : "Ativar") + '</button><button class="mini-btn danger" data-kit-action="delete" data-kit-id="' + escapeHtml(kit.id) + '">Excluir</button></div></article>').join("");
+        els.catalogEmpty.style.display = kits.length ? "none" : "block";
+        return;
+      }
       els.catalogCurrentCategoryTitle.textContent = category ? category.label : "Itens";
       els.catalogCurrentCategoryLabel.textContent = category ? category.label : selectedCategory;
       const search = String(state.catalogSearch || "").trim().toLowerCase();
@@ -5718,9 +5751,19 @@ function renderAdminPanelHtml(token: string) {
       els.catalogLoading.style.display = "none";
       if (!response.ok) { showToast(await response.text()); return; }
       state.catalog = await response.json();
-      if (state.catalogCategory && !findCatalogCategory(state.catalogCategory)) state.catalogCategory = "";
+      if (state.catalogCategory && !findCatalogCategory(state.catalogCategory) && state.catalogCategory !== "__kits") state.catalogCategory = "";
       renderCatalog();
     }
+    document.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-kit-action]");
+      if (!button) return;
+      const id = button.getAttribute("data-kit-id") || "";
+      const action = button.getAttribute("data-kit-action");
+      const kit = (state.catalog?.kits || []).find((entry) => entry.id === id);
+      if (action === "edit") openCatalogKitModal(kit);
+      if (action === "toggle") toggleCatalogKit(id);
+      if (action === "delete") deleteCatalogKit(id);
+    });
     function findCatalogItem(itemId) {
       return (state.catalog?.items || []).find((item) => item.id === itemId) || null;
     }
@@ -5811,6 +5854,16 @@ function renderAdminPanelHtml(token: string) {
       showToast(isCreate ? "Item criado com sucesso." : "Item atualizado com sucesso.");
       await loadCatalog();
     }
+    async function toggleCatalogKit(id) {
+      const kit = (state.catalog?.kits || []).find((entry) => entry.id === id); if (!kit) return;
+      const response = await apiFetch("/admin-panel/api/catalog/kits/" + encodeURIComponent(id) + "/toggle", { method: "PATCH", body: JSON.stringify({ enabled: !kit.enabled }) });
+      if (!response.ok) { showToast(await response.text()); return; } await loadCatalog();
+    }
+    async function deleteCatalogKit(id) {
+      if (!confirm("Excluir este kit?")) return;
+      const response = await apiFetch("/admin-panel/api/catalog/kits/" + encodeURIComponent(id), { method: "DELETE" });
+      if (!response.ok) { showToast(await response.text()); return; } await loadCatalog();
+    }
     async function toggleCatalogItem(itemId) {
       const item = findCatalogItem(itemId);
       if (!item) return;
@@ -5865,6 +5918,53 @@ function renderAdminPanelHtml(token: string) {
       await loadCatalog();
     }
 
+
+
+    function openCatalogKitModal(kit) {
+      state.catalogKitModal = { mode: kit ? "edit" : "create", id: kit?.id || null };
+      els.catalogKitModalTitle.textContent = kit ? "Editar kit" : "Novo kit";
+      els.catalogKitId.value = kit?.id || "";
+      els.catalogKitId.disabled = Boolean(kit);
+      els.catalogKitName.value = kit?.name || "";
+      els.catalogKitCategory.value = kit?.category || "kits";
+      els.catalogKitPrice.value = kit?.price ?? 0;
+      els.catalogKitImage.value = kit?.imageUrl || "";
+      els.catalogKitDescription.value = kit?.description || "";
+      els.catalogKitItems.value = (kit?.items || []).map((item) => item.className + " | " + item.quantity).join("\n");
+      els.catalogKitEnabled.checked = kit?.enabled !== false;
+      els.catalogKitModalBackdrop.classList.add("open");
+      setTimeout(() => els.catalogKitName.focus(), 80);
+    }
+    function closeCatalogKitModal() {
+      state.catalogKitModal = null;
+      els.catalogKitModalBackdrop.classList.remove("open");
+    }
+    function readCatalogKitForm() {
+      const lines = String(els.catalogKitItems.value || "").split("\n").map((line) => line.trim()).filter(Boolean);
+      const items = lines.map((line) => {
+        const parts = line.split("|");
+        return { className: String(parts[0] || "").trim(), quantity: Math.max(1, Number(parts[1] || 1)) };
+      }).filter((item) => item.className);
+      return {
+        id: String(els.catalogKitId.value || els.catalogKitName.value || "").trim(),
+        name: String(els.catalogKitName.value || "").trim(),
+        category: String(els.catalogKitCategory.value || "kits").trim(),
+        price: Number(els.catalogKitPrice.value || 0),
+        imageUrl: String(els.catalogKitImage.value || "").trim(),
+        description: String(els.catalogKitDescription.value || "").trim(),
+        enabled: Boolean(els.catalogKitEnabled.checked),
+        items,
+      };
+    }
+    async function saveCatalogKit() {
+      const payload = readCatalogKitForm();
+      if (!payload.name || !payload.items.length) { showToast("Informe o nome e pelo menos um item."); return; }
+      const editing = Boolean(state.catalogKitModal?.id);
+      const path = editing ? "/admin-panel/api/catalog/kits/" + encodeURIComponent(state.catalogKitModal.id) : "/admin-panel/api/catalog/kits";
+      const response = await apiFetch(path, { method: editing ? "PATCH" : "POST", body: JSON.stringify(payload) });
+      if (!response.ok) { showToast(await response.text()); return; }
+      closeCatalogKitModal(); showToast(editing ? "Kit atualizado." : "Kit criado."); await loadCatalog();
+    }
 
     function dayzItemImageHtml(item) {
       const imageUrl = item?.imageUrl || item?.urlImg || "";
