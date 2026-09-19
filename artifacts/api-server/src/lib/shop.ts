@@ -1469,10 +1469,21 @@ export function formatShopQueue(state: AppState) {
     lines.push("No shop orders yet.");
   } else {
     for (const order of latest) {
-      lines.push(
-        `• \`${order.status}\` ${order.itemClass} @ \`${order.x}, ${order.y}, ${order.z}\``,
-      );
+      if (order.itemKind === "kit" && Array.isArray(order.kitItems) && order.kitItems.length) {
+        const contents = order.kitItems
+          .map((component) => String(component.name || component.className) + " ×" + Math.max(1, Math.floor(Number(component.quantity || 1))))
+          .join(", ");
+        lines.push(
+          "• `" + order.status + "` 📦 " + (order.itemName || order.kitId || "Kit") + " @ `" + order.x + ", " + order.y + ", " + order.z + "`",
+        );
+        lines.push("  └─ " + contents);
+      } else {
+        lines.push(
+          "• `" + order.status + "` " + order.itemClass + " @ `" + order.x + ", " + order.y + ", " + order.z + "`",
+        );
+      }
     }
+  }
   }
 
   return lines.join("\n");
