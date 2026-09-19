@@ -98,41 +98,23 @@ function getOrderEventName(order: ShopOrder, index: number) {
   const id = sanitizeEventPart(order.id || String(index)).slice(-16);
 
   if (isVehicleOrder(order)) {
-    // Custom vehicle events must start with Vehicle, but should not reuse the
-    // vanilla event name. This keeps bought vehicles isolated from natural CE
-    // vehicle counts/positions.
     return `VehicleShop_${item}_${id || index}`;
+  }
+
+  if (order.itemKind === "kit" && Array.isArray(order.kitItems) && order.kitItems.length) {
+    const kit = sanitizeEventPart(order.kitId || order.itemName || "Kit");
+    return `StaticKit_${kit}_${id || index}`;
   }
 
   return `Static_${item}_${id || index}`;
 }
 
+// Delivery expansion is intentionally kept at the order/event level.
+// A Kit is one ShopOrder and therefore one CE event with multiple children.
+// Quantities are represented by each child's min/max values instead of creating
+// multiple events at the same coordinate.
 export function expandShopOrdersForDelivery(orders: ShopOrder[]): ShopOrder[] {
-  const expanded: ShopOrder[] = [];
-  for (const order of orders) {
-    const components = Array.isArray(order.kitItems) && order.kitItems.length ? order.kitItems : null;
-    if (!components) {
-      expanded.push(order);
-      continue;
-    }
-    for (const component of components) {
-      const quantity = Math.max(1, Math.floor(Number(component.quantity || 1)));
-      for (let unit = 0; unit < quantity; unit += 1) {
-        expanded.push({
-          ...order,
-          id: `${order.id}_${sanitizeEventPart(component.className)}_${unit + 1}`,
-          itemKind: "item",
-          kitId: undefined,
-          kitItems: undefined,
-          itemClass: String(component.className || "").trim(),
-          itemName: component.name || component.className,
-          spawnEventName: undefined,
-          deliveryKind: "item",
-        });
-      }
-    }
-  }
-  return expanded;
+  return orders.map((order) => ({ ...order }));
 }
 
 function resolveShopOrders(orders: ShopOrder[]): ResolvedShopOrder[] {
@@ -144,6 +126,18 @@ function resolveShopOrders(orders: ShopOrder[]): ResolvedShopOrder[] {
 }
 
 function buildStaticEventXml(order: ShopOrder, eventName: string) {
+  const components = Array.isArray(order.kitItems) && order.kitItems.length
+    ? order.kitItems
+    : [{ className: order.itemClass, quantity: 1 }];
+
+  const children = components
+    .map((component) => {
+      const className = String(component.className || "").trim();
+      const quantity = Math.max(1, Math.floor(Number(component.quantity || 1)));
+      return `            <child lootmax="0" lootmin="0" max="${quantity}" min="${quantity}" type="${className}"/>`;
+    })
+    .join("\n");
+
   return [
     `    <event name="${eventName}">`,
     "        <nominal>1</nominal>",
@@ -159,7 +153,7 @@ function buildStaticEventXml(order: ShopOrder, eventName: string) {
     "        <limit>child</limit>",
     "        <active>1</active>",
     "        <children>",
-    `            <child lootmax="0" lootmin="0" max="1" min="1" type="${order.itemClass}"/>`,
+    children,
     "        </children>",
     "    </event>",
   ].join("\n");
