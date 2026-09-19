@@ -5765,6 +5765,14 @@ function renderAdminPanelHtml(token: string) {
         '<div class="category-subtitle">' + countLabel + '</div>' +
       '</article>';
     }
+    function catalogKitsCard(catalog) {
+      const count = (catalog?.kits || []).length;
+      return '<article class="catalog-category-card catalog-kits-card" id="catalogKitsCard">' +
+        '<div class="category-icon">▦</div>' +
+        '<div class="category-title">Kits</div>' +
+        '<div class="category-subtitle">' + formatCoins(count) + ' kit' + (count === 1 ? '' : 's') + '</div>' +
+      '</article>';
+    }
     function catalogNewCategoryCard() {
       return '<article class="catalog-category-card new" id="catalogNewCategoryCard"><div class="category-icon">＋</div><div class="category-title">Nova categoria</div><div class="category-subtitle">Criar uma nova pasta</div></article>';
     }
@@ -5821,7 +5829,7 @@ function renderAdminPanelHtml(token: string) {
       if (isQueue) { renderShopQueue(); return; }
 
       if (!isItems) {
-        els.catalogCategoryGrid.innerHTML = (state.catalog.categories || []).map(catalogCategoryCard).join("") + catalogNewCategoryCard();
+        els.catalogCategoryGrid.innerHTML = catalogKitsCard(state.catalog) + (state.catalog.categories || []).map(catalogCategoryCard).join("") + catalogNewCategoryCard();
         els.catalogEmpty.style.display = "none";
         return;
       }
@@ -6260,7 +6268,11 @@ function renderAdminPanelHtml(token: string) {
       const path = editing ? "/admin-panel/api/catalog/kits/" + encodeURIComponent(state.catalogKitModal.id) : "/admin-panel/api/catalog/kits";
       const response = await apiFetch(path, { method: editing ? "PATCH" : "POST", body: JSON.stringify(payload) });
       if (!response.ok) { showToast(await response.text()); return; }
-      closeCatalogKitModal(); showToast(editing ? "Kit atualizado." : "Kit criado."); await loadCatalog();
+      closeCatalogKitModal();
+      showToast(editing ? "Kit atualizado." : "Kit criado.");
+      state.catalogCategory = "__kits";
+      state.catalogMode = "items";
+      await loadCatalog();
     }
 
 
@@ -9064,6 +9076,14 @@ function renderAdminPanelHtml(token: string) {
       const card = event.target.closest(".catalog-category-card");
       if (!card) return;
       if (card.id === "catalogNewCategoryCard") { openCatalogCategoryModal(); return; }
+      if (card.id === "catalogKitsCard") {
+        state.catalogCategory = "__kits";
+        state.catalogMode = "items";
+        state.catalogSearch = "";
+        if (els.catalogSearch) els.catalogSearch.value = "";
+        renderCatalog();
+        return;
+      }
       const categoryId = card.getAttribute("data-category-id");
       if (!categoryId) return;
       if (deleteButton?.dataset.categoryAction === "delete") {
