@@ -111,6 +111,7 @@ export async function ensureShopCatalogSchema() {
         kit_id TEXT NOT NULL,
         class_name TEXT NOT NULL,
         name TEXT,
+        image_url TEXT,
         quantity INTEGER NOT NULL DEFAULT 1,
         sort_order INTEGER NOT NULL DEFAULT 0,
         PRIMARY KEY (server_id, kit_id, class_name),
@@ -212,6 +213,7 @@ function normalizeCatalog(catalog: ShopCatalog): ShopCatalog {
     items: (kit.items || []).filter((item) => item?.className).map((item) => ({
       className: String(item.className).trim(),
       name: item.name ? String(item.name).trim() : undefined,
+      imageUrl: item.imageUrl ? String(item.imageUrl).trim() : undefined,
       quantity: Math.max(1, Math.floor(Number(item.quantity || 1))),
     })),
   }));
@@ -256,7 +258,7 @@ export async function loadShopCatalogFromDatabase(): Promise<ShopCatalog> {
   const baseItems = itemRows.map(rowToItem);
   const hydratedItems = await hydrateCatalogItemsFromDzPage(baseItems);
   const kits = await Promise.all(kitRows.map(async (row: any) => {
-    const rows = await db`SELECT class_name, name, quantity, sort_order
+    const rows = await db`SELECT class_name, name, image_url, quantity, sort_order
       FROM server_shop_catalog_kit_components
       WHERE server_id = ${serverId} AND kit_id = ${row.id}
       ORDER BY sort_order ASC, class_name ASC`;
@@ -272,6 +274,7 @@ export async function loadShopCatalogFromDatabase(): Promise<ShopCatalog> {
       items: rows.map((item: any) => ({
         className: String(item.class_name || "").trim(),
         name: item.name ? String(item.name).trim() : undefined,
+        imageUrl: item.image_url ? String(item.image_url).trim() : undefined,
         quantity: Math.max(1, Math.floor(Number(item.quantity || 1))),
       })).filter((item: ShopKitItem) => item.className),
     } as ShopKit;
@@ -364,7 +367,7 @@ export async function upsertShopKitInDatabase(kit: ShopKit) {
   const id = normalizeShopCatalogId(kit.id || kit.name);
   if (!id) throw new Error("Kit requires an id.");
 
-  const itemsByClassName = new Map<string, { className: string; name?: string; quantity: number; sortOrder: number }>();
+  const itemsByClassName = new Map<string, { className: string; name?: string; imageUrl?: string; quantity: number; sortOrder: number }>();
   for (const [index, rawItem] of (kit.items || []).entries()) {
     const className = String(rawItem?.className || "").trim();
     if (!className) continue;
@@ -377,9 +380,11 @@ export async function upsertShopKitInDatabase(kit: ShopKit) {
     }
 
     const name = rawItem.name ? String(rawItem.name).trim() : undefined;
+    const imageUrl = rawItem.imageUrl ? String(rawItem.imageUrl).trim() : undefined;
     itemsByClassName.set(className, {
       className,
       ...(name ? { name } : {}),
+      ...(imageUrl ? { imageUrl } : {}),
       quantity,
       sortOrder: index,
     });
@@ -401,8 +406,8 @@ export async function upsertShopKitInDatabase(kit: ShopKit) {
 
     for (const item of items) {
       await tx`INSERT INTO server_shop_catalog_kit_components
-        (server_id, kit_id, class_name, name, quantity, sort_order)
-        VALUES (${serverId}, ${id}, ${item.className}, ${item.name || null}, ${item.quantity}, ${item.sortOrder})`;
+        (server_id, kit_id, class_name, name, image_url, quantity, sort_order)
+        VALUES (${serverId}, ${id}, ${item.className}, ${item.name || null}, ${item.imageUrl || null}, ${item.quantity}, ${item.sortOrder})`;
     }
   });
 
