@@ -497,8 +497,7 @@ function normalizeServerScopedSettingsDraft(value: unknown, existing: ServerScop
     } else {
       delete next.serverResetTimes;
       delete next.shopRestartTimes;
-    }
-  }
+    }  }
   const resetTimezoneInput = "serverResetTimezone" in source ? source.serverResetTimezone : source.shopRestartTimezone;
   if ("serverResetTimezone" in source || "shopRestartTimezone" in source) {
     const normalized = optionalServerText(resetTimezoneInput, 100);
@@ -535,6 +534,12 @@ function mapManagedServerRow(row: any): ManagedServerDescriptor {
     enabled: row.enabled !== false,
     primary: false,
     runtimeEnabled: Boolean(row.runtime_enabled),
+    // Reset cadence is read from the dedicated schedule table. The managed_servers
+    // columns remain a compatibility mirror during the migration.
+    resetSchedule: {
+      times: String(row.reset_schedule_times || row.server_reset_times || "").trim(),
+      timezone: String(row.reset_schedule_timezone || row.server_reset_timezone || "America/Sao_Paulo").trim(),
+    },
     onboardingStatus: normalizeServerOnboardingStatus(row.onboarding_status),
     mode: "multi-server-native",
     integrations: {
@@ -614,10 +619,12 @@ function mapManagedServerRow(row: any): ManagedServerDescriptor {
 async function reloadManagedServerRegistryFromDb() {
   if (!sql) return [] as ManagedServerDescriptor[];
   const rows = await getSql()`
-    SELECT id, name, organization_id, enabled, primary_server, runtime_enabled, onboarding_status,
-           mode, nitrado_service_id, discord_guild_id, server_reset_times, server_reset_timezone, runtime_config
-    FROM managed_servers
-    ORDER BY created_at ASC, id ASC
+    SELECT ms.id, ms.name, ms.organization_id, ms.enabled, ms.primary_server, ms.runtime_enabled, ms.onboarding_status,
+           ms.mode, ms.nitrado_service_id, ms.discord_guild_id, ms.server_reset_times, ms.server_reset_timezone, ms.runtime_config,
+           srs.times AS reset_schedule_times, srs.timezone AS reset_schedule_timezone
+    FROM managed_servers ms
+    LEFT JOIN server_reset_schedules srs ON srs.server_id = ms.id
+    ORDER BY ms.created_at ASC, ms.id ASC
   `;
   const descriptors = (rows as any[]).map((row) => mapManagedServerRow(row));
   setPersistedManagedServers(descriptors);
@@ -712,6 +719,51 @@ export async function ensureManagedServerRegistryMetadata() {
       setOrganizationRegistryPersistenceStatus({ enabled: true, organizationsTableReady: true, membershipsTableReady: true, defaultOrganizationSeeded: true, initialized: true });
 
       await getSql()`CREATE TABLE IF NOT EXISTS managed_servers (id TEXT PRIMARY KEY, name TEXT NOT NULL, organization_id TEXT NOT NULL, enabled BOOLEAN NOT NULL DEFAULT TRUE, primary_server BOOLEAN NOT NULL DEFAULT FALSE, runtime_enabled BOOLEAN NOT NULL DEFAULT FALSE, onboarding_status TEXT NOT NULL DEFAULT 'draft', mode TEXT NOT NULL DEFAULT 'multi-server-native', nitrado_service_id TEXT, discord_guild_id TEXT, server_reset_times TEXT, server_reset_timezone TEXT, runtime_config JSONB, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW() )`;
+      await getSql()`
+        CREATE TABLE IF NOT EXISTS server_reset_schedules (
+          server_id TEXT PRIMARY KEY REFERENCES managed_servers(id) ON DELETE CASCADE,
+          times TEXT NOT NULL,
+          timezone TEXT NOT NULL DEFAULT 'America/Sao_Paulo',
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `;
+      await getSql()`CREATE INDEX IF NOT EXISTS server_reset_schedules_updated_at_idx ON server_reset_schedules (updated_at)`;
+      // Migrate the existing dedicated managed_servers columns into the canonical
+      // schedule table without losing any already configured cadence.
+      await getSql()`
+        INSERT INTO server_reset_schedules (server_id, times, timezone, updated_at)
+        SELECT id, BTRIM(server_reset_times), COALESCE(NULLIF(BTRIM(server_reset_timezone), ''), 'America/Sao_Paulo'), NOW()
+        FROM managed_servers
+        WHERE NULLIF(BTRIM(server_reset_times), '') IS NOT NULL
+        ON CONFLICT (server_id) DO UPDATE
+        SET times = EXCLUDED.times,
+            timezone = EXCLUDED.timezone,
+            updated_at = NOW()
+      `;
+      // Keep legacy managed_servers columns synchronized as a compatibility mirror.
+      // New reads use server_reset_schedules exclusively.
+      await getSql()`
+        CREATE OR REPLACE FUNCTION sync_server_reset_schedule_mirror()
+        RETURNS TRIGGER AS $
+        BEGIN
+          IF NULLIF(BTRIM(NEW.server_reset_times), '') IS NULL THEN
+            DELETE FROM server_reset_schedules WHERE server_id = NEW.id;
+          ELSE
+            INSERT INTO server_reset_schedules (server_id, times, timezone, updated_at)
+            VALUES (NEW.id, BTRIM(NEW.server_reset_times), COALESCE(NULLIF(BTRIM(NEW.server_reset_timezone), ''), 'America/Sao_Paulo'), NOW())
+            ON CONFLICT (server_id) DO UPDATE
+            SET times = EXCLUDED.times, timezone = EXCLUDED.timezone, updated_at = NOW();
+          END IF;
+          RETURN NEW;
+        END;
+        $ LANGUAGE plpgsql
+      `;
+      await getSql()`DROP TRIGGER IF EXISTS managed_servers_reset_schedule_mirror ON managed_servers`;
+      await getSql()`
+        CREATE TRIGGER managed_servers_reset_schedule_mirror
+        AFTER INSERT OR UPDATE OF server_reset_times, server_reset_timezone ON managed_servers
+        FOR EACH ROW EXECUTE FUNCTION sync_server_reset_schedule_mirror()
+      `;
       await getSql()`ALTER TABLE managed_servers ADD COLUMN IF NOT EXISTS runtime_config JSONB`;
       await getSql()`ALTER TABLE managed_servers ADD COLUMN IF NOT EXISTS server_reset_times TEXT`;
       await getSql()`ALTER TABLE managed_servers ADD COLUMN IF NOT EXISTS server_reset_timezone TEXT`;
@@ -997,8 +1049,7 @@ export type ServerResetState = {
 export type ShopSavedLocation = {
   id: string;
   discordUserId: string;
-  name: string;
-  x: number;
+  name: string;  x: number;
   y: number;
   z: number;
   createdAt: string;
@@ -1497,8 +1548,7 @@ function migrateLegacyState(data: any): AppState {
 
 
 
-function hasPersistedSpawnZones(value: any) {
-  return Boolean(value && typeof value === "object" && Array.isArray(value.zones) && value.zones.length > 0);
+function hasPersistedSpawnZones(value: any) {  return Boolean(value && typeof value === "object" && Array.isArray(value.zones) && value.zones.length > 0);
 }
 
 function parseLastPersistedState(): Partial<AppState> | null {
@@ -1997,8 +2047,7 @@ export async function updateManagedServerDiscordChannels(serverIdInput: unknown,
   const servers = await reloadManagedServerRegistryFromDb();
   recordNetworkTransfer({
     service: "neon-server-registry", operation: "update_server_discord_channels", direction: "outbound",
-    bytes: Buffer.byteLength(JSON.stringify({ serverId: id, discord }), "utf8"), ok: true,
-  });
+    bytes: Buffer.byteLength(JSON.stringify({ serverId: id, discord }), "utf8"), ok: true,  });
   return servers.find((server) => server.id === id);
 }
 
@@ -2045,6 +2094,21 @@ export async function updateManagedServerScopedSettings(serverIdInput: unknown, 
         runtime_config = ${JSON.stringify(runtime)}::jsonb, updated_at = NOW()
     WHERE id = ${id}
   `;
+  // The trigger mirrors the compatibility columns into the canonical schedule table.
+  // Keep this explicit assertion so a schedule save cannot silently succeed without
+  // a corresponding canonical row.
+  if (settings.serverResetTimes || settings.shopRestartTimes) {
+    const canonicalTimes = String(settings.serverResetTimes || settings.shopRestartTimes || "").trim();
+    const canonicalTimezone = String(settings.serverResetTimezone || settings.shopRestartTimezone || "America/Sao_Paulo").trim();
+    await getSql()`
+      INSERT INTO server_reset_schedules (server_id, times, timezone, updated_at)
+      VALUES (${id}, ${canonicalTimes}, ${canonicalTimezone}, NOW())
+      ON CONFLICT (server_id) DO UPDATE
+      SET times = EXCLUDED.times, timezone = EXCLUDED.timezone, updated_at = NOW()
+    `;
+  } else {
+    await getSql()`DELETE FROM server_reset_schedules WHERE server_id = ${id}`;
+  }
   const servers = await reloadManagedServerRegistryFromDb();
   recordNetworkTransfer({
     service: "neon-server-registry", operation: "update_server_scoped_settings", direction: "outbound",
@@ -2497,8 +2561,7 @@ export async function setManagedServerRuntimePaused(serverId: string, paused: bo
   if (!next) throw new Error(`Servidor ${id} nao encontrado apos atualizar pause/resume.`);
   recordNetworkTransfer({
     service: "neon-server-registry",
-    operation: paused ? "pause_server_runtime" : "resume_server_runtime",
-    direction: "outbound",
+    operation: paused ? "pause_server_runtime" : "resume_server_runtime",    direction: "outbound",
     bytes: Buffer.byteLength(JSON.stringify({ serverId: id, paused, operations }), "utf8"),
     ok: true,
   });
@@ -2997,8 +3060,7 @@ async function persistDomainBatchToNeon(
         service: "neon-player-stats",
         operation: "player_stats_batch_upsert",
         direction: "outbound",
-        bytes: playerPayloadBytes,
-        ok: true,
+        bytes: playerPayloadBytes,        ok: true,
       });
     }
     recordNetworkTransfer({
@@ -3497,8 +3559,7 @@ function summarizeGlobalPlayers(players: Record<string, PlayerStats> | undefined
 }
 
 function applyGranularPlayerRows(state: AppState, rows: any[]) {
-  let newestGranularAt = 0;
-  let applied = 0;
+  let newestGranularAt = 0;  let applied = 0;
   for (const row of rows || []) {
     const playerKey = String(row.player_key || "");
     if (!playerKey || !row.stats || typeof row.stats !== "object") continue;
@@ -3997,8 +4058,7 @@ async function flushPlayerPositionHistoryBatch() {
   const playerPositionFlushTimer = getPlayerPositionRuntime().flushTimer;
   if (playerPositionFlushTimer) {
     clearTimeout(playerPositionFlushTimer);
-    getPlayerPositionRuntime().flushTimer = null;
-  }
+    getPlayerPositionRuntime().flushTimer = null;  }
   if (!sql || !getPlayerPositionRuntime().pendingObservations.size) return;
 
   const rows = [...getPlayerPositionRuntime().pendingObservations.values()];
