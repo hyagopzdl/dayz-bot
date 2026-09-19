@@ -497,8 +497,7 @@ function normalizeServerScopedSettingsDraft(value: unknown, existing: ServerScop
     } else {
       delete next.serverResetTimes;
       delete next.shopRestartTimes;
-    }  }
-  const resetTimezoneInput = "serverResetTimezone" in source ? source.serverResetTimezone : source.shopRestartTimezone;
+    }  }  const resetTimezoneInput = "serverResetTimezone" in source ? source.serverResetTimezone : source.shopRestartTimezone;
   if ("serverResetTimezone" in source || "shopRestartTimezone" in source) {
     const normalized = optionalServerText(resetTimezoneInput, 100);
     if (normalized) {
@@ -719,8 +718,54 @@ export async function ensureManagedServerRegistryMetadata() {
       setOrganizationRegistryPersistenceStatus({ enabled: true, organizationsTableReady: true, membershipsTableReady: true, defaultOrganizationSeeded: true, initialized: true });
 
       await getSql()`CREATE TABLE IF NOT EXISTS managed_servers (id TEXT PRIMARY KEY, name TEXT NOT NULL, organization_id TEXT NOT NULL, enabled BOOLEAN NOT NULL DEFAULT TRUE, primary_server BOOLEAN NOT NULL DEFAULT FALSE, runtime_enabled BOOLEAN NOT NULL DEFAULT FALSE, onboarding_status TEXT NOT NULL DEFAULT 'draft', mode TEXT NOT NULL DEFAULT 'multi-server-native', nitrado_service_id TEXT, discord_guild_id TEXT, server_reset_times TEXT, server_reset_timezone TEXT, runtime_config JSONB, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW() )`;
+      await getSql()`ALTER TABLE managed_servers ADD COLUMN IF NOT EXISTS runtime_config JSONB`;
+      await getSql()`ALTER TABLE managed_servers ADD COLUMN IF NOT EXISTS server_reset_times TEXT`;
+      await getSql()`ALTER TABLE managed_servers ADD COLUMN IF NOT EXISTS server_reset_timezone TEXT`;
       await getSql()`
         CREATE TABLE IF NOT EXISTS server_reset_schedules (
+          server_id TEXT PRIMARY KEY REFERENCES managed_servers(id) ON DELETE CASCADE,
+          times TEXT NOT NULL,
+          timezone TEXT NOT NULL DEFAULT 'America/Sao_Paulo',
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `;
+      await getSql()`CREATE INDEX IF NOT EXISTS server_reset_schedules_updated_at_idx ON server_reset_schedules (updated_at)`;
+      // Migrate the existing dedicated managed_servers columns into the canonical
+      // schedule table without losing any already configured cadence.
+      await getSql()`
+        INSERT INTO server_reset_schedules (server_id, times, timezone, updated_at)
+        SELECT id, BTRIM(server_reset_times), COALESCE(NULLIF(BTRIM(server_reset_timezone), ''), 'America/Sao_Paulo'), NOW()
+        FROM managed_servers
+        WHERE NULLIF(BTRIM(server_reset_times), '') IS NOT NULL
+        ON CONFLICT (server_id) DO UPDATE
+        SET times = EXCLUDED.times,
+            timezone = EXCLUDED.timezone,
+            updated_at = NOW()
+      `;
+      // Keep legacy managed_servers columns synchronized as a compatibility mirror.
+      // New reads use server_reset_schedules exclusively.
+      await getSql()`
+        CREATE OR REPLACE FUNCTION sync_server_reset_schedule_mirror()
+        RETURNS TRIGGER AS $function$
+        BEGIN
+          IF NULLIF(BTRIM(NEW.server_reset_times), '') IS NULL THEN
+            DELETE FROM server_reset_schedules WHERE server_id = NEW.id;
+          ELSE
+            INSERT INTO server_reset_schedules (server_id, times, timezone, updated_at)
+            VALUES (NEW.id, BTRIM(NEW.server_reset_times), COALESCE(NULLIF(BTRIM(NEW.server_reset_timezone), ''), 'America/Sao_Paulo'), NOW())
+            ON CONFLICT (server_id) DO UPDATE
+            SET times = EXCLUDED.times, timezone = EXCLUDED.timezone, updated_at = NOW();
+          END IF;
+          RETURN NEW;
+        END;
+        $function$ LANGUAGE plpgsql
+      `;
+      await getSql()`DROP TRIGGER IF EXISTS managed_servers_reset_schedule_mirror ON managed_servers`;
+      await getSql()`
+        CREATE TRIGGER managed_servers_reset_schedule_mirror
+        AFTER INSERT OR UPDATE OF server_reset_times, server_reset_timezone ON managed_servers
+        FOR EACH ROW EXECUTE FUNCTION sync_server_reset_schedule_mirror()
+      `; (
           server_id TEXT PRIMARY KEY REFERENCES managed_servers(id) ON DELETE CASCADE,
           times TEXT NOT NULL,
           timezone TEXT NOT NULL DEFAULT 'America/Sao_Paulo',
@@ -997,7 +1042,6 @@ export type ShopOrderStatus =
   | "included_in_restart"
   | "spawned"
   | "failed";
-
 
 export type ShopResetMonitor = {
   batchId?: string;
@@ -1497,8 +1541,7 @@ function migrateLegacyState(data: any): AppState {
   state.shopAutoDeploy = data.shopAutoDeploy || null;
   state.mapRotation = data.mapRotation;
   state.mapVoteUserLocales = data.mapVoteUserLocales && typeof data.mapVoteUserLocales === "object" ? data.mapVoteUserLocales : {};
-  state.discordCommandSettings = normalizeDiscordCommandSettings(data.discordCommandSettings);
-  state.serviceSettings = normalizeServiceSettings(data.serviceSettings);
+  state.discordCommandSettings = normalizeDiscordCommandSettings(data.discordCommandSettings);  state.serviceSettings = normalizeServiceSettings(data.serviceSettings);
 
   const rawOnlinePlayers = data.onlinePlayers || {};
   const now = new Date().toISOString();
@@ -1997,8 +2040,7 @@ export async function bindManagedServerDiscordGuild(serverIdInput: unknown, guil
   const currentServers = await reloadManagedServerRegistryFromDb();
   const current = currentServers.find((server) => server.id === id);
   if (!current) throw new Error(`Servidor ${id} nao encontrado.`);
-  const duplicate = currentServers.find((server) => server.id !== id && server.integrations.discordGuildId === guildId);
-  if (duplicate) throw new Error(`Este Discord ja esta vinculado ao servidor ${duplicate.name}.`);
+  const duplicate = currentServers.find((server) => server.id !== id && server.integrations.discordGuildId === guildId);  if (duplicate) throw new Error(`Este Discord ja esta vinculado ao servidor ${duplicate.name}.`);
 
   const guildChanged = Boolean(current.integrations.discordGuildId && current.integrations.discordGuildId !== guildId);
   const nextRuntime = {
@@ -2497,8 +2539,7 @@ export async function setManagedServerRuntimeEnabled(serverId: string, enabled: 
         onboarding_status = 'ready',
         runtime_config = ${JSON.stringify(nextRuntime)}::jsonb,
         updated_at = NOW()
-    WHERE id = ${id} AND id <> ${getPrimaryServerId()}
-  `;
+    WHERE id = ${id} AND id <> ${getPrimaryServerId()}  `;
 
   const servers = await reloadManagedServerRegistryFromDb();
   const next = servers.find((server) => server.id === id);
@@ -2997,8 +3038,7 @@ async function persistDomainBatchToNeon(
 
   try {
     if (playerEntries.length) await ensureGranularPlayerStatsTable();
-    await sql.begin(async (tx: any) => {
-      for (const [domain, entry] of entries) {
+    await sql.begin(async (tx: any) => {      for (const [domain, entry] of entries) {
         if (botStateScopedPersistenceReady) {
           await tx`
             INSERT INTO bot_state (id, data, updated_at, server_id)
@@ -3497,7 +3537,6 @@ function scheduleNeonPersist() {
     });
   }, delay);
 }
-
 export async function flushStateAsync(forceCompatibilitySnapshot = false) {
   if (STATE_PERSISTENCE_V2_ENABLED) {
     await Promise.all([
@@ -3997,8 +4036,7 @@ export function getStateDomainPersistenceMetrics(serverId = getActiveServerId())
   const metric = domainPersistenceMetricsStore.get(serverId);
   const uptimeHours = Math.max(1 / 60, (Date.now() - new Date(metric.startedAt).getTime()) / 3_600_000);
   const flushes = Math.max(1, metric.flushes);
-  return {
-    serverId,
+  return {    serverId,
     ...metric,
     pendingDomains: getPersistenceRuntime(serverId).pendingDomains.size,
     backgroundCadenceMinutes: Math.round(STATE_BACKGROUND_PERSIST_MS / 60_000),
@@ -4498,31 +4536,3 @@ export async function saveStateAsync(data: AppState, reason?: string) {
 
   getPersistenceRuntime().pendingPersistJson = serialized;
   getPersistenceRuntime().pendingPersistHash = hash;
-  getPersistenceRuntime().pendingPersistReasons.add(persistenceReason);
-  getPersistenceRuntime().pendingPersistStartedAt = getPersistenceRuntime().pendingPersistStartedAt || Date.now();
-  scheduleNeonPersist();
-}
-
-export function getState(): AppState {
-  const cachedState = getCachedState();
-  if (cachedState) return cachedState;
-  setCachedState(readLocalState());
-  getPersistenceRuntime().lastPersistedJson = serializeState(getCachedState()!);
-  getPersistenceRuntime().lastPersistedHash = hashState(getPersistenceRuntime().lastPersistedJson);
-  getPersistenceRuntime().lastCoreHash = hashCoreState(getCachedState()!);
-  getPersistenceRuntime().lastDiscordRuntimeHash = hashState(serializeDiscordRuntime(getCachedState()!));
-  initializeDomainHashes(getCachedState()!);
-  return getCachedState()!;
-}
-
-export function saveState(data: AppState) {
-  setCachedState(data);
-  const serialized = serializeState(data);
-  getPersistenceRuntime().lastPersistedJson = serialized;
-  getPersistenceRuntime().lastPersistedHash = hashState(serialized);
-  getPersistenceRuntime().lastCoreHash = hashCoreState(data);
-  getPersistenceRuntime().lastDiscordRuntimeHash = hashState(serializeDiscordRuntime(data));
-  initializeDomainHashes(data);
-  writeLocalState(data);
-  logStateDebug("💾 STATE SALVO LOCALMENTE", { file: getLocalStateFile(), serverId: getActiveServerId() });
-}
