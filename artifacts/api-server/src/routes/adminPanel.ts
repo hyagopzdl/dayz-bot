@@ -1239,7 +1239,7 @@ function startSpawnZoneAutomationScheduler() {
 function renderSpawnPointXml(points: SpawnZonePointPayload[]) {
   return points
     .map((point) => `\t\t\t<pos x="${Number(point.x || 0).toFixed(2)}" z="${Number(point.z || 0).toFixed(2)}" />`)
-    .join("\n");
+    .join("\\n");
 }
 
 function replaceFreshSpawnPointsXml(xml: string, zone: SpawnZonePayload) {
@@ -5948,7 +5948,7 @@ function renderAdminPanelHtml(token: string) {
       els.catalogKitModalBackdrop.classList.remove("open");
     }
     function readCatalogKitForm() {
-      const lines = String(els.catalogKitItems.value || "").split("\n").map((line) => line.trim()).filter(Boolean);
+      const lines = String(els.catalogKitItems.value || "").split("\\n").map((line) => line.trim()).filter(Boolean);
       const items = lines.map((line) => {
         const parts = line.split("|");
         return { className: String(parts[0] || "").trim(), quantity: Math.max(1, Number(parts[1] || 1)) };
