@@ -7,6 +7,7 @@ import {
 } from "discord.js";
 import {
   createShopOrder,
+  createShopKitOrder,
   ensureShopDeliveryConfiguration,
   findSavedShopLocation,
   getShopItems,
@@ -205,14 +206,27 @@ export async function handleShopInteraction(interaction: any, ctx: ShopInteracti
           });
         }
 
-        const order = createShopOrder({
-          state,
-          discordUserId: interaction.user.id,
-          itemInput: checkout.itemId,
-          x: checkout.x,
-          y: checkout.y,
-          z: checkout.z,
-        });
+        const order = checkout.itemKind === "kit"
+          ? createShopKitOrder({
+              state,
+              discordUserId: interaction.user.id,
+              kitId: checkout.kitId || checkout.itemId,
+              x: checkout.x,
+              y: checkout.y,
+              z: checkout.z,
+              price,
+              locationName: checkout.saveLocationName,
+            })
+          : createShopOrder({
+              state,
+              discordUserId: interaction.user.id,
+              itemInput: checkout.itemId,
+              x: checkout.x,
+              y: checkout.y,
+              z: checkout.z,
+              price,
+              locationName: checkout.saveLocationName,
+            });
 
         if (price > 0) {
           purchaseWithWallet({
@@ -260,10 +274,13 @@ export async function handleShopInteraction(interaction: any, ctx: ShopInteracti
         return true;
       }
 
-      const [, itemId, locationId = "custom"] = interaction.customId.split(":");
+      const [, kindOrItemId, maybeItemIdOrLocation, maybeLocationId] = interaction.customId.split(":");
+      const isKit = kindOrItemId === "kit";
+      const itemId = isKit ? maybeItemIdOrLocation : kindOrItemId;
+      const locationId = (isKit ? maybeLocationId : maybeItemIdOrLocation) || "custom";
       await ensureShopCatalogLoaded();
-      const item = getShopItems().find((candidate) => candidate.id === itemId);
-      if (!item) {
+      const item = isKit ? null : getShopItems().find((candidate) => candidate.id === itemId);
+      if (!item && !isKit) {
         await interaction.reply({ content: "❌ Item not found.", ephemeral: true });
         return true;
       }
@@ -283,7 +300,7 @@ export async function handleShopInteraction(interaction: any, ctx: ShopInteracti
           const checkout = createPendingShopCheckout({
             state,
             discordUserId: interaction.user.id,
-            itemId,
+            itemId: isKit ? `kit:${itemId}` : itemId,
             x: location.x,
             y: location.y,
             z: location.z,
@@ -306,8 +323,8 @@ export async function handleShopInteraction(interaction: any, ctx: ShopInteracti
       }
 
       const modal = new ModalBuilder()
-        .setCustomId(`shop-modal:${item.id}`)
-        .setTitle(`Buy ${item.name}`);
+        .setCustomId(`shop-modal:${isKit ? "kit:" : ""}${itemId}`)
+        .setTitle(`Buy ${isKit ? "Kit" : item!.name}`);
 
       const coords = new TextInputBuilder()
         .setCustomId("coords")
