@@ -2960,7 +2960,7 @@ function renderAdminPanelHtml(token: string) {
     .primary-btn:hover { background: #6875ff; transform: translateY(-1px); }
     .danger-btn { background: rgba(242,63,67,.11); color: #ffb4b6; border: 1px solid rgba(242,63,67,.22); }
     .danger-btn:hover { background: rgba(242,63,67,.16); }
-    .content { padding: 28px; }
+    .content { padding: 28px; overflow-anchor: none; }
     .view { display: none; animation: fadeIn .18s ease both; }
     .view.active { display: block; }
     @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
@@ -3357,7 +3357,26 @@ function renderAdminPanelHtml(token: string) {
     .shop-history-meta { color: var(--text-3); font-size: 12px; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .shop-history-side { text-align: right; color: var(--text-3); font-size: 12px; line-height: 1.45; }
 
-    .items-shell { display: grid; gap: 14px; }
+    .kit-modal { max-width: 760px; }
+    .kit-items-editor { margin-top: 18px; padding: 16px; border: 1px solid var(--border); border-radius: 16px; background: #25262A; }
+    .kit-items-header { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom:12px; }
+    .kit-items-header h3 { margin:0; font-size:14px; font-weight:650; }
+    .kit-items-header p { margin:5px 0 0; color:var(--text-3); font-size:12px; }
+    .kit-item-rows { display:grid; gap:10px; }
+    .kit-item-row { display:grid; grid-template-columns:minmax(0,1fr) 110px 38px; gap:8px; align-items:start; }
+    .kit-item-search-wrap { position:relative; min-width:0; }
+    .kit-item-search { width:100%; }
+    .kit-item-selected { display:flex; align-items:center; gap:10px; min-height:42px; padding:8px 10px; border:1px solid var(--border-strong); border-radius:10px; background:#313338; }
+    .kit-item-selected-thumb { width:28px; height:28px; border-radius:8px; overflow:hidden; background:#25262A; display:grid; place-items:center; flex:0 0 auto; color:var(--text-3); }
+    .kit-item-selected-thumb img { width:100%; height:100%; object-fit:cover; }
+    .kit-item-selected-copy { min-width:0; }
+    .kit-item-selected-title { font-size:13px; font-weight:650; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .kit-item-selected-class { color:var(--text-3); font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:2px; }
+    .kit-item-remove { width:38px; height:42px; padding:0; }
+    .kit-add-item { margin-top:10px; width:100%; }
+    .kit-enabled-row { margin-top:16px; }
+    .kit-item-rows .autocomplete-menu { position:absolute; top:calc(100% + 6px); left:0; right:0; z-index:30; max-height:280px; overflow:auto; }
+    .items-shell { display: grid; gap: 14px; overflow-anchor: none; }
     .items-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) 180px auto; gap: 10px; align-items: center; }
     .items-list { display: grid; gap: 8px; }
     .dayz-item-row {
@@ -5221,21 +5240,31 @@ function renderAdminPanelHtml(token: string) {
     </div>
   </div>
   <div id="catalogKitModalBackdrop" class="modal-backdrop">
-    <div class="modal">
+    <div class="modal kit-modal">
       <h2 id="catalogKitModalTitle">Novo kit</h2>
-      <p>Monte um produto com vários itens da base DayZ. A composição fica isolada por servidor.</p>
+      <p>Monte um produto com vários itens da base DayZ. Selecione uma categoria existente e adicione os itens um por um.</p>
       <div class="form-grid two">
         <label>ID<input id="catalogKitId" placeholder="kit_starter" /></label>
         <label>Nome<input id="catalogKitName" placeholder="Kit Starter" /></label>
-        <label>Categoria<input id="catalogKitCategory" value="kits" /></label>
+        <label>Categoria<select id="catalogKitCategory"></select></label>
         <label>Preço<input id="catalogKitPrice" type="number" min="0" step="1" value="0" /></label>
         <label class="full">URL da imagem<input id="catalogKitImage" placeholder="https://..." /></label>
-        <label class="full">Descrição<textarea id="catalogKitDescription"></textarea></label>
-        <label class="full">Itens do kit <small style="display:block;color:var(--text-3);margin-top:4px">Use uma linha por item: ClassName | quantidade</small>
-          <textarea id="catalogKitItems" rows="8" placeholder="M4A1 | 1&#10;Mag_STANAG_30Rnd | 4&#10;Ammo_556x45 | 120"></textarea>
-        </label>
-        <label class="toggle-row full"><span><b>Disponível no shop</b></span><input id="catalogKitEnabled" type="checkbox" checked /></label>
+        <label class="full">Descrição<textarea id="catalogKitDescription" placeholder="Descrição exibida no shop..."></textarea></label>
       </div>
+
+      <div class="kit-items-editor">
+        <div class="kit-items-header">
+          <div>
+            <h3>Itens do kit</h3>
+            <p>Pesquise na base DayZ, escolha o item e informe a quantidade.</p>
+          </div>
+          <span id="catalogKitItemsCount" class="chip">0 itens</span>
+        </div>
+        <div id="catalogKitItemRows" class="kit-item-rows"></div>
+        <button type="button" id="catalogKitAddItem" class="ghost-btn kit-add-item">＋ Adicionar item</button>
+      </div>
+
+      <label class="toggle-row full kit-enabled-row"><span><b>Disponível no shop</b><small style="display:block;color:var(--text-3);margin-top:4px">Kits desativados ficam ocultos no /shop.</small></span><input id="catalogKitEnabled" type="checkbox" checked /></label>
       <div class="modal-actions"><button class="ghost-btn" id="catalogKitModalCancel">Cancelar</button><button class="primary-btn" id="catalogKitModalConfirm">Salvar kit</button></div>
     </div>
   </div>
@@ -5362,7 +5391,7 @@ function renderAdminPanelHtml(token: string) {
       coinAmount: document.getElementById("coinAmount"), coinReason: document.getElementById("coinReason"), toast: document.getElementById("toast"),
       detailDrawer: document.getElementById("detailDrawer"), drawerBody: document.getElementById("drawerBody"), drawerAvatar: document.getElementById("drawerAvatar"), drawerName: document.getElementById("drawerName"), drawerMeta: document.getElementById("drawerMeta"),
       catalogGrid: document.getElementById("catalogGrid"), catalogLoading: document.getElementById("catalogLoading"), catalogEmpty: document.getElementById("catalogEmpty"), catalogSearch: document.getElementById("catalogSearch"), catalogCategoryView: document.getElementById("catalogCategoryView"), catalogItemsView: document.getElementById("catalogItemsView"), catalogCategoryGrid: document.getElementById("catalogCategoryGrid"), catalogCurrentCategoryTitle: document.getElementById("catalogCurrentCategoryTitle"), catalogCurrentCategoryLabel: document.getElementById("catalogCurrentCategoryLabel"), shopQueueView: document.getElementById("shopQueueView"), shopQueueStats: document.getElementById("shopQueueStats"), shopQueueList: document.getElementById("shopQueueList"), shopQueueEmpty: document.getElementById("shopQueueEmpty"), shopQueueRuntime: document.getElementById("shopQueueRuntime"),
-      catalogModalBackdrop: document.getElementById("catalogModalBackdrop"), catalogModalTitle: document.getElementById("catalogModalTitle"), catalogModalSubtitle: document.getElementById("catalogModalSubtitle"), catalogItemId: document.getElementById("catalogItemId"), catalogItemAutocomplete: document.getElementById("catalogItemAutocomplete"), catalogItemCategory: document.getElementById("catalogItemCategory"), catalogItemName: document.getElementById("catalogItemName"), catalogItemPrice: document.getElementById("catalogItemPrice"), catalogItemImage: document.getElementById("catalogItemImage"), catalogItemDescription: document.getElementById("catalogItemDescription"), catalogItemEnabled: document.getElementById("catalogItemEnabled"), catalogCategoryModalBackdrop: document.getElementById("catalogCategoryModalBackdrop"), catalogCategoryName: document.getElementById("catalogCategoryName"), catalogCategoryId: document.getElementById("catalogCategoryId"), catalogCategoryDescription: document.getElementById("catalogCategoryDescription"), catalogCategoryEnabled: document.getElementById("catalogCategoryEnabled"), catalogKitCreate: document.getElementById("catalogKitCreate"), catalogKitCreateFromItems: document.getElementById("catalogKitCreateFromItems"), catalogKitModalBackdrop: document.getElementById("catalogKitModalBackdrop"), catalogKitModalTitle: document.getElementById("catalogKitModalTitle"), catalogKitId: document.getElementById("catalogKitId"), catalogKitName: document.getElementById("catalogKitName"), catalogKitCategory: document.getElementById("catalogKitCategory"), catalogKitPrice: document.getElementById("catalogKitPrice"), catalogKitImage: document.getElementById("catalogKitImage"), catalogKitDescription: document.getElementById("catalogKitDescription"), catalogKitEnabled: document.getElementById("catalogKitEnabled"), catalogKitItems: document.getElementById("catalogKitItems"),
+      catalogModalBackdrop: document.getElementById("catalogModalBackdrop"), catalogModalTitle: document.getElementById("catalogModalTitle"), catalogModalSubtitle: document.getElementById("catalogModalSubtitle"), catalogItemId: document.getElementById("catalogItemId"), catalogItemAutocomplete: document.getElementById("catalogItemAutocomplete"), catalogItemCategory: document.getElementById("catalogItemCategory"), catalogItemName: document.getElementById("catalogItemName"), catalogItemPrice: document.getElementById("catalogItemPrice"), catalogItemImage: document.getElementById("catalogItemImage"), catalogItemDescription: document.getElementById("catalogItemDescription"), catalogItemEnabled: document.getElementById("catalogItemEnabled"), catalogCategoryModalBackdrop: document.getElementById("catalogCategoryModalBackdrop"), catalogCategoryName: document.getElementById("catalogCategoryName"), catalogCategoryId: document.getElementById("catalogCategoryId"), catalogCategoryDescription: document.getElementById("catalogCategoryDescription"), catalogCategoryEnabled: document.getElementById("catalogCategoryEnabled"), catalogKitCreate: document.getElementById("catalogKitCreate"), catalogKitCreateFromItems: document.getElementById("catalogKitCreateFromItems"), catalogKitModalBackdrop: document.getElementById("catalogKitModalBackdrop"), catalogKitModalTitle: document.getElementById("catalogKitModalTitle"), catalogKitId: document.getElementById("catalogKitId"), catalogKitName: document.getElementById("catalogKitName"), catalogKitCategory: document.getElementById("catalogKitCategory"), catalogKitPrice: document.getElementById("catalogKitPrice"), catalogKitImage: document.getElementById("catalogKitImage"), catalogKitDescription: document.getElementById("catalogKitDescription"), catalogKitEnabled: document.getElementById("catalogKitEnabled"), catalogKitItemRows: document.getElementById("catalogKitItemRows"), catalogKitAddItem: document.getElementById("catalogKitAddItem"), catalogKitItemsCount: document.getElementById("catalogKitItemsCount"),
       itemsList: document.getElementById("itemsList"), itemsLoading: document.getElementById("itemsLoading"), itemsEmpty: document.getElementById("itemsEmpty"), itemsSearch: document.getElementById("itemsSearch"), itemsFilter: document.getElementById("itemsFilter"), itemsRefresh: document.getElementById("itemsRefresh"), itemsSentinel: document.getElementById("itemsSentinel"),
       lockedContainerSetupStatus: document.getElementById("lockedContainerSetupStatus"), lockedContainerModalStatus: document.getElementById("lockedContainerModalStatus"), lockedContainerInstalledSection: document.getElementById("lockedContainerInstalledSection"), lockedContainerInstalledGrid: document.getElementById("lockedContainerInstalledGrid"), lockedContainerAvailableGrid: document.getElementById("lockedContainerAvailableGrid"), eventIntegrationModalBackdrop: document.getElementById("eventIntegrationModalBackdrop"), eventIntegrationModalClose: document.getElementById("eventIntegrationModalClose"),
       itemModalBackdrop: document.getElementById("itemModalBackdrop"), itemModalTitle: document.getElementById("itemModalTitle"), itemModalSubtitle: document.getElementById("itemModalSubtitle"), itemModalPreviewImage: document.getElementById("itemModalPreviewImage"), itemModalPreviewName: document.getElementById("itemModalPreviewName"), itemModalPreviewClass: document.getElementById("itemModalPreviewClass"), itemModalPopularName: document.getElementById("itemModalPopularName"), itemModalImageUrl: document.getElementById("itemModalImageUrl"), itemModalSpawnEventName: document.getElementById("itemModalSpawnEventName"), itemModalEnabled: document.getElementById("itemModalEnabled"),
@@ -5817,8 +5846,37 @@ function renderAdminPanelHtml(token: string) {
     els.catalogKitCreateFromItems?.addEventListener("click", () => openCatalogKitModal());
     els.catalogKitModalCancel?.addEventListener("click", closeCatalogKitModal);
     els.catalogKitModalConfirm?.addEventListener("click", saveCatalogKit);
+    els.catalogKitAddItem?.addEventListener("click", () => addCatalogKitItemRow());
     els.catalogKitModalBackdrop?.addEventListener("click", (event) => {
       if (event.target === els.catalogKitModalBackdrop) closeCatalogKitModal();
+    });
+    els.catalogKitItemRows?.addEventListener("input", (event) => {
+      const input = event.target.closest("[data-kit-search]");
+      if (!input) return;
+      const row = input.closest(".kit-item-row");
+      if (row) searchCatalogKitItem(row, input.value);
+    });
+    els.catalogKitItemRows?.addEventListener("click", (event) => {
+      const remove = event.target.closest("[data-kit-remove]");
+      if (remove) {
+        const row = remove.closest(".kit-item-row");
+        if (row) { row.remove(); if (!els.catalogKitItemRows.querySelector(".kit-item-row")) addCatalogKitItemRow(); updateCatalogKitItemsCount(); }
+        return;
+      }
+      const select = event.target.closest("[data-kit-select]");
+      if (!select) return;
+      const row = select.closest(".kit-item-row");
+      if (!row) return;
+      row.dataset.className = select.dataset.kitSelect || "";
+      row.dataset.itemName = select.dataset.kitName || row.dataset.className;
+      row.dataset.imageUrl = select.dataset.kitImage || "";
+      const quantity = Math.max(1, Number(row.querySelector("[data-kit-quantity]")?.value || 1));
+      const items = getCatalogKitDraftItems();
+      const current = items.find((item) => item.className === row.dataset.className);
+      if (current) current.quantity = quantity;
+      renderCatalogKitItems(items);
+      if (!items.some((item) => !item.className)) addCatalogKitItemRow();
+      updateCatalogKitItemsCount();
     });
     function findCatalogItem(itemId) {
       return (state.catalog?.items || []).find((item) => item.id === itemId) || null;
@@ -5976,18 +6034,105 @@ function renderAdminPanelHtml(token: string) {
 
 
 
+    function renderCatalogKitCategoryOptions(selectedCategory) {
+      const categories = state.catalog?.categories || [];
+      const valid = categories.some((category) => category.id === selectedCategory);
+      els.catalogKitCategory.innerHTML = categories.length
+        ? categories.map((category) => '<option value="' + escapeHtml(category.id) + '">' + escapeHtml((category.emoji ? category.emoji + ' ' : '') + category.label) + '</option>').join("")
+        : '<option value="">Crie uma categoria primeiro</option>';
+      els.catalogKitCategory.disabled = !categories.length;
+      if (categories.length) els.catalogKitCategory.value = valid ? selectedCategory : categories[0].id;
+    }
+
+    function kitItemRowHtml(index, item) {
+      const selected = item?.className
+        ? '<div class="kit-item-selected"><div class="kit-item-selected-thumb">' +
+          (item.imageUrl ? '<img src="' + escapeHtml(item.imageUrl) + '" alt="" />' : icon("package", "entity-icon")) +
+          '</div><div class="kit-item-selected-copy"><div class="kit-item-selected-title">' + escapeHtml(item.name || item.className) + '</div><div class="kit-item-selected-class">' + escapeHtml(item.className) + '</div></div></div>'
+        : '<input class="kit-item-search" data-kit-search="' + index + '" autocomplete="off" placeholder="Pesquisar item por nome ou ClassName..." />';
+      return '<div class="kit-item-row" data-kit-row="' + index + '">' +
+        '<div class="kit-item-search-wrap">' + selected +
+        '<div class="autocomplete-menu kit-item-autocomplete" data-kit-autocomplete="' + index + '"></div></div>' +
+        '<input class="kit-item-quantity" data-kit-quantity="' + index + '" type="number" min="1" step="1" value="' + escapeHtml(String(item?.quantity || 1)) + '" aria-label="Quantidade" />' +
+        '<button type="button" class="ghost-btn kit-item-remove" data-kit-remove="' + index + '" aria-label="Remover item">×</button>' +
+        '</div>';
+    }
+
+    function renderCatalogKitItems(items) {
+      const normalized = Array.isArray(items) ? items : [];
+      els.catalogKitItemRows.innerHTML = normalized.map((item, index) => kitItemRowHtml(index, item)).join("");
+      els.catalogKitItemsCount.textContent = normalized.filter((item) => item?.className).length + " itens";
+      const firstEmpty = els.catalogKitItemRows.querySelector(".kit-item-search");
+      if (firstEmpty) setTimeout(() => firstEmpty.focus(), 40);
+    }
+
+    function updateCatalogKitItemsCount() {
+      const count = Array.from(els.catalogKitItemRows.querySelectorAll(".kit-item-row")).filter((row) => row.dataset.className).length;
+      els.catalogKitItemsCount.textContent = count + " " + (count === 1 ? "item" : "itens");
+    }
+
+    function getCatalogKitDraftItems() {
+      return Array.from(els.catalogKitItemRows.querySelectorAll(".kit-item-row")).map((row) => {
+        const quantity = Math.max(1, Number(row.querySelector("[data-kit-quantity]")?.value || 1));
+        return {
+          className: row.dataset.className || "",
+          name: row.dataset.itemName || "",
+          imageUrl: row.dataset.imageUrl || "",
+          quantity,
+        };
+      }).filter((item) => item.className);
+    }
+
+    function setKitItemAutocomplete(row, items) {
+      const menu = row.querySelector(".kit-item-autocomplete");
+      if (!menu) return;
+      if (!items.length) {
+        menu.innerHTML = '<div class="autocomplete-subtitle" style="padding:12px">Nenhum item encontrado.</div>';
+      } else {
+        menu.innerHTML = items.map((item) => {
+          const thumb = item.imageUrl ? '<img src="' + escapeHtml(item.imageUrl) + '" alt="" loading="lazy" />' : '<div class="autocomplete-fallback">' + icon("package", "entity-icon") + '</div>';
+          return '<button type="button" class="autocomplete-option" data-kit-select="' + escapeHtml(item.className) + '" data-kit-name="' + escapeHtml(item.popularName || item.className) + '" data-kit-image="' + escapeHtml(item.imageUrl || "") + '">' +
+            thumb + '<span><div class="autocomplete-title">' + escapeHtml(item.popularName || item.className) + '</div><div class="autocomplete-subtitle">' + escapeHtml(item.className) + '</div></span></button>';
+        }).join("");
+      }
+      menu.classList.add("open");
+    }
+
+    const kitAutocompleteTimers = new Map();
+    async function searchCatalogKitItem(row, query) {
+      const key = row.dataset.kitRow || "0";
+      clearTimeout(kitAutocompleteTimers.get(key));
+      kitAutocompleteTimers.set(key, setTimeout(async () => {
+        const response = await apiFetch("/admin-panel/api/dayz-items?query=" + encodeURIComponent(query || "") + "&limit=12");
+        if (!response.ok) return;
+        const payload = await response.json();
+        if (row.isConnected) setKitItemAutocomplete(row, payload.items || []);
+      }, 160));
+    }
+
+    function addCatalogKitItemRow(item = null) {
+      const items = getCatalogKitDraftItems();
+      if (item) items.push(item);
+      else items.push({ className: "", quantity: 1 });
+      renderCatalogKitItems(items);
+    }
+
     function openCatalogKitModal(kit) {
       state.catalogKitModal = { mode: kit ? "edit" : "create", id: kit?.id || null };
       els.catalogKitModalTitle.textContent = kit ? "Editar kit" : "Novo kit";
       els.catalogKitId.value = kit?.id || "";
       els.catalogKitId.disabled = Boolean(kit);
       els.catalogKitName.value = kit?.name || "";
-      els.catalogKitCategory.value = kit?.category || "kits";
+      renderCatalogKitCategoryOptions(kit?.category || "");
       els.catalogKitPrice.value = kit?.price ?? 0;
       els.catalogKitImage.value = kit?.imageUrl || "";
       els.catalogKitDescription.value = kit?.description || "";
-      els.catalogKitItems.value = (kit?.items || []).map((item) => item.className + " | " + item.quantity).join("\n");
       els.catalogKitEnabled.checked = kit?.enabled !== false;
+      renderCatalogKitItems((kit?.items || []).map((item) => ({
+        className: item.className,
+        name: item.name || item.className,
+        quantity: item.quantity,
+      })));
       els.catalogKitModalBackdrop.classList.add("open");
       setTimeout(() => els.catalogKitName.focus(), 80);
     }
@@ -5996,31 +6141,27 @@ function renderAdminPanelHtml(token: string) {
       els.catalogKitModalBackdrop.classList.remove("open");
     }
     function readCatalogKitForm() {
-      const lines = String(els.catalogKitItems.value || "").split("\n").map((line) => line.trim()).filter(Boolean);
-      const items = lines.map((line) => {
-        const parts = line.split("|");
-        return { className: String(parts[0] || "").trim(), quantity: Math.max(1, Number(parts[1] || 1)) };
-      }).filter((item) => item.className);
       return {
         id: String(els.catalogKitId.value || els.catalogKitName.value || "").trim(),
         name: String(els.catalogKitName.value || "").trim(),
-        category: String(els.catalogKitCategory.value || "kits").trim(),
+        category: String(els.catalogKitCategory.value || "").trim(),
         price: Number(els.catalogKitPrice.value || 0),
         imageUrl: String(els.catalogKitImage.value || "").trim(),
         description: String(els.catalogKitDescription.value || "").trim(),
         enabled: Boolean(els.catalogKitEnabled.checked),
-        items,
+        items: getCatalogKitDraftItems(),
       };
     }
     async function saveCatalogKit() {
       const payload = readCatalogKitForm();
-      if (!payload.name || !payload.items.length) { showToast("Informe o nome e pelo menos um item."); return; }
+      if (!payload.name || !payload.category || !payload.items.length) { showToast("Informe nome, categoria e pelo menos um item."); return; }
       const editing = Boolean(state.catalogKitModal?.id);
       const path = editing ? "/admin-panel/api/catalog/kits/" + encodeURIComponent(state.catalogKitModal.id) : "/admin-panel/api/catalog/kits";
       const response = await apiFetch(path, { method: editing ? "PATCH" : "POST", body: JSON.stringify(payload) });
       if (!response.ok) { showToast(await response.text()); return; }
       closeCatalogKitModal(); showToast(editing ? "Kit atualizado." : "Kit criado."); await loadCatalog();
     }
+
 
     function dayzItemImageHtml(item) {
       const imageUrl = item?.imageUrl || item?.urlImg || "";
@@ -6064,6 +6205,13 @@ function renderAdminPanelHtml(token: string) {
       state.itemsCursor = payload.nextCursor ?? (state.itemsCursor + incoming.length);
       state.itemsHasMore = Boolean(payload.hasMore);
       renderDayzItems(Boolean(!reset));
+      if (reset && state.view === "items") {
+        requestAnimationFrame(() => {
+          window.scrollTo(0, 0);
+          document.documentElement.scrollTop = 0;
+          document.body.scrollTop = 0;
+        });
+      }
     }
     function findDayzItem(className) {
       return state.dayzItems.find((item) => item.className === className) || null;
