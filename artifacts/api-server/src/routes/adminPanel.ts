@@ -38,7 +38,6 @@ import {
   type ShopCatalog,
   type ShopItem,
   type ShopKit,
-  getShopKits,
   upsertShopKit,
   deleteShopKit,
   toggleShopKit,
