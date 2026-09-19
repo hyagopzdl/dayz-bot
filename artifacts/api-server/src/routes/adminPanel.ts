@@ -8736,6 +8736,10 @@ function renderAdminPanelHtml(token: string) {
     document.getElementById("catalogBack").addEventListener("click", leaveCatalogCategory);
     document.getElementById("catalogCategoryCreate").addEventListener("click", openCatalogCategoryModal);
     document.getElementById("catalogCreate").addEventListener("click", () => openCatalogModal("create", null));
+    document.getElementById("catalogKitCreate").addEventListener("click", () => openCatalogKitModal(null));
+    document.getElementById("catalogKitCreateFromItems").addEventListener("click", () => openCatalogKitModal(null));
+    document.getElementById("catalogKitModalCancel").addEventListener("click", closeCatalogKitModal);
+    document.getElementById("catalogKitModalConfirm").addEventListener("click", saveCatalogKit);
     document.getElementById("catalogModalCancel").addEventListener("click", closeCatalogModal);
     document.getElementById("catalogModalConfirm").addEventListener("click", saveCatalogItem);
     document.getElementById("catalogCategoryModalCancel").addEventListener("click", closeCatalogCategoryModal);
