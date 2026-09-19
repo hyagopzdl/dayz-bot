@@ -18,6 +18,8 @@ import {
   getShopItemDeliveryKind,
   getShopItems,
   getShopItemsByCategory,
+  findShopKit,
+  getShopKits,
 } from "./shopCatalog";
 import type { AppState, ShopOrder, ShopPendingCheckout } from "./state";
 import { getActiveServerId } from "./serverRuntime";
@@ -57,6 +59,19 @@ export async function buildPlayerShopCatalog(state: AppState, session: PortalSes
       minimumPrice: categoryItems.length ? Math.min(...categoryItems.map((item) => Number(item.price || 0))) : 0,
     };
   });
+  const kits = getShopKits();
+  if (kits.length) {
+    categories.push({
+      id: "kits",
+      label: "Kits",
+      emoji: "▦",
+      description: "Pacotes de itens entregues juntos no próximo reset.",
+      itemCount: kits.length,
+      previewImages: kits.map((kit) => kit.imageUrl).filter(Boolean).slice(0, 3),
+      minimumPrice: Math.min(...kits.map((kit) => Number(kit.price || 0))),
+      enabled: true,
+    });
+  }
 
   return {
     profile: { linked: Boolean(link), gamertag: link?.gamertag || null },
@@ -71,6 +86,13 @@ export async function buildPlayerShopCategory(state: AppState, session: PortalSe
   const catalog = await buildPlayerShopCatalog(state, session);
   const category = catalog.categories.find((candidate) => candidate.id === categoryId);
   if (!category) throw new Error("Category not found.");
+  if (categoryId === "kits") {
+    return {
+      ...catalog,
+      category,
+      items: getShopKits().map(presentKit),
+    };
+  }
   return {
     ...catalog,
     category,
@@ -82,13 +104,38 @@ export async function buildPlayerShopItem(state: AppState, session: PortalSessio
   await ensureShopCatalogLoaded();
   const catalog = await buildPlayerShopCatalog(state, session);
   const item = findShopItem(itemId);
-  if (!item) throw new Error("Item not found.");
-  return { ...catalog, item: presentItem(item), locations: getSavedShopLocations(state, session.discordId) };
+  if (item) {
+    return { ...catalog, item: presentItem(item), locations: getSavedShopLocations(state, session.discordId) };
+  }
+  const kit = findShopKit(itemId);
+  if (!kit) throw new Error("Item not found.");
+  return { ...catalog, item: presentKit(kit), locations: getSavedShopLocations(state, session.discordId) };
+}
+
+function presentKit(kit: ReturnType<typeof getShopKits>[number]) {
+  return {
+    id: kit.id,
+    kind: "kit" as const,
+    name: kit.name,
+    technicalName: kit.name,
+    description: kit.description || "Pacote de itens entregue junto no próximo server reset.",
+    imageUrl: kit.imageUrl || null,
+    category: "kits",
+    price: Number(kit.price || 0),
+    deliveryKind: "item" as const,
+    components: (kit.items || []).map((item) => ({
+      className: item.className,
+      name: item.name || item.className,
+      quantity: Math.max(1, Math.floor(Number(item.quantity || 1))),
+      imageUrl: item.imageUrl || null,
+    })),
+  };
 }
 
 function presentItem(item: ReturnType<typeof getShopItems>[number]) {
   return {
     id: item.id,
+    kind: "item" as const,
     name: item.popularName || item.name,
     technicalName: item.name,
     description: item.description || "Delivered automatically at the selected location on the next server reset.",
@@ -103,6 +150,7 @@ export function createPlayerShopCheckout(options: {
   state: AppState;
   session: PortalSession;
   itemId: string;
+  itemKind?: "item" | "kit";
   x: unknown;
   z: unknown;
   locationId?: string;
@@ -112,8 +160,9 @@ export function createPlayerShopCheckout(options: {
   const link = getPlayerLinkByDiscordId(state, options.session.discordId);
   if (!link) throw new Error("Link your DayZ gamertag through Discord before purchasing.");
   assertShopCanAcceptPurchase(state);
-  const item = findShopItem(options.itemId);
-  if (!item) throw new Error("Item not found.");
+  const item = options.itemKind === "kit" ? null : findShopItem(options.itemId);
+  const kit = options.itemKind === "kit" ? findShopKit(options.itemId) : null;
+  if (!item && !kit) throw new Error("Item not found.");
   const x = roundCoord(options.x);
   const z = roundCoord(options.z);
   const y = 0;
@@ -127,12 +176,14 @@ export function createPlayerShopCheckout(options: {
     id: `checkout_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
     serverId: getActiveServerId(),
     discordUserId: options.session.discordId,
-    itemId: item.id,
-    itemClass: item.className,
-    itemName: item.popularName || item.name,
-    price: Number(item.price || 0),
-    ...(item.spawnEventName ? { spawnEventName: item.spawnEventName } : {}),
-    deliveryKind: getShopItemDeliveryKind(item),
+    itemId: item?.id || kit!.id,
+    itemKind: kit ? "kit" : "item",
+    ...(kit ? { kitId: kit.id } : {}),
+    itemClass: item?.className || kit!.items[0]?.className || "Kit",
+    itemName: item?.popularName || item?.name || kit!.name,
+    price: Number(item?.price ?? kit!.price ?? 0),
+    ...(item?.spawnEventName ? { spawnEventName: item.spawnEventName } : {}),
+    deliveryKind: item ? getShopItemDeliveryKind(item) : "item",
     x, y, z,
     saveLocationName: locationName,
     createdAt: now.toISOString(),
@@ -158,7 +209,7 @@ export function getPlayerShopCheckout(state: AppState, session: PortalSession, c
 function presentCheckout(checkout: ShopPendingCheckout, balance: number, runtime: ReturnType<typeof getShopRuntimeStatus>) {
   return {
     id: checkout.id,
-    item: { id: checkout.itemId, name: checkout.itemName || checkout.itemClass, price: Number(checkout.price || 0), deliveryKind: checkout.deliveryKind },
+    item: { id: checkout.itemId, kind: checkout.itemKind || "item", name: checkout.itemName || checkout.itemClass, price: Number(checkout.price || 0), deliveryKind: checkout.deliveryKind },
     location: { name: checkout.saveLocationName || null, x: checkout.x, z: checkout.z },
     balance,
     balanceAfter: Math.max(0, balance - Number(checkout.price || 0)),
@@ -184,7 +235,9 @@ export function confirmPlayerShopCheckout(state: AppState, session: PortalSessio
     if (checkout.saveLocationName) {
       saveShopLocation({ state, discordUserId: session.discordId, name: checkout.saveLocationName, x: checkout.x, y: checkout.y, z: checkout.z });
     }
-    const order = createShopOrder({ state, discordUserId: session.discordId, itemInput: checkout.itemId, x: checkout.x, y: checkout.y, z: checkout.z, price, locationName: checkout.saveLocationName });
+    const order = checkout.itemKind === "kit"
+      ? createShopKitOrder({ state, discordUserId: session.discordId, kitId: checkout.kitId || checkout.itemId, x: checkout.x, y: checkout.y, z: checkout.z, price, locationName: checkout.saveLocationName })
+      : createShopOrder({ state, discordUserId: session.discordId, itemInput: checkout.itemId, x: checkout.x, y: checkout.y, z: checkout.z, price, locationName: checkout.saveLocationName });
     if (price > 0) purchaseWithWallet({ state, link, amount: price, itemName: checkout.itemName || order.itemName || checkout.itemClass, orderId: order.id });
     const walletAfter = getOrCreateWalletForLink(state, link).wallet.balance;
     order.price = price;
