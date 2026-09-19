@@ -5771,7 +5771,9 @@ function renderAdminPanelHtml(token: string) {
       renderCatalog();
     }
     document.addEventListener("click", (event) => {
-      const button = event.target.closest("[data-kit-action]");
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      const button = target.closest("[data-kit-action]");
       if (!button) return;
       const id = button.getAttribute("data-kit-id") || "";
       const action = button.getAttribute("data-kit-action");
@@ -8744,10 +8746,10 @@ function renderAdminPanelHtml(token: string) {
     document.getElementById("catalogBack").addEventListener("click", leaveCatalogCategory);
     document.getElementById("catalogCategoryCreate").addEventListener("click", openCatalogCategoryModal);
     document.getElementById("catalogCreate").addEventListener("click", () => openCatalogModal("create", null));
-    document.getElementById("catalogKitCreate").addEventListener("click", () => openCatalogKitModal(null));
-    document.getElementById("catalogKitCreateFromItems").addEventListener("click", () => openCatalogKitModal(null));
-    document.getElementById("catalogKitModalCancel").addEventListener("click", closeCatalogKitModal);
-    document.getElementById("catalogKitModalConfirm").addEventListener("click", saveCatalogKit);
+    document.getElementById("catalogKitCreate")?.addEventListener("click", () => openCatalogKitModal(null));
+    document.getElementById("catalogKitCreateFromItems")?.addEventListener("click", () => openCatalogKitModal(null));
+    document.getElementById("catalogKitModalCancel")?.addEventListener("click", closeCatalogKitModal);
+    document.getElementById("catalogKitModalConfirm")?.addEventListener("click", saveCatalogKit);
     document.getElementById("catalogModalCancel").addEventListener("click", closeCatalogModal);
     document.getElementById("catalogModalConfirm").addEventListener("click", saveCatalogItem);
     document.getElementById("catalogCategoryModalCancel").addEventListener("click", closeCatalogCategoryModal);
