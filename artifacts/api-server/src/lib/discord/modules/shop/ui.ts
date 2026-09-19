@@ -12,6 +12,8 @@ import {
   getShopCategories,
   getShopItemsByCategory,
   getShopItems,
+  getShopKits,
+  findShopKit,
   getShopItemDeliveryKind,
   getSavedShopLocations,
 } from "../../../shop";
@@ -43,7 +45,11 @@ export function formatShopClosedMessage(state: any) {
 
 export function buildShopHomePayload(state: any) {
   const runtime = getShopRuntimeStatus(state);
-  const categories = getShopCategories();
+  const categories = [...getShopCategories()];
+  const kits = getShopKits();
+  if (kits.length) {
+    categories.push({ id: "kits", label: "Kits", emoji: "▦" });
+  }
 
   const embed = new EmbedBuilder()
     .setTitle("🛒 DayZ Shop")
@@ -83,8 +89,15 @@ export function buildShopHomePayload(state: any) {
 
 export function buildShopCategoryPayload(state: any, categoryId: string) {
   const runtime = getShopRuntimeStatus(state);
-  const items = getShopItemsByCategory(categoryId);
-  const categoryLabel = getShopCategories().find((c) => c.id === categoryId)?.label || categoryId;
+  const kits = getShopKits();
+  const items = categoryId === "kits" ? kits.map((kit) => ({
+    id: kit.id,
+    name: kit.name,
+    description: kit.description || "Pacote de itens entregue no próximo restart.",
+    price: kit.price,
+    imageUrl: kit.imageUrl,
+  })) : getShopItemsByCategory(categoryId);
+  const categoryLabel = categoryId === "kits" ? "Kits" : getShopCategories().find((c) => c.id === categoryId)?.label || categoryId;
 
   const embed = new EmbedBuilder()
     .setTitle(`🛒 ${categoryLabel}`)
@@ -156,9 +169,10 @@ export function buildShopItemPayload(
   selectedLocationId?: string,
 ) {
   const runtime = getShopRuntimeStatus(state);
-  const item = getShopItems().find((candidate) => candidate.id === itemId);
+  const kit = categoryId === "kits" ? findShopKit(itemId) : null;
+  const item = kit ? null : getShopItems().find((candidate) => candidate.id === itemId);
 
-  if (!item) {
+  if (!item && !kit) {
     return {
       content: "❌ Item not found.",
       embeds: [],
@@ -172,95 +186,68 @@ export function buildShopItemPayload(
   const selectedLocation = selectedLocationId
     ? savedLocations.find((location) => location.id === selectedLocationId)
     : null;
-
+  const isKit = Boolean(kit);
+  const displayName = kit?.name || item?.name || "Item";
+  const description = kit?.description || item?.description || "Delivered on the next restart.";
+  const price = Number(kit?.price ?? item?.price ?? 0);
   const embed = new EmbedBuilder()
-    .setTitle(`📦 ${item.name}`)
-    .setDescription(
-      [
-        item.description || "Delivered on the next restart.",
-        "",
-        `Class: \`${item.className}\``,
-        getShopItemDeliveryKind(item) === "vehicle" ? "Type: **Vehicle**" : null,
-        `Price: **${item.price}**`,
-        selectedLocation
-          ? `Delivery: **${selectedLocation.name}** — \`${selectedLocation.x}, ${selectedLocation.y}, ${selectedLocation.z}\``
-          : savedLocations.length
-            ? "Delivery: select a saved coordinate or choose custom."
-            : "Delivery: custom coordinate required at checkout.",
-        runtime.nextRestartLabel
-          ? `Estimated delivery: next restart window **${runtime.nextRestartLabel}**`
-          : null,
-        runtime.canAcceptPurchase ? null : `\n⚠️ ${runtime.reason}`,
-      ]
-        .filter(Boolean)
-        .join("\n"),
-    )
+    .setTitle(isKit ? `📦 ▦ ${displayName}` : `📦 ${displayName}`)
+    .setDescription([
+      description,
+      "",
+      isKit
+        ? `Contents: **${(kit?.items || []).map((component) => `${component.name || component.className} ×${Math.max(1, Math.floor(Number(component.quantity || 1)))}`).join(", ")}**`
+        : `Class: \`${item?.className}\``,
+      !isKit && getShopItemDeliveryKind(item!) === "vehicle" ? "Type: **Vehicle**" : null,
+      `Price: **${price}**`,
+      selectedLocation
+        ? `Delivery: **${selectedLocation.name}** — \`${selectedLocation.x}, ${selectedLocation.y}, ${selectedLocation.z}\``
+        : savedLocations.length
+          ? "Delivery: select a saved coordinate or choose custom."
+          : "Delivery: custom coordinate required at checkout.",
+      runtime.nextRestartLabel
+        ? `Estimated delivery: next restart window **${runtime.nextRestartLabel}**`
+        : null,
+      runtime.canAcceptPurchase ? null : `\\n⚠️ ${runtime.reason}`,
+    ].filter(Boolean).join("\\n"))
     .setColor(runtime.canAcceptPurchase ? "Green" : "Orange");
 
-  if (item.imageUrl) embed.setThumbnail(item.imageUrl);
+  const imageUrl = kit?.imageUrl || item?.imageUrl;
+  if (imageUrl) embed.setThumbnail(imageUrl);
 
   const buyButton = new ButtonBuilder()
-    .setCustomId(`shop-buy-ui:${item.id}:${selectedLocation?.id || "custom"}`)
-    .setLabel(
-      runtime.canAcceptPurchase
-        ? selectedLocation
-          ? `Buy to ${selectedLocation.name}`
-          : "Buy with custom coordinate"
-        : "Checkout closed",
-    )
+    .setCustomId(`shop-buy-ui:${isKit ? "kit:" : ""}${itemId}:${selectedLocation?.id || "custom"}`)
+    .setLabel(runtime.canAcceptPurchase
+      ? selectedLocation ? `Buy to ${selectedLocation.name}` : "Buy with custom coordinate"
+      : "Checkout closed")
     .setStyle(runtime.canAcceptPurchase ? ButtonStyle.Success : ButtonStyle.Secondary)
     .setDisabled(!runtime.canAcceptPurchase);
 
   const backButton = new ButtonBuilder()
-    .setCustomId(`shop-back-category:${categoryId || item.category || "misc"}`)
+    .setCustomId(`shop-back-category:${categoryId || item?.category || "misc"}`)
     .setLabel("Back")
     .setStyle(ButtonStyle.Secondary);
-
   const cancelButton = new ButtonBuilder()
     .setCustomId("shop-cancel")
     .setLabel("Cancel")
     .setStyle(ButtonStyle.Danger);
-
   const components: any[] = [];
-
   if (savedLocations.length) {
     const locationMenu = new StringSelectMenuBuilder()
-      .setCustomId(`shop-location:${item.id}:${categoryId || item.category || "misc"}`)
+      .setCustomId(`shop-location:${isKit ? "kit:" : ""}${itemId}:${categoryId || item?.category || "misc"}`)
       .setPlaceholder("Select delivery coordinate")
       .addOptions([
         ...savedLocations.slice(0, 24).map((location) => ({
-          label: location.name,
-          value: location.id,
+          label: location.name, value: location.id,
           description: `${location.x}, ${location.y}, ${location.z}`,
           default: location.id === selectedLocation?.id,
         })),
-        {
-          label: "Custom coordinate",
-          value: "custom",
-          description: "Type a new iZurvive coordinate during checkout",
-          default: !selectedLocation,
-        },
+        { label: "Custom coordinate", value: "custom", description: "Type a new iZurvive coordinate during checkout", default: !selectedLocation },
       ]);
-
-    components.push(
-      new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(locationMenu),
-    );
+    components.push(new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(locationMenu));
   }
-
-  components.push(
-    new ActionRowBuilder<ButtonBuilder>().addComponents(
-      buyButton,
-      backButton,
-      cancelButton,
-    ),
-  );
-
-  return {
-    embeds: [embed],
-    components,
-  };
-}
-
+  components.push(new ActionRowBuilder<ButtonBuilder>().addComponents(buyButton, backButton, cancelButton));
+  return { embeds: [embed], components };
 
 export function formatShopMoney(value: unknown) {
   const amount = Number(value || 0);
@@ -349,8 +336,11 @@ export function createPendingShopCheckout(options: {
   z: number;
   saveLocationName?: string;
 }) {
-  const item = getShopItems().find((candidate) => candidate.id === options.itemId);
-  if (!item) throw new Error("Item not found.");
+  const isKit = String(options.itemId).startsWith("kit:");
+  const resolvedId = isKit ? String(options.itemId).slice(4) : options.itemId;
+  const kit = isKit ? findShopKit(resolvedId) : null;
+  const item = isKit ? null : getShopItems().find((candidate) => candidate.id === resolvedId);
+  if (!item && !kit) throw new Error("Item not found.");
 
   const checkouts = ensurePendingShopCheckouts(options.state);
   const now = new Date();
@@ -358,12 +348,14 @@ export function createPendingShopCheckout(options: {
     id: `checkout_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
     serverId: getActiveServerId(),
     discordUserId: options.discordUserId,
-    itemId: item.id,
-    itemClass: item.className,
-    itemName: item.name,
-    price: item.price,
-    ...(item.spawnEventName ? { spawnEventName: item.spawnEventName } : {}),
-    deliveryKind: getShopItemDeliveryKind(item),
+    itemId: resolvedId,
+    itemKind: kit ? "kit" : "item",
+    ...(kit ? { kitId: kit.id } : {}),
+    itemClass: item?.className || kit!.items[0]?.className || "Kit",
+    itemName: item?.name || kit!.name,
+    price: item?.price ?? kit!.price,
+    ...(item?.spawnEventName ? { spawnEventName: item.spawnEventName } : {}),
+    deliveryKind: item ? getShopItemDeliveryKind(item) : "item",
     x: Number(options.x.toFixed(2)),
     y: Number(options.y.toFixed(2)),
     z: Number(options.z.toFixed(2)),
