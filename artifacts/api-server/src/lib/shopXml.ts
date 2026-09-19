@@ -107,16 +107,39 @@ function getOrderEventName(order: ShopOrder, index: number) {
   return `Static_${item}_${id || index}`;
 }
 
+export function expandShopOrdersForDelivery(orders: ShopOrder[]): ShopOrder[] {
+  const expanded: ShopOrder[] = [];
+  for (const order of orders) {
+    const components = Array.isArray(order.kitItems) && order.kitItems.length ? order.kitItems : null;
+    if (!components) {
+      expanded.push(order);
+      continue;
+    }
+    for (const component of components) {
+      const quantity = Math.max(1, Math.floor(Number(component.quantity || 1)));
+      for (let unit = 0; unit < quantity; unit += 1) {
+        expanded.push({
+          ...order,
+          id: `${order.id}_${sanitizeEventPart(component.className)}_${unit + 1}`,
+          itemKind: "item",
+          kitId: undefined,
+          kitItems: undefined,
+          itemClass: String(component.className || "").trim(),
+          itemName: component.name || component.className,
+          spawnEventName: undefined,
+          deliveryKind: "item",
+        });
+      }
+    }
+  }
+  return expanded;
+}
+
 function resolveShopOrders(orders: ShopOrder[]): ResolvedShopOrder[] {
-  return orders.map((order, index) => {
+  return expandShopOrdersForDelivery(orders).map((order, index) => {
     const isVehicle = isVehicleOrder(order);
     const eventName = getOrderEventName(order, index);
-
-    return {
-      order,
-      eventName,
-      isVehicle,
-    };
+    return { order, eventName, isVehicle };
   });
 }
 
