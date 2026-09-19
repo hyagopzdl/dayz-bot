@@ -3357,7 +3357,29 @@ function renderAdminPanelHtml(token: string) {
     .shop-history-meta { color: var(--text-3); font-size: 12px; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .shop-history-side { text-align: right; color: var(--text-3); font-size: 12px; line-height: 1.45; }
 
-    .kit-modal { max-width: 760px; }
+    .kit-modal {
+      width: min(760px, 100%);
+      max-height: calc(100vh - 44px);
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .kit-modal > h2 { padding: 20px 20px 0; flex: 0 0 auto; }
+    .kit-modal-body {
+      min-height: 0;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      padding: 0 20px 4px;
+      scrollbar-gutter: stable;
+    }
+    .kit-modal > .modal-actions {
+      margin: 0;
+      padding: 16px 20px 20px;
+      border-top: 1px solid var(--border);
+      background: #2B2D31;
+      flex: 0 0 auto;
+    }
     .kit-items-editor { margin-top: 18px; padding: 16px; border: 1px solid var(--border); border-radius: 16px; background: #25262A; }
     .kit-items-header { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom:12px; }
     .kit-items-header h3 { margin:0; font-size:14px; font-weight:650; }
@@ -5245,29 +5267,31 @@ function renderAdminPanelHtml(token: string) {
   <div id="catalogKitModalBackdrop" class="modal-backdrop">
     <div class="modal kit-modal">
       <h2 id="catalogKitModalTitle">Novo kit</h2>
-      <p>Monte um produto com vários itens da base DayZ. Selecione uma categoria existente e adicione os itens um por um.</p>
-      <div class="form-grid two">
-        <label>ID<input id="catalogKitId" placeholder="kit_starter" /></label>
-        <label>Nome<input id="catalogKitName" placeholder="Kit Starter" /></label>
-        <label>Categoria<select id="catalogKitCategory"></select></label>
-        <label>Preço<input id="catalogKitPrice" type="number" min="0" step="1" value="0" /></label>
-        <label class="full">URL da imagem<input id="catalogKitImage" placeholder="https://..." /></label>
-        <label class="full">Descrição<textarea id="catalogKitDescription" placeholder="Descrição exibida no shop..."></textarea></label>
-      </div>
-
-      <div class="kit-items-editor">
-        <div class="kit-items-header">
-          <div>
-            <h3>Itens do kit</h3>
-            <p>Pesquise na base DayZ, escolha o item e informe a quantidade.</p>
-          </div>
-          <span id="catalogKitItemsCount" class="chip">0 itens</span>
+      <div class="kit-modal-body">
+        <p>Monte um produto com vários itens da base DayZ. Selecione uma categoria existente e adicione os itens um por um.</p>
+        <div class="form-grid two">
+          <label>ID<input id="catalogKitId" placeholder="kit_starter" /></label>
+          <label>Nome<input id="catalogKitName" placeholder="Kit Starter" /></label>
+          <label>Categoria<select id="catalogKitCategory"></select></label>
+          <label>Preço<input id="catalogKitPrice" type="number" min="0" step="1" value="0" /></label>
+          <label class="full">URL da imagem<input id="catalogKitImage" placeholder="https://..." /></label>
+          <label class="full">Descrição<textarea id="catalogKitDescription" placeholder="Descrição exibida no shop..."></textarea></label>
         </div>
-        <div id="catalogKitItemRows" class="kit-item-rows"></div>
-        <button type="button" id="catalogKitAddItem" class="ghost-btn kit-add-item">＋ Adicionar item</button>
-      </div>
 
-      <label class="toggle-row full kit-enabled-row"><span><b>Disponível no shop</b><small style="display:block;color:var(--text-3);margin-top:4px">Kits desativados ficam ocultos no /shop.</small></span><input id="catalogKitEnabled" type="checkbox" checked /></label>
+        <div class="kit-items-editor">
+          <div class="kit-items-header">
+            <div>
+              <h3>Itens do kit</h3>
+              <p>Pesquise na base DayZ, escolha o item e informe a quantidade.</p>
+            </div>
+            <span id="catalogKitItemsCount" class="chip">0 itens</span>
+          </div>
+          <div id="catalogKitItemRows" class="kit-item-rows"></div>
+          <button type="button" id="catalogKitAddItem" class="ghost-btn kit-add-item">＋ Adicionar item</button>
+        </div>
+
+        <label class="toggle-row full kit-enabled-row"><span><b>Disponível no shop</b><small style="display:block;color:var(--text-3);margin-top:4px">Kits desativados ficam ocultos no /shop.</small></span><input id="catalogKitEnabled" type="checkbox" checked /></label>
+      </div>
       <div class="modal-actions"><button class="ghost-btn" id="catalogKitModalCancel">Cancelar</button><button class="primary-btn" id="catalogKitModalConfirm">Salvar kit</button></div>
     </div>
   </div>
