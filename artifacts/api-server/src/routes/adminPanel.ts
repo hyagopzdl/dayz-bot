@@ -38,6 +38,7 @@ import {
   type ShopCatalog,
   type ShopItem,
   type ShopKit,
+  getShopKits,
   upsertShopKit,
   deleteShopKit,
   toggleShopKit,
@@ -5676,13 +5677,6 @@ function renderAdminPanelHtml(token: string) {
       els.catalogItemCategory.innerHTML = options.join("");
     }
     function enterCatalogCategory(categoryId) {
-      if (categoryId === "__kits") {
-        state.catalogCategory = "__kits";
-        state.catalogMode = "items";
-        state.catalogSearch = "";
-        renderCatalog();
-        return;
-      }
       const category = findCatalogCategory(categoryId);
       if (!category) return;
       state.catalogCategory = category.id;
@@ -5731,9 +5725,7 @@ function renderAdminPanelHtml(token: string) {
       if (isQueue) { renderShopQueue(); return; }
 
       if (!isItems) {
-        els.catalogCategoryGrid.innerHTML = (state.catalog.categories || []).map(catalogCategoryCard).join("") +
-          '<article class="catalog-category-card" data-category-id="__kits"><div class="category-icon">📦</div><div class="category-title">Kits</div><div class="category-subtitle">' + formatCoins((state.catalog.kits || []).length) + ' kit' + ((state.catalog.kits || []).length === 1 ? '' : 's') + '</div></article>' +
-          catalogNewCategoryCard();
+        els.catalogCategoryGrid.innerHTML = (state.catalog.categories || []).map(catalogCategoryCard).join("") + catalogNewCategoryCard();
         els.catalogEmpty.style.display = "none";
         return;
       }
@@ -8744,10 +8736,6 @@ function renderAdminPanelHtml(token: string) {
     document.getElementById("catalogBack").addEventListener("click", leaveCatalogCategory);
     document.getElementById("catalogCategoryCreate").addEventListener("click", openCatalogCategoryModal);
     document.getElementById("catalogCreate").addEventListener("click", () => openCatalogModal("create", null));
-    document.getElementById("catalogKitCreate").addEventListener("click", () => openCatalogKitModal(null));
-    document.getElementById("catalogKitCreateFromItems").addEventListener("click", () => openCatalogKitModal(null));
-    document.getElementById("catalogKitModalCancel").addEventListener("click", closeCatalogKitModal);
-    document.getElementById("catalogKitModalConfirm").addEventListener("click", saveCatalogKit);
     document.getElementById("catalogModalCancel").addEventListener("click", closeCatalogModal);
     document.getElementById("catalogModalConfirm").addEventListener("click", saveCatalogItem);
     document.getElementById("catalogCategoryModalCancel").addEventListener("click", closeCatalogCategoryModal);
