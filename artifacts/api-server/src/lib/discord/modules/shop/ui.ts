@@ -248,6 +248,7 @@ export function buildShopItemPayload(
   }
   components.push(new ActionRowBuilder<ButtonBuilder>().addComponents(buyButton, backButton, cancelButton));
   return { embeds: [embed], components };
+}
 
 export function formatShopMoney(value: unknown) {
   const amount = Number(value || 0);
