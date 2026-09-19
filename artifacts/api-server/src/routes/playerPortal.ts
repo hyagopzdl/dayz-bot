@@ -447,6 +447,7 @@ router.post("/api/player/shop/checkouts", requirePortalAuth, async (req, res) =>
       state,
       session: req.portalSession!,
       itemId: String(req.body?.itemId || ""),
+      itemKind: req.body?.itemKind === "kit" ? "kit" : "item",
       x: req.body?.x,
       z: req.body?.z,
       locationId: typeof req.body?.locationId === "string" ? req.body.locationId : undefined,
