@@ -497,8 +497,7 @@ function normalizeServerScopedSettingsDraft(value: unknown, existing: ServerScop
     } else {
       delete next.serverResetTimes;
       delete next.shopRestartTimes;
-    }  }  const resetTimezoneInput = "serverResetTimezone" in source ? source.serverResetTimezone : source.shopRestartTimezone;
-  if ("serverResetTimezone" in source || "shopRestartTimezone" in source) {
+    }  }  const resetTimezoneInput = "serverResetTimezone" in source ? source.serverResetTimezone : source.shopRestartTimezone;  if ("serverResetTimezone" in source || "shopRestartTimezone" in source) {
     const normalized = optionalServerText(resetTimezoneInput, 100);
     if (normalized) {
       next.serverResetTimezone = normalized;
@@ -737,10 +736,7 @@ export async function ensureManagedServerRegistryMetadata() {
         SELECT id, BTRIM(server_reset_times), COALESCE(NULLIF(BTRIM(server_reset_timezone), ''), 'America/Sao_Paulo'), NOW()
         FROM managed_servers
         WHERE NULLIF(BTRIM(server_reset_times), '') IS NOT NULL
-        ON CONFLICT (server_id) DO UPDATE
-        SET times = EXCLUDED.times,
-            timezone = EXCLUDED.timezone,
-            updated_at = NOW()
+        ON CONFLICT (server_id) DO NOTHING
       `;
       // Keep legacy managed_servers columns synchronized as a compatibility mirror.
       // New reads use server_reset_schedules exclusively.
@@ -997,8 +993,7 @@ type OnlinePlayer = {
   connectedAt?: string;
   lastSeenAt: string;
   sessionKills?: number;
-  sessionDeaths?: number;
-  sessionStreak?: number;
+  sessionDeaths?: number;  sessionStreak?: number;
 };
 
 export type FileCursor = {
@@ -1497,8 +1492,7 @@ function migrateLegacyState(data: any): AppState {
       const normalized = gamertag.toLowerCase();
       if (!gamertag || !normalized || normalized === mainNormalized || seen.has(normalized)) continue;
       const owner = state.playerLinksByGamertag[normalized];
-      if (owner && owner !== discordId) continue;
-      seen.add(normalized);
+      if (owner && owner !== discordId) continue;      seen.add(normalized);
       clean.push(gamertag);
       state.playerLinksByGamertag[normalized] = discordId;
     }
@@ -1997,7 +1991,6 @@ export async function updateManagedServerShopResetSettings(
     settingsInput,
     current.runtime.settings || {},
   );
-
   const nextRuntime = {
     ...current.runtime,
     settings: nextSettings,
@@ -2497,8 +2490,7 @@ export async function setManagedServerRuntimeEnabled(serverId: string, enabled: 
       // Phase 17B permits rows created by tenant-safe data access before the ADM
       // runtime starts. Composite server_id PKs and scoped-read safety are the
       // security boundary; an empty namespace is no longer required.
-      const namespaceRows = await inspectManagedServerNamespaceRows(id);
-      if (namespaceRows.botState || namespaceRows.playerStats || namespaceRows.positionHistory) {
+      const namespaceRows = await inspectManagedServerNamespaceRows(id);      if (namespaceRows.botState || namespaceRows.playerStats || namespaceRows.positionHistory) {
         console.log(`🧭 reutilizando namespace preexistente e server-scoped na primeira ativacao [${id}]`, namespaceRows);
       }
     }
@@ -2997,8 +2989,7 @@ function analyzePayload(parsed: AppState, now: string) {
   ]);
 
   return {
-    sections: allSections
-      .map(({ key, bytes, entries }) => ({ key, bytes, entries }))
+    sections: allSections      .map(({ key, bytes, entries }) => ({ key, bytes, entries }))
       .sort((a, b) => b.bytes - a.bytes),
     changedSections: changed.map((section) => section.key),
     changedBytes: changed.reduce((sum, section) => sum + section.bytes, 0),
@@ -3497,7 +3488,6 @@ async function flushPendingState() {
   getPersistenceRuntime().pendingPersistHash = "";
   getPersistenceRuntime().pendingPersistReasons = new Set<string>();
   getPersistenceRuntime().pendingPersistStartedAt = 0;
-
   const saveTimer = getPersistenceRuntime().saveTimer;
   if (saveTimer) {
     clearTimeout(saveTimer);
@@ -3997,8 +3987,7 @@ export function getStatePersistenceMetrics(serverId = getActiveServerId()) {
     reasons: { ...metric.reasons },
     sections: { ...metric.sections },
     lastPayloadSections: [...metric.lastPayloadSections],
-    detailedSections: [...metric.detailedSections],
-    recentWrites: [...metric.recentWrites],
+    detailedSections: [...metric.detailedSections],    recentWrites: [...metric.recentWrites],
   };
 }
 
@@ -4498,41 +4487,3 @@ export async function saveStateAsync(data: AppState, reason?: string) {
   if (!sql) {
     getPersistenceRuntime().lastPersistedJson = serialized;
     getPersistenceRuntime().lastPersistedHash = hash;
-    initializeDomainHashes(safeData);
-    logStateDebug("💾 STATE SALVO EM", { file: getLocalStateFile(), serverId: getActiveServerId() });
-    return;
-  }
-
-  if (STATE_PERSISTENCE_V2_ENABLED) {
-    // Runtime fields are persisted independently as well, even when the caller
-    // used the generic save API (for example admin/config paths touching mapRotation).
-    const runtimeSerialized = serializeDiscordRuntime(safeData);
-    const runtimeHash = hashState(runtimeSerialized);
-    const runtimeChanged = runtimeHash !== getPersistenceRuntime().lastDiscordRuntimeHash && runtimeHash !== getPersistenceRuntime().pendingDiscordRuntimeHash;
-    if (runtimeChanged) {
-      getPersistenceRuntime().pendingDiscordRuntimeJson = runtimeSerialized;
-      getPersistenceRuntime().pendingDiscordRuntimeHash = runtimeHash;
-      scheduleDiscordRuntimePersist();
-    }
-
-    const changed = await queueAndPersistStateDomains(safeData, persistenceReason);
-    if (!changed && !runtimeChanged) {
-      persistenceMetrics.skippedWrites += 1;
-      getReasonMetric(persistenceReason).skippedRequests += 1;
-      logStateDebug("⏭️ STATE V2 ignorado: sem alterações", { reason: persistenceReason });
-    }
-    // Keep the latest in-memory/full JSON for local diagnostics and the hourly
-    // compatibility snapshot, but do not treat it as already persisted in Neon.
-    getPersistenceRuntime().lastPersistedJson = serialized;
-    return;
-  }
-
-  if (hash === getPersistenceRuntime().lastPersistedHash || serialized === getPersistenceRuntime().lastPersistedJson) {
-    persistenceMetrics.skippedWrites += 1;
-    getReasonMetric(persistenceReason).skippedRequests += 1;
-    logStateDebug("⏭️ STATE ignorado: sem alterações", { reason: persistenceReason });
-    return;
-  }
-
-  getPersistenceRuntime().pendingPersistJson = serialized;
-  getPersistenceRuntime().pendingPersistHash = hash;
