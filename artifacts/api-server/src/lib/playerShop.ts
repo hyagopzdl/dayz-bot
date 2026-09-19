@@ -56,8 +56,6 @@ export async function buildPlayerShopCatalog(state: AppState, session: PortalSes
     return { ...category, itemCount: categoryItems.length, previewImages: categoryItems.map((item) => item.imageUrl).filter(Boolean).slice(0, 3), minimumPrice: categoryItems.length ? Math.min(...categoryItems.map((item) => Number(item.price || 0))) : 0 };
   });
   const kits = getShopKits();
-  if (kits.length) categories.push({ id: "kits", label: "Kits", emoji: "▦", description: "Pacotes de itens entregues juntos no próximo reset.", itemCount: kits.length, previewImages: kits.map((kit) => kit.imageUrl).filter(Boolean).slice(0, 3), minimumPrice: Math.min(...kits.map((kit) => Number(kit.price || 0))), enabled: true });
-  const kits = getShopKits();
   if (kits.length) {
     categories.push({
       id: "kits",
@@ -91,7 +89,6 @@ export async function buildPlayerShopCategory(state: AppState, session: PortalSe
       items: getShopKits().map(presentKit),
     };
   }
-  if (categoryId === "kits") return { ...catalog, category, items: getShopKits().map(presentKit) };
   return { ...catalog, category, items: getShopItemsByCategory(categoryId).map(presentItem) };
 }
 
