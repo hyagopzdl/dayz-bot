@@ -48,7 +48,7 @@ export function buildShopHomePayload(state: any) {
   const categories = [...getShopCategories()];
   const kits = getShopKits();
   if (kits.length) {
-    categories.push({ id: "kits", label: "Kits", emoji: "▦" });
+    categories.push({ id: "kits", label: "Kits", emoji: "▦", description: "Pacotes de itens entregues juntos.", enabled: true });
   }
 
   const embed = new EmbedBuilder()
