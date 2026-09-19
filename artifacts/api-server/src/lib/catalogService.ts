@@ -109,11 +109,12 @@ export async function ensureShopCatalogSchema() {
       CREATE TABLE IF NOT EXISTS server_shop_catalog_kit_items (
         server_id TEXT NOT NULL,
         kit_id TEXT NOT NULL,
-        class_name TEXT NOT NULL,
-        name TEXT,
+        item_id TEXT NOT NULL,
         quantity INTEGER NOT NULL DEFAULT 1,
         sort_order INTEGER NOT NULL DEFAULT 0,
-        PRIMARY KEY (server_id, kit_id, class_name)
+        PRIMARY KEY (server_id, kit_id, item_id),
+        FOREIGN KEY (server_id, kit_id) REFERENCES server_shop_catalog_kits(server_id, id) ON DELETE CASCADE,
+        FOREIGN KEY (server_id, item_id) REFERENCES server_shop_catalog_items(server_id, id) ON DELETE RESTRICT
       )
     `;
     await db`CREATE INDEX IF NOT EXISTS server_shop_catalog_kits_category_idx ON server_shop_catalog_kits (server_id, category)`;
@@ -241,9 +242,13 @@ export async function loadShopCatalogFromDatabase(): Promise<ShopCatalog> {
   const baseItems = itemRows.map(rowToItem);
   const hydratedItems = await hydrateCatalogItemsFromDzPage(baseItems);
   const kits = await Promise.all(kitRows.map(async (row: any) => {
-    const rows = await db`SELECT class_name, name, quantity, sort_order FROM server_shop_catalog_kit_items
-      WHERE server_id = ${serverId} AND kit_id = ${row.id}
-      ORDER BY sort_order ASC, class_name ASC`;
+    const rows = await db`SELECT kit_item.item_id, kit_item.quantity, kit_item.sort_order,
+             catalog_item.class_name, catalog_item.name
+      FROM server_shop_catalog_kit_items AS kit_item
+      INNER JOIN server_shop_catalog_items AS catalog_item
+        ON catalog_item.server_id = kit_item.server_id AND catalog_item.id = kit_item.item_id
+      WHERE kit_item.server_id = ${serverId} AND kit_item.kit_id = ${row.id}
+      ORDER BY kit_item.sort_order ASC, catalog_item.class_name ASC`;
     return {
       id: normalizeShopCatalogId(row.id),
       name: String(row.name || row.id).trim(),
@@ -345,7 +350,6 @@ export async function upsertShopKitInDatabase(kit: ShopKit) {
   const id = normalizeShopCatalogId(kit.id || kit.name); if (!id) throw new Error("Kit requires an id.");
   const items = (kit.items || []).filter((item) => item?.className).map((item, index) => ({
     className: String(item.className).trim(),
-    name: item.name ? String(item.name).trim() : null,
     quantity: Math.max(1, Math.floor(Number(item.quantity || 1))),
     sortOrder: index,
   }));
@@ -355,8 +359,13 @@ export async function upsertShopKitInDatabase(kit: ShopKit) {
       VALUES (${serverId}, ${id}, ${String(kit.name || id).trim()}, ${normalizeShopCatalogId(kit.category || "kits") || "kits"}, ${Math.max(0, Math.floor(Number(kit.price || 0)))}, ${kit.description || null}, ${kit.imageUrl || null}, ${kit.enabled !== false}, ${Number.isFinite(Number(kit.sortOrder)) ? Math.floor(Number(kit.sortOrder)) : 0}, NOW())
       ON CONFLICT (server_id, id) DO UPDATE SET name=EXCLUDED.name, category=EXCLUDED.category, price=EXCLUDED.price, description=EXCLUDED.description, image_url=EXCLUDED.image_url, enabled=EXCLUDED.enabled, sort_order=EXCLUDED.sort_order, updated_at=NOW()`;
     await tx`DELETE FROM server_shop_catalog_kit_items WHERE server_id=${serverId} AND kit_id=${id}`;
-    for (const item of items) await tx`INSERT INTO server_shop_catalog_kit_items (server_id, kit_id, class_name, name, quantity, sort_order)
-      VALUES (${serverId}, ${id}, ${item.className}, ${item.name}, ${item.quantity}, ${item.sortOrder})`;
+    for (const item of items) {
+      const catalogRows = await tx`SELECT id FROM server_shop_catalog_items
+        WHERE server_id=${serverId} AND class_name=${item.className} LIMIT 1`;
+      if (!catalogRows.length) throw new Error(`Item "${item.className}" não está cadastrado no catálogo deste servidor.`);
+      await tx`INSERT INTO server_shop_catalog_kit_items (server_id, kit_id, item_id, quantity, sort_order)
+        VALUES (${serverId}, ${id}, ${catalogRows[0].id}, ${item.quantity}, ${item.sortOrder})`;
+    }
   });
   await refreshShopCatalogCache();
   return (getCachedShopCatalog().kits || []).find((entry) => entry.id === id) || null;
