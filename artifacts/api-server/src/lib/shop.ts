@@ -8,6 +8,7 @@ import {
   removeShopBotBlock,
   SHOP_BOT_END,
   SHOP_BOT_START,
+  expandShopOrdersForDelivery,
 } from "./shopXml";
 import { systems } from "./systems";
 import { getServerRuntimeContext } from "./serverRuntime";
