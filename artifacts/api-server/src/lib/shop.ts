@@ -33,6 +33,8 @@ import {
   getShopItems,
   getShopItemsByCategory,
   getShopCatalog,
+  getShopKits,
+  findShopKit,
   type ShopItem,
 } from "./shopCatalog";
 
@@ -43,6 +45,8 @@ export {
   getShopItemDeliveryKind,
   getShopItems,
   getShopItemsByCategory,
+  getShopKits,
+  findShopKit,
 } from "./shopCatalog";
 
 export function getShopItemsSnapshot(): ShopItem[] {
