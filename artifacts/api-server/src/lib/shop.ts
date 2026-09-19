@@ -214,17 +214,11 @@ function getLegacyShopEventSpawnsPath(serverId = getServerRuntimeContext().serve
 }
 
 function buildExpectedShopEventNamesForOrders(orders: ShopOrder[]) {
-  return orders.map((order, index) => {
+  return expandShopOrdersForDelivery(orders).map((order, index) => {
     const item = String(order.itemClass || order.itemName || "Item")
-      .replace(/[^a-zA-Z0-9_]/g, "_")
-      .replace(/_+/g, "_")
-      .replace(/^_+|_+$/g, "")
-      .slice(0, 48) || "Item";
+      .replace(/[^a-zA-Z0-9_]/g, "_").replace(/_+/g, "_").replace(/^_+|_+$/g, "").slice(0, 48) || "Item";
     const id = String(order.id || index)
-      .replace(/[^a-zA-Z0-9_]/g, "_")
-      .replace(/_+/g, "_")
-      .replace(/^_+|_+$/g, "")
-      .slice(-16) || String(index);
+      .replace(/[^a-zA-Z0-9_]/g, "_").replace(/_+/g, "_").replace(/^_+|_+$/g, "").slice(-16) || String(index);
     const vehicle = order.deliveryKind === "vehicle" || String(order.spawnEventName || "").startsWith("Vehicle");
     return (vehicle ? "VehicleShop_" : "Static_") + item + "_" + id;
   });
@@ -350,18 +344,16 @@ function validateInjectedShopXml(options: {
     throw new Error(missingShopBotError(`cfgeventspawns.xml (${stage})`));
   }
 
-  for (const order of expectedOrders) {    const itemClass = String(order.itemClass || "").trim();
+  const deliveryOrders = expandShopOrdersForDelivery(expectedOrders);
+  for (const order of deliveryOrders) {
+    const itemClass = String(order.itemClass || "").trim();
     if (!eventsXml.includes(`type="${itemClass}"`)) {
-      throw new Error(
-        `SHOP DEPLOY FAILED: events.xml (${stage}) is missing item class ${itemClass} for order ${order.id}.`,
-      );
+      throw new Error(`SHOP DEPLOY FAILED: events.xml (${stage}) is missing item class ${itemClass} for order ${order.id}.`);
     }
   }
 
-  if (eventNames?.length && eventNames.length !== expectedOrders.length) {
-    throw new Error(
-      `SHOP DEPLOY FAILED: generated ${eventNames.length} event name(s) for ${expectedOrders.length} order(s).`,
-    );
+  if (eventNames?.length && eventNames.length !== deliveryOrders.length) {
+    throw new Error(`SHOP DEPLOY FAILED: generated ${eventNames.length} event name(s) for ${deliveryOrders.length} delivery event(s).`);
   }
 
   for (const eventName of eventNames || []) {
