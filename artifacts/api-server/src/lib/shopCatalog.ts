@@ -48,6 +48,7 @@ export type ShopCategory = {
 export type ShopKitItem = {
   className: string;
   name?: string;
+  imageUrl?: string;
   quantity: number;
 };
 
