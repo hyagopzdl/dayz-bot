@@ -3365,7 +3365,9 @@ function renderAdminPanelHtml(token: string) {
     .kit-item-rows { display:grid; gap:10px; }
     .kit-item-row { display:grid; grid-template-columns:minmax(0,1fr) 110px 38px; gap:8px; align-items:start; }
     .kit-item-search-wrap { position:relative; min-width:0; }
-    .kit-item-search { width:100%; }
+    .kit-item-search { width:100%; padding:12px 13px; border:1px solid var(--border-strong); border-radius:10px; background:#1E1F22; color:var(--text); outline:none; transition:border-color .16s ease, box-shadow .16s ease, background .16s ease; }
+    .kit-item-search::placeholder { color:var(--text-3); }
+    .kit-item-search:focus { border-color:rgba(88,101,242,.72); box-shadow:0 0 0 3px rgba(88,101,242,.12); background:#23252A; }
     .kit-item-selected { display:flex; align-items:center; gap:10px; min-height:42px; padding:8px 10px; border:1px solid var(--border-strong); border-radius:10px; background:#313338; }
     .kit-item-selected-thumb { width:28px; height:28px; border-radius:8px; overflow:hidden; background:#25262A; display:grid; place-items:center; flex:0 0 auto; color:var(--text-3); }
     .kit-item-selected-thumb img { width:100%; height:100%; object-fit:cover; }
@@ -5842,41 +5844,96 @@ function renderAdminPanelHtml(token: string) {
       if (action === "delete") deleteCatalogKit(id);
     });
 
-    els.catalogKitCreate?.addEventListener("click", () => openCatalogKitModal());
-    els.catalogKitCreateFromItems?.addEventListener("click", () => openCatalogKitModal());
-    els.catalogKitModalCancel?.addEventListener("click", closeCatalogKitModal);
-    els.catalogKitModalConfirm?.addEventListener("click", saveCatalogKit);
-    els.catalogKitAddItem?.addEventListener("click", () => addCatalogKitItemRow());
-    els.catalogKitModalBackdrop?.addEventListener("click", (event) => {
-      if (event.target === els.catalogKitModalBackdrop) closeCatalogKitModal();
-    });
-    els.catalogKitItemRows?.addEventListener("input", (event) => {
-      const input = event.target.closest("[data-kit-search]");
+    // Kit interactions use one document-level delegated handler so they keep working
+    // after the item rows/autocomplete are rebuilt dynamically.
+    document.addEventListener("input", (event) => {
+      const input = event.target.closest?.("[data-kit-search]");
       if (!input) return;
       const row = input.closest(".kit-item-row");
       if (row) searchCatalogKitItem(row, input.value);
     });
-    els.catalogKitItemRows?.addEventListener("click", (event) => {
-      const remove = event.target.closest("[data-kit-remove]");
-      if (remove) {
-        const row = remove.closest(".kit-item-row");
-        if (row) { row.remove(); if (!els.catalogKitItemRows.querySelector(".kit-item-row")) addCatalogKitItemRow(); updateCatalogKitItemsCount(); }
+
+    document.addEventListener("click", async (event) => {
+      const target = event.target.closest?.("button, [role=" + '"' + "button" + '"' + "]");
+      const kitModal = els.catalogKitModalBackdrop;
+      if (!target) {
+        if (kitModal && event.target === kitModal) closeCatalogKitModal();
         return;
       }
-      const select = event.target.closest("[data-kit-select]");
-      if (!select) return;
-      const row = select.closest(".kit-item-row");
-      if (!row) return;
-      row.dataset.className = select.dataset.kitSelect || "";
-      row.dataset.itemName = select.dataset.kitName || row.dataset.className;
-      row.dataset.imageUrl = select.dataset.kitImage || "";
-      const quantity = Math.max(1, Number(row.querySelector("[data-kit-quantity]")?.value || 1));
-      const items = getCatalogKitDraftItems();
-      const current = items.find((item) => item.className === row.dataset.className);
-      if (current) current.quantity = quantity;
-      renderCatalogKitItems(items);
-      if (!items.some((item) => !item.className)) addCatalogKitItemRow();
-      updateCatalogKitItemsCount();
+
+      if (target.matches("#catalogKitCreate, #catalogKitCreateFromItems")) {
+        event.preventDefault();
+        openCatalogKitModal();
+        return;
+      }
+
+      if (target.matches("#catalogKitModalCancel")) {
+        event.preventDefault();
+        closeCatalogKitModal();
+        return;
+      }
+
+      if (target.matches("#catalogKitModalConfirm")) {
+        event.preventDefault();
+        await saveCatalogKit();
+        return;
+      }
+
+      if (target.matches("#catalogKitAddItem")) {
+        event.preventDefault();
+        addCatalogKitItemRow();
+        return;
+      }
+
+      const remove = target.closest("[data-kit-remove]");
+      if (remove) {
+        event.preventDefault();
+        const row = remove.closest(".kit-item-row");
+        if (row) {
+          row.remove();
+          if (!els.catalogKitItemRows.querySelector(".kit-item-row")) addCatalogKitItemRow();
+          updateCatalogKitItemsCount();
+        }
+        return;
+      }
+
+      const select = target.closest("[data-kit-select]");
+      if (select) {
+        event.preventDefault();
+        const row = select.closest(".kit-item-row");
+        if (!row) return;
+
+        const className = select.getAttribute("data-kit-select") || "";
+        const name = select.getAttribute("data-kit-name") || className;
+        const imageUrl = select.getAttribute("data-kit-image") || "";
+        if (!className) return;
+
+        // Do not allow the same DayZ item twice in one kit. If it already exists,
+        // increase its quantity in the existing row instead.
+        const duplicate = Array.from(els.catalogKitItemRows.querySelectorAll(".kit-item-row"))
+          .find((candidate) => candidate !== row && candidate.dataset.className === className);
+
+        if (duplicate) {
+          const quantityInput = duplicate.querySelector("[data-kit-quantity]");
+          const currentQuantity = Math.max(1, Number(quantityInput?.value || 1));
+          if (quantityInput) quantityInput.value = String(currentQuantity + Math.max(1, Number(row.querySelector("[data-kit-quantity]")?.value || 1)));
+          row.remove();
+          updateCatalogKitItemsCount();
+          return;
+        }
+
+        row.dataset.className = className;
+        row.dataset.itemName = name;
+        row.dataset.imageUrl = imageUrl;
+
+        const items = getCatalogKitDraftItems();
+        renderCatalogKitItems(items);
+        addCatalogKitItemRow();
+        updateCatalogKitItemsCount();
+        return;
+      }
+
+      if (kitModal && event.target === kitModal) closeCatalogKitModal();
     });
     function findCatalogItem(itemId) {
       return (state.catalog?.items || []).find((item) => item.id === itemId) || null;
