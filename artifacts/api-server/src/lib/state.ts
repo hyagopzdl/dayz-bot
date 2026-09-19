@@ -497,7 +497,10 @@ function normalizeServerScopedSettingsDraft(value: unknown, existing: ServerScop
     } else {
       delete next.serverResetTimes;
       delete next.shopRestartTimes;
-    }  }  const resetTimezoneInput = "serverResetTimezone" in source ? source.serverResetTimezone : source.shopRestartTimezone;  if ("serverResetTimezone" in source || "shopRestartTimezone" in source) {
+    }
+  }
+  const resetTimezoneInput = "serverResetTimezone" in source ? source.serverResetTimezone : source.shopRestartTimezone;
+  if ("serverResetTimezone" in source || "shopRestartTimezone" in source) {
     const normalized = optionalServerText(resetTimezoneInput, 100);
     if (normalized) {
       next.serverResetTimezone = normalized;
@@ -532,8 +535,6 @@ function mapManagedServerRow(row: any): ManagedServerDescriptor {
     enabled: row.enabled !== false,
     primary: false,
     runtimeEnabled: Boolean(row.runtime_enabled),
-    // Reset cadence is read from the dedicated schedule table. The managed_servers
-    // columns remain a compatibility mirror during the migration.
     resetSchedule: {
       times: String(row.reset_schedule_times || row.server_reset_times || "").trim(),
       timezone: String(row.reset_schedule_timezone || row.server_reset_timezone || "America/Sao_Paulo").trim(),
@@ -729,8 +730,6 @@ export async function ensureManagedServerRegistryMetadata() {
         )
       `;
       await getSql()`CREATE INDEX IF NOT EXISTS server_reset_schedules_updated_at_idx ON server_reset_schedules (updated_at)`;
-      // Migrate the existing dedicated managed_servers columns into the canonical
-      // schedule table without losing any already configured cadence.
       await getSql()`
         INSERT INTO server_reset_schedules (server_id, times, timezone, updated_at)
         SELECT id, BTRIM(server_reset_times), COALESCE(NULLIF(BTRIM(server_reset_timezone), ''), 'America/Sao_Paulo'), NOW()
@@ -738,8 +737,6 @@ export async function ensureManagedServerRegistryMetadata() {
         WHERE NULLIF(BTRIM(server_reset_times), '') IS NOT NULL
         ON CONFLICT (server_id) DO NOTHING
       `;
-      // Keep legacy managed_servers columns synchronized as a compatibility mirror.
-      // New reads use server_reset_schedules exclusively.
       await getSql()`
         CREATE OR REPLACE FUNCTION sync_server_reset_schedule_mirror()
         RETURNS TRIGGER AS $function$
@@ -755,49 +752,6 @@ export async function ensureManagedServerRegistryMetadata() {
           RETURN NEW;
         END;
         $function$ LANGUAGE plpgsql
-      `;
-      await getSql()`DROP TRIGGER IF EXISTS managed_servers_reset_schedule_mirror ON managed_servers`;
-      await getSql()`
-        CREATE TRIGGER managed_servers_reset_schedule_mirror
-        AFTER INSERT OR UPDATE OF server_reset_times, server_reset_timezone ON managed_servers
-        FOR EACH ROW EXECUTE FUNCTION sync_server_reset_schedule_mirror()
-      `; (
-          server_id TEXT PRIMARY KEY REFERENCES managed_servers(id) ON DELETE CASCADE,
-          times TEXT NOT NULL,
-          timezone TEXT NOT NULL DEFAULT 'America/Sao_Paulo',
-          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-        )
-      `;
-      await getSql()`CREATE INDEX IF NOT EXISTS server_reset_schedules_updated_at_idx ON server_reset_schedules (updated_at)`;
-      // Migrate the existing dedicated managed_servers columns into the canonical
-      // schedule table without losing any already configured cadence.
-      await getSql()`
-        INSERT INTO server_reset_schedules (server_id, times, timezone, updated_at)
-        SELECT id, BTRIM(server_reset_times), COALESCE(NULLIF(BTRIM(server_reset_timezone), ''), 'America/Sao_Paulo'), NOW()
-        FROM managed_servers
-        WHERE NULLIF(BTRIM(server_reset_times), '') IS NOT NULL
-        ON CONFLICT (server_id) DO UPDATE
-        SET times = EXCLUDED.times,
-            timezone = EXCLUDED.timezone,
-            updated_at = NOW()
-      `;
-      // Keep legacy managed_servers columns synchronized as a compatibility mirror.
-      // New reads use server_reset_schedules exclusively.
-      await getSql()`
-        CREATE OR REPLACE FUNCTION sync_server_reset_schedule_mirror()
-        RETURNS TRIGGER AS $
-        BEGIN
-          IF NULLIF(BTRIM(NEW.server_reset_times), '') IS NULL THEN
-            DELETE FROM server_reset_schedules WHERE server_id = NEW.id;
-          ELSE
-            INSERT INTO server_reset_schedules (server_id, times, timezone, updated_at)
-            VALUES (NEW.id, BTRIM(NEW.server_reset_times), COALESCE(NULLIF(BTRIM(NEW.server_reset_timezone), ''), 'America/Sao_Paulo'), NOW())
-            ON CONFLICT (server_id) DO UPDATE
-            SET times = EXCLUDED.times, timezone = EXCLUDED.timezone, updated_at = NOW();
-          END IF;
-          RETURN NEW;
-        END;
-        $ LANGUAGE plpgsql
       `;
       await getSql()`DROP TRIGGER IF EXISTS managed_servers_reset_schedule_mirror ON managed_servers`;
       await getSql()`
@@ -993,7 +947,8 @@ type OnlinePlayer = {
   connectedAt?: string;
   lastSeenAt: string;
   sessionKills?: number;
-  sessionDeaths?: number;  sessionStreak?: number;
+  sessionDeaths?: number;
+  sessionStreak?: number;
 };
 
 export type FileCursor = {
@@ -1037,6 +992,7 @@ export type ShopOrderStatus =
   | "included_in_restart"
   | "spawned"
   | "failed";
+
 
 export type ShopResetMonitor = {
   batchId?: string;
@@ -1088,7 +1044,8 @@ export type ServerResetState = {
 export type ShopSavedLocation = {
   id: string;
   discordUserId: string;
-  name: string;  x: number;
+  name: string;
+  x: number;
   y: number;
   z: number;
   createdAt: string;
@@ -1492,7 +1449,8 @@ function migrateLegacyState(data: any): AppState {
       const normalized = gamertag.toLowerCase();
       if (!gamertag || !normalized || normalized === mainNormalized || seen.has(normalized)) continue;
       const owner = state.playerLinksByGamertag[normalized];
-      if (owner && owner !== discordId) continue;      seen.add(normalized);
+      if (owner && owner !== discordId) continue;
+      seen.add(normalized);
       clean.push(gamertag);
       state.playerLinksByGamertag[normalized] = discordId;
     }
@@ -1535,7 +1493,8 @@ function migrateLegacyState(data: any): AppState {
   state.shopAutoDeploy = data.shopAutoDeploy || null;
   state.mapRotation = data.mapRotation;
   state.mapVoteUserLocales = data.mapVoteUserLocales && typeof data.mapVoteUserLocales === "object" ? data.mapVoteUserLocales : {};
-  state.discordCommandSettings = normalizeDiscordCommandSettings(data.discordCommandSettings);  state.serviceSettings = normalizeServiceSettings(data.serviceSettings);
+  state.discordCommandSettings = normalizeDiscordCommandSettings(data.discordCommandSettings);
+  state.serviceSettings = normalizeServiceSettings(data.serviceSettings);
 
   const rawOnlinePlayers = data.onlinePlayers || {};
   const now = new Date().toISOString();
@@ -1585,7 +1544,8 @@ function migrateLegacyState(data: any): AppState {
 
 
 
-function hasPersistedSpawnZones(value: any) {  return Boolean(value && typeof value === "object" && Array.isArray(value.zones) && value.zones.length > 0);
+function hasPersistedSpawnZones(value: any) {
+  return Boolean(value && typeof value === "object" && Array.isArray(value.zones) && value.zones.length > 0);
 }
 
 function parseLastPersistedState(): Partial<AppState> | null {
@@ -1991,6 +1951,7 @@ export async function updateManagedServerShopResetSettings(
     settingsInput,
     current.runtime.settings || {},
   );
+
   const nextRuntime = {
     ...current.runtime,
     settings: nextSettings,
@@ -2033,7 +1994,8 @@ export async function bindManagedServerDiscordGuild(serverIdInput: unknown, guil
   const currentServers = await reloadManagedServerRegistryFromDb();
   const current = currentServers.find((server) => server.id === id);
   if (!current) throw new Error(`Servidor ${id} nao encontrado.`);
-  const duplicate = currentServers.find((server) => server.id !== id && server.integrations.discordGuildId === guildId);  if (duplicate) throw new Error(`Este Discord ja esta vinculado ao servidor ${duplicate.name}.`);
+  const duplicate = currentServers.find((server) => server.id !== id && server.integrations.discordGuildId === guildId);
+  if (duplicate) throw new Error(`Este Discord ja esta vinculado ao servidor ${duplicate.name}.`);
 
   const guildChanged = Boolean(current.integrations.discordGuildId && current.integrations.discordGuildId !== guildId);
   const nextRuntime = {
@@ -2082,7 +2044,8 @@ export async function updateManagedServerDiscordChannels(serverIdInput: unknown,
   const servers = await reloadManagedServerRegistryFromDb();
   recordNetworkTransfer({
     service: "neon-server-registry", operation: "update_server_discord_channels", direction: "outbound",
-    bytes: Buffer.byteLength(JSON.stringify({ serverId: id, discord }), "utf8"), ok: true,  });
+    bytes: Buffer.byteLength(JSON.stringify({ serverId: id, discord }), "utf8"), ok: true,
+  });
   return servers.find((server) => server.id === id);
 }
 
@@ -2129,9 +2092,6 @@ export async function updateManagedServerScopedSettings(serverIdInput: unknown, 
         runtime_config = ${JSON.stringify(runtime)}::jsonb, updated_at = NOW()
     WHERE id = ${id}
   `;
-  // The trigger mirrors the compatibility columns into the canonical schedule table.
-  // Keep this explicit assertion so a schedule save cannot silently succeed without
-  // a corresponding canonical row.
   if (settings.serverResetTimes || settings.shopRestartTimes) {
     const canonicalTimes = String(settings.serverResetTimes || settings.shopRestartTimes || "").trim();
     const canonicalTimezone = String(settings.serverResetTimezone || settings.shopRestartTimezone || "America/Sao_Paulo").trim();
@@ -2490,7 +2450,8 @@ export async function setManagedServerRuntimeEnabled(serverId: string, enabled: 
       // Phase 17B permits rows created by tenant-safe data access before the ADM
       // runtime starts. Composite server_id PKs and scoped-read safety are the
       // security boundary; an empty namespace is no longer required.
-      const namespaceRows = await inspectManagedServerNamespaceRows(id);      if (namespaceRows.botState || namespaceRows.playerStats || namespaceRows.positionHistory) {
+      const namespaceRows = await inspectManagedServerNamespaceRows(id);
+      if (namespaceRows.botState || namespaceRows.playerStats || namespaceRows.positionHistory) {
         console.log(`🧭 reutilizando namespace preexistente e server-scoped na primeira ativacao [${id}]`, namespaceRows);
       }
     }
@@ -2531,7 +2492,8 @@ export async function setManagedServerRuntimeEnabled(serverId: string, enabled: 
         onboarding_status = 'ready',
         runtime_config = ${JSON.stringify(nextRuntime)}::jsonb,
         updated_at = NOW()
-    WHERE id = ${id} AND id <> ${getPrimaryServerId()}  `;
+    WHERE id = ${id} AND id <> ${getPrimaryServerId()}
+  `;
 
   const servers = await reloadManagedServerRegistryFromDb();
   const next = servers.find((server) => server.id === id);
@@ -2594,7 +2556,8 @@ export async function setManagedServerRuntimePaused(serverId: string, paused: bo
   if (!next) throw new Error(`Servidor ${id} nao encontrado apos atualizar pause/resume.`);
   recordNetworkTransfer({
     service: "neon-server-registry",
-    operation: paused ? "pause_server_runtime" : "resume_server_runtime",    direction: "outbound",
+    operation: paused ? "pause_server_runtime" : "resume_server_runtime",
+    direction: "outbound",
     bytes: Buffer.byteLength(JSON.stringify({ serverId: id, paused, operations }), "utf8"),
     ok: true,
   });
@@ -2989,7 +2952,8 @@ function analyzePayload(parsed: AppState, now: string) {
   ]);
 
   return {
-    sections: allSections      .map(({ key, bytes, entries }) => ({ key, bytes, entries }))
+    sections: allSections
+      .map(({ key, bytes, entries }) => ({ key, bytes, entries }))
       .sort((a, b) => b.bytes - a.bytes),
     changedSections: changed.map((section) => section.key),
     changedBytes: changed.reduce((sum, section) => sum + section.bytes, 0),
@@ -3029,7 +2993,8 @@ async function persistDomainBatchToNeon(
 
   try {
     if (playerEntries.length) await ensureGranularPlayerStatsTable();
-    await sql.begin(async (tx: any) => {      for (const [domain, entry] of entries) {
+    await sql.begin(async (tx: any) => {
+      for (const [domain, entry] of entries) {
         if (botStateScopedPersistenceReady) {
           await tx`
             INSERT INTO bot_state (id, data, updated_at, server_id)
@@ -3091,7 +3056,8 @@ async function persistDomainBatchToNeon(
         service: "neon-player-stats",
         operation: "player_stats_batch_upsert",
         direction: "outbound",
-        bytes: playerPayloadBytes,        ok: true,
+        bytes: playerPayloadBytes,
+        ok: true,
       });
     }
     recordNetworkTransfer({
@@ -3488,6 +3454,7 @@ async function flushPendingState() {
   getPersistenceRuntime().pendingPersistHash = "";
   getPersistenceRuntime().pendingPersistReasons = new Set<string>();
   getPersistenceRuntime().pendingPersistStartedAt = 0;
+
   const saveTimer = getPersistenceRuntime().saveTimer;
   if (saveTimer) {
     clearTimeout(saveTimer);
@@ -3527,6 +3494,7 @@ function scheduleNeonPersist() {
     });
   }, delay);
 }
+
 export async function flushStateAsync(forceCompatibilitySnapshot = false) {
   if (STATE_PERSISTENCE_V2_ENABLED) {
     await Promise.all([
@@ -3588,7 +3556,8 @@ function summarizeGlobalPlayers(players: Record<string, PlayerStats> | undefined
 }
 
 function applyGranularPlayerRows(state: AppState, rows: any[]) {
-  let newestGranularAt = 0;  let applied = 0;
+  let newestGranularAt = 0;
+  let applied = 0;
   for (const row of rows || []) {
     const playerKey = String(row.player_key || "");
     if (!playerKey || !row.stats || typeof row.stats !== "object") continue;
@@ -3987,7 +3956,8 @@ export function getStatePersistenceMetrics(serverId = getActiveServerId()) {
     reasons: { ...metric.reasons },
     sections: { ...metric.sections },
     lastPayloadSections: [...metric.lastPayloadSections],
-    detailedSections: [...metric.detailedSections],    recentWrites: [...metric.recentWrites],
+    detailedSections: [...metric.detailedSections],
+    recentWrites: [...metric.recentWrites],
   };
 }
 
@@ -4025,7 +3995,8 @@ export function getStateDomainPersistenceMetrics(serverId = getActiveServerId())
   const metric = domainPersistenceMetricsStore.get(serverId);
   const uptimeHours = Math.max(1 / 60, (Date.now() - new Date(metric.startedAt).getTime()) / 3_600_000);
   const flushes = Math.max(1, metric.flushes);
-  return {    serverId,
+  return {
+    serverId,
     ...metric,
     pendingDomains: getPersistenceRuntime(serverId).pendingDomains.size,
     backgroundCadenceMinutes: Math.round(STATE_BACKGROUND_PERSIST_MS / 60_000),
@@ -4085,7 +4056,8 @@ async function flushPlayerPositionHistoryBatch() {
   const playerPositionFlushTimer = getPlayerPositionRuntime().flushTimer;
   if (playerPositionFlushTimer) {
     clearTimeout(playerPositionFlushTimer);
-    getPlayerPositionRuntime().flushTimer = null;  }
+    getPlayerPositionRuntime().flushTimer = null;
+  }
   if (!sql || !getPlayerPositionRuntime().pendingObservations.size) return;
 
   const rows = [...getPlayerPositionRuntime().pendingObservations.values()];
@@ -4487,3 +4459,69 @@ export async function saveStateAsync(data: AppState, reason?: string) {
   if (!sql) {
     getPersistenceRuntime().lastPersistedJson = serialized;
     getPersistenceRuntime().lastPersistedHash = hash;
+    initializeDomainHashes(safeData);
+    logStateDebug("💾 STATE SALVO EM", { file: getLocalStateFile(), serverId: getActiveServerId() });
+    return;
+  }
+
+  if (STATE_PERSISTENCE_V2_ENABLED) {
+    // Runtime fields are persisted independently as well, even when the caller
+    // used the generic save API (for example admin/config paths touching mapRotation).
+    const runtimeSerialized = serializeDiscordRuntime(safeData);
+    const runtimeHash = hashState(runtimeSerialized);
+    const runtimeChanged = runtimeHash !== getPersistenceRuntime().lastDiscordRuntimeHash && runtimeHash !== getPersistenceRuntime().pendingDiscordRuntimeHash;
+    if (runtimeChanged) {
+      getPersistenceRuntime().pendingDiscordRuntimeJson = runtimeSerialized;
+      getPersistenceRuntime().pendingDiscordRuntimeHash = runtimeHash;
+      scheduleDiscordRuntimePersist();
+    }
+
+    const changed = await queueAndPersistStateDomains(safeData, persistenceReason);
+    if (!changed && !runtimeChanged) {
+      persistenceMetrics.skippedWrites += 1;
+      getReasonMetric(persistenceReason).skippedRequests += 1;
+      logStateDebug("⏭️ STATE V2 ignorado: sem alterações", { reason: persistenceReason });
+    }
+    // Keep the latest in-memory/full JSON for local diagnostics and the hourly
+    // compatibility snapshot, but do not treat it as already persisted in Neon.
+    getPersistenceRuntime().lastPersistedJson = serialized;
+    return;
+  }
+
+  if (hash === getPersistenceRuntime().lastPersistedHash || serialized === getPersistenceRuntime().lastPersistedJson) {
+    persistenceMetrics.skippedWrites += 1;
+    getReasonMetric(persistenceReason).skippedRequests += 1;
+    logStateDebug("⏭️ STATE ignorado: sem alterações", { reason: persistenceReason });
+    return;
+  }
+
+  getPersistenceRuntime().pendingPersistJson = serialized;
+  getPersistenceRuntime().pendingPersistHash = hash;
+  getPersistenceRuntime().pendingPersistReasons.add(persistenceReason);
+  getPersistenceRuntime().pendingPersistStartedAt = getPersistenceRuntime().pendingPersistStartedAt || Date.now();
+  scheduleNeonPersist();
+}
+
+export function getState(): AppState {
+  const cachedState = getCachedState();
+  if (cachedState) return cachedState;
+  setCachedState(readLocalState());
+  getPersistenceRuntime().lastPersistedJson = serializeState(getCachedState()!);
+  getPersistenceRuntime().lastPersistedHash = hashState(getPersistenceRuntime().lastPersistedJson);
+  getPersistenceRuntime().lastCoreHash = hashCoreState(getCachedState()!);
+  getPersistenceRuntime().lastDiscordRuntimeHash = hashState(serializeDiscordRuntime(getCachedState()!));
+  initializeDomainHashes(getCachedState()!);
+  return getCachedState()!;
+}
+
+export function saveState(data: AppState) {
+  setCachedState(data);
+  const serialized = serializeState(data);
+  getPersistenceRuntime().lastPersistedJson = serialized;
+  getPersistenceRuntime().lastPersistedHash = hashState(serialized);
+  getPersistenceRuntime().lastCoreHash = hashCoreState(data);
+  getPersistenceRuntime().lastDiscordRuntimeHash = hashState(serializeDiscordRuntime(data));
+  initializeDomainHashes(data);
+  writeLocalState(data);
+  logStateDebug("💾 STATE SALVO LOCALMENTE", { file: getLocalStateFile(), serverId: getActiveServerId() });
+}
