@@ -4,6 +4,7 @@ import { getPlayerLinkByDiscordId } from "./playerLinks";
 import {
   assertShopCanAcceptPurchase,
   createShopOrder,
+  createShopKitOrder,
   ensureShopState,
   findSavedShopLocation,
   getSavedShopLocations,
