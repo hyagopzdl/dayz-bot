@@ -118,14 +118,19 @@ export async function ensureShopCatalogSchema() {
         CHECK (quantity > 0)
       )
     `;
-    await db`
-      INSERT INTO server_shop_catalog_kit_components (server_id, kit_id, class_name, name, quantity, sort_order)
-      SELECT legacy.server_id, legacy.kit_id, catalog_item.class_name, catalog_item.name, legacy.quantity, legacy.sort_order
-      FROM server_shop_catalog_kit_items AS legacy
-      INNER JOIN server_shop_catalog_items AS catalog_item
-        ON catalog_item.server_id = legacy.server_id AND catalog_item.id = legacy.item_id
-      ON CONFLICT (server_id, kit_id, class_name) DO NOTHING
+    const legacyKitTable = await db`
+      SELECT to_regclass('public.server_shop_catalog_kit_items') AS table_name
     `;
+    if (legacyKitTable[0]?.table_name) {
+      await db`
+        INSERT INTO server_shop_catalog_kit_components (server_id, kit_id, class_name, name, quantity, sort_order)
+        SELECT legacy.server_id, legacy.kit_id, catalog_item.class_name, catalog_item.name, legacy.quantity, legacy.sort_order
+        FROM server_shop_catalog_kit_items AS legacy
+        INNER JOIN server_shop_catalog_items AS catalog_item
+          ON catalog_item.server_id = legacy.server_id AND catalog_item.id = legacy.item_id
+        ON CONFLICT (server_id, kit_id, class_name) DO NOTHING
+      `;
+    }
     await db`CREATE INDEX IF NOT EXISTS server_shop_catalog_kits_category_idx ON server_shop_catalog_kits (server_id, category)`;
     await db`CREATE INDEX IF NOT EXISTS server_shop_catalog_kit_components_kit_idx ON server_shop_catalog_kit_components (server_id, kit_id)`;
   })().catch((error) => {
