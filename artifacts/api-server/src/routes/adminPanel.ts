@@ -5812,6 +5812,14 @@ function renderAdminPanelHtml(token: string) {
       if (action === "toggle") toggleCatalogKit(id);
       if (action === "delete") deleteCatalogKit(id);
     });
+
+    els.catalogKitCreate?.addEventListener("click", () => openCatalogKitModal());
+    els.catalogKitCreateFromItems?.addEventListener("click", () => openCatalogKitModal());
+    els.catalogKitModalCancel?.addEventListener("click", closeCatalogKitModal);
+    els.catalogKitModalConfirm?.addEventListener("click", saveCatalogKit);
+    els.catalogKitModalBackdrop?.addEventListener("click", (event) => {
+      if (event.target === els.catalogKitModalBackdrop) closeCatalogKitModal();
+    });
     function findCatalogItem(itemId) {
       return (state.catalog?.items || []).find((item) => item.id === itemId) || null;
     }
@@ -8336,7 +8344,10 @@ function renderAdminPanelHtml(token: string) {
     }
 
     function switchView(view) {
-      state.view = view; document.querySelectorAll(".view").forEach((el) => el.classList.toggle("active", el.id === "view-" + view));
+      const changed = state.view !== view;
+      state.view = view;
+      if (changed) window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+      document.querySelectorAll(".view").forEach((el) => el.classList.toggle("active", el.id === "view-" + view));
     document.querySelectorAll(".nav button").forEach((el) => el.classList.toggle("active", el.dataset.view === view));
       els.pageTitle.textContent = view === "general" ? "Geral" : view === "members" ? "Membros" : view === "catalog" ? "Shop" : view === "map-events" ? "Eventos do Mapa" : view === "spawn-zones" ? "Spawn Zones" : view === "player-map" ? "Player Map" : view === "settings" ? "Settings" : "Itens";
       if (view === "members" && !els.memberList.children.length) loadMembers(true);
