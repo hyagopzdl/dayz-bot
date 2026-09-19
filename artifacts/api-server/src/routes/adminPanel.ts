@@ -59,6 +59,7 @@ import {
   getStatePersistenceMetrics,
   getDiscordRuntimePersistenceMetrics,
   getStateDomainPersistenceMetrics,
+  getServerResetScheduleConfig,
   getGranularPlayerStatsPersistenceMetrics,
   getPlayerPositionHistoryMetrics,
   getLatestPlayerPositionSnapshot,
@@ -9141,7 +9142,15 @@ router.get("/api/shop-reset-settings", async (req, res) => {
   const serverId = String(req.adminSession?.serverId || getActiveServerId() || "").trim();
   const server = getManagedServerById(serverId);
   if (!server) { res.status(403).json({ error: "SERVER_CONTEXT_REQUIRED" }); return; }
-  res.json({ serverId: server.id, serverName: server.name, settings: server.runtime.settings || {} });
+  const resetSchedule = getServerResetScheduleConfig(server.id);
+  const settings = {
+    ...(server.runtime.settings || {}),
+    serverResetTimes: resetSchedule.times,
+    serverResetTimezone: resetSchedule.timezone,
+    shopRestartTimes: resetSchedule.times,
+    shopRestartTimezone: resetSchedule.timezone,
+  };
+  res.json({ serverId: server.id, serverName: server.name, settings });
 });
 
 router.patch("/api/shop-reset-settings", async (req, res) => {
@@ -9152,7 +9161,15 @@ router.patch("/api/shop-reset-settings", async (req, res) => {
   try {
     const updated = await updateManagedServerScopedSettings(server.id, req.body || {});
     if (updated) scheduleServerResetAutomationForServer(updated);
-    res.json({ server: updated, settings: updated?.runtime.settings || {} });
+    const resetSchedule = updated ? getServerResetScheduleConfig(updated.id) : { times: "", timezone: "America/Sao_Paulo" };
+    const settings = {
+      ...(updated?.runtime.settings || {}),
+      serverResetTimes: resetSchedule.times,
+      serverResetTimezone: resetSchedule.timezone,
+      shopRestartTimes: resetSchedule.times,
+      shopRestartTimezone: resetSchedule.timezone,
+    };
+    res.json({ server: updated, settings });
   } catch (err) {
     res.status(400).send(err instanceof Error ? err.message : String(err));
   }
