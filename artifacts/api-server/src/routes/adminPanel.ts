@@ -5677,6 +5677,13 @@ function renderAdminPanelHtml(token: string) {
       els.catalogItemCategory.innerHTML = options.join("");
     }
     function enterCatalogCategory(categoryId) {
+      if (categoryId === "__kits") {
+        state.catalogCategory = "__kits";
+        state.catalogMode = "items";
+        state.catalogSearch = "";
+        renderCatalog();
+        return;
+      }
       const category = findCatalogCategory(categoryId);
       if (!category) return;
       state.catalogCategory = category.id;
@@ -5725,7 +5732,9 @@ function renderAdminPanelHtml(token: string) {
       if (isQueue) { renderShopQueue(); return; }
 
       if (!isItems) {
-        els.catalogCategoryGrid.innerHTML = (state.catalog.categories || []).map(catalogCategoryCard).join("") + catalogNewCategoryCard();
+        els.catalogCategoryGrid.innerHTML = (state.catalog.categories || []).map(catalogCategoryCard).join("") +
+          '<article class="catalog-category-card" data-category-id="__kits"><div class="category-icon">📦</div><div class="category-title">Kits</div><div class="category-subtitle">' + formatCoins((state.catalog.kits || []).length) + ' kit' + ((state.catalog.kits || []).length === 1 ? '' : 's') + '</div></article>' +
+          catalogNewCategoryCard();
         els.catalogEmpty.style.display = "none";
         return;
       }
