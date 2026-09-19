@@ -2203,10 +2203,18 @@ function buildCatalogPayload() {
         a.name.localeCompare(b.name),
     );
 
+  const kits = (catalog.kits || []).map((kit: ShopKit) => ({
+    id: kit.id, name: kit.name, category: kit.category || "kits",
+    price: Math.floor(Number(kit.price || 0)), description: kit.description || "",
+    imageUrl: kit.imageUrl || "", enabled: kit.enabled !== false,
+    sortOrder: Number(kit.sortOrder || 0),
+    items: (kit.items || []).map((item) => ({ className: item.className, name: item.name || "", quantity: Math.max(1, Math.floor(Number(item.quantity || 1))) })),
+  }));
   return {
     version: catalog.version,
     categories,
     items,
+    kits,
     stats: {
       totalItems: items.length,
       enabledItems: items.filter((item) => item.enabled).length,
@@ -9959,6 +9967,64 @@ router.get("/api/catalog", async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: String(err) });
   }
+});
+
+router.post("/api/catalog/kits", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  try {
+    const body = req.body && typeof req.body === "object" ? req.body : {};
+    const kit: ShopKit = {
+      id: String(body.id || body.name || "").trim(),
+      name: String(body.name || "").trim(),
+      category: String(body.category || "kits").trim(),
+      price: Number(body.price || 0),
+      imageUrl: String(body.imageUrl || "").trim() || undefined,
+      description: String(body.description || "").trim() || undefined,
+      enabled: body.enabled !== false,
+      items: Array.isArray(body.items) ? body.items.map((item: any) => ({
+        className: String(item?.className || "").trim(),
+        name: String(item?.name || "").trim() || undefined,
+        quantity: Math.max(1, Math.floor(Number(item?.quantity || 1))),
+      })).filter((item: any) => item.className) : [],
+    };
+    const saved = await upsertShopKit(kit);
+    res.json({ ok: true, kit: saved, catalog: buildCatalogPayload() });
+  } catch (err) { res.status(400).json({ ok: false, error: err instanceof Error ? err.message : String(err) }); }
+});
+
+router.patch("/api/catalog/kits/:id", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  try {
+    const body = req.body && typeof req.body === "object" ? req.body : {};
+    const kit: ShopKit = {
+      id: req.params.id, name: String(body.name || "").trim(),
+      category: String(body.category || "kits").trim(), price: Number(body.price || 0),
+      imageUrl: String(body.imageUrl || "").trim() || undefined,
+      description: String(body.description || "").trim() || undefined,
+      enabled: body.enabled !== false,
+      items: Array.isArray(body.items) ? body.items : [],
+    };
+    const saved = await upsertShopKit(kit);
+    res.json({ ok: true, kit: saved, catalog: buildCatalogPayload() });
+  } catch (err) { res.status(400).json({ ok: false, error: err instanceof Error ? err.message : String(err) }); }
+});
+
+router.patch("/api/catalog/kits/:id/toggle", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  try {
+    const kit = await toggleShopKit(req.params.id, typeof req.body?.enabled === "boolean" ? req.body.enabled : undefined);
+    if (!kit) { res.status(404).send("Catalog kit not found"); return; }
+    res.json({ ok: true, kit, catalog: buildCatalogPayload() });
+  } catch (err) { res.status(400).json({ ok: false, error: err instanceof Error ? err.message : String(err) }); }
+});
+
+router.delete("/api/catalog/kits/:id", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  try {
+    const deleted = await deleteShopKit(req.params.id);
+    if (!deleted) { res.status(404).send("Catalog kit not found"); return; }
+    res.json({ ok: true, deleted: true, catalog: buildCatalogPayload() });
+  } catch (err) { res.status(400).json({ ok: false, error: err instanceof Error ? err.message : String(err) }); }
 });
 
 router.patch("/api/catalog/categories/reorder", async (req, res) => {
