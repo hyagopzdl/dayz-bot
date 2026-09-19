@@ -32,6 +32,7 @@ import {
   getShopItemDeliveryKind,
   getShopItems,
   getShopItemsByCategory,
+  getShopCatalog,
   type ShopItem,
 } from "./shopCatalog";
 
@@ -665,6 +666,68 @@ export function createShopOrder(options: {
     itemName: item.name,
     ...(item.spawnEventName ? { spawnEventName: item.spawnEventName } : {}),
     deliveryKind: getShopItemDeliveryKind(item),
+    x: Number(options.x.toFixed(2)),
+    y: Number(options.y.toFixed(2)),
+    z: Number(options.z.toFixed(2)),
+    status: "pending_spawn",
+    createdAt: now,
+    ...(Number.isFinite(options.price) ? { price: Number(options.price) } : {}),
+    ...(String(options.locationName || "").trim() ? { locationName: String(options.locationName).trim().slice(0, 40) } : {}),
+  };
+
+  state.shopOrders.push(order);
+  return order;
+}
+
+export function createShopKitOrder(options: {
+  state: AppState;
+  discordUserId: string;
+  kitId: string;
+  x: number;
+  y: number;
+  z: number;
+  price?: number;
+  locationName?: string;
+}) {
+  const state = ensureShopState(options.state);
+  assertShopCanAcceptPurchase(state);
+  const catalog = getShopCatalog();
+  const kit = (catalog.kits || []).find((candidate) => String(candidate.id) === String(options.kitId));
+
+  if (!kit || kit.enabled === false) {
+    throw new Error("Kit not found or disabled.");
+  }
+
+  const components = Array.isArray(kit.items)
+    ? kit.items
+        .map((item) => ({
+          className: String(item.className || "").trim(),
+          ...(String(item.name || "").trim() ? { name: String(item.name).trim() } : {}),
+          quantity: Math.max(1, Math.floor(Number(item.quantity || 1))),
+        }))
+        .filter((item) => item.className)
+    : [];
+
+  if (!components.length) {
+    throw new Error("Kit has no valid items.");
+  }
+
+  if (![options.x, options.y, options.z].every(Number.isFinite)) {
+    throw new Error("Invalid coordinates.");
+  }
+
+  const now = new Date().toISOString();
+  const first = components[0];
+  const order: ShopOrder = {
+    id: `shop_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    serverId: getServerRuntimeContext().serverId,
+    discordUserId: options.discordUserId,
+    itemClass: first.className,
+    itemKind: "kit",
+    kitId: String(kit.id),
+    kitItems: components,
+    itemName: kit.name,
+    deliveryKind: "item",
     x: Number(options.x.toFixed(2)),
     y: Number(options.y.toFixed(2)),
     z: Number(options.z.toFixed(2)),
