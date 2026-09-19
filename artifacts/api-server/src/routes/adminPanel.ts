@@ -2208,7 +2208,7 @@ function buildCatalogPayload() {
     price: Math.floor(Number(kit.price || 0)), description: kit.description || "",
     imageUrl: kit.imageUrl || "", enabled: kit.enabled !== false,
     sortOrder: Number(kit.sortOrder || 0),
-    items: (kit.items || []).map((item) => ({ className: item.className, name: item.name || "", quantity: Math.max(1, Math.floor(Number(item.quantity || 1))) })),
+    items: (kit.items || []).map((item) => ({ className: item.className, name: item.name || "", imageUrl: item.imageUrl || "", quantity: Math.max(1, Math.floor(Number(item.quantity || 1))) })),
   }));
   return {
     version: catalog.version,
@@ -10304,6 +10304,7 @@ router.post("/api/catalog/kits", async (req, res) => {
       items: Array.isArray(body.items) ? body.items.map((item: any) => ({
         className: String(item?.className || "").trim(),
         name: String(item?.name || "").trim() || undefined,
+        imageUrl: String(item?.imageUrl || "").trim() || undefined,
         quantity: Math.max(1, Math.floor(Number(item?.quantity || 1))),
       })).filter((item: any) => item.className) : [],
     };
