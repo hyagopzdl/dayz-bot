@@ -106,19 +106,28 @@ export async function ensureShopCatalogSchema() {
       )
     `;
     await db`
-      CREATE TABLE IF NOT EXISTS server_shop_catalog_kit_items (
+      CREATE TABLE IF NOT EXISTS server_shop_catalog_kit_components (
         server_id TEXT NOT NULL,
         kit_id TEXT NOT NULL,
-        item_id TEXT NOT NULL,
+        class_name TEXT NOT NULL,
+        name TEXT,
         quantity INTEGER NOT NULL DEFAULT 1,
         sort_order INTEGER NOT NULL DEFAULT 0,
-        PRIMARY KEY (server_id, kit_id, item_id),
+        PRIMARY KEY (server_id, kit_id, class_name),
         FOREIGN KEY (server_id, kit_id) REFERENCES server_shop_catalog_kits(server_id, id) ON DELETE CASCADE,
-        FOREIGN KEY (server_id, item_id) REFERENCES server_shop_catalog_items(server_id, id) ON DELETE RESTRICT
+        CHECK (quantity > 0)
       )
     `;
+    await db`
+      INSERT INTO server_shop_catalog_kit_components (server_id, kit_id, class_name, name, quantity, sort_order)
+      SELECT legacy.server_id, legacy.kit_id, catalog_item.class_name, catalog_item.name, legacy.quantity, legacy.sort_order
+      FROM server_shop_catalog_kit_items AS legacy
+      INNER JOIN server_shop_catalog_items AS catalog_item
+        ON catalog_item.server_id = legacy.server_id AND catalog_item.id = legacy.item_id
+      ON CONFLICT (server_id, kit_id, class_name) DO NOTHING
+    `;
     await db`CREATE INDEX IF NOT EXISTS server_shop_catalog_kits_category_idx ON server_shop_catalog_kits (server_id, category)`;
-    await db`CREATE INDEX IF NOT EXISTS server_shop_catalog_kit_items_kit_idx ON server_shop_catalog_kit_items (server_id, kit_id)`;
+    await db`CREATE INDEX IF NOT EXISTS server_shop_catalog_kit_components_kit_idx ON server_shop_catalog_kit_components (server_id, kit_id)`;
   })().catch((error) => {
     schemaPromise = null;
     throw error;
@@ -242,13 +251,10 @@ export async function loadShopCatalogFromDatabase(): Promise<ShopCatalog> {
   const baseItems = itemRows.map(rowToItem);
   const hydratedItems = await hydrateCatalogItemsFromDzPage(baseItems);
   const kits = await Promise.all(kitRows.map(async (row: any) => {
-    const rows = await db`SELECT kit_item.item_id, kit_item.quantity, kit_item.sort_order,
-             catalog_item.class_name, catalog_item.name
-      FROM server_shop_catalog_kit_items AS kit_item
-      INNER JOIN server_shop_catalog_items AS catalog_item
-        ON catalog_item.server_id = kit_item.server_id AND catalog_item.id = kit_item.item_id
-      WHERE kit_item.server_id = ${serverId} AND kit_item.kit_id = ${row.id}
-      ORDER BY kit_item.sort_order ASC, catalog_item.class_name ASC`;
+    const rows = await db`SELECT class_name, name, quantity, sort_order
+      FROM server_shop_catalog_kit_components
+      WHERE server_id = ${serverId} AND kit_id = ${row.id}
+      ORDER BY sort_order ASC, class_name ASC`;
     return {
       id: normalizeShopCatalogId(row.id),
       name: String(row.name || row.id).trim(),
@@ -346,27 +352,55 @@ export async function toggleShopCatalogItemInDatabase(itemId: string, enabled?: 
 
 
 export async function upsertShopKitInDatabase(kit: ShopKit) {
-  const db = requireSql(); const serverId = currentServerId(); await seedServerCatalogIfNeeded(serverId);
-  const id = normalizeShopCatalogId(kit.id || kit.name); if (!id) throw new Error("Kit requires an id.");
-  const items = (kit.items || []).filter((item) => item?.className).map((item, index) => ({
-    className: String(item.className).trim(),
-    quantity: Math.max(1, Math.floor(Number(item.quantity || 1))),
+  const db = requireSql();
+  const serverId = currentServerId();
+  await seedServerCatalogIfNeeded(serverId);
+
+  const id = normalizeShopCatalogId(kit.id || kit.name);
+  if (!id) throw new Error("Kit requires an id.");
+
+  const itemsByClassName = new Map<string, { className: string; name?: string; quantity: number; sortOrder: number }>();
+  for (const [index, rawItem] of (kit.items || []).entries()) {
+    const className = String(rawItem?.className || "").trim();
+    if (!className) continue;
+
+    const quantity = Math.max(1, Math.floor(Number(rawItem.quantity || 1)));
+    const existing = itemsByClassName.get(className);
+    if (existing) {
+      existing.quantity += quantity;
+      continue;
+    }
+
+    const name = rawItem.name ? String(rawItem.name).trim() : undefined;
+    itemsByClassName.set(className, {
+      className,
+      ...(name ? { name } : {}),
+      quantity,
+      sortOrder: index,
+    });
+  }
+
+  const items = [...itemsByClassName.values()].map((item, index) => ({
+    ...item,
     sortOrder: index,
   }));
+
   if (!items.length) throw new Error("Kit requires at least one item.");
+
   await db.begin(async (tx) => {
     await tx`INSERT INTO server_shop_catalog_kits (server_id, id, name, category, price, description, image_url, enabled, sort_order, updated_at)
       VALUES (${serverId}, ${id}, ${String(kit.name || id).trim()}, ${normalizeShopCatalogId(kit.category || "kits") || "kits"}, ${Math.max(0, Math.floor(Number(kit.price || 0)))}, ${kit.description || null}, ${kit.imageUrl || null}, ${kit.enabled !== false}, ${Number.isFinite(Number(kit.sortOrder)) ? Math.floor(Number(kit.sortOrder)) : 0}, NOW())
       ON CONFLICT (server_id, id) DO UPDATE SET name=EXCLUDED.name, category=EXCLUDED.category, price=EXCLUDED.price, description=EXCLUDED.description, image_url=EXCLUDED.image_url, enabled=EXCLUDED.enabled, sort_order=EXCLUDED.sort_order, updated_at=NOW()`;
-    await tx`DELETE FROM server_shop_catalog_kit_items WHERE server_id=${serverId} AND kit_id=${id}`;
+
+    await tx`DELETE FROM server_shop_catalog_kit_components WHERE server_id=${serverId} AND kit_id=${id}`;
+
     for (const item of items) {
-      const catalogRows = await tx`SELECT id FROM server_shop_catalog_items
-        WHERE server_id=${serverId} AND class_name=${item.className} LIMIT 1`;
-      if (!catalogRows.length) throw new Error(`Item "${item.className}" não está cadastrado no catálogo deste servidor.`);
-      await tx`INSERT INTO server_shop_catalog_kit_items (server_id, kit_id, item_id, quantity, sort_order)
-        VALUES (${serverId}, ${id}, ${catalogRows[0].id}, ${item.quantity}, ${item.sortOrder})`;
+      await tx`INSERT INTO server_shop_catalog_kit_components
+        (server_id, kit_id, class_name, name, quantity, sort_order)
+        VALUES (${serverId}, ${id}, ${item.className}, ${item.name || null}, ${item.quantity}, ${item.sortOrder})`;
     }
   });
+
   await refreshShopCatalogCache();
   return (getCachedShopCatalog().kits || []).find((entry) => entry.id === id) || null;
 }
@@ -375,7 +409,7 @@ export async function deleteShopKitFromDatabase(kitId: string) {
   const db = requireSql(); const serverId = currentServerId(); const id = normalizeShopCatalogId(kitId);
   if (!id) return false;
   const result = await db`DELETE FROM server_shop_catalog_kits WHERE server_id=${serverId} AND id=${id} RETURNING id`;
-  await db`DELETE FROM server_shop_catalog_kit_items WHERE server_id=${serverId} AND kit_id=${id}`;
+  await db`DELETE FROM server_shop_catalog_kit_components WHERE server_id=${serverId} AND kit_id=${id}`;
   await refreshShopCatalogCache();
   return result.length > 0;
 }
@@ -405,7 +439,7 @@ export async function reorderShopCatalogItems(categoryId: string, itemIds: strin
 
 export async function seedShopCatalogInDatabase(catalog: ShopCatalog, options?: { replace?: boolean }) {
   const db = requireSql(); const serverId = currentServerId(); await ensureShopCatalogSchema(); const normalized = normalizeCatalog(catalog);
-  if (options?.replace) { await db`DELETE FROM server_shop_catalog_kit_items WHERE server_id = ${serverId}`; await db`DELETE FROM server_shop_catalog_kits WHERE server_id = ${serverId}`; await db`DELETE FROM server_shop_catalog_items WHERE server_id = ${serverId}`; await db`DELETE FROM server_shop_catalog_categories WHERE server_id = ${serverId}`; }
+  if (options?.replace) { await db`DELETE FROM server_shop_catalog_kit_components WHERE server_id = ${serverId}`; await db`DELETE FROM server_shop_catalog_kits WHERE server_id = ${serverId}`; await db`DELETE FROM server_shop_catalog_items WHERE server_id = ${serverId}`; await db`DELETE FROM server_shop_catalog_categories WHERE server_id = ${serverId}`; }
   for (const category of normalized.categories) await upsertShopCatalogCategory(category);
   for (const item of normalized.items) await upsertShopCatalogItemInDatabase(item);
   cachedCatalogs.set(serverId, normalized); return { categories: normalized.categories.length, items: normalized.items.length, seededAt: nowIso(), serverId };
@@ -417,7 +451,7 @@ export async function cloneShopCatalogFromServer(sourceServerId: string, targetS
   if (sourceServer.organizationId !== targetServer.organizationId) throw new Error("Catalogos nao podem ser clonados entre organizacoes diferentes.");
   await seedServerCatalogIfNeeded(sourceServerId); if (sourceServerId === targetServerId) return refreshShopCatalogCache();
   await db.begin(async (tx) => {
-    await tx`DELETE FROM server_shop_catalog_kit_items WHERE server_id = ${targetServerId}`;
+    await tx`DELETE FROM server_shop_catalog_kit_components WHERE server_id = ${targetServerId}`;
     await tx`DELETE FROM server_shop_catalog_kits WHERE server_id = ${targetServerId}`;
     await tx`DELETE FROM server_shop_catalog_items WHERE server_id = ${targetServerId}`;
     await tx`DELETE FROM server_shop_catalog_categories WHERE server_id = ${targetServerId}`;
@@ -427,8 +461,8 @@ export async function cloneShopCatalogFromServer(sourceServerId: string, targetS
       SELECT ${targetServerId}, id, name, class_name, popular_name, category, price, description, image_url, enabled, max_per_restart, sort_order, NOW(), NOW() FROM server_shop_catalog_items WHERE server_id = ${sourceServerId}`;
     await tx`INSERT INTO server_shop_catalog_kits (server_id, id, name, category, price, description, image_url, enabled, sort_order, created_at, updated_at)
       SELECT ${targetServerId}, id, name, category, price, description, image_url, enabled, sort_order, NOW(), NOW() FROM server_shop_catalog_kits WHERE server_id = ${sourceServerId}`;
-    await tx`INSERT INTO server_shop_catalog_kit_items (server_id, kit_id, class_name, name, quantity, sort_order)
-      SELECT ${targetServerId}, kit_id, class_name, name, quantity, sort_order FROM server_shop_catalog_kit_items WHERE server_id = ${sourceServerId}`;
+    await tx`INSERT INTO server_shop_catalog_kit_components (server_id, kit_id, class_name, name, quantity, sort_order)
+      SELECT ${targetServerId}, kit_id, class_name, name, quantity, sort_order FROM server_shop_catalog_kit_components WHERE server_id = ${sourceServerId}`;
   });
   cachedCatalogs.delete(targetServerId); return { sourceServerId, targetServerId };
 }
