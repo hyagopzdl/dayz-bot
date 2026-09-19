@@ -1484,7 +1484,6 @@ export function formatShopQueue(state: AppState) {
       }
     }
   }
-  }
 
   return lines.join("\n");
 }
