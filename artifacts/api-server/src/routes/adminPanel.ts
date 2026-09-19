@@ -2748,7 +2748,7 @@ function buildActivitySeries(state: AdminState) {
 
 function renderAdminPanelHtml(token: string) {
   const tokenJson = JSON.stringify(token || "");
-  return `<!doctype html>
+  return String.raw`<!doctype html>
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8" />
@@ -5988,7 +5988,7 @@ function renderAdminPanelHtml(token: string) {
       els.catalogKitModalBackdrop.classList.remove("open");
     }
     function readCatalogKitForm() {
-      const lines = String(els.catalogKitItems.value || "").split("\\n").map((line) => line.trim()).filter(Boolean);
+      const lines = String(els.catalogKitItems.value || "").split("\n").map((line) => line.trim()).filter(Boolean);
       const items = lines.map((line) => {
         const parts = line.split("|");
         return { className: String(parts[0] || "").trim(), quantity: Math.max(1, Number(parts[1] || 1)) };
