@@ -225,8 +225,18 @@ function buildExpectedShopEventNamesForOrders(orders: ShopOrder[]) {
       .replace(/[^a-zA-Z0-9_]/g, "_").replace(/_+/g, "_").replace(/^_+|_+$/g, "").slice(0, 48) || "Item";
     const id = String(order.id || index)
       .replace(/[^a-zA-Z0-9_]/g, "_").replace(/_+/g, "_").replace(/^_+|_+$/g, "").slice(-16) || String(index);
-    const vehicle = order.deliveryKind === "vehicle" || String(order.spawnEventName || "").startsWith("Vehicle");
-    return (vehicle ? "VehicleShop_" : "Static_") + item + "_" + id;
+
+    if (order.deliveryKind === "vehicle" || String(order.spawnEventName || "").startsWith("Vehicle")) {
+      return `VehicleShop_${item}_${id}`;
+    }
+
+    if (order.itemKind === "kit" && Array.isArray(order.kitItems) && order.kitItems.length) {
+      const kit = String(order.kitId || order.itemName || "Kit")
+        .replace(/[^a-zA-Z0-9_]/g, "_").replace(/_+/g, "_").replace(/^_+|_+$/g, "").slice(0, 48) || "Kit";
+      return `StaticKit_${kit}_${id}`;
+    }
+
+    return `Static_${item}_${id}`;
   });
 }
 
@@ -352,14 +362,23 @@ function validateInjectedShopXml(options: {
 
   const deliveryOrders = expandShopOrdersForDelivery(expectedOrders);
   for (const order of deliveryOrders) {
-    const itemClass = String(order.itemClass || "").trim();
-    if (!eventsXml.includes(`type="${itemClass}"`)) {
-      throw new Error(`SHOP DEPLOY FAILED: events.xml (${stage}) is missing item class ${itemClass} for order ${order.id}.`);
+    const components = Array.isArray(order.kitItems) && order.kitItems.length
+      ? order.kitItems
+      : [{ className: order.itemClass, quantity: 1 }];
+
+    for (const component of components) {
+      const itemClass = String(component.className || "").trim();
+      if (!itemClass) {
+        throw new Error(`SHOP DEPLOY FAILED: order ${order.id} contains a kit component with an empty class name.`);
+      }
+      if (!eventsXml.includes(`type="${itemClass}"`)) {
+        throw new Error(`SHOP DEPLOY FAILED: events.xml (${stage}) is missing item class ${itemClass} for order ${order.id}.`);
+      }
     }
   }
 
   if (eventNames?.length && eventNames.length !== deliveryOrders.length) {
-    throw new Error(`SHOP DEPLOY FAILED: generated ${eventNames.length} event name(s) for ${deliveryOrders.length} delivery event(s).`);
+    throw new Error(`SHOP DEPLOY FAILED: generated ${eventNames.length} event name(s) for ${deliveryOrders.length} Shop order(s).`);
   }
 
   for (const eventName of eventNames || []) {
