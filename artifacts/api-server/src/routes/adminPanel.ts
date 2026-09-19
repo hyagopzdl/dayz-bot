@@ -6059,9 +6059,9 @@ function renderAdminPanelHtml(token: string) {
     }
 
     function renderCatalogKitItems(items) {
-      const normalized = Array.isArray(items) ? items : [];
+      const normalized = Array.isArray(items) && items.length ? items : [{ className: "", quantity: 1 }];
       els.catalogKitItemRows.innerHTML = normalized.map((item, index) => kitItemRowHtml(index, item)).join("");
-      els.catalogKitItemsCount.textContent = normalized.filter((item) => item?.className).length + " itens";
+      els.catalogKitItemsCount.textContent = normalized.filter((item) => item?.className).length + " " + (normalized.filter((item) => item?.className).length === 1 ? "item" : "itens");
       const firstEmpty = els.catalogKitItemRows.querySelector(".kit-item-search");
       if (firstEmpty) setTimeout(() => firstEmpty.focus(), 40);
     }
