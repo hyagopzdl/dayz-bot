@@ -5854,22 +5854,23 @@ function renderAdminPanelHtml(token: string) {
       const imageUrl = select.getAttribute("data-kit-image") || "";
       if (!className) return false;
 
-      const duplicate = Array.from(els.catalogKitItemRows.querySelectorAll(".kit-item-row"))
-        .find((candidate) => candidate !== row && candidate.dataset.className === className);
+      const currentItems = getCatalogKitDraftItems();
+      const currentRowQuantity = Math.max(1, Number(row.querySelector("[data-kit-quantity]")?.value || 1));
+      const duplicate = currentItems.find((item) => item.className === className);
 
       if (duplicate) {
-        const quantityInput = duplicate.querySelector("[data-kit-quantity]");
-        const currentQuantity = Math.max(1, Number(quantityInput?.value || 1));
-        const rowQuantity = Math.max(1, Number(row.querySelector("[data-kit-quantity]")?.value || 1));
-        if (quantityInput) quantityInput.value = String(currentQuantity + rowQuantity);
-        row.remove();
+        duplicate.quantity = Math.max(1, Number(duplicate.quantity || 1)) + currentRowQuantity;
+        renderCatalogKitItems(currentItems);
+        addCatalogKitItemRow();
       } else {
-        row.dataset.className = className;
-        row.dataset.itemName = name;
-        row.dataset.imageUrl = imageUrl;
-
-        const items = getCatalogKitDraftItems();
-        renderCatalogKitItems(items);
+        const selectedItems = currentItems.filter((item) => item.className);
+        selectedItems.push({
+          className,
+          name,
+          imageUrl,
+          quantity: currentRowQuantity,
+        });
+        renderCatalogKitItems(selectedItems);
         addCatalogKitItemRow();
       }
 
@@ -5886,9 +5887,9 @@ function renderAdminPanelHtml(token: string) {
       if (row) searchCatalogKitItem(row, input.value);
     });
 
-    // Use pointerdown for autocomplete selection. This fires before the browser
-    // can move focus away from the search input, so the option cannot disappear
-    // before the selection is applied.
+    // Select autocomplete options on pointerdown so focus changes cannot close
+    // the menu before the selection is committed. The document click handler
+    // intentionally ignores these options to prevent a double-selection.
     els.catalogKitItemRows?.addEventListener("pointerdown", (event) => {
       const select = event.target.closest?.("[data-kit-select]");
       if (!select) return;
@@ -5941,10 +5942,10 @@ function renderAdminPanelHtml(token: string) {
         return;
       }
 
-      const select = target.closest("[data-kit-select]");
-      if (select) {
+      // Autocomplete selection is handled by the row-level pointerdown listener.
+      // Do not select again on click: the DOM may already have been rebuilt.
+      if (target.closest("[data-kit-select]")) {
         event.preventDefault();
-        selectCatalogKitItemFromOption(select);
         return;
       }
 
@@ -6117,12 +6118,16 @@ function renderAdminPanelHtml(token: string) {
     }
 
     function kitItemRowHtml(index, item) {
-      const selected = item?.className
+      const hasItem = Boolean(item?.className);
+      const classNameAttr = hasItem ? ' data-class-name="' + escapeHtml(item.className) + '"' : "";
+      const itemNameAttr = hasItem ? ' data-item-name="' + escapeHtml(item.name || item.className) + '"' : "";
+      const imageUrlAttr = hasItem ? ' data-image-url="' + escapeHtml(item.imageUrl || "") + '"' : "";
+      const selected = hasItem
         ? '<div class="kit-item-selected"><div class="kit-item-selected-thumb">' +
           (item.imageUrl ? '<img src="' + escapeHtml(item.imageUrl) + '" alt="" />' : icon("package", "entity-icon")) +
           '</div><div class="kit-item-selected-copy"><div class="kit-item-selected-title">' + escapeHtml(item.name || item.className) + '</div><div class="kit-item-selected-class">' + escapeHtml(item.className) + '</div></div></div>'
         : '<input class="kit-item-search" data-kit-search="' + index + '" autocomplete="off" placeholder="Pesquisar item por nome ou ClassName..." />';
-      return '<div class="kit-item-row" data-kit-row="' + index + '">' +
+      return '<div class="kit-item-row" data-kit-row="' + index + '"' + classNameAttr + itemNameAttr + imageUrlAttr + '>' +
         '<div class="kit-item-search-wrap">' + selected +
         '<div class="autocomplete-menu kit-item-autocomplete" data-kit-autocomplete="' + index + '"></div></div>' +
         '<input class="kit-item-quantity" data-kit-quantity="' + index + '" type="number" min="1" step="1" value="' + escapeHtml(String(item?.quantity || 1)) + '" aria-label="Quantidade" />' +
