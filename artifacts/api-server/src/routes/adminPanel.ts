@@ -88,7 +88,7 @@ import { downloadTextFile, uploadTextFile } from "../lib/nitradoFtp";
 import { getAdmDownloadMetrics, setAdmDownloadMode } from "../lib/nitradoDownloader";
 import { getRuntimePerformanceMetrics } from "../lib/runtimeMetrics";
 import { getNetworkMetrics } from "../lib/networkMetrics";
-import { getManagedServerById, getServerFoundationDiagnostics, listExecutableManagedServers, listManagedServers } from "../lib/serverRegistry";
+import { getManagedServerById, getServerFoundationDiagnostics, getServerResetScheduleConfig, listExecutableManagedServers, listManagedServers } from "../lib/serverRegistry";
 import { getActiveServerId, isServerRuntimeLocked, runInServerDataContext, runInServerMaintenanceContext, runInServerRuntimeContext, runWithServerMaintenanceLock } from "../lib/serverRuntime";
 import {
   discoverNitradoServices,
