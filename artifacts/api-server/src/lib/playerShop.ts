@@ -52,13 +52,10 @@ export async function buildPlayerShopCatalog(state: AppState, session: PortalSes
   const items = getShopItems();
   const categories = getShopCategories().map((category) => {
     const categoryItems = items.filter((item) => (item.category || "misc") === category.id);
-    return {
-      ...category,
-      itemCount: categoryItems.length,
-      previewImages: categoryItems.map((item) => item.imageUrl).filter(Boolean).slice(0, 3),
-      minimumPrice: categoryItems.length ? Math.min(...categoryItems.map((item) => Number(item.price || 0))) : 0,
-    };
+    return { ...category, itemCount: categoryItems.length, previewImages: categoryItems.map((item) => item.imageUrl).filter(Boolean).slice(0, 3), minimumPrice: categoryItems.length ? Math.min(...categoryItems.map((item) => Number(item.price || 0))) : 0 };
   });
+  const kits = getShopKits();
+  if (kits.length) categories.push({ id: "kits", label: "Kits", emoji: "▦", description: "Pacotes de itens entregues juntos no próximo reset.", itemCount: kits.length, previewImages: kits.map((kit) => kit.imageUrl).filter(Boolean).slice(0, 3), minimumPrice: Math.min(...kits.map((kit) => Number(kit.price || 0))), enabled: true });
   const kits = getShopKits();
   if (kits.length) {
     categories.push({
@@ -93,11 +90,8 @@ export async function buildPlayerShopCategory(state: AppState, session: PortalSe
       items: getShopKits().map(presentKit),
     };
   }
-  return {
-    ...catalog,
-    category,
-    items: getShopItemsByCategory(categoryId).map(presentItem),
-  };
+  if (categoryId === "kits") return { ...catalog, category, items: getShopKits().map(presentKit) };
+  return { ...catalog, category, items: getShopItemsByCategory(categoryId).map(presentItem) };
 }
 
 export async function buildPlayerShopItem(state: AppState, session: PortalSession, itemId: string) {
@@ -130,6 +124,10 @@ function presentKit(kit: ReturnType<typeof getShopKits>[number]) {
       imageUrl: item.imageUrl || null,
     })),
   };
+}
+
+function presentKit(kit: ReturnType<typeof getShopKits>[number]) {
+  return { id: kit.id, kind: "kit" as const, name: kit.name, technicalName: kit.name, description: kit.description || "Pacote de itens entregue junto no próximo server reset.", imageUrl: kit.imageUrl || null, category: "kits", price: Number(kit.price || 0), deliveryKind: "item" as const, components: (kit.items || []).map((item) => ({ className: item.className, name: item.name || item.className, quantity: Math.max(1, Math.floor(Number(item.quantity || 1))), imageUrl: item.imageUrl || null })) };
 }
 
 function presentItem(item: ReturnType<typeof getShopItems>[number]) {
