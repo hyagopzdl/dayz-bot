@@ -59,7 +59,6 @@ import {
   getStatePersistenceMetrics,
   getDiscordRuntimePersistenceMetrics,
   getStateDomainPersistenceMetrics,
-  getServerResetScheduleConfig,
   getGranularPlayerStatsPersistenceMetrics,
   getPlayerPositionHistoryMetrics,
   getLatestPlayerPositionSnapshot,
