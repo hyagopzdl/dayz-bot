@@ -5,6 +5,7 @@ import { seedShopCatalog, type ShopCatalog, type ShopCategory, type ShopItem } f
 
 const DEFAULT_CATALOG: ShopCatalog = {
   version: 1,
+  kits: [],
   categories: [
     {
       id: "containers",
@@ -110,6 +111,7 @@ function normalizeCatalog(input: Partial<ShopCatalog> | ShopItem[]): ShopCatalog
     version: Number(source.version || 1),
     categories: safeCategories,
     items: safeItems,
+    kits: [],
   };
 }
 
