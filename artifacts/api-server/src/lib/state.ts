@@ -732,9 +732,26 @@ export async function ensureManagedServerRegistryMetadata() {
       await getSql()`CREATE INDEX IF NOT EXISTS server_reset_schedules_updated_at_idx ON server_reset_schedules (updated_at)`;
       await getSql()`
         INSERT INTO server_reset_schedules (server_id, times, timezone, updated_at)
-        SELECT id, BTRIM(server_reset_times), COALESCE(NULLIF(BTRIM(server_reset_timezone), ''), 'America/Sao_Paulo'), NOW()
+        SELECT
+          id,
+          COALESCE(
+            NULLIF(BTRIM(server_reset_times), ''),
+            NULLIF(BTRIM(runtime_config->'settings'->>'serverResetTimes'), ''),
+            NULLIF(BTRIM(runtime_config->'settings'->>'shopRestartTimes'), '')
+          ),
+          COALESCE(
+            NULLIF(BTRIM(server_reset_timezone), ''),
+            NULLIF(BTRIM(runtime_config->'settings'->>'serverResetTimezone'), ''),
+            NULLIF(BTRIM(runtime_config->'settings'->>'shopRestartTimezone'), ''),
+            'America/Sao_Paulo'
+          ),
+          NOW()
         FROM managed_servers
-        WHERE NULLIF(BTRIM(server_reset_times), '') IS NOT NULL
+        WHERE COALESCE(
+          NULLIF(BTRIM(server_reset_times), ''),
+          NULLIF(BTRIM(runtime_config->'settings'->>'serverResetTimes'), ''),
+          NULLIF(BTRIM(runtime_config->'settings'->>'shopRestartTimes'), '')
+        ) IS NOT NULL
         ON CONFLICT (server_id) DO NOTHING
       `;
       await getSql()`
