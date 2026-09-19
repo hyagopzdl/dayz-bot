@@ -124,9 +124,6 @@ function presentKit(kit: ReturnType<typeof getShopKits>[number]) {
   };
 }
 
-function presentKit(kit: ReturnType<typeof getShopKits>[number]) {
-  return { id: kit.id, kind: "kit" as const, name: kit.name, technicalName: kit.name, description: kit.description || "Pacote de itens entregue junto no próximo server reset.", imageUrl: kit.imageUrl || null, category: "kits", price: Number(kit.price || 0), deliveryKind: "item" as const, components: (kit.items || []).map((item) => ({ className: item.className, name: item.name || item.className, quantity: Math.max(1, Math.floor(Number(item.quantity || 1))), imageUrl: item.imageUrl || null })) };
-}
 
 function presentItem(item: ReturnType<typeof getShopItems>[number]) {
   return {
