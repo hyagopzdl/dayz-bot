@@ -5311,6 +5311,46 @@ function renderAdminPanelHtml(token: string) {
   </div>
   <div id="toast" class="toast"></div>
   <script>
+    (function () {
+      try {
+        const adminToken = ${tokenJson};
+        if (adminToken) {
+          document.cookie = "${TOKEN_COOKIE}=" + encodeURIComponent(adminToken) + "; path=/admin-panel; SameSite=Lax";
+        }
+        const buttons = document.querySelectorAll(".nav button[data-view]");
+        const views = document.querySelectorAll(".view");
+        buttons.forEach(function (button) {
+          button.addEventListener("click", function () {
+            const view = button.getAttribute("data-view");
+            if (!view) return;
+            if (typeof window.switchView === "function") {
+              window.switchView(view);
+              return;
+            }
+            buttons.forEach(function (item) { item.classList.toggle("active", item === button); });
+            views.forEach(function (item) { item.classList.toggle("active", item.id === "view-" + view); });
+          });
+        });
+        const updated = document.getElementById("overviewUpdatedAt");
+        if (updated) {
+          updated.textContent = "Atualizando...";
+          fetch("/admin-panel/api/overview", { credentials: "same-origin" })
+            .then(function (response) { return response.ok ? response.json() : null; })
+            .then(function (payload) {
+              if (!updated) return;
+              const value = payload && payload.generatedAt ? new Date(payload.generatedAt) : new Date();
+              updated.textContent = "Atualizado " + value.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+            })
+            .catch(function () {
+              if (updated) updated.textContent = "Atualização indisponível";
+            });
+        }
+      } catch (error) {
+        console.error("[admin-panel bootstrap]", error);
+      }
+    })();
+  </script>
+  <script>
     const adminToken = ${tokenJson};
     if (adminToken) document.cookie = "${TOKEN_COOKIE}=" + encodeURIComponent(adminToken) + "; path=/admin-panel; SameSite=Lax";
     const state = { view: "general", cursor: 0, hasMore: true, loadingMembers: false, memberForceRefresh: false, search: "", filter: "", modal: null, catalogModal: null, selectedDiscordId: null, catalog: null, catalogSearch: "", catalogCategory: "", catalogMode: "categories", catalogDrag: null, catalogJustDragged: false, shopQueue: null, shopTransactions: null, shopHistorySearch: "", shopQueueModeBefore: "categories", itemsCursor: 0, itemsHasMore: true, itemsLoading: false, itemsSearch: "", itemsFilter: "all", dayzItems: [], itemsStats: null, itemModal: null, mapEventPresets: [], selectedMapEventPresetId: "locked_container_red_military", mapEventRewardStorageItem: null, mapEventLootItems: [], scheduledMapEvents: [], mapEventBuilderOpen: false, settingsTab: "server", managedServers: null, managedServersLoading: false, selectedManagedServerId: null, managedServerSetupTab: "overview", managedServerIntegrationSetup: null, managedServerNitradoServices: [], managedServerDiscordGuilds: [], managedServerDiscordChannels: [], managedServerPreflightResult: null, organization: null, serviceSettings: null, serviceSettingsLoading: false, discordCommands: null, discordCommandsLoading: false, lockedContainerSetup: null, spawnZonesTab: "rotation", spawnZones: null, selectedSpawnZoneId: null, highlightedSpawnPointId: null, spawnZoneMapZoom: 1, spawnZoneMapDragging: false, spawnZoneEditingNameId: null, playerMap: null, playerMapZoom: 1, playerMapSearch: "" };
