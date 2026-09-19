@@ -88,7 +88,10 @@ export async function handleShopInteraction(interaction: any, ctx: ShopInteracti
     }
 
     if (interaction.customId.startsWith("shop-location:")) {
-      const [, itemId, categoryId] = interaction.customId.split(":");
+      const parts = interaction.customId.split(":");
+      const isKit = parts[1] === "kit";
+      const itemId = isKit ? "kit:" + parts[2] : parts[1];
+      const categoryId = isKit ? parts[3] : parts[2];
       const selectedLocationId = interaction.values[0] === "custom" ? undefined : interaction.values[0];
       await interaction.editReply(
         buildShopItemPayload(
@@ -353,7 +356,8 @@ export async function handleShopInteraction(interaction: any, ctx: ShopInteracti
   if (interaction.isModalSubmit()) {
     if (interaction.customId.startsWith("shop-modal:")) {
       await safeDeferReply(interaction);
-      const itemId = interaction.customId.split(":")[1];
+      const modalPayload = interaction.customId.slice("shop-modal:".length);
+      const itemId = modalPayload;
       const coordsInput = interaction.fields.getTextInputValue("coords");
       const saveLocationName = interaction.fields.getTextInputValue("save_location_name") || "";
       const state = await ctx.getState();
