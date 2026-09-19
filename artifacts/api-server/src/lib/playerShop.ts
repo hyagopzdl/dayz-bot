@@ -269,6 +269,9 @@ export function presentOrder(order: ShopOrder) {
   return {
     id: order.id,
     serverId: order.serverId || getActiveServerId(),
+    itemKind: order.itemKind || "item",
+    kitId: order.kitId || null,
+    kitItems: order.kitItems || null,
     itemName: order.itemName || order.itemClass,
     price: Number(order.price || 0),
     location: { name: order.locationName || null, x: order.x, z: order.z },
