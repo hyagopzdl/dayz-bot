@@ -119,6 +119,10 @@ export async function ensureShopCatalogSchema() {
         CHECK (quantity > 0)
       )
     `;
+    await db`
+      ALTER TABLE server_shop_catalog_kit_components
+      ADD COLUMN IF NOT EXISTS image_url TEXT
+    `;
     const legacyKitTable = await db`
       SELECT to_regclass('public.server_shop_catalog_kit_items') AS table_name
     `;
