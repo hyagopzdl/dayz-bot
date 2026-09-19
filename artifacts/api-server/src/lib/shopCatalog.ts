@@ -11,6 +11,9 @@ import {
   seedShopCatalogInDatabase,
   reorderShopCatalogCategories,
   reorderShopCatalogItems,
+  upsertShopKitInDatabase,
+  deleteShopKitFromDatabase,
+  toggleShopKitInDatabase,
   cloneShopCatalogFromServer,
   getShopCatalogIsolationDiagnostics,
 } from "./catalogService";
@@ -42,10 +45,29 @@ export type ShopCategory = {
   sortOrder?: number;
 };
 
+export type ShopKitItem = {
+  className: string;
+  name?: string;
+  quantity: number;
+};
+
+export type ShopKit = {
+  id: string;
+  name: string;
+  category?: string;
+  price: number;
+  description?: string;
+  imageUrl?: string;
+  enabled?: boolean;
+  sortOrder?: number;
+  items: ShopKitItem[];
+};
+
 export type ShopCatalog = {
   version: number;
   categories: ShopCategory[];
   items: ShopItem[];
+  kits: ShopKit[];
 };
 
 export function normalizeShopCatalogId(value: string) {
@@ -110,6 +132,31 @@ export async function ensureShopCatalogLoaded() {
 
 export function getShopCatalog(): ShopCatalog {
   return getCachedShopCatalog();
+}
+
+export function getShopKits(includeDisabled = false) {
+  const kits = getShopCatalog().kits || [];
+  return includeDisabled ? kits : kits.filter((kit) => kit.enabled !== false);
+}
+
+export function findShopKit(input: string) {
+  const normalized = normalizeShopCatalogId(input);
+  return getShopKits().find((kit) =>
+    normalizeShopCatalogId(kit.id) === normalized ||
+    normalizeShopCatalogId(kit.name) === normalized
+  ) || null;
+}
+
+export async function upsertShopKit(kit: ShopKit) {
+  return upsertShopKitInDatabase(kit);
+}
+
+export async function deleteShopKit(kitId: string) {
+  return deleteShopKitFromDatabase(kitId);
+}
+
+export async function toggleShopKit(kitId: string, enabled?: boolean) {
+  return toggleShopKitInDatabase(kitId, enabled);
 }
 
 export function getShopCategories(includeDisabled = false) {
