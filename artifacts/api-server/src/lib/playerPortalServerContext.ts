@@ -6,6 +6,7 @@ import {
   type ManagedServerDescriptor,
 } from "./serverRegistry";
 import { runInServerDataContext } from "./serverRuntime";
+import { refreshManagedServerRegistryFromDb } from "./state";
 
 const PLAYER_SERVER_COOKIE = "adm_player_server";
 const PLAYER_SERVER_COOKIE_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
@@ -111,22 +112,27 @@ export function getPlayerPortalServerContext(res: Response): PlayerPortalServerC
   return context;
 }
 
-export function playerPortalServerContextMiddleware(req: Request, res: Response, next: NextFunction) {
-  let context: PlayerPortalServerContext;
+export async function playerPortalServerContextMiddleware(req: Request, res: Response, next: NextFunction) {
   try {
-    context = resolvePlayerPortalServerContext(req);
+    // The registry is normally hydrated during startup, but the HTTP server can
+    // receive requests before that async bootstrap finishes. Hydrate lazily on
+    // the first Player Portal request instead of exposing a transient 500.
+    if (listManagedServers().length === 0) {
+      await refreshManagedServerRegistryFromDb();
+    }
+
+    const context = resolvePlayerPortalServerContext(req);
+
+    res.locals.playerPortalServerContext = context;
+    if (context.fellBackToPrimary || req.cookies?.[PLAYER_SERVER_COOKIE] !== context.selectedServer.id) {
+      setSelectedServerCookie(req, res, context.selectedServer.id);
+    }
+
+    setServerRuntimeIsolationStatus({ playerPortalContextNamespaced: true });
+    runInServerDataContext(context.selectedServer.id, next);
   } catch (error) {
     next(error);
-    return;
   }
-
-  res.locals.playerPortalServerContext = context;
-  if (context.fellBackToPrimary || req.cookies?.[PLAYER_SERVER_COOKIE] !== context.selectedServer.id) {
-    setSelectedServerCookie(req, res, context.selectedServer.id);
-  }
-
-  setServerRuntimeIsolationStatus({ playerPortalContextNamespaced: true });
-  runInServerDataContext(context.selectedServer.id, next);
 }
 
 export function getPlayerPortalContextDiagnostics() {
