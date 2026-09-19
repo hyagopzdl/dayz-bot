@@ -396,7 +396,7 @@ export async function reorderShopCatalogItems(categoryId: string, itemIds: strin
 
 export async function seedShopCatalogInDatabase(catalog: ShopCatalog, options?: { replace?: boolean }) {
   const db = requireSql(); const serverId = currentServerId(); await ensureShopCatalogSchema(); const normalized = normalizeCatalog(catalog);
-  if (options?.replace) { await db`DELETE FROM server_shop_catalog_items WHERE server_id = ${serverId}`; await db`DELETE FROM server_shop_catalog_categories WHERE server_id = ${serverId}`; }
+  if (options?.replace) { await db`DELETE FROM server_shop_catalog_kit_items WHERE server_id = ${serverId}`; await db`DELETE FROM server_shop_catalog_kits WHERE server_id = ${serverId}`; await db`DELETE FROM server_shop_catalog_items WHERE server_id = ${serverId}`; await db`DELETE FROM server_shop_catalog_categories WHERE server_id = ${serverId}`; }
   for (const category of normalized.categories) await upsertShopCatalogCategory(category);
   for (const item of normalized.items) await upsertShopCatalogItemInDatabase(item);
   cachedCatalogs.set(serverId, normalized); return { categories: normalized.categories.length, items: normalized.items.length, seededAt: nowIso(), serverId };
@@ -408,12 +408,18 @@ export async function cloneShopCatalogFromServer(sourceServerId: string, targetS
   if (sourceServer.organizationId !== targetServer.organizationId) throw new Error("Catalogos nao podem ser clonados entre organizacoes diferentes.");
   await seedServerCatalogIfNeeded(sourceServerId); if (sourceServerId === targetServerId) return refreshShopCatalogCache();
   await db.begin(async (tx) => {
+    await tx`DELETE FROM server_shop_catalog_kit_items WHERE server_id = ${targetServerId}`;
+    await tx`DELETE FROM server_shop_catalog_kits WHERE server_id = ${targetServerId}`;
     await tx`DELETE FROM server_shop_catalog_items WHERE server_id = ${targetServerId}`;
     await tx`DELETE FROM server_shop_catalog_categories WHERE server_id = ${targetServerId}`;
     await tx`INSERT INTO server_shop_catalog_categories (server_id, id, label, emoji, description, enabled, sort_order, created_at, updated_at)
       SELECT ${targetServerId}, id, label, emoji, description, enabled, sort_order, NOW(), NOW() FROM server_shop_catalog_categories WHERE server_id = ${sourceServerId}`;
     await tx`INSERT INTO server_shop_catalog_items (server_id, id, name, class_name, popular_name, category, price, description, image_url, enabled, max_per_restart, sort_order, created_at, updated_at)
       SELECT ${targetServerId}, id, name, class_name, popular_name, category, price, description, image_url, enabled, max_per_restart, sort_order, NOW(), NOW() FROM server_shop_catalog_items WHERE server_id = ${sourceServerId}`;
+    await tx`INSERT INTO server_shop_catalog_kits (server_id, id, name, category, price, description, image_url, enabled, sort_order, created_at, updated_at)
+      SELECT ${targetServerId}, id, name, category, price, description, image_url, enabled, sort_order, NOW(), NOW() FROM server_shop_catalog_kits WHERE server_id = ${sourceServerId}`;
+    await tx`INSERT INTO server_shop_catalog_kit_items (server_id, kit_id, class_name, name, quantity, sort_order)
+      SELECT ${targetServerId}, kit_id, class_name, name, quantity, sort_order FROM server_shop_catalog_kit_items WHERE server_id = ${sourceServerId}`;
   });
   cachedCatalogs.delete(targetServerId); return { sourceServerId, targetServerId };
 }
