@@ -342,7 +342,7 @@ export function buildEnabledDiscordCommands(
 
 export async function registerDiscordCommands(
   client: any,
-  settings?: DiscordCommandSettingsLike,
+  settings: DiscordCommandSettingsLike,
   serverId: string,
   scope: DiscordCommandRegistrationScope = "all",
   explicitGuildId?: string,
