@@ -1,4 +1,3 @@
-import { getPrimaryServerId } from "../serverRegistry";
 import { getServerRuntimeContext } from "../serverRuntime";
 import { PermissionsBitField } from "discord.js";
 
@@ -308,7 +307,7 @@ export function buildDiscordCommands() {
 
 
 
-const SECONDARY_CORE_COMMANDS = new Set([
+const SERVER_DATA_COMMANDS = new Set([
   "link",
   "unlink",
   "bank",
@@ -324,7 +323,7 @@ const SECONDARY_CORE_COMMANDS = new Set([
   "player-stats",
 ]);
 
-export type DiscordCommandRegistrationScope = "full" | "core";
+export type DiscordCommandRegistrationScope = "all" | "data";
 
 type DiscordCommandSettingsLike = Record<
   string,
@@ -333,18 +332,18 @@ type DiscordCommandSettingsLike = Record<
 
 export function buildEnabledDiscordCommands(
   settings?: DiscordCommandSettingsLike,
-  scope: DiscordCommandRegistrationScope = "full",
+  scope: DiscordCommandRegistrationScope = "all",
 ) {
   return buildDiscordCommands().filter((command) =>
     settings?.[command.name]?.enabled !== false
-    && (scope === "full" || SECONDARY_CORE_COMMANDS.has(command.name)),
+    && (scope === "all" || SERVER_DATA_COMMANDS.has(command.name)),
   );
 }
 
 export async function registerDiscordCommands(
   client: any,
   settings?: DiscordCommandSettingsLike,
-  serverId = getPrimaryServerId(),
+  serverId: string,
   scope: DiscordCommandRegistrationScope = "full",
   explicitGuildId?: string,
 ) {
