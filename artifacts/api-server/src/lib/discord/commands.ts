@@ -272,7 +272,7 @@ export function buildDiscordCommands() {
     {
       name: "shop-deploy",
       description:
-        "Run the complete Shop delivery cycle: inject, restart the server, and finalize the batch after it returns.",
+        "Inject orders, restart the server, and finalize the delivery batch.",
       defaultMemberPermissions: adminPermission,
       dmPermission: false,
     },
