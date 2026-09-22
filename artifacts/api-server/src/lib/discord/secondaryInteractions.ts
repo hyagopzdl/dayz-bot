@@ -171,7 +171,7 @@ async function handleSecondaryInteraction(interaction: any, serverId: string) {
 export function registerManagedServerDataInteractions(client: Client) {
   // startDiscordBot can be called through compatibility paths more than once.
   // Never attach duplicate listeners to the same Discord client.
-  if (secondaryInteractionClients.has(client as object)) return;
+  if (managedServerDataInteractionClients.has(client as object)) return;
   secondaryInteractionClients.add(client as object);
 
   client.on("interactionCreate", async (interaction: any) => {
