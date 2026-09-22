@@ -9,7 +9,6 @@ import { isShopServiceEnabled, SHOP_COMMAND_NAMES } from "../serviceSettings";
 import { clearShopSpawnerAndMarkSpawned, injectPendingShopOrders, formatShopQueue, getShopItems } from "../shop";
 import { ensureShopCatalogLoaded } from "../shopCatalog";
 import {
-  getPrimaryServerId,
   resolveServerIdFromDiscordGuildId,
 } from "../serverRegistry";
 import { runInServerDataContext } from "../serverRuntime";
@@ -18,9 +17,9 @@ import { deferEphemeral } from "./responses";
 import { assertAdmin } from "./permissions";
 import { buildNeutralEmbed } from "./ui/embeds";
 
-const SECONDARY_ADMIN_SHOP_COMMANDS = new Set(["shop-queue", "shop-inject", "shop-deploy", "shop-clear", "shop-catalog"]);
+const SERVER_DATA_ADMIN_SHOP_COMMANDS = new Set(["shop-queue", "shop-inject", "shop-deploy", "shop-clear", "shop-catalog"]);
 
-const secondaryInteractionClients = new WeakSet<object>();
+const managedServerDataInteractionClients = new WeakSet<object>();
 
 
 function isLinkInteraction(interaction: any) {
@@ -41,7 +40,7 @@ async function handleSecondaryLinkInteraction(interaction: any, serverId: string
   if (await handleLinkComponentInteraction(interaction, ctx)) return true;
 
   if (interaction.isChatInputCommand?.() && (interaction.commandName === "link" || interaction.commandName === "unlink")) {
-    // Acknowledge Discord first. The previous secondary flow loaded the full
+    // Acknowledge Discord first. The previous server-data flow loaded the full
     // server state before handleLinkCommand() could defer the interaction,
     // which is why /link could sit on an endless loading state.
     if (!interaction.deferred && !interaction.replied) {
@@ -123,7 +122,7 @@ async function handleSecondaryInteraction(interaction: any, serverId: string) {
     return;
   }
 
-  if (!SECONDARY_ADMIN_SHOP_COMMANDS.has(interaction.commandName)) return;
+  if (!SERVER_DATA_ADMIN_SHOP_COMMANDS.has(interaction.commandName)) return;
   const acknowledged = await deferEphemeral(interaction);
   if (!acknowledged || !(await assertAdmin(interaction))) return;
 
@@ -169,11 +168,11 @@ async function handleSecondaryInteraction(interaction: any, serverId: string) {
   }
 }
 
-export function registerSecondaryManagedServerInteractions(client: Client) {
+export function registerManagedServerDataInteractions(client: Client) {
   // startDiscordBot can be called through compatibility paths more than once.
   // Never attach duplicate listeners to the same Discord client.
-  if (secondaryInteractionClients.has(client as object)) return;
-  secondaryInteractionClients.add(client as object);
+  if (managedServerDataInteractionClients.has(client as object)) return;
+  managedServerDataInteractionClients.add(client as object);
 
   client.on("interactionCreate", async (interaction: any) => {
     const guildId = String(interaction.guildId || "").trim();
@@ -192,7 +191,7 @@ export function registerSecondaryManagedServerInteractions(client: Client) {
 
       if (!serverId) {
         if (interaction.isChatInputCommand?.()) {
-          console.warn("⚠️ secondary Discord command received from unbound guild", {
+          console.warn("⚠️ server Discord command received from unbound guild", {
             guildId,
             command: interaction.commandName,
           });
@@ -208,10 +207,8 @@ export function registerSecondaryManagedServerInteractions(client: Client) {
         return;
       }
 
-      if (serverId === getPrimaryServerId()) return;
-
       if (interaction.isChatInputCommand?.()) {
-        console.log("➡️ secondary Discord command routed", {
+        console.log("➡️ Discord command routed", {
           guildId,
           serverId,
           command: interaction.commandName,
@@ -226,14 +223,14 @@ export function registerSecondaryManagedServerInteractions(client: Client) {
         return;
       }
 
-      // Data-plane Discord commands (wallet, link, catalog browsing, identity)
+      // Server-scoped Discord commands (wallet, link, catalog browsing, identity)
       // must remain available independently from ADM/Nitrado activation. Helpers
       // that actually perform FTP/Nitrado work still enforce their own runtime
       // safety gates. Keeping the whole interaction in DataContext also prevents
-      // any helper from falling back to the primary tenant.
+      // any helper from falling back to another server context.
       await runInServerDataContext(serverId, () => handleSecondaryInteraction(interaction, serverId!));
     } catch (error) {
-      console.error(`❌ secondary Discord interaction failed [${serverId || "unresolved"}]:`, error);
+      console.error(`❌ Discord server interaction failed [${serverId || "unresolved"}]:`, error);
       if (interaction.isAutocomplete?.()) {
         await interaction.respond([]).catch(() => undefined);
         return;
