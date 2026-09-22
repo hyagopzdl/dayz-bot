@@ -4,7 +4,7 @@ import crypto from "crypto";
 import sharp from "sharp";
 import { Router, type Request, type Response } from "express";
 import { Routes } from "discord.js";
-import { deployPendingShopOrders, getShopRuntimeStatus, getShopEventsPath } from "../lib/shop";
+import { injectPendingShopOrders, getShopRuntimeStatus, getShopEventsPath } from "../lib/shop";
 import {
   checkAirdropMilitarySetupNow,
   checkLockedContainerSetupNow,
@@ -9781,7 +9781,7 @@ router.post("/api/servers/:serverId/shop/deploy", async (req, res) => {
     const serverId = String(req.params.serverId || "");
     const result = await runInServerRuntimeContext(serverId, async () => {
       const state = await getStateAsync();
-      const deployed = await deployPendingShopOrders(state);
+      const deployed = await injectPendingShopOrders(state);
       if (deployed?.deployed) await saveStateAsync(state, `phase16:manual-shop-deploy:${serverId}`);
       return deployed;
     });
