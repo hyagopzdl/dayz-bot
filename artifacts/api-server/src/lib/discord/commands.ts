@@ -264,9 +264,16 @@ export function buildDiscordCommands() {
       dmPermission: false,
     },
     {
+      name: "shop-inject",
+      description:
+        "Inject pending shop orders into the DayZ mission files without restarting the server.",
+      defaultMemberPermissions: adminPermission,
+      dmPermission: false,
+    },
+    {
       name: "shop-deploy",
       description:
-        "Inject pending shop orders into events.xml and cfgeventspawns.xml.",
+        "Run the complete Shop delivery cycle: inject, restart the server, and finalize the batch after it returns.",
       defaultMemberPermissions: adminPermission,
       dmPermission: false,
     },
@@ -310,6 +317,7 @@ const SECONDARY_CORE_COMMANDS = new Set([
   "setcoins",
   "shop",
   "shop-queue",
+  "shop-inject",
   "shop-deploy",
   "shop-clear",
   "shop-catalog",
