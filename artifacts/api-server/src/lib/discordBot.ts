@@ -85,7 +85,13 @@ export async function syncDiscordCommandsForManagedServer(serverId: string) {
     normalizeDiscordCommandSettings({}),
     DEFAULT_SERVICE_SETTINGS,
   );
-  await registerDiscordCommands(client, settings, serverId, "core");
+  await registerDiscordCommands(
+    client,
+    settings,
+    serverId,
+    "core",
+    server.integrations.discordGuildId,
+  );
   return true;
 }
 
