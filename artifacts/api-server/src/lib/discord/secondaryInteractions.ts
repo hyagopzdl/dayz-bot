@@ -40,7 +40,7 @@ async function handleSecondaryLinkInteraction(interaction: any, serverId: string
   if (await handleLinkComponentInteraction(interaction, ctx)) return true;
 
   if (interaction.isChatInputCommand?.() && (interaction.commandName === "link" || interaction.commandName === "unlink")) {
-    // Acknowledge Discord first. The previous secondary flow loaded the full
+    // Acknowledge Discord first. The previous server-data flow loaded the full
     // server state before handleLinkCommand() could defer the interaction,
     // which is why /link could sit on an endless loading state.
     if (!interaction.deferred && !interaction.replied) {
