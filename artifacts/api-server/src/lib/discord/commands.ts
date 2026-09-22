@@ -331,7 +331,7 @@ type DiscordCommandSettingsLike = Record<
 >;
 
 export function buildEnabledDiscordCommands(
-  settings?: DiscordCommandSettingsLike,
+  settings: DiscordCommandSettingsLike,
   scope: DiscordCommandRegistrationScope = "all",
 ) {
   return buildDiscordCommands().filter((command) =>
@@ -369,3 +369,6 @@ export async function registerDiscordCommands(
     throw err;
   }
 }
+
+
+/** @deprecated Use syncDiscordCommandsForServer. Kept only for API compatibility. */
