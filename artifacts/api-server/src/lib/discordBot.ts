@@ -208,7 +208,7 @@ async function handleDiscordReady() {
     diagnostics: getDiscordGatewayDiagnostics(),
   });
   try {
-    registerSecondaryManagedServerInteractions(client);
+    registerManagedServerDataInteractions(client);
     registerManagedServerMemberFeeds();
     await syncAllManagedServers();
     console.log(`✅ Discord multi-tenant pronto (${listManagedServers().length} servidores registrados)`);
@@ -242,3 +242,7 @@ export async function startDiscordBot() {
   })();
   return discordLoginInFlight;
 }
+
+
+/** @deprecated Use syncDiscordCommandsForServer. */
+export const syncDiscordCommandsForManagedServer = syncDiscordCommandsForServer;

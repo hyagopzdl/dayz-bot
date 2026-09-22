@@ -9259,7 +9259,7 @@ router.patch("/api/service-settings", async (req, res) => {
     const effectiveCommandSettings = applyServiceSettingsToCommandSettings(state.discordCommandSettings, next);
     const client = getDiscordClient();
     if (client.isReady()) {
-      await registerDiscordCommands(client, effectiveCommandSettings, getActiveServerId(), "full");
+      await registerDiscordCommands(client, effectiveCommandSettings, getActiveServerId(), "all");
     }
 
     res.json({
