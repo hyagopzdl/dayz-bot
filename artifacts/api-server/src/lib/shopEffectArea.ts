@@ -1,4 +1,5 @@
 import type { ShopOrder } from "./state";
+import { expandShopOrdersForDelivery } from "./shopXml";
 
 export const SHOP_EFFECT_AREA_PREFIX = "SHOP_BOT_";
 export const SHOP_EFFECT_AREA_PARTICLE = "graphics/particles/fire_bonfire";
@@ -99,7 +100,8 @@ export function injectShopEffectAreas(json: string, orders: ShopOrder[]) {
     !String(area.AreaName || "").startsWith(SHOP_EFFECT_AREA_PREFIX),
   );
 
-  const injected = orders.map((order, index) => buildShopEffectArea(order, index));
+  const deliveryOrders = expandShopOrdersForDelivery(orders);
+  const injected = deliveryOrders.map((order, index) => buildShopEffectArea(order, index));
   root.Areas = [...retained, ...injected];
 
   return JSON.stringify(root, null, 2) + "\n";
@@ -126,7 +128,8 @@ export function hasShopEffectAreas(json: string, orders?: ShopOrder[]) {
     return areas.some((area) => String(area.AreaName || "").startsWith(SHOP_EFFECT_AREA_PREFIX));
   }
 
-  return orders.every((order, index) =>
+  const deliveryOrders = expandShopOrdersForDelivery(orders);
+  return deliveryOrders.every((order, index) =>
     areas.some((area) => String(area.AreaName || "") === buildShopEffectAreaName(order, index)),
   );
 }
