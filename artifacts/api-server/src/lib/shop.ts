@@ -1,6 +1,7 @@
 import type { AppState, ShopOrder, ShopSavedLocation } from "./state";
 import { ensureManagedServerShopDeliveryConfiguration, ensureManagedServerShopDeliveryRoutingConfiguration } from "./state";
 import { getNitradoGameserverStatus } from "./nitradoDownloader";
+import { stopAndStartNitradoServer } from "./nitradoServerControl";
 import { downloadServerTextFile, uploadServerTextFile } from "./serverFileTransport";
 import {
   injectShopEventSpawnsXml,
@@ -314,30 +315,30 @@ function hasShopBotBlock(xml: string) {
 }
 
 function missingShopBotError(fileLabel: string) {
-  return `SHOP DEPLOY FAILED: ${fileLabel} does not contain SHOP_BOT block after injection/upload. Orders were not marked as included.`;
+  return `SHOP INJECT FAILED: ${fileLabel} does not contain SHOP_BOT block after injection/upload. Orders were not marked as included.`;
 }
 
 function validateOrdersReadyForXml(orders: ShopOrder[]) {
   if (!orders.length) {
-    throw new Error("SHOP DEPLOY ABORTED: no pending orders to inject.");
+    throw new Error("SHOP INJECT ABORTED: no pending orders to inject.");
   }
 
   const activeServerId = getServerRuntimeContext().serverId;
   for (const order of orders) {
     if (order.serverId && order.serverId !== activeServerId) {
-      throw new Error(`SHOP DEPLOY ABORTED: order ${order.id || "unknown"} belongs to ${order.serverId}, not ${activeServerId}.`);
+      throw new Error(`SHOP INJECT ABORTED: order ${order.id || "unknown"} belongs to ${order.serverId}, not ${activeServerId}.`);
     }
     const itemClass = String(order.itemClass || "").trim();
 
     if (!itemClass) {
       throw new Error(
-        `SHOP DEPLOY ABORTED: order ${order.id || "unknown"} has empty itemClass.`,
+        `SHOP INJECT ABORTED: order ${order.id || "unknown"} has empty itemClass.`,
       );
     }
 
     if (![order.x, order.y, order.z].every(Number.isFinite)) {
       throw new Error(
-        `SHOP DEPLOY ABORTED: order ${order.id || "unknown"} has invalid coordinates.`,
+        `SHOP INJECT ABORTED: order ${order.id || "unknown"} has invalid coordinates.`,
       );
     }
   }
@@ -369,28 +370,28 @@ function validateInjectedShopXml(options: {
     for (const component of components) {
       const itemClass = String(component.className || "").trim();
       if (!itemClass) {
-        throw new Error(`SHOP DEPLOY FAILED: order ${order.id} contains a kit component with an empty class name.`);
+        throw new Error(`SHOP INJECT FAILED: order ${order.id} contains a kit component with an empty class name.`);
       }
       if (!eventsXml.includes(`type="${itemClass}"`)) {
-        throw new Error(`SHOP DEPLOY FAILED: events.xml (${stage}) is missing item class ${itemClass} for order ${order.id}.`);
+        throw new Error(`SHOP INJECT FAILED: events.xml (${stage}) is missing item class ${itemClass} for order ${order.id}.`);
       }
     }
   }
 
   if (eventNames?.length && eventNames.length !== deliveryOrders.length) {
-    throw new Error(`SHOP DEPLOY FAILED: generated ${eventNames.length} event name(s) for ${deliveryOrders.length} Shop order(s).`);
+    throw new Error(`SHOP INJECT FAILED: generated ${eventNames.length} event name(s) for ${deliveryOrders.length} Shop order(s).`);
   }
 
   for (const eventName of eventNames || []) {
     if (!eventsXml.includes(`event name="${eventName}"`)) {
       throw new Error(
-        `SHOP DEPLOY FAILED: events.xml (${stage}) is missing generated event ${eventName}.`,
+        `SHOP INJECT FAILED: events.xml (${stage}) is missing generated event ${eventName}.`,
       );
     }
 
     if (!eventSpawnsXml.includes(`event name="${eventName}"`)) {
       throw new Error(
-        `SHOP DEPLOY FAILED: cfgeventspawns.xml (${stage}) is missing generated event ${eventName}.`,
+        `SHOP INJECT FAILED: cfgeventspawns.xml (${stage}) is missing generated event ${eventName}.`,
       );
     }
   }
@@ -809,12 +810,12 @@ async function backupShopXmlFiles(_eventsXml: string, _eventSpawnsXml: string, _
   }
 }
 
-export async function deployPendingShopOrders(state: AppState) {
+export async function injectPendingShopOrders(state: AppState) {
   ensureShopState(state);
 
   const delivery = await ensureShopDeliveryConfiguration();
   if (!delivery.ready) {
-    throw new Error(delivery.reason || "SHOP DEPLOY BLOCKED: server-scoped delivery routing is not ready.");
+    throw new Error(delivery.reason || "SHOP INJECT BLOCKED: server-scoped delivery routing is not ready.");
   }
 
   if (!systems.shop) {
@@ -845,12 +846,12 @@ export async function deployPendingShopOrders(state: AppState) {
   }
 
   console.log(
-    `🛒 SHOP DEPLOY START pending=${pendingOrders.length} events=${getShopFilePaths().eventsPath} spawns=${getShopFilePaths().eventSpawnsPath} effects=${getShopFilePaths().effectAreaPath}`,
+    `🛒 SHOP INJECT START pending=${pendingOrders.length} events=${getShopFilePaths().eventsPath} spawns=${getShopFilePaths().eventSpawnsPath} effects=${getShopFilePaths().effectAreaPath}`,
   );
 
   validateOrdersReadyForXml(pendingOrders);
 
-  console.log("🛒 SHOP DEPLOY downloading XML files");
+  console.log("🛒 SHOP INJECT downloading XML files");
   let eventsXml: string;
   let eventSpawnsXml: string;
   let effectAreaJson: string;
@@ -874,7 +875,7 @@ export async function deployPendingShopOrders(state: AppState) {
 
   await backupShopXmlFiles(eventsXml, eventSpawnsXml, effectAreaJson);
 
-  console.log("🛒 SHOP DEPLOY injecting SHOP_BOT XML blocks");
+  console.log("🛒 SHOP INJECT injecting SHOP_BOT XML blocks");
   const injectedEvents = injectShopEventsXml(eventsXml, pendingOrders);
   const injectedEventSpawns = injectShopEventSpawnsXml(
     eventSpawnsXml,
@@ -890,11 +891,11 @@ export async function deployPendingShopOrders(state: AppState) {
     stage: "generated",
   });
   if (!hasShopEffectAreas(injectedEffectAreaJson, pendingOrders)) {
-    throw new Error("SHOP DEPLOY FAILED: cfgEffectArea.json is missing one or more generated Shop fire markers.");
+    throw new Error("SHOP INJECT FAILED: cfgEffectArea.json is missing one or more generated Shop fire markers.");
   }
 
   console.log(
-    `🛒 SHOP DEPLOY uploading XML files events=${injectedEvents.eventNames.length}`,
+    `🛒 SHOP INJECT uploading XML files events=${injectedEvents.eventNames.length}`,
   );
   try {
     await uploadServerTextFile(getShopFilePaths().eventsPath, injectedEvents.xml);
@@ -902,19 +903,19 @@ export async function deployPendingShopOrders(state: AppState) {
     await uploadServerTextFile(getShopFilePaths().effectAreaPath, injectedEffectAreaJson);
 
   } catch (deployError) {
-    console.error("❌ SHOP DEPLOY partial failure; attempting XML rollback", deployError);
+    console.error("❌ SHOP INJECT partial failure; attempting XML rollback", deployError);
     try {
       await restoreAndVerifyShopXmlFiles(eventsXml, eventSpawnsXml, "DEPLOY");
       await uploadServerTextFile(getShopFilePaths().effectAreaPath, effectAreaJson);
       const restoredEffectAreaJson = await downloadServerTextFile(getShopFilePaths().effectAreaPath);
       if (restoredEffectAreaJson !== effectAreaJson) {
-        throw new Error("SHOP DEPLOY ROLLBACK FAILED: cfgEffectArea.json could not be restored.");
+        throw new Error("SHOP INJECT ROLLBACK FAILED: cfgEffectArea.json could not be restored.");
       }
-      console.log("✅ SHOP DEPLOY rollback verified by restoring and re-downloading both original XML payloads");
+      console.log("✅ SHOP INJECT rollback verified by restoring and re-downloading both original XML payloads");
     } catch (rollbackError) {
-      console.error("❌ SHOP DEPLOY rollback failed or could not be verified", rollbackError);
+      console.error("❌ SHOP INJECT rollback failed or could not be verified", rollbackError);
       throw new Error(
-        "SHOP DEPLOY FAILED AND ROLLBACK COULD NOT BE VERIFIED: " +
+        "SHOP INJECT FAILED AND ROLLBACK COULD NOT BE VERIFIED: " +
           (rollbackError instanceof Error ? rollbackError.message : String(rollbackError)),
         { cause: deployError },
       );
@@ -943,7 +944,7 @@ export async function deployPendingShopOrders(state: AppState) {
   };
 
   console.log(
-    `✅ SHOP DEPLOY VERIFIED deployed=${pendingOrders.length} batch=${batchId}`,
+    `✅ SHOP INJECT VERIFIED deployed=${pendingOrders.length} batch=${batchId}`,
   );
 
   return {
@@ -1023,6 +1024,42 @@ async function removeShopXmlBlocks(expectedOrders: ShopOrder[] = []) {
   };
 }
 
+export async function runShopDeployRestart(state: AppState) {
+  ensureShopState(state);
+  const includedOrders = getIncludedShopOrders(state);
+  if (!includedOrders.length) throw new Error("SHOP DEPLOY ABORTED: no injected batch is waiting for restart.");
+  const monitor = state.shopResetMonitor;
+  if (!monitor) throw new Error("SHOP DEPLOY ABORTED: shop reset monitor is missing.");
+
+  const targetRestartAt = new Date().toISOString();
+  monitor.autoRestartManaged = true;
+  monitor.targetRestartAt = targetRestartAt;
+  monitor.restartPhase = "scheduled";
+  monitor.restartRequestedAt = targetRestartAt;
+  monitor.restartError = undefined;
+  monitor.confirmationReason = "manual_shop_deploy";
+
+  try {
+    const result = await stopAndStartNitradoServer(getServerRuntimeContext().serverId);
+    const completedAt = new Date().toISOString();
+    monitor.sawOfflineAt = monitor.sawOfflineAt || completedAt;
+    monitor.sawOnlineAt = completedAt;
+    monitor.restartPhase = "completed";
+    monitor.restartCompletedAt = completedAt;
+    monitor.lastStatus = String(result.startedStatus || "started").trim().toLowerCase();
+    monitor.lastCheckedAt = completedAt;
+    monitor.restartError = undefined;
+    monitor.confirmationReason = "manual_shop_deploy_restart_completed";
+    return { restarted: true, startedStatus: result.startedStatus, completedAt, batchId: monitor.batchId };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    monitor.restartPhase = "failed";
+    monitor.restartError = message;
+    monitor.lastCheckedAt = new Date().toISOString();
+    monitor.confirmationReason = "manual_shop_deploy_restart_failed";
+    throw error;
+  }
+}
 export async function clearShopSpawnerAndMarkSpawned(
   state: AppState,
   options?: { cancelPending?: boolean; includedOnly?: boolean },
@@ -1132,7 +1169,7 @@ export async function autoDeployPendingShopOrdersIfNeeded(
   const now = new Date();
   if (!isWithinScheduledDeployWindow(now, restart.at)) return null;
 
-  const result = await deployPendingShopOrders(state);
+  const result = await injectPendingShopOrders(state);
   if (!result?.deployed) return result;
 
   const monitor = state.shopResetMonitor;
