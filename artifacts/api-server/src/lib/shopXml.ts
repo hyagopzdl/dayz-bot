@@ -109,12 +109,50 @@ function getOrderEventName(order: ShopOrder, index: number) {
   return `Static_${item}_${id || index}`;
 }
 
-// Delivery expansion is intentionally kept at the order/event level.
-// A Kit is one ShopOrder and therefore one CE event with multiple children.
-// Quantities are represented by each child's min/max values instead of creating
-// multiple events at the same coordinate.
+// A Kit remains one ShopOrder for commerce/history, but the DayZ delivery
+// pipeline must never rely on multiple kit components living under the same
+// CE event. Expand each component into its own synthetic delivery order.
+// These objects are ephemeral: the parent ShopOrder is still the source of
+// truth for payment, history and final status.
 export function expandShopOrdersForDelivery(orders: ShopOrder[]): ShopOrder[] {
-  return orders.map((order) => ({ ...order }));
+  const expanded: ShopOrder[] = [];
+
+  for (const order of orders) {
+    if (order.itemKind !== "kit" || !Array.isArray(order.kitItems) || !order.kitItems.length) {
+      expanded.push({ ...order });
+      continue;
+    }
+
+    order.kitItems.forEach((component, componentIndex) => {
+      const className = String(component.className || "").trim();
+      if (!className) return;
+
+      const dayzItem = findDayzItem(className);
+      const spawnEventName = String(dayzItem?.spawnEventName || "").trim();
+
+      expanded.push({
+        ...order,
+        id: `${order.id}_component_${componentIndex + 1}`,
+        itemKind: "item",
+        kitId: undefined,
+        // Keep the single component on the synthetic delivery order so the
+        // existing quantity handling in buildStaticEventXml remains intact.
+        kitItems: [{
+          className,
+          ...(String(component.name || "").trim() ? { name: String(component.name).trim() } : {}),
+          quantity: Math.max(1, Math.floor(Number(component.quantity || 1))),
+        }],
+        itemClass: className,
+        itemName: String(component.name || className).trim(),
+        ...(spawnEventName ? { spawnEventName } : {}),
+        deliveryKind: spawnEventName.startsWith("Vehicle") ? "vehicle" : "item",
+        // Quantity is carried by this component's own CE event.
+        // The parent order remains unchanged in state.shopOrders.
+      });
+    });
+  }
+
+  return expanded;
 }
 
 function resolveShopOrders(orders: ShopOrder[]): ResolvedShopOrder[] {
