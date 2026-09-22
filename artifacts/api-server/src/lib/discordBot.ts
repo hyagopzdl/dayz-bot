@@ -172,7 +172,7 @@ async function syncAllManagedServers() {
   const servers = listManagedServers().filter((server) => server.enabled && server.integrations.discordGuildId);
   for (const server of servers) {
     try {
-      await syncDiscordCommandsForManagedServer(server.id);
+      await syncDiscordCommandsForServer(server.id);
       await registerManagedServerInteractions(server.id);
     } catch (error) {
       console.error(`❌ erro inicializando Discord [${server.id}]:`, error);
