@@ -2,7 +2,7 @@ import type { ShopOrder } from "./state";
 import { expandShopOrdersForDelivery } from "./shopXml";
 
 export const SHOP_EFFECT_AREA_PREFIX = "SHOP_BOT_";
-export const SHOP_EFFECT_AREA_PARTICLE = "graphics/particles/fire_bonfire";
+export const SHOP_EFFECT_AREA_PARTICLE = "graphics/particles/fire_small_torch_02";
 
 type EffectArea = {
   AreaName?: string;
@@ -52,24 +52,14 @@ export function buildShopEffectAreaName(order: ShopOrder, index = 0) {
 export function buildShopEffectArea(order: ShopOrder, index = 0): EffectArea {
   return {
     AreaName: buildShopEffectAreaName(order, index),
-    Type: "ContaminatedArea_Static",
-    TriggerType: "EffectTrigger",
+    Type: "SpookyArea",
+    TriggerType: "SpookyTrigger",
     Data: {
       Pos: [
         formatCoordinate(Number(order.x)),
         formatCoordinate(Number(order.y ?? 0)),
         formatCoordinate(Number(order.z)),
       ],
-      Radius: 1,
-      PosHeight: 5,
-      NegHeight: 1,
-      InnerRingCount: 1,
-      InnerPartDist: 1,
-      OuterRingToggle: 0,
-      OuterPartDist: 1,
-      OuterOffset: 0,
-      VerticalLayers: 0,
-      VerticalOffset: 0,
       ParticleName: SHOP_EFFECT_AREA_PARTICLE,
     },
     PlayerData: {
