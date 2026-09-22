@@ -172,7 +172,7 @@ export function registerManagedServerDataInteractions(client: Client) {
   // startDiscordBot can be called through compatibility paths more than once.
   // Never attach duplicate listeners to the same Discord client.
   if (managedServerDataInteractionClients.has(client as object)) return;
-  secondaryInteractionClients.add(client as object);
+  managedServerDataInteractionClients.add(client as object);
 
   client.on("interactionCreate", async (interaction: any) => {
     const guildId = String(interaction.guildId || "").trim();
