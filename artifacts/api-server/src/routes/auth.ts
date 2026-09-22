@@ -15,7 +15,7 @@ import { canOrganizationRole, getUserOrganizationMembership } from "../lib/organ
 import { getManagedServerById } from "../lib/serverRegistry";
 import { runInServerDataContext } from "../lib/serverRuntime";
 import { getAdminServerAccess } from "../lib/adminUsers";
-import { getDiscordClient, syncDiscordCommandsForManagedServer } from "../lib/discordBot";
+import { getDiscordClient, syncDiscordCommandsForServer } from "../lib/discordBot";
 
 const router = Router();
 const DISCORD_API = "https://discord.com/api/v10";
@@ -245,7 +245,7 @@ router.get("/discord/callback", async (req, res) => {
       const botGuild = await confirmBotJoinedGuild(guildId);
       const bound = await bindManagedServerDiscordGuild(server.id, guildId);
       if (!bound) throw new Error("Unable to persist the Discord server binding.");
-      await syncDiscordCommandsForManagedServer(server.id);
+      await syncDiscordCommandsForServer(server.id);
 
       logger.info({ serverId: server.id, guildId, guildName: botGuild.name, discordId: user.id }, "Discord guild connected to managed server");
       res.redirect(adminSession ? "/admin-panel/setup?discord=connected" : `/saas?server=${encodeURIComponent(server.id)}&discord=connected`);
