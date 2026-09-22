@@ -4,7 +4,7 @@ import { createDiscordStateAccess } from "./discord/stateAccess";
 import { registerDiscordCommands } from "./discord/commands";
 import { createDiscordFeedRuntime } from "./discord/modules/feeds/runtime";
 import { registerInteractionHandlers } from "./discord/interactions";
-import { registerSecondaryManagedServerInteractions } from "./discord/secondaryInteractions";
+import { registerManagedServerDataInteractions } from "./discord/secondaryInteractions";
 import { registerMemberFeed } from "./discord/modules/memberFeed";
 import { applyServiceSettingsToCommandSettings, DEFAULT_SERVICE_SETTINGS } from "./serviceSettings";
 import { normalizeDiscordCommandSettings } from "./discord/commandSettings";
@@ -78,7 +78,7 @@ export function getDiscordGatewayDiagnostics() {
 
 export { registerKillStreakFromKill } from "./discord/modules/killstreak/service";
 
-export async function syncDiscordCommandsForManagedServer(serverId: string) {
+export async function syncDiscordCommandsForServer(serverId: string) {
   const server = listManagedServers().find((item) => item.id === serverId);
   if (!server?.enabled || !server.integrations.discordGuildId) return false;
   const settings = applyServiceSettingsToCommandSettings(
@@ -89,7 +89,7 @@ export async function syncDiscordCommandsForManagedServer(serverId: string) {
     client,
     settings,
     serverId,
-    "core",
+    "all",
     server.integrations.discordGuildId,
   );
   return true;
