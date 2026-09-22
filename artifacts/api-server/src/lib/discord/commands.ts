@@ -344,7 +344,7 @@ export async function registerDiscordCommands(
   client: any,
   settings?: DiscordCommandSettingsLike,
   serverId: string,
-  scope: DiscordCommandRegistrationScope = "full",
+  scope: DiscordCommandRegistrationScope = "all",
   explicitGuildId?: string,
 ) {
   try {
