@@ -6,7 +6,7 @@ import { handleEconomyAdminAutocomplete, handleEconomyAdminCommand } from "./mod
 import { handleShopInteraction } from "./modules/shop/interactions";
 import { DISABLED_COMMAND_MESSAGE, isDiscordCommandEnabled } from "./commandSettings";
 import { isShopServiceEnabled, SHOP_COMMAND_NAMES } from "../serviceSettings";
-import { clearShopSpawnerAndMarkSpawned, deployPendingShopOrders, formatShopQueue, getShopItems } from "../shop";
+import { clearShopSpawnerAndMarkSpawned, injectPendingShopOrders, formatShopQueue, getShopItems } from "../shop";
 import { ensureShopCatalogLoaded } from "../shopCatalog";
 import {
   getPrimaryServerId,
@@ -18,7 +18,7 @@ import { deferEphemeral } from "./responses";
 import { assertAdmin } from "./permissions";
 import { buildNeutralEmbed } from "./ui/embeds";
 
-const SECONDARY_ADMIN_SHOP_COMMANDS = new Set(["shop-queue", "shop-deploy", "shop-clear", "shop-catalog"]);
+const SECONDARY_ADMIN_SHOP_COMMANDS = new Set(["shop-queue", "shop-inject", "shop-deploy", "shop-clear", "shop-catalog"]);
 
 const secondaryInteractionClients = new WeakSet<object>();
 
@@ -143,7 +143,7 @@ async function handleSecondaryInteraction(interaction: any, serverId: string) {
   }
 
   if (interaction.commandName === "shop-deploy") {
-    const result = await deployPendingShopOrders(state);
+    const result = await injectPendingShopOrders(state);
     if (!result || result.deployed <= 0) {
       await interaction.editReply(result?.reason || "No pending shop orders to deploy.");
       return;
