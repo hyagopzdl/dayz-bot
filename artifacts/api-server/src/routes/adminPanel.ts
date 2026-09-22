@@ -9324,7 +9324,7 @@ router.patch("/api/discord-commands/:commandName", async (req, res) => {
     }
 
     const effectiveCommandSettings = applyServiceSettingsToCommandSettings(state.discordCommandSettings, state.serviceSettings);
-    await registerDiscordCommands(client, effectiveCommandSettings, getActiveServerId(), "full");
+    await registerDiscordCommands(client, effectiveCommandSettings, getActiveServerId(), "all");
     res.json({ commands: listDiscordCommandDescriptors(effectiveCommandSettings) });
   } catch (err) {
     res.status(500).json({ error: String(err) });
