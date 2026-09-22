@@ -346,16 +346,22 @@ export async function registerDiscordCommands(
   settings?: DiscordCommandSettingsLike,
   serverId = getPrimaryServerId(),
   scope: DiscordCommandRegistrationScope = "full",
+  explicitGuildId?: string,
 ) {
   try {
     const commands = buildEnabledDiscordCommands(settings, scope);
 
-    const guildId = getServerRuntimeContext(serverId).discord.guildId;
+    // Prefer the persisted managed-server binding. Runtime context can lag during
+    // startup/registry hydration, which can make a newly added guild command never
+    // reach the actual Discord guild even though the command definition is correct.
+    const guildId = String(explicitGuildId || getServerRuntimeContext(serverId).discord.guildId || "").trim();
     if (guildId) {
       const guild = await client.guilds.fetch(guildId);
       await guild.commands.set(commands);
+      console.log("✅ Discord guild commands replaced [" + serverId + "] guild=" + guildId + ":", commands.map((command) => command.name).join(", "));
     } else {
       await client.application?.commands.set(commands);
+      console.log("✅ Discord global commands replaced [" + serverId + "]:", commands.map((command) => command.name).join(", "));
     }
 
     console.log(`✅ ${commands.length} comandos do Discord sincronizados [${serverId}] (${scope})`);
