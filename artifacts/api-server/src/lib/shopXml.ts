@@ -135,7 +135,13 @@ export function expandShopOrdersForDelivery(orders: ShopOrder[]): ShopOrder[] {
         id: `${order.id}_component_${componentIndex + 1}`,
         itemKind: "item",
         kitId: undefined,
-        kitItems: undefined,
+        // Keep the single component on the synthetic delivery order so the
+        // existing quantity handling in buildStaticEventXml remains intact.
+        kitItems: [{
+          className,
+          ...(String(component.name || "").trim() ? { name: String(component.name).trim() } : {}),
+          quantity: Math.max(1, Math.floor(Number(component.quantity || 1))),
+        }],
         itemClass: className,
         itemName: String(component.name || className).trim(),
         ...(spawnEventName ? { spawnEventName } : {}),
