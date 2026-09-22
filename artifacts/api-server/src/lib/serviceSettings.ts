@@ -49,6 +49,7 @@ export const SHOP_COMMAND_NAMES = new Set([
   "shop",
   "shop-buy",
   "shop-queue",
+  "shop-inject",
   "shop-deploy",
   "shop-clear",
   "shop-catalog",
