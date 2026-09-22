@@ -2,7 +2,8 @@ import { Client, ChannelType, PermissionFlagsBits, TextBasedChannel } from "disc
 import { resolveServerIdFromDiscordGuildId } from "../serverRegistry";
 import {
   createShopOrder,
-  deployPendingShopOrders,
+  injectPendingShopOrders,
+  runShopDeployRestart,
   clearShopSpawnerAndMarkSpawned,
   formatShopQueue,
   parseShopCoordinates,
@@ -186,54 +187,36 @@ export function registerInteractionHandlers(ctx: RegisterInteractionHandlersCont
       return;
     }
 
-    if (interaction.commandName === "shop-deploy") {
+    if (interaction.commandName === "shop-inject" || interaction.commandName === "shop-deploy") {
       const state = await getState();
-
+      const fullDeploy = interaction.commandName === "shop-deploy";
       try {
-        const result = await deployPendingShopOrders(state);
-
-        if (!result) {
-          await interaction.editReply(
-            "⚠️ Shop deploy is currently unavailable because the shop or Nitrado system is disabled.",
-          );
-          return;
-        }
-
-        if (result.deployed <= 0) {
-          await interaction.editReply(
-            `⚠️ ${result.reason || "No pending shop orders to deploy."}`,
-          );
-          return;
-        }
-
+        const result = await injectPendingShopOrders(state);
+        if (!result) { await interaction.editReply("⚠️ Shop injection is currently unavailable because the shop or Nitrado system is disabled."); return; }
+        if (result.deployed <= 0) { await interaction.editReply(`⚠️ ${result.reason || "No pending shop orders to inject."}`); return; }
         await saveState(state);
-
-        await interaction.editReply(
-          [
-            `✅ Injected and verified **${result.deployed}** shop order(s) in the Nitrado XML files.`,
-            "",
-            `Batch: \`${result.batchId || "unknown"}\``,
-            `Path: \`${result.path}\``,
-            "",
-            "Restart the server after this upload. Orders are only marked as included after the SHOP_BOT blocks are verified on FTP.",
-          ].join("\n"),
-        );
+        if (!fullDeploy) {
+          await interaction.editReply(["✅ Injected and verified **" + result.deployed + "** shop order(s) in the Nitrado mission files.","", "Batch: `" + (result.batchId || "unknown") + "`","Path: `" + result.path + "`","","The server was **not restarted**. Use `/shop-deploy` to run the complete delivery cycle."].join("\n"));
+          return;
+        }
+        const monitor = state.shopResetMonitor;
+        if (!monitor) throw new Error("Shop reset monitor was not created after injection.");
+        monitor.autoRestartManaged = true;
+        monitor.targetRestartAt = new Date().toISOString();
+        monitor.restartPhase = "scheduled";
+        monitor.restartRequestedAt = new Date().toISOString();
+        monitor.confirmationReason = "manual_shop_deploy";
+        await saveState(state);
+        const restart = await runShopDeployRestart(state);
+        await saveState(state);
+        await interaction.editReply(["✅ Shop deploy completed for **" + result.deployed + "** order(s).","","Batch: `" + (result.batchId || "unknown") + "`","• Shop files: **injected + verified**","• Server restart: **completed** (" + (restart.startedStatus || "started") + ")","• Auto-clear: **armed** and will finalize the batch after the safe post-online window.","","Use /shop-queue to monitor the batch."].join("\n"));
       } catch (err) {
-        console.error("❌ SHOP_BOT manual deploy failed:", err);
-        await interaction.editReply(
-          [
-            "❌ Shop deploy failed before orders were marked as included.",
-            "",
-            `Reason: \`${String((err as Error)?.message || err).slice(0, 1500)}\``,
-            "",
-            "No order should be considered spawned from this failed deploy. Check Render logs for the full stack trace.",
-          ].join("\n"),
-        );
+        console.error(`❌ SHOP_${fullDeploy ? "DEPLOY" : "INJECT"} failed:`, err);
+        try { await saveState(state); } catch (saveError) { console.error("❌ Failed persisting Shop state after command failure:", saveError); }
+        await interaction.editReply(["❌ Shop " + (fullDeploy ? "deploy" : "injection") + " failed.","","Reason: `" + String((err as Error)?.message || err).slice(0, 1500) + "`","","" + (fullDeploy ? "The batch was not marked as spawned. If the server restart failed, the injected batch remains protected for recovery." : "No server restart was requested by this command.")].join("\n"));
       }
-
       return;
     }
-
     if (interaction.commandName === "shop-clear") {
       const state = await getState();
 
