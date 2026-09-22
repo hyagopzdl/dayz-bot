@@ -227,7 +227,7 @@ export function registerManagedServerDataInteractions(client: Client) {
       // must remain available independently from ADM/Nitrado activation. Helpers
       // that actually perform FTP/Nitrado work still enforce their own runtime
       // safety gates. Keeping the whole interaction in DataContext also prevents
-      // any helper from falling back to the primary tenant.
+      // any helper from falling back to another server context.
       await runInServerDataContext(serverId, () => handleSecondaryInteraction(interaction, serverId!));
     } catch (error) {
       console.error(`❌ Discord server interaction failed [${serverId || "unresolved"}]:`, error);
